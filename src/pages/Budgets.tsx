@@ -7,6 +7,10 @@ import { useState } from "react";
 
 export default function Budgets() {
   const [open, setOpen] = useState(false);
+  const [itemOpen, setItemOpen] = useState(false);
+  const [selectedBudgetId, setSelectedBudgetId] = useState("");
+  const [itemAccountId, setItemAccountId] = useState("");
+  const [itemAmount, setItemAmount] = useState(0);
   const [department, setDepartment] = useState("");
   const [periodStart, setPeriodStart] = useState("");
   const [periodEnd, setPeriodEnd] = useState("");
