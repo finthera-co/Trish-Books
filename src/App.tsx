@@ -3,8 +3,12 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { AuthProvider } from "@/contexts/AuthContext";
+import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "./components/layout/AppLayout";
 import Index from "./pages/Index";
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
 import Tenants from "./pages/Tenants";
 import UsersPage from "./pages/UsersPage";
 import ChartOfAccounts from "./pages/ChartOfAccounts";
@@ -24,31 +28,37 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route element={<AppLayout />}>
-            <Route path="/" element={<Index />} />
-            <Route path="/tenants" element={<Tenants />} />
-            <Route path="/users" element={<UsersPage />} />
-            <Route path="/accounts" element={<ChartOfAccounts />} />
-            <Route path="/journals" element={<JournalEntries />} />
-            <Route path="/ledger" element={<Ledger />} />
-            <Route path="/invoices" element={<Invoices />} />
-            <Route path="/expenses" element={<Expenses />} />
-            <Route path="/petty-cash" element={<PettyCash />} />
-            <Route path="/budgets" element={<Budgets />} />
-            <Route path="/reports" element={<Reports />} />
-            <Route path="/audit-logs" element={<AuditLogs />} />
-            <Route path="/subscriptions" element={<Subscriptions />} />
-            <Route path="/settings" element={<SettingsPage />} />
-          </Route>
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
+    <AuthProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+            <Route element={<ProtectedRoute />}>
+              <Route element={<AppLayout />}>
+                <Route path="/" element={<Index />} />
+                <Route path="/tenants" element={<Tenants />} />
+                <Route path="/users" element={<UsersPage />} />
+                <Route path="/accounts" element={<ChartOfAccounts />} />
+                <Route path="/journals" element={<JournalEntries />} />
+                <Route path="/ledger" element={<Ledger />} />
+                <Route path="/invoices" element={<Invoices />} />
+                <Route path="/expenses" element={<Expenses />} />
+                <Route path="/petty-cash" element={<PettyCash />} />
+                <Route path="/budgets" element={<Budgets />} />
+                <Route path="/reports" element={<Reports />} />
+                <Route path="/audit-logs" element={<AuditLogs />} />
+                <Route path="/subscriptions" element={<Subscriptions />} />
+                <Route path="/settings" element={<SettingsPage />} />
+              </Route>
+            </Route>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </AuthProvider>
   </QueryClientProvider>
 );
 

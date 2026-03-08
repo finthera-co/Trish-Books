@@ -1,8 +1,17 @@
-import { Outlet } from "react-router-dom";
+import { Outlet, useNavigate } from "react-router-dom";
 import AppSidebar from "./AppSidebar";
-import { Bell, Search } from "lucide-react";
+import { Bell, Search, LogOut } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function AppLayout() {
+  const { appUser, signOut } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/login");
+  };
+
   return (
     <div className="flex min-h-screen">
       <AppSidebar />
@@ -20,17 +29,21 @@ export default function AppLayout() {
           <div className="flex items-center gap-4">
             <button className="relative p-2 rounded-md hover:bg-accent">
               <Bell className="w-4 h-4 text-muted-foreground" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-destructive rounded-full" />
             </button>
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-xs font-medium text-primary-foreground">
-                SA
+                {appUser ? `${appUser.first_name[0]}${appUser.last_name[0]}` : "?"}
               </div>
               <div className="text-sm">
-                <p className="font-medium text-foreground">Super Admin</p>
-                <p className="text-xs text-muted-foreground">admin@accubooks.com</p>
+                <p className="font-medium text-foreground">
+                  {appUser ? `${appUser.first_name} ${appUser.last_name}` : "Loading..."}
+                </p>
+                <p className="text-xs text-muted-foreground">{appUser?.role_name || ""}</p>
               </div>
             </div>
+            <button onClick={handleSignOut} className="p-2 rounded-md hover:bg-accent" title="Sign out">
+              <LogOut className="w-4 h-4 text-muted-foreground" />
+            </button>
           </div>
         </header>
 
