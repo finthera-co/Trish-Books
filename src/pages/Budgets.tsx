@@ -103,6 +103,40 @@ export default function Budgets() {
             </div>
           </DialogContent>
         </Dialog>
+        <Dialog open={itemOpen} onOpenChange={setItemOpen}>
+          <DialogTrigger asChild>
+            <Button variant="outline" disabled={!budgets?.length}>Add Budget Item</Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Add Budget Line Item</DialogTitle></DialogHeader>
+            <div className="space-y-4 pt-4">
+              <div>
+                <label className="text-sm font-medium">Budget</label>
+                <select value={selectedBudgetId} onChange={(e) => setSelectedBudgetId(e.target.value)}
+                  className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground">
+                  <option value="">Select budget...</option>
+                  {budgets?.map(b => <option key={b.id} value={b.id}>{b.department} ({b.period_start})</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Account</label>
+                <select value={itemAccountId} onChange={(e) => setItemAccountId(e.target.value)}
+                  className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground">
+                  <option value="">Select account...</option>
+                  {accounts?.map(a => <option key={a.id} value={a.id}>{a.account_code} - {a.account_name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Allocated Amount</label>
+                <input type="number" value={itemAmount || ""} onChange={(e) => setItemAmount(Number(e.target.value))}
+                  className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" />
+              </div>
+              <Button onClick={handleAddItem} disabled={!selectedBudgetId || !itemAccountId || !itemAmount || createBudgetItem.isPending} className="w-full">
+                {createBudgetItem.isPending ? "Adding..." : "Add Item"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {chartData.length > 0 && (
