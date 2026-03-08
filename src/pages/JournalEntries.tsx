@@ -99,8 +99,8 @@ export default function JournalEntries() {
                 <Button variant="outline" size="sm" onClick={addLine} className="mt-2">Add Line</Button>
               </div>
               <div className="flex justify-between text-sm">
-                <span>Total Debit: ${totalDebit.toFixed(2)}</span>
-                <span>Total Credit: ${totalCredit.toFixed(2)}</span>
+                <span>Total Debit: LKR {totalDebit.toFixed(2)}</span>
+                <span>Total Credit: LKR {totalCredit.toFixed(2)}</span>
                 <span className={isBalanced ? "text-success" : "text-destructive"}>
                   {isBalanced ? "✓ Balanced" : "✗ Not balanced"}
                 </span>
