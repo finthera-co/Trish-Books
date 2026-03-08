@@ -1,7 +1,7 @@
 import { Plus, Search, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
-import { useExpenses, useCreateExpense, useUpdateExpense, useExpenseCategories } from "@/hooks/useData";
+import { useExpenses, useCreateExpense, useUpdateExpense, useExpenseCategories, useCreateExpenseCategory } from "@/hooks/useData";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
