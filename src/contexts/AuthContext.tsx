@@ -42,10 +42,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email,
         first_name,
         last_name,
-        roles!inner(role_name)
+        roles(role_name)
       `)
       .eq("auth_user_id", authUserId)
-      .single();
+      .maybeSingle();
 
     if (!error && data) {
       setAppUser({

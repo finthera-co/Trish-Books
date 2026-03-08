@@ -145,7 +145,7 @@ export default function AppSidebar() {
 
       {/* Footer */}
       <div className="p-3 border-t border-sidebar-border">
-        <button className="sidebar-item sidebar-item-inactive w-full">
+        <button onClick={handleSignOut} className="sidebar-item sidebar-item-inactive w-full">
           <LogOut className="w-4 h-4" />
           Sign Out
         </button>
