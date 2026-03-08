@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Building2,
   Users,
+  UserCheck,
   BookOpen,
   FileText,
   Receipt,
@@ -16,6 +17,8 @@ import {
   Settings,
   LogOut,
   ChevronDown,
+  Package,
+  DollarSign,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -43,6 +46,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: "Tenants", path: "/tenants", icon: Building2 },
       { label: "Users", path: "/users", icon: Users },
+      { label: "Employees", path: "/employees", icon: UserCheck },
     ],
   },
   {
@@ -57,6 +61,7 @@ const navGroups: NavGroup[] = [
     label: "Billing",
     items: [
       { label: "Invoices", path: "/invoices", icon: Wallet },
+      { label: "Products & Taxes", path: "/products-taxes", icon: Package },
       { label: "Expenses", path: "/expenses", icon: Banknote },
       { label: "Petty Cash", path: "/petty-cash", icon: PiggyBank },
     ],
@@ -65,6 +70,7 @@ const navGroups: NavGroup[] = [
     label: "Planning",
     items: [
       { label: "Budgeting", path: "/budgets", icon: TrendingUp },
+      { label: "Payroll", path: "/payroll", icon: DollarSign },
       { label: "Reports", path: "/reports", icon: BarChart3 },
     ],
   },

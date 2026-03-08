@@ -1,7 +1,7 @@
 import { Plus, Search, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
-import { useExpenses, useCreateExpense, useUpdateExpense, useExpenseCategories } from "@/hooks/useData";
+import { useExpenses, useCreateExpense, useUpdateExpense, useExpenseCategories, useCreateExpenseCategory } from "@/hooks/useData";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
@@ -15,16 +15,26 @@ const statusColors: Record<string, string> = {
 export default function Expenses() {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
+  const [catOpen, setCatOpen] = useState(false);
   const [amount, setAmount] = useState(0);
   const [description, setDescription] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split("T")[0]);
+  const [newCatName, setNewCatName] = useState("");
 
   const { data: expenses, isLoading } = useExpenses();
   const { data: categories } = useExpenseCategories();
   const createExpense = useCreateExpense();
   const updateExpense = useUpdateExpense();
+  const createCategory = useCreateExpenseCategory();
   const { isCompanyAdmin } = useAuth();
+
+  const handleCreateCategory = async () => {
+    const cat = await createCategory.mutateAsync({ name: newCatName });
+    setCategoryId(cat.id);
+    setCatOpen(false);
+    setNewCatName("");
+  };
 
   const filtered = expenses?.filter((e) =>
     (e.description || "").toLowerCase().includes(search.toLowerCase())
@@ -77,11 +87,29 @@ export default function Expenses() {
               </div>
               <div>
                 <label className="text-sm font-medium">Category</label>
-                <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}
-                  className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground">
-                  <option value="">Select category...</option>
-                  {categories?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                <div className="flex gap-2 mt-1">
+                  <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}
+                    className="flex-1 text-sm border rounded-md px-3 py-2 bg-background text-foreground">
+                    <option value="">Select category...</option>
+                    {categories?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <Dialog open={catOpen} onOpenChange={setCatOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm">New</Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader><DialogTitle>New Category</DialogTitle></DialogHeader>
+                      <div className="space-y-4 pt-4">
+                        <div>
+                          <label className="text-sm font-medium">Category Name</label>
+                          <input type="text" value={newCatName} onChange={(e) => setNewCatName(e.target.value)}
+                            className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" placeholder="Travel" />
+                        </div>
+                        <Button onClick={handleCreateCategory} disabled={!newCatName} className="w-full">Create Category</Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
               </div>
               <div>
                 <label className="text-sm font-medium">Description</label>

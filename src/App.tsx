@@ -22,6 +22,9 @@ import Reports from "./pages/Reports";
 import AuditLogs from "./pages/AuditLogs";
 import Subscriptions from "./pages/Subscriptions";
 import SettingsPage from "./pages/SettingsPage";
+import Employees from "./pages/Employees";
+import ProductsTaxes from "./pages/ProductsTaxes";
+import Payroll from "./pages/Payroll";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -41,13 +44,16 @@ const App = () => (
                 <Route path="/" element={<Index />} />
                 <Route path="/tenants" element={<Tenants />} />
                 <Route path="/users" element={<UsersPage />} />
+                <Route path="/employees" element={<Employees />} />
                 <Route path="/accounts" element={<ChartOfAccounts />} />
                 <Route path="/journals" element={<JournalEntries />} />
                 <Route path="/ledger" element={<Ledger />} />
                 <Route path="/invoices" element={<Invoices />} />
+                <Route path="/products-taxes" element={<ProductsTaxes />} />
                 <Route path="/expenses" element={<Expenses />} />
                 <Route path="/petty-cash" element={<PettyCash />} />
                 <Route path="/budgets" element={<Budgets />} />
+                <Route path="/payroll" element={<Payroll />} />
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/audit-logs" element={<AuditLogs />} />
                 <Route path="/subscriptions" element={<Subscriptions />} />
