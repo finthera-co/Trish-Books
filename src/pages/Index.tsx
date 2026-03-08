@@ -25,10 +25,10 @@ export default function Index() {
   const pendingInvoices = invoices?.filter(i => i.status === "sent").reduce((s, i) => s + Number(i.total_amount), 0) || 0;
 
   const stats = [
-    { label: "Total Revenue", value: `$${totalRevenue.toLocaleString()}`, change: totalRevenue > 0 ? "+12.5%" : "", trend: "up", icon: DollarSign },
-    { label: "Total Expenses", value: `$${totalExpenses.toLocaleString()}`, change: totalExpenses > 0 ? "+3.1%" : "", trend: "up", icon: TrendingDown },
-    { label: "Net Profit", value: `$${netProfit.toLocaleString()}`, change: netProfit !== 0 ? (netProfit >= 0 ? "+18.2%" : "-5%") : "", trend: netProfit >= 0 ? "up" : "down", icon: TrendingUp },
-    { label: "Pending Invoices", value: `$${pendingInvoices.toLocaleString()}`, change: "", trend: "up", icon: Wallet },
+    { label: "Total Revenue", value: `LKR ${totalRevenue.toLocaleString()}`, change: totalRevenue > 0 ? "+12.5%" : "", trend: "up", icon: DollarSign },
+    { label: "Total Expenses", value: `LKR ${totalExpenses.toLocaleString()}`, change: totalExpenses > 0 ? "+3.1%" : "", trend: "up", icon: TrendingDown },
+    { label: "Net Profit", value: `LKR ${netProfit.toLocaleString()}`, change: netProfit !== 0 ? (netProfit >= 0 ? "+18.2%" : "-5%") : "", trend: netProfit >= 0 ? "up" : "down", icon: TrendingUp },
+    { label: "Pending Invoices", value: `LKR ${pendingInvoices.toLocaleString()}`, change: "", trend: "up", icon: Wallet },
   ];
 
   // Monthly revenue chart from invoices
@@ -146,7 +146,7 @@ export default function Index() {
           ) : (
             <ResponsiveContainer width="100%" height={250}>
               <PieChart>
-                <Pie data={accountTypeSummary} cx="50%" cy="50%" outerRadius={90} dataKey="value" label={({ name, value }) => `${name}: $${value.toLocaleString()}`}>
+                <Pie data={accountTypeSummary} cx="50%" cy="50%" outerRadius={90} dataKey="value" label={({ name, value }) => `${name}: LKR ${value.toLocaleString()}`}>
                   {accountTypeSummary.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                 </Pie>
                 <Tooltip />
@@ -193,7 +193,7 @@ export default function Index() {
                   <td className="font-medium text-foreground">{txn.id}...</td>
                   <td>{txn.description}</td>
                   <td className="text-muted-foreground">{txn.date}</td>
-                  <td className="text-right font-medium text-foreground">${txn.amount.toLocaleString()}</td>
+                  <td className="text-right font-medium text-foreground">LKR {txn.amount.toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>

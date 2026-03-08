@@ -149,7 +149,7 @@ export default function Expenses() {
                   </td>
                   <td className="text-muted-foreground">{exp.expense_date}</td>
                   <td><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[exp.status] || ""}`}>{exp.status}</span></td>
-                  <td className="text-right font-medium text-foreground">${Number(exp.amount).toLocaleString()}</td>
+                  <td className="text-right font-medium text-foreground">LKR {Number(exp.amount).toLocaleString()}</td>
                   <td>
                     {isCompanyAdmin && exp.status === "pending" && (
                       <DropdownMenu>

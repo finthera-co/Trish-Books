@@ -106,7 +106,7 @@ export default function Payroll() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium">Net Salary</label>
-                  <p className="mt-1 text-lg font-semibold text-foreground">${netSalary.toLocaleString()}</p>
+                  <p className="mt-1 text-lg font-semibold text-foreground">LKR {netSalary.toLocaleString()}</p>
                 </div>
                 <div>
                   <label className="text-sm font-medium">Payment Date</label>
@@ -123,9 +123,9 @@ export default function Payroll() {
       </div>
 
       <div className="grid grid-cols-3 gap-4">
-        <div className="stat-card"><p className="text-sm text-muted-foreground">Total Gross</p><p className="text-xl font-semibold text-foreground mt-1">${totalGross.toLocaleString()}</p></div>
-        <div className="stat-card"><p className="text-sm text-muted-foreground">Total Deductions</p><p className="text-xl font-semibold text-warning mt-1">${totalDeductions.toLocaleString()}</p></div>
-        <div className="stat-card"><p className="text-sm text-muted-foreground">Total Net Pay</p><p className="text-xl font-semibold text-success mt-1">${totalNet.toLocaleString()}</p></div>
+        <div className="stat-card"><p className="text-sm text-muted-foreground">Total Gross</p><p className="text-xl font-semibold text-foreground mt-1">LKR {totalGross.toLocaleString()}</p></div>
+        <div className="stat-card"><p className="text-sm text-muted-foreground">Total Deductions</p><p className="text-xl font-semibold text-warning mt-1">LKR {totalDeductions.toLocaleString()}</p></div>
+        <div className="stat-card"><p className="text-sm text-muted-foreground">Total Net Pay</p><p className="text-xl font-semibold text-success mt-1">LKR {totalNet.toLocaleString()}</p></div>
       </div>
 
       <div className="stat-card">
@@ -152,9 +152,9 @@ export default function Payroll() {
                     </span>
                   </td>
                   <td className="text-muted-foreground">{r.period_start} to {r.period_end}</td>
-                  <td className="text-right">${Number(r.gross_salary).toLocaleString()}</td>
-                  <td className="text-right text-warning">${Number(r.deductions).toLocaleString()}</td>
-                  <td className="text-right font-medium text-success">${Number(r.net_salary).toLocaleString()}</td>
+                  <td className="text-right">LKR {Number(r.gross_salary).toLocaleString()}</td>
+                  <td className="text-right text-warning">LKR {Number(r.deductions).toLocaleString()}</td>
+                  <td className="text-right font-medium text-success">LKR {Number(r.net_salary).toLocaleString()}</td>
                   <td className="text-muted-foreground">{r.payment_date || "Unpaid"}</td>
                 </tr>
               ))}

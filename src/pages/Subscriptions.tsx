@@ -51,7 +51,7 @@ export default function Subscriptions() {
                 )}
               </div>
               <div className="mb-4">
-                <span className="text-3xl font-bold text-foreground">${Number(plan.price)}</span>
+                <span className="text-3xl font-bold text-foreground">LKR {Number(plan.price)}</span>
                 <span className="text-muted-foreground">/{plan.billing_cycle}</span>
                 <p className="text-sm text-muted-foreground mt-1">Up to {plan.max_users} users</p>
               </div>

@@ -174,10 +174,10 @@ export default function Budgets() {
                   <tr key={b.id}>
                     <td className="font-medium text-foreground">{b.department}</td>
                     <td className="text-muted-foreground">{b.period_start} to {b.period_end}</td>
-                    <td className="text-right">${Number(b.total_budget).toLocaleString()}</td>
-                    <td className="text-right">${actual.toLocaleString()}</td>
+                    <td className="text-right">LKR {Number(b.total_budget).toLocaleString()}</td>
+                    <td className="text-right">LKR {actual.toLocaleString()}</td>
                     <td className={`text-right font-medium ${variance <= 0 ? "text-success" : "text-destructive"}`}>
-                      {variance <= 0 ? "" : "+"}${variance.toLocaleString()}
+                      {variance <= 0 ? "" : "+"}LKR {variance.toLocaleString()}
                     </td>
                   </tr>
                 );

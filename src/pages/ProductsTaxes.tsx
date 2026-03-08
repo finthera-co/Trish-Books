@@ -133,7 +133,7 @@ export default function ProductsTaxes() {
                           {(p.taxes as any)?.tax_name ? `${(p.taxes as any).tax_name} (${Number((p.taxes as any).tax_rate)}%)` : "No tax"}
                         </span>
                       </td>
-                      <td className="text-right font-medium text-foreground">${Number(p.price).toLocaleString()}</td>
+                      <td className="text-right font-medium text-foreground">LKR {Number(p.price).toLocaleString()}</td>
                     </tr>
                   ))}
                 </tbody>
