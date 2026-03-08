@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 
 export default function SettingsPage() {
@@ -29,12 +29,12 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
 
   // Initialize form when tenant loads
-  useState(() => {
+  useEffect(() => {
     if (tenant) {
       setCompanyName(tenant.company_name);
       setCountry(tenant.country || "");
     }
-  });
+  }, [tenant]);
 
   const handleSave = async () => {
     if (!appUser?.tenant_id) return;

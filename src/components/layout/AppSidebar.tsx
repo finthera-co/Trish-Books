@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Building2,
@@ -18,6 +18,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface NavItem {
   label: string;
@@ -79,7 +80,14 @@ const navGroups: NavGroup[] = [
 
 export default function AppSidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/login");
+  };
 
   const toggleGroup = (label: string) => {
     setCollapsed((prev) => ({ ...prev, [label]: !prev[label] }));
@@ -137,7 +145,7 @@ export default function AppSidebar() {
 
       {/* Footer */}
       <div className="p-3 border-t border-sidebar-border">
-        <button className="sidebar-item sidebar-item-inactive w-full">
+        <button onClick={handleSignOut} className="sidebar-item sidebar-item-inactive w-full">
           <LogOut className="w-4 h-4" />
           Sign Out
         </button>
