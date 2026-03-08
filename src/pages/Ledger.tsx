@@ -22,10 +22,20 @@ export default function Ledger() {
       }));
   }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()) || [];
 
-  // Calculate running balance
+  // Calculate running balance based on account normal balance direction
+  // Asset & Expense = normal debit balance (debit increases, credit decreases)
+  // Liability, Equity & Revenue = normal credit balance (credit increases, debit decreases)
+  const isDebitNormal = selectedAccount
+    ? ["Asset", "Expense", "COGS"].includes(selectedAccount.account_type)
+    : true;
+
   let balance = 0;
   const ledgerWithBalance = ledger.map(row => {
-    balance += row.debit - row.credit;
+    if (isDebitNormal) {
+      balance += row.debit - row.credit;
+    } else {
+      balance += row.credit - row.debit;
+    }
     return { ...row, balance };
   });
 
