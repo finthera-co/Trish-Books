@@ -98,9 +98,9 @@ export default function Ledger() {
                   <td className="text-muted-foreground">{row.date}</td>
                   <td>{row.description}</td>
                   <td className="font-mono text-xs text-muted-foreground">{row.reference}</td>
-                  <td className="text-right">{row.debit ? `$${row.debit.toLocaleString()}` : "-"}</td>
-                  <td className="text-right">{row.credit ? `$${row.credit.toLocaleString()}` : "-"}</td>
-                  <td className="text-right font-medium text-foreground">${row.balance.toLocaleString()}</td>
+                  <td className="text-right">{row.debit ? `LKR ${row.debit.toLocaleString()}` : "-"}</td>
+                  <td className="text-right">{row.credit ? `LKR ${row.credit.toLocaleString()}` : "-"}</td>
+                  <td className="text-right font-medium text-foreground">LKR {row.balance.toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>
