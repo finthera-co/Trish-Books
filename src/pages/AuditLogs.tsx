@@ -1,14 +1,6 @@
 import { Search } from "lucide-react";
 import { useState } from "react";
-
-const mockLogs = [
-  { id: 1, action: "Transaction Created", user: "John Smith", details: "Journal Entry JE-001 created", timestamp: "2026-03-07 14:32:00", ip: "192.168.1.45" },
-  { id: 2, action: "User Login", user: "Sarah Johnson", details: "Successful login", timestamp: "2026-03-07 09:15:00", ip: "192.168.1.22" },
-  { id: 3, action: "Invoice Updated", user: "Mike Williams", details: "INV-003 status changed to Overdue", timestamp: "2026-03-06 16:45:00", ip: "192.168.1.33" },
-  { id: 4, action: "Expense Approved", user: "Admin", details: "EXP-001 approved", timestamp: "2026-03-06 11:20:00", ip: "192.168.1.10" },
-  { id: 5, action: "Account Modified", user: "Sarah Johnson", details: "Account 5200 name updated", timestamp: "2026-03-05 15:50:00", ip: "192.168.1.22" },
-  { id: 6, action: "Data Export", user: "Admin", details: "Trial Balance report exported", timestamp: "2026-03-05 10:30:00", ip: "192.168.1.10" },
-];
+import { useAuditLogs } from "@/hooks/useData";
 
 const actionColors: Record<string, string> = {
   "Transaction Created": "bg-success/10 text-success",
@@ -21,7 +13,12 @@ const actionColors: Record<string, string> = {
 
 export default function AuditLogs() {
   const [search, setSearch] = useState("");
-  const filtered = mockLogs.filter((l) => l.action.toLowerCase().includes(search.toLowerCase()) || l.user.toLowerCase().includes(search.toLowerCase()));
+  const { data: logs, isLoading } = useAuditLogs();
+
+  const filtered = logs?.filter((l) =>
+    l.action.toLowerCase().includes(search.toLowerCase()) ||
+    ((l.users as any)?.first_name || "").toLowerCase().includes(search.toLowerCase())
+  ) || [];
 
   return (
     <div className="space-y-6">
@@ -38,20 +35,38 @@ export default function AuditLogs() {
           <input type="text" placeholder="Search logs..." value={search} onChange={(e) => setSearch(e.target.value)}
             className="bg-transparent text-sm outline-none flex-1 text-foreground placeholder:text-muted-foreground" />
         </div>
-        <table className="data-table">
-          <thead><tr><th>Timestamp</th><th>Action</th><th>User</th><th>Details</th><th>IP Address</th></tr></thead>
-          <tbody>
-            {filtered.map((log) => (
-              <tr key={log.id}>
-                <td className="font-mono text-xs text-muted-foreground">{log.timestamp}</td>
-                <td><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${actionColors[log.action] || ""}`}>{log.action}</span></td>
-                <td className="text-foreground">{log.user}</td>
-                <td className="text-muted-foreground">{log.details}</td>
-                <td className="font-mono text-xs text-muted-foreground">{log.ip}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        
+        {isLoading ? (
+          <p className="text-center py-8 text-muted-foreground">Loading...</p>
+        ) : filtered.length === 0 ? (
+          <p className="text-center py-8 text-muted-foreground">No audit logs found</p>
+        ) : (
+          <table className="data-table">
+            <thead><tr><th>Timestamp</th><th>Action</th><th>User</th><th>Details</th><th>IP Address</th></tr></thead>
+            <tbody>
+              {filtered.map((log) => (
+                <tr key={log.id}>
+                  <td className="font-mono text-xs text-muted-foreground">
+                    {new Date(log.created_at).toLocaleString()}
+                  </td>
+                  <td>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${actionColors[log.action] || "bg-muted text-muted-foreground"}`}>
+                      {log.action}
+                    </span>
+                  </td>
+                  <td className="text-foreground">
+                    {(log.users as any)?.first_name} {(log.users as any)?.last_name}
+                  </td>
+                  <td className="text-muted-foreground text-sm">
+                    {log.table_name && `Table: ${log.table_name}`}
+                    {log.record_id && ` | ID: ${log.record_id.slice(0, 8)}...`}
+                  </td>
+                  <td className="font-mono text-xs text-muted-foreground">{log.ip_address || "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

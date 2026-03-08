@@ -7,48 +7,45 @@ import {
   ArrowDownRight,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-
-const stats = [
-  { label: "Total Revenue", value: "$124,500", change: "+12.5%", trend: "up", icon: DollarSign },
-  { label: "Total Expenses", value: "$87,200", change: "+3.1%", trend: "up", icon: TrendingDown },
-  { label: "Net Profit", value: "$37,300", change: "+18.2%", trend: "up", icon: TrendingUp },
-  { label: "Cash Balance", value: "$52,840", change: "-2.4%", trend: "down", icon: Wallet },
-];
-
-const monthlyData = [
-  { month: "Jan", revenue: 18000, expenses: 12000 },
-  { month: "Feb", revenue: 20000, expenses: 14000 },
-  { month: "Mar", revenue: 17500, expenses: 11000 },
-  { month: "Apr", revenue: 22000, expenses: 15000 },
-  { month: "May", revenue: 24500, expenses: 16500 },
-  { month: "Jun", revenue: 22500, expenses: 18700 },
-];
-
-const cashFlowData = [
-  { month: "Jan", balance: 42000 },
-  { month: "Feb", balance: 48000 },
-  { month: "Mar", balance: 54500 },
-  { month: "Apr", balance: 51000 },
-  { month: "May", balance: 59000 },
-  { month: "Jun", balance: 52840 },
-];
-
-const recentTransactions = [
-  { id: "TXN-001", description: "Office Supplies", account: "Expenses", amount: -1250, date: "2026-03-07" },
-  { id: "TXN-002", description: "Client Payment - Acme Corp", account: "Revenue", amount: 8500, date: "2026-03-06" },
-  { id: "TXN-003", description: "Utility Bill", account: "Expenses", amount: -340, date: "2026-03-05" },
-  { id: "TXN-004", description: "Consulting Fee", account: "Revenue", amount: 4200, date: "2026-03-05" },
-  { id: "TXN-005", description: "Software License", account: "Expenses", amount: -899, date: "2026-03-04" },
-];
+import { useInvoices, useExpenses, useJournalEntries } from "@/hooks/useData";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function Index() {
+  const { appUser } = useAuth();
+  const { data: invoices } = useInvoices();
+  const { data: expenses } = useExpenses();
+  const { data: journalEntries } = useJournalEntries();
+
+  // Calculate stats from real data
+  const totalRevenue = invoices?.filter(i => i.status === "paid").reduce((s, i) => s + Number(i.total_amount), 0) || 0;
+  const totalExpenses = expenses?.filter(e => e.status === "approved").reduce((s, e) => s + Number(e.amount), 0) || 0;
+  const netProfit = totalRevenue - totalExpenses;
+  const pendingInvoices = invoices?.filter(i => i.status === "sent").reduce((s, i) => s + Number(i.total_amount), 0) || 0;
+
+  const stats = [
+    { label: "Total Revenue", value: `$${totalRevenue.toLocaleString()}`, change: "+12.5%", trend: "up", icon: DollarSign },
+    { label: "Total Expenses", value: `$${totalExpenses.toLocaleString()}`, change: "+3.1%", trend: "up", icon: TrendingDown },
+    { label: "Net Profit", value: `$${netProfit.toLocaleString()}`, change: netProfit >= 0 ? "+18.2%" : "-5%", trend: netProfit >= 0 ? "up" : "down", icon: TrendingUp },
+    { label: "Pending Invoices", value: `$${pendingInvoices.toLocaleString()}`, change: "", trend: "up", icon: Wallet },
+  ];
+
+  // Recent transactions from journal entries
+  const recentTransactions = journalEntries?.slice(0, 5).map(entry => ({
+    id: entry.id.slice(0, 8),
+    description: entry.description,
+    date: entry.entry_date,
+    amount: (entry.journal_lines as any[])?.reduce((s, l) => s + Number(l.debit), 0) || 0,
+  })) || [];
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="page-header">
         <div>
           <h1 className="page-title">Financial Dashboard</h1>
-          <p className="page-description">Overview of your financial performance</p>
+          <p className="page-description">
+            Welcome back, {appUser?.first_name}! Here's your financial overview.
+          </p>
         </div>
         <div className="flex gap-2">
           <select className="text-sm border rounded-md px-3 py-2 bg-card text-foreground">
@@ -70,91 +67,54 @@ export default function Index() {
             </div>
             <div className="flex items-end justify-between">
               <span className="text-2xl font-semibold text-foreground">{stat.value}</span>
-              <span
-                className={`flex items-center text-xs font-medium ${
-                  stat.trend === "up" ? "text-success" : "text-destructive"
-                }`}
-              >
-                {stat.trend === "up" ? (
-                  <ArrowUpRight className="w-3 h-3 mr-0.5" />
-                ) : (
-                  <ArrowDownRight className="w-3 h-3 mr-0.5" />
-                )}
-                {stat.change}
-              </span>
+              {stat.change && (
+                <span
+                  className={`flex items-center text-xs font-medium ${
+                    stat.trend === "up" ? "text-success" : "text-destructive"
+                  }`}
+                >
+                  {stat.trend === "up" ? (
+                    <ArrowUpRight className="w-3 h-3 mr-0.5" />
+                  ) : (
+                    <ArrowDownRight className="w-3 h-3 mr-0.5" />
+                  )}
+                  {stat.change}
+                </span>
+              )}
             </div>
           </div>
         ))}
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="stat-card">
-          <h3 className="text-sm font-medium text-foreground mb-4">Revenue vs Expenses</h3>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={monthlyData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(214 20% 90%)" />
-              <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="hsl(215 14% 46%)" />
-              <YAxis tick={{ fontSize: 12 }} stroke="hsl(215 14% 46%)" />
-              <Tooltip />
-              <Bar dataKey="revenue" fill="hsl(215 60% 42%)" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="expenses" fill="hsl(0 72% 51%)" radius={[4, 4, 0, 0]} opacity={0.7} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="stat-card">
-          <h3 className="text-sm font-medium text-foreground mb-4">Cash Flow Trend</h3>
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={cashFlowData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(214 20% 90%)" />
-              <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="hsl(215 14% 46%)" />
-              <YAxis tick={{ fontSize: 12 }} stroke="hsl(215 14% 46%)" />
-              <Tooltip />
-              <Line
-                type="monotone"
-                dataKey="balance"
-                stroke="hsl(215 60% 42%)"
-                strokeWidth={2}
-                dot={{ fill: "hsl(215 60% 42%)", r: 4 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
       {/* Recent Transactions */}
       <div className="stat-card">
         <h3 className="text-sm font-medium text-foreground mb-4">Recent Transactions</h3>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Reference</th>
-              <th>Description</th>
-              <th>Account</th>
-              <th>Date</th>
-              <th className="text-right">Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            {recentTransactions.map((txn) => (
-              <tr key={txn.id}>
-                <td className="font-medium text-foreground">{txn.id}</td>
-                <td>{txn.description}</td>
-                <td>
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-secondary text-secondary-foreground">
-                    {txn.account}
-                  </span>
-                </td>
-                <td className="text-muted-foreground">{txn.date}</td>
-                <td className={`text-right font-medium ${txn.amount >= 0 ? "text-success" : "text-destructive"}`}>
-                  {txn.amount >= 0 ? "+" : ""}
-                  ${Math.abs(txn.amount).toLocaleString()}
-                </td>
+        {recentTransactions.length === 0 ? (
+          <p className="text-center py-8 text-muted-foreground">No transactions yet. Create journal entries to see them here.</p>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Reference</th>
+                <th>Description</th>
+                <th>Date</th>
+                <th className="text-right">Amount</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {recentTransactions.map((txn) => (
+                <tr key={txn.id}>
+                  <td className="font-medium text-foreground">{txn.id}...</td>
+                  <td>{txn.description}</td>
+                  <td className="text-muted-foreground">{txn.date}</td>
+                  <td className="text-right font-medium text-foreground">
+                    ${txn.amount.toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );
