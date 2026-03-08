@@ -25,6 +25,11 @@ export default function JournalEntries() {
   
   const updateLine = (index: number, field: string, value: any) => {
     const newLines = [...lines];
+    if (field === "debit" && Number(value) > 0) {
+      (newLines[index] as any)["credit"] = 0;
+    } else if (field === "credit" && Number(value) > 0) {
+      (newLines[index] as any)["debit"] = 0;
+    }
     (newLines[index] as any)[field] = value;
     setLines(newLines);
   };
