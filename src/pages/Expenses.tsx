@@ -15,16 +15,26 @@ const statusColors: Record<string, string> = {
 export default function Expenses() {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
+  const [catOpen, setCatOpen] = useState(false);
   const [amount, setAmount] = useState(0);
   const [description, setDescription] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split("T")[0]);
+  const [newCatName, setNewCatName] = useState("");
 
   const { data: expenses, isLoading } = useExpenses();
   const { data: categories } = useExpenseCategories();
   const createExpense = useCreateExpense();
   const updateExpense = useUpdateExpense();
+  const createCategory = useCreateExpenseCategory();
   const { isCompanyAdmin } = useAuth();
+
+  const handleCreateCategory = async () => {
+    const cat = await createCategory.mutateAsync({ name: newCatName });
+    setCategoryId(cat.id);
+    setCatOpen(false);
+    setNewCatName("");
+  };
 
   const filtered = expenses?.filter((e) =>
     (e.description || "").toLowerCase().includes(search.toLowerCase())
