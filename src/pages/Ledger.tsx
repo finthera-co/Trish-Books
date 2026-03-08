@@ -64,7 +64,7 @@ export default function Ledger() {
         <div className="stat-card">
           <p className="text-sm text-muted-foreground">Net Movement</p>
           <p className={`text-xl font-semibold mt-1 ${netMovement >= 0 ? "text-success" : "text-destructive"}`}>
-            {netMovement >= 0 ? "+" : ""}${netMovement.toLocaleString()}
+            {netMovement >= 0 ? "+" : ""}LKR {netMovement.toLocaleString()}
           </p>
         </div>
         <div className="stat-card">
