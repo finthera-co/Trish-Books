@@ -26,6 +26,7 @@ import Employees from "./pages/Employees";
 import ProductsTaxes from "./pages/ProductsTaxes";
 import Payroll from "./pages/Payroll";
 import TrialBalance from "./pages/TrialBalance";
+import DataExports from "./pages/DataExports";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
