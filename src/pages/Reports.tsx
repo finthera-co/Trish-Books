@@ -455,7 +455,7 @@ export default function Reports() {
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={chartData} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis type="number" tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `$${v.toLocaleString()}`} />
+                  <XAxis type="number" tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `LKR ${v.toLocaleString()}`} />
                   <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" width={120} />
                   <Tooltip formatter={(v: number) => fmt(v)} />
                   <Bar dataKey="amount" radius={[0, 4, 4, 0]}>
