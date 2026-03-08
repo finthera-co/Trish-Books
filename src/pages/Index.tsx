@@ -25,10 +25,10 @@ export default function Index() {
   const pendingInvoices = invoices?.filter(i => i.status === "sent").reduce((s, i) => s + Number(i.total_amount), 0) || 0;
 
   const stats = [
-    { label: "Total Revenue", value: `$${totalRevenue.toLocaleString()}`, change: totalRevenue > 0 ? "+12.5%" : "", trend: "up", icon: DollarSign },
-    { label: "Total Expenses", value: `$${totalExpenses.toLocaleString()}`, change: totalExpenses > 0 ? "+3.1%" : "", trend: "up", icon: TrendingDown },
-    { label: "Net Profit", value: `$${netProfit.toLocaleString()}`, change: netProfit !== 0 ? (netProfit >= 0 ? "+18.2%" : "-5%") : "", trend: netProfit >= 0 ? "up" : "down", icon: TrendingUp },
-    { label: "Pending Invoices", value: `$${pendingInvoices.toLocaleString()}`, change: "", trend: "up", icon: Wallet },
+    { label: "Total Revenue", value: `LKR ${totalRevenue.toLocaleString()}`, change: totalRevenue > 0 ? "+12.5%" : "", trend: "up", icon: DollarSign },
+    { label: "Total Expenses", value: `LKR ${totalExpenses.toLocaleString()}`, change: totalExpenses > 0 ? "+3.1%" : "", trend: "up", icon: TrendingDown },
+    { label: "Net Profit", value: `LKR ${netProfit.toLocaleString()}`, change: netProfit !== 0 ? (netProfit >= 0 ? "+18.2%" : "-5%") : "", trend: netProfit >= 0 ? "up" : "down", icon: TrendingUp },
+    { label: "Pending Invoices", value: `LKR ${pendingInvoices.toLocaleString()}`, change: "", trend: "up", icon: Wallet },
   ];
 
   // Monthly revenue chart from invoices
