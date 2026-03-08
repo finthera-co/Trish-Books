@@ -61,8 +61,9 @@ export default function TrialBalance() {
     journalLines.forEach(line => {
       const entryDate = line.journal_entries?.entry_date;
       const status = line.journal_entries?.status;
+      const voidedAt = (line.journal_entries as any)?.voided_at;
       if (!entryDate || entryDate > asOfDate) return;
-      if (status === "draft") return; // only posted entries
+      if (status === "draft" || status === "voided" || voidedAt) return; // only posted, non-voided entries
 
       const acc = map.get(line.account_id);
       if (acc) {
