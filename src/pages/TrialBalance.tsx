@@ -243,7 +243,7 @@ export default function TrialBalance() {
           <div className={`mt-4 px-4 py-2.5 rounded-lg text-sm font-medium ${isBalanced ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
             {isBalanced
               ? "✓ Trial balance is in balance — total debits equal total credits"
-              : `✗ Out of balance by $${fmt(Math.abs(totalDebit - totalCredit))}. Review journal entries for errors.`}
+              : `✗ Out of balance by LKR ${fmt(Math.abs(totalDebit - totalCredit))}. Review journal entries for errors.`}
           </div>
         )}
       </div>
