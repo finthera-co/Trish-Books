@@ -57,6 +57,11 @@ export default function Expenses() {
     updateExpense.mutate({ id, status });
   };
 
+  const totalAll = expenses?.reduce((s, e) => s + Number(e.amount), 0) || 0;
+  const totalApproved = expenses?.filter(e => e.status === "approved").reduce((s, e) => s + Number(e.amount), 0) || 0;
+  const totalPending = expenses?.filter(e => e.status === "pending").reduce((s, e) => s + Number(e.amount), 0) || 0;
+  const totalRejected = expenses?.filter(e => e.status === "rejected").reduce((s, e) => s + Number(e.amount), 0) || 0;
+
   return (
     <div className="space-y-6">
       <div className="page-header">
@@ -122,6 +127,27 @@ export default function Expenses() {
             </div>
           </DialogContent>
         </Dialog>
+      </div>
+
+      {/* Summary Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="stat-card">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Expenses</p>
+          <p className="text-xl font-bold text-foreground mt-1">LKR {totalAll.toLocaleString()}</p>
+        </div>
+        <div className="stat-card">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide">Approved</p>
+          <p className="text-xl font-bold text-success mt-1">LKR {totalApproved.toLocaleString()}</p>
+        </div>
+        <div className="stat-card">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide">Pending</p>
+          <p className="text-xl font-bold text-warning mt-1">LKR {totalPending.toLocaleString()}</p>
+          <p className="text-[10px] text-muted-foreground">{expenses?.filter(e => e.status === "pending").length || 0} items</p>
+        </div>
+        <div className="stat-card">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide">Rejected</p>
+          <p className="text-xl font-bold text-destructive mt-1">LKR {totalRejected.toLocaleString()}</p>
+        </div>
       </div>
 
       <div className="stat-card">

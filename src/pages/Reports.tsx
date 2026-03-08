@@ -25,7 +25,12 @@ export default function Reports() {
 
   // Filter journal entries by period
   const filteredEntries = useMemo(() => {
-    return journalEntries?.filter(e => e.entry_date >= periodFrom && e.entry_date <= periodTo) || [];
+    return journalEntries?.filter(e => 
+      e.status === "posted" && 
+      !(e as any).voided_at &&
+      e.entry_date >= periodFrom && 
+      e.entry_date <= periodTo
+    ) || [];
   }, [journalEntries, periodFrom, periodTo]);
 
   // Build account balances from filtered journal lines
