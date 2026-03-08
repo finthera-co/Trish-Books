@@ -483,6 +483,44 @@ export type Database = {
           },
         ]
       }
+      export_logs: {
+        Row: {
+          created_at: string
+          export_type: string
+          file_name: string
+          file_path: string
+          id: string
+          tables_included: string[]
+          tenant_id: string
+        }
+        Insert: {
+          created_at?: string
+          export_type?: string
+          file_name: string
+          file_path: string
+          id?: string
+          tables_included?: string[]
+          tenant_id: string
+        }
+        Update: {
+          created_at?: string
+          export_type?: string
+          file_name?: string
+          file_path?: string
+          id?: string
+          tables_included?: string[]
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "export_logs_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       financial_reports: {
         Row: {
           file_url: string | null
