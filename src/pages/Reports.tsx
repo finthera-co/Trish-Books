@@ -58,7 +58,7 @@ export default function Reports() {
   const fmt = (n: number) => {
     const abs = Math.abs(n);
     const str = abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return n < 0 ? `($${str})` : `$${str}`;
+    return n < 0 ? `(LKR ${str})` : `LKR ${str}`;
   };
 
   const StatementHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (
