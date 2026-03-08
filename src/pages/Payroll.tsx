@@ -106,7 +106,7 @@ export default function Payroll() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium">Net Salary</label>
-                  <p className="mt-1 text-lg font-semibold text-foreground">${netSalary.toLocaleString()}</p>
+                  <p className="mt-1 text-lg font-semibold text-foreground">LKR {netSalary.toLocaleString()}</p>
                 </div>
                 <div>
                   <label className="text-sm font-medium">Payment Date</label>
