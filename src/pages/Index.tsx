@@ -193,7 +193,7 @@ export default function Index() {
                   <td className="font-medium text-foreground">{txn.id}...</td>
                   <td>{txn.description}</td>
                   <td className="text-muted-foreground">{txn.date}</td>
-                  <td className="text-right font-medium text-foreground">${txn.amount.toLocaleString()}</td>
+                  <td className="text-right font-medium text-foreground">LKR {txn.amount.toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>

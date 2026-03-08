@@ -178,7 +178,7 @@ export default function Invoices() {
                   <td className="text-muted-foreground">{inv.issue_date}</td>
                   <td className="text-muted-foreground">{inv.due_date || "-"}</td>
                   <td><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[inv.status] || ""}`}>{inv.status}</span></td>
-                  <td className="text-right font-medium text-foreground">${Number(inv.total_amount).toLocaleString()}</td>
+                  <td className="text-right font-medium text-foreground">LKR {Number(inv.total_amount).toLocaleString()}</td>
                   <td>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>

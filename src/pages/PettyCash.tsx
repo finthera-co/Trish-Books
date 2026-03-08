@@ -164,7 +164,7 @@ export default function PettyCash() {
                   <td>{t.description || "-"}</td>
                   <td><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${typeColors[t.transaction_type] || ""}`}>{t.transaction_type}</span></td>
                   <td className={`text-right font-medium ${Number(t.amount) >= 0 ? "text-success" : "text-destructive"}`}>
-                    {Number(t.amount) >= 0 ? "+" : ""}${Math.abs(Number(t.amount)).toFixed(2)}
+                    {Number(t.amount) >= 0 ? "+" : ""}LKR {Math.abs(Number(t.amount)).toFixed(2)}
                   </td>
                 </tr>
               ))}

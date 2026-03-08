@@ -152,9 +152,9 @@ export default function Payroll() {
                     </span>
                   </td>
                   <td className="text-muted-foreground">{r.period_start} to {r.period_end}</td>
-                  <td className="text-right">${Number(r.gross_salary).toLocaleString()}</td>
-                  <td className="text-right text-warning">${Number(r.deductions).toLocaleString()}</td>
-                  <td className="text-right font-medium text-success">${Number(r.net_salary).toLocaleString()}</td>
+                  <td className="text-right">LKR {Number(r.gross_salary).toLocaleString()}</td>
+                  <td className="text-right text-warning">LKR {Number(r.deductions).toLocaleString()}</td>
+                  <td className="text-right font-medium text-success">LKR {Number(r.net_salary).toLocaleString()}</td>
                   <td className="text-muted-foreground">{r.payment_date || "Unpaid"}</td>
                 </tr>
               ))}

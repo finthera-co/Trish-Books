@@ -136,8 +136,8 @@ export default function JournalEntries() {
                     <td className="text-muted-foreground">{entry.entry_date}</td>
                     <td className="font-medium text-foreground">{entry.description}</td>
                     <td className="font-mono text-xs text-muted-foreground">{entry.reference || "-"}</td>
-                    <td className="text-right font-medium">${totalDebit.toLocaleString()}</td>
-                    <td className="text-right font-medium">${totalCredit.toLocaleString()}</td>
+                    <td className="text-right font-medium">LKR {totalDebit.toLocaleString()}</td>
+                    <td className="text-right font-medium">LKR {totalCredit.toLocaleString()}</td>
                     <td>
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                         entry.status === "posted" ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"
