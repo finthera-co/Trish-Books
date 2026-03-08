@@ -146,7 +146,7 @@ export default function Index() {
           ) : (
             <ResponsiveContainer width="100%" height={250}>
               <PieChart>
-                <Pie data={accountTypeSummary} cx="50%" cy="50%" outerRadius={90} dataKey="value" label={({ name, value }) => `${name}: $${value.toLocaleString()}`}>
+                <Pie data={accountTypeSummary} cx="50%" cy="50%" outerRadius={90} dataKey="value" label={({ name, value }) => `${name}: LKR ${value.toLocaleString()}`}>
                   {accountTypeSummary.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                 </Pie>
                 <Tooltip />
