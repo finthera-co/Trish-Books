@@ -132,7 +132,7 @@ export default function Employees() {
                     </span>
                   </td>
                   <td className="text-muted-foreground">{emp.hire_date || "-"}</td>
-                  <td className="text-right font-medium text-foreground">{emp.salary ? `$${Number(emp.salary).toLocaleString()}` : "-"}</td>
+                  <td className="text-right font-medium text-foreground">{emp.salary ? `LKR ${Number(emp.salary).toLocaleString()}` : "-"}</td>
                 </tr>
               ))}
             </tbody>
