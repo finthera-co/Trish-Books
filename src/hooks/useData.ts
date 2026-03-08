@@ -3,6 +3,32 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
+// Helper: Write audit log
+async function writeAuditLog(action: string, tableName: string, recordId?: string, details?: Record<string, any>) {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    
+    const tenantId = await supabase.rpc("get_user_tenant_id");
+    const userId = await supabase
+      .from("users")
+      .select("id")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+
+    await supabase.from("audit_logs").insert({
+      action,
+      table_name: tableName,
+      record_id: recordId,
+      user_id: userId.data?.id,
+      tenant_id: tenantId.data,
+      details: details || null,
+    });
+  } catch {
+    // Silently fail - don't break the main operation
+  }
+}
+
 // Tenants
 export function useTenants() {
   return useQuery({
@@ -24,6 +50,7 @@ export function useCreateTenant() {
     mutationFn: async (tenant: { company_name: string; country?: string; industry?: string; subscription_plan_id?: string }) => {
       const { data, error } = await supabase.from("tenants").insert(tenant).select().single();
       if (error) throw error;
+      writeAuditLog("Tenant Created", "tenants", data.id, { company_name: tenant.company_name });
       return data;
     },
     onSuccess: () => {
@@ -37,9 +64,10 @@ export function useCreateTenant() {
 export function useUpdateTenant() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...updates }: { id: string; status?: string }) => {
+    mutationFn: async ({ id, ...updates }: { id: string; status?: string; company_name?: string; country?: string; subscription_plan_id?: string }) => {
       const { error } = await supabase.from("tenants").update(updates).eq("id", id);
       if (error) throw error;
+      writeAuditLog("Tenant Updated", "tenants", id, updates);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tenants"] });
@@ -70,6 +98,7 @@ export function useCreateUser() {
     mutationFn: async (user: { email: string; first_name: string; last_name: string; role_id: string; tenant_id: string }) => {
       const { data, error } = await supabase.from("users").insert(user).select().single();
       if (error) throw error;
+      writeAuditLog("User Created", "users", data.id, { email: user.email });
       return data;
     },
     onSuccess: () => {
@@ -105,6 +134,7 @@ export function useCreateAccount() {
         tenant_id: appUser?.tenant_id,
       }).select().single();
       if (error) throw error;
+      writeAuditLog("Account Created", "accounts", data.id, { account_name: account.account_name, account_code: account.account_code });
       return data;
     },
     onSuccess: () => {
@@ -145,7 +175,6 @@ export function useCreateJournalEntry() {
       }).select().single();
       if (error) throw error;
 
-      // Insert journal lines
       const lines = entry.lines.map(line => ({
         journal_entry_id: data.id,
         account_id: line.account_id,
@@ -155,6 +184,7 @@ export function useCreateJournalEntry() {
       const { error: linesError } = await supabase.from("journal_lines").insert(lines);
       if (linesError) throw linesError;
 
+      writeAuditLog("Journal Entry Posted", "journal_entries", data.id, { description: entry.description, reference: entry.reference });
       return data;
     },
     onSuccess: () => {
@@ -190,6 +220,7 @@ export function useCreateInvoice() {
         tenant_id: appUser?.tenant_id,
       }).select().single();
       if (error) throw error;
+      writeAuditLog("Invoice Created", "invoices", data.id, { invoice_number: invoice.invoice_number, total_amount: invoice.total_amount });
       return data;
     },
     onSuccess: () => {
@@ -206,6 +237,7 @@ export function useUpdateInvoice() {
     mutationFn: async ({ id, ...updates }: { id: string; status?: string }) => {
       const { error } = await supabase.from("invoices").update(updates).eq("id", id);
       if (error) throw error;
+      writeAuditLog("Invoice Updated", "invoices", id, updates);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
@@ -237,6 +269,7 @@ export function useCreateCustomer() {
         tenant_id: appUser?.tenant_id,
       }).select().single();
       if (error) throw error;
+      writeAuditLog("Customer Created", "customers", data.id, { name: customer.name });
       return data;
     },
     onSuccess: () => {
@@ -272,6 +305,7 @@ export function useCreateExpense() {
         tenant_id: appUser?.tenant_id,
       }).select().single();
       if (error) throw error;
+      writeAuditLog("Expense Submitted", "expenses", data.id, { amount: expense.amount, description: expense.description });
       return data;
     },
     onSuccess: () => {
@@ -288,6 +322,7 @@ export function useUpdateExpense() {
     mutationFn: async ({ id, ...updates }: { id: string; status?: string }) => {
       const { error } = await supabase.from("expenses").update(updates).eq("id", id);
       if (error) throw error;
+      writeAuditLog(`Expense ${updates.status === 'approved' ? 'Approved' : 'Rejected'}`, "expenses", id, updates);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
@@ -306,6 +341,26 @@ export function useExpenseCategories() {
       if (error) throw error;
       return data;
     },
+  });
+}
+
+export function useCreateExpenseCategory() {
+  const queryClient = useQueryClient();
+  const { appUser } = useAuth();
+  return useMutation({
+    mutationFn: async (category: { name: string; account_id?: string }) => {
+      const { data, error } = await supabase.from("expense_categories").insert({
+        ...category,
+        tenant_id: appUser?.tenant_id,
+      }).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["expense_categories"] });
+      toast.success("Category created");
+    },
+    onError: (e: Error) => toast.error(e.message),
   });
 }
 
@@ -341,6 +396,7 @@ export function useCreatePettyCashTransaction() {
     mutationFn: async (txn: { petty_cash_account_id: string; amount: number; transaction_type: string; description?: string }) => {
       const { data, error } = await supabase.from("petty_cash_transactions").insert(txn).select().single();
       if (error) throw error;
+      writeAuditLog("Petty Cash Transaction", "petty_cash_transactions", data.id, { amount: txn.amount, type: txn.transaction_type });
       return data;
     },
     onSuccess: () => {
@@ -377,11 +433,28 @@ export function useCreateBudget() {
         tenant_id: appUser?.tenant_id,
       }).select().single();
       if (error) throw error;
+      writeAuditLog("Budget Created", "budgets", data.id, { department: budget.department, total_budget: budget.total_budget });
       return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["budgets"] });
       toast.success("Budget created");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useCreateBudgetItem() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (item: { budget_id: string; account_id: string; allocated_amount: number }) => {
+      const { data, error } = await supabase.from("budget_items").insert(item).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["budgets"] });
+      toast.success("Budget item added");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -443,17 +516,132 @@ export function useCreateEmployee() {
   const queryClient = useQueryClient();
   const { appUser } = useAuth();
   return useMutation({
-    mutationFn: async (employee: { first_name: string; last_name: string; email?: string; department?: string; salary?: number }) => {
+    mutationFn: async (employee: { first_name: string; last_name: string; email?: string; department?: string; salary?: number; hire_date?: string }) => {
       const { data, error } = await supabase.from("employees").insert({
         ...employee,
+        tenant_id: appUser?.tenant_id,
+      }).select().single();
+      if (error) throw error;
+      writeAuditLog("Employee Created", "employees", data.id, { name: `${employee.first_name} ${employee.last_name}` });
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["employees"] });
+      toast.success("Employee added");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useUpdateEmployee() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...updates }: { id: string; first_name?: string; last_name?: string; email?: string; department?: string; salary?: number }) => {
+      const { error } = await supabase.from("employees").update(updates).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["employees"] });
+      toast.success("Employee updated");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// Products
+export function useProducts() {
+  return useQuery({
+    queryKey: ["products"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("products")
+        .select("*, taxes(tax_name, tax_rate)")
+        .order("name");
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+export function useCreateProduct() {
+  const queryClient = useQueryClient();
+  const { appUser } = useAuth();
+  return useMutation({
+    mutationFn: async (product: { name: string; description?: string; price: number; tax_id?: string; income_account_id?: string }) => {
+      const { data, error } = await supabase.from("products").insert({
+        ...product,
         tenant_id: appUser?.tenant_id,
       }).select().single();
       if (error) throw error;
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["employees"] });
-      toast.success("Employee added");
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      toast.success("Product created");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// Taxes
+export function useTaxes() {
+  return useQuery({
+    queryKey: ["taxes"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("taxes").select("*").order("tax_name");
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+export function useCreateTax() {
+  const queryClient = useQueryClient();
+  const { appUser } = useAuth();
+  return useMutation({
+    mutationFn: async (tax: { tax_name: string; tax_rate: number }) => {
+      const { data, error } = await supabase.from("taxes").insert({
+        ...tax,
+        tenant_id: appUser?.tenant_id,
+      }).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["taxes"] });
+      toast.success("Tax rate created");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// Payroll Records
+export function usePayrollRecords() {
+  return useQuery({
+    queryKey: ["payroll_records"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("payroll_records")
+        .select("*, employees(first_name, last_name, department)")
+        .order("period_start", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+export function useCreatePayrollRecord() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (record: { employee_id: string; period_start: string; period_end: string; gross_salary: number; deductions: number; net_salary: number; payment_date?: string }) => {
+      const { data, error } = await supabase.from("payroll_records").insert(record).select().single();
+      if (error) throw error;
+      writeAuditLog("Payroll Record Created", "payroll_records", data.id, { employee_id: record.employee_id, net_salary: record.net_salary });
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["payroll_records"] });
+      toast.success("Payroll record created");
     },
     onError: (e: Error) => toast.error(e.message),
   });
