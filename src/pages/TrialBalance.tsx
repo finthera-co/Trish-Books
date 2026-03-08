@@ -155,7 +155,7 @@ export default function TrialBalance() {
         <div className="stat-card">
           <p className="text-xs text-muted-foreground uppercase tracking-wide">Difference</p>
           <p className={`text-xl font-bold mt-1 ${isBalanced ? "text-success" : "text-destructive"}`}>
-            ${fmt(Math.abs(totalDebit - totalCredit))}
+            LKR {fmt(Math.abs(totalDebit - totalCredit))}
           </p>
         </div>
         <div className="stat-card">
