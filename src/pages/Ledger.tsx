@@ -59,7 +59,7 @@ export default function Ledger() {
       <div className="grid grid-cols-3 gap-4">
         <div className="stat-card">
           <p className="text-sm text-muted-foreground">Opening Balance</p>
-          <p className="text-xl font-semibold text-foreground mt-1">${openingBalance.toLocaleString()}</p>
+          <p className="text-xl font-semibold text-foreground mt-1">LKR {openingBalance.toLocaleString()}</p>
         </div>
         <div className="stat-card">
           <p className="text-sm text-muted-foreground">Net Movement</p>
