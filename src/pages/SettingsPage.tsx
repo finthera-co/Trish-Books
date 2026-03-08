@@ -29,12 +29,12 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
 
   // Initialize form when tenant loads
-  useState(() => {
+  useEffect(() => {
     if (tenant) {
       setCompanyName(tenant.company_name);
       setCountry(tenant.country || "");
     }
-  });
+  }, [tenant]);
 
   const handleSave = async () => {
     if (!appUser?.tenant_id) return;
