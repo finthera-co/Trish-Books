@@ -150,10 +150,10 @@ export default function Invoices() {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        <div className="stat-card"><p className="text-sm text-muted-foreground">Total Outstanding</p><p className="text-xl font-semibold text-foreground mt-1">${stats.outstanding.toLocaleString()}</p></div>
-        <div className="stat-card"><p className="text-sm text-muted-foreground">Paid This Month</p><p className="text-xl font-semibold text-success mt-1">${stats.paid.toLocaleString()}</p></div>
-        <div className="stat-card"><p className="text-sm text-muted-foreground">Overdue</p><p className="text-xl font-semibold text-destructive mt-1">${stats.overdue.toLocaleString()}</p></div>
-        <div className="stat-card"><p className="text-sm text-muted-foreground">Drafts</p><p className="text-xl font-semibold text-muted-foreground mt-1">${stats.drafts.toLocaleString()}</p></div>
+        <div className="stat-card"><p className="text-sm text-muted-foreground">Total Outstanding</p><p className="text-xl font-semibold text-foreground mt-1">LKR {stats.outstanding.toLocaleString()}</p></div>
+        <div className="stat-card"><p className="text-sm text-muted-foreground">Paid This Month</p><p className="text-xl font-semibold text-success mt-1">LKR {stats.paid.toLocaleString()}</p></div>
+        <div className="stat-card"><p className="text-sm text-muted-foreground">Overdue</p><p className="text-xl font-semibold text-destructive mt-1">LKR {stats.overdue.toLocaleString()}</p></div>
+        <div className="stat-card"><p className="text-sm text-muted-foreground">Drafts</p><p className="text-xl font-semibold text-muted-foreground mt-1">LKR {stats.drafts.toLocaleString()}</p></div>
       </div>
 
       <div className="stat-card">
