@@ -146,11 +146,11 @@ export default function TrialBalance() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="stat-card">
           <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Debits</p>
-          <p className="text-xl font-bold text-foreground mt-1">${fmt(totalDebit)}</p>
+          <p className="text-xl font-bold text-foreground mt-1">LKR {fmt(totalDebit)}</p>
         </div>
         <div className="stat-card">
           <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Credits</p>
-          <p className="text-xl font-bold text-foreground mt-1">${fmt(totalCredit)}</p>
+          <p className="text-xl font-bold text-foreground mt-1">LKR {fmt(totalCredit)}</p>
         </div>
         <div className="stat-card">
           <p className="text-xs text-muted-foreground uppercase tracking-wide">Difference</p>
