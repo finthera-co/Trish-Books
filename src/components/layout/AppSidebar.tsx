@@ -55,6 +55,7 @@ const navGroups: NavGroup[] = [
       { label: "Chart of Accounts", path: "/accounts", icon: BookOpen },
       { label: "Journal Entries", path: "/journals", icon: FileText },
       { label: "Ledger", path: "/ledger", icon: Receipt },
+      { label: "Trial Balance", path: "/trial-balance", icon: FileText },
     ],
   },
   {

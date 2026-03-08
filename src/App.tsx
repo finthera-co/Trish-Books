@@ -25,6 +25,7 @@ import SettingsPage from "./pages/SettingsPage";
 import Employees from "./pages/Employees";
 import ProductsTaxes from "./pages/ProductsTaxes";
 import Payroll from "./pages/Payroll";
+import TrialBalance from "./pages/TrialBalance";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -48,6 +49,7 @@ const App = () => (
                 <Route path="/accounts" element={<ChartOfAccounts />} />
                 <Route path="/journals" element={<JournalEntries />} />
                 <Route path="/ledger" element={<Ledger />} />
+                <Route path="/trial-balance" element={<TrialBalance />} />
                 <Route path="/invoices" element={<Invoices />} />
                 <Route path="/products-taxes" element={<ProductsTaxes />} />
                 <Route path="/expenses" element={<Expenses />} />
