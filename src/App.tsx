@@ -26,6 +26,7 @@ import Employees from "./pages/Employees";
 import ProductsTaxes from "./pages/ProductsTaxes";
 import Payroll from "./pages/Payroll";
 import TrialBalance from "./pages/TrialBalance";
+import DataExports from "./pages/DataExports";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -60,6 +61,7 @@ const App = () => (
                 <Route path="/audit-logs" element={<AuditLogs />} />
                 <Route path="/subscriptions" element={<Subscriptions />} />
                 <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/exports" element={<DataExports />} />
               </Route>
             </Route>
             <Route path="*" element={<NotFound />} />

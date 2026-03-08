@@ -19,6 +19,7 @@ import {
   ChevronDown,
   Package,
   DollarSign,
+  FileArchive,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -80,6 +81,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: "Audit Logs", path: "/audit-logs", icon: Shield },
       { label: "Subscriptions", path: "/subscriptions", icon: CreditCard },
+      { label: "Data Exports", path: "/exports", icon: FileArchive },
       { label: "Settings", path: "/settings", icon: Settings },
     ],
   },
