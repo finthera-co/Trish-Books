@@ -18,6 +18,19 @@ export default function Budgets() {
 
   const { data: budgets, isLoading } = useBudgets();
   const createBudget = useCreateBudget();
+  const createBudgetItem = useCreateBudgetItem();
+  const { data: accounts } = useAccounts();
+
+  const handleAddItem = async () => {
+    await createBudgetItem.mutateAsync({
+      budget_id: selectedBudgetId,
+      account_id: itemAccountId,
+      allocated_amount: itemAmount,
+    });
+    setItemOpen(false);
+    setItemAccountId("");
+    setItemAmount(0);
+  };
 
   const handleCreate = async () => {
     await createBudget.mutateAsync({
