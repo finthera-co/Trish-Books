@@ -20,6 +20,7 @@ import {
   Package,
   DollarSign,
   FileArchive,
+  Calendar,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -57,6 +58,7 @@ const navGroups: NavGroup[] = [
       { label: "Journal Entries", path: "/journals", icon: FileText },
       { label: "Ledger", path: "/ledger", icon: Receipt },
       { label: "Trial Balance", path: "/trial-balance", icon: FileText },
+      { label: "Fiscal Periods", path: "/fiscal-periods", icon: Calendar },
     ],
   },
   {

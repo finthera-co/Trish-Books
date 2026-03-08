@@ -61,8 +61,9 @@ export default function TrialBalance() {
     journalLines.forEach(line => {
       const entryDate = line.journal_entries?.entry_date;
       const status = line.journal_entries?.status;
+      const voidedAt = (line.journal_entries as any)?.voided_at;
       if (!entryDate || entryDate > asOfDate) return;
-      if (status === "draft") return; // only posted entries
+      if (status === "draft" || status === "voided" || voidedAt) return; // only posted, non-voided entries
 
       const acc = map.get(line.account_id);
       if (acc) {
@@ -229,10 +230,10 @@ export default function TrialBalance() {
             <tfoot>
               <tr className="font-bold border-t-2 border-foreground/20">
                 <td colSpan={3} className="text-foreground">Totals</td>
-                <td className="text-right font-mono text-foreground">${fmt(totalDebit)}</td>
-                <td className="text-right font-mono text-foreground">${fmt(totalCredit)}</td>
+                <td className="text-right font-mono text-foreground">LKR {fmt(totalDebit)}</td>
+                <td className="text-right font-mono text-foreground">LKR {fmt(totalCredit)}</td>
                 <td className={`text-right font-mono ${isBalanced ? "text-success" : "text-destructive"}`}>
-                  ${fmt(Math.abs(totalDebit - totalCredit))}
+                  LKR {fmt(Math.abs(totalDebit - totalCredit))}
                 </td>
               </tr>
             </tfoot>
