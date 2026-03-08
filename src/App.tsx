@@ -25,6 +25,7 @@ import SettingsPage from "./pages/SettingsPage";
 import Employees from "./pages/Employees";
 import ProductsTaxes from "./pages/ProductsTaxes";
 import Payroll from "./pages/Payroll";
+import TrialBalance from "./pages/TrialBalance";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
