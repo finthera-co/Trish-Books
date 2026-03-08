@@ -80,7 +80,14 @@ const navGroups: NavGroup[] = [
 
 export default function AppSidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/login");
+  };
 
   const toggleGroup = (label: string) => {
     setCollapsed((prev) => ({ ...prev, [label]: !prev[label] }));
