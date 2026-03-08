@@ -162,22 +162,38 @@ export default function Budgets() {
           <p className="text-center py-8 text-muted-foreground">No budgets found. Create your first budget to get started.</p>
         ) : (
           <table className="data-table">
-            <thead><tr><th>Department</th><th>Period</th><th className="text-right">Budget</th><th className="text-right">Actual</th><th className="text-right">Variance</th></tr></thead>
+            <thead><tr><th>Department</th><th>Period</th><th className="text-right">Budget</th><th className="text-right">Actual</th><th className="text-right">Variance</th><th className="w-40">Utilization</th></tr></thead>
             <tbody>
               {budgets.map((b) => {
                 const actual = (b.budget_items as any[])?.reduce((sum, item) => {
                   const variance = (item.budget_variances as any[])?.[0];
                   return sum + (variance?.actual_amount || 0);
                 }, 0) || 0;
-                const variance = actual - Number(b.total_budget);
+                const budget = Number(b.total_budget);
+                const variance = actual - budget;
+                const utilization = budget > 0 ? Math.min((actual / budget) * 100, 100) : 0;
+                const isOverBudget = actual > budget && budget > 0;
                 return (
                   <tr key={b.id}>
                     <td className="font-medium text-foreground">{b.department}</td>
-                    <td className="text-muted-foreground">{b.period_start} to {b.period_end}</td>
-                    <td className="text-right">LKR {Number(b.total_budget).toLocaleString()}</td>
-                    <td className="text-right">LKR {actual.toLocaleString()}</td>
-                    <td className={`text-right font-medium ${variance <= 0 ? "text-success" : "text-destructive"}`}>
+                    <td className="text-muted-foreground text-sm">{b.period_start} → {b.period_end}</td>
+                    <td className="text-right font-mono tabular-nums">LKR {budget.toLocaleString()}</td>
+                    <td className="text-right font-mono tabular-nums">LKR {actual.toLocaleString()}</td>
+                    <td className={`text-right font-mono tabular-nums font-medium ${variance <= 0 ? "text-success" : "text-destructive"}`}>
                       {variance <= 0 ? "" : "+"}LKR {variance.toLocaleString()}
+                    </td>
+                    <td>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${isOverBudget ? "bg-destructive" : utilization > 80 ? "bg-warning" : "bg-success"}`}
+                            style={{ width: `${Math.min(utilization, 100)}%` }}
+                          />
+                        </div>
+                        <span className={`text-xs font-medium tabular-nums ${isOverBudget ? "text-destructive" : "text-muted-foreground"}`}>
+                          {utilization.toFixed(0)}%
+                        </span>
+                      </div>
                     </td>
                   </tr>
                 );
