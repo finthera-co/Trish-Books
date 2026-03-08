@@ -104,7 +104,7 @@ export default function Employees() {
       <div className="grid grid-cols-3 gap-4">
         <div className="stat-card"><p className="text-sm text-muted-foreground">Total Employees</p><p className="text-xl font-semibold text-foreground mt-1">{employees?.length || 0}</p></div>
         <div className="stat-card"><p className="text-sm text-muted-foreground">Departments</p><p className="text-xl font-semibold text-foreground mt-1">{departments.size}</p></div>
-        <div className="stat-card"><p className="text-sm text-muted-foreground">Total Payroll</p><p className="text-xl font-semibold text-foreground mt-1">${totalSalary.toLocaleString()}/mo</p></div>
+        <div className="stat-card"><p className="text-sm text-muted-foreground">Total Payroll</p><p className="text-xl font-semibold text-foreground mt-1">LKR {totalSalary.toLocaleString()}/mo</p></div>
       </div>
 
       <div className="stat-card">
