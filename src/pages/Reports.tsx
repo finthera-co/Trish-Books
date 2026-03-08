@@ -378,7 +378,7 @@ export default function Reports() {
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
-                <YAxis tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`} />
+                <YAxis tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `LKR ${(v/1000).toFixed(0)}k`} />
                 <Tooltip formatter={(v: number) => fmt(v)} />
                 <Line type="monotone" dataKey="operating" name="Operating" stroke={COLORS[1]} strokeWidth={2} dot={{ r: 3 }} />
                 <Line type="monotone" dataKey="cumulative" name="Cumulative" stroke={COLORS[0]} strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3 }} />
