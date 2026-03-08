@@ -87,11 +87,29 @@ export default function Expenses() {
               </div>
               <div>
                 <label className="text-sm font-medium">Category</label>
-                <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}
-                  className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground">
-                  <option value="">Select category...</option>
-                  {categories?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                <div className="flex gap-2 mt-1">
+                  <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}
+                    className="flex-1 text-sm border rounded-md px-3 py-2 bg-background text-foreground">
+                    <option value="">Select category...</option>
+                    {categories?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <Dialog open={catOpen} onOpenChange={setCatOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm">New</Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader><DialogTitle>New Category</DialogTitle></DialogHeader>
+                      <div className="space-y-4 pt-4">
+                        <div>
+                          <label className="text-sm font-medium">Category Name</label>
+                          <input type="text" value={newCatName} onChange={(e) => setNewCatName(e.target.value)}
+                            className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" placeholder="Travel" />
+                        </div>
+                        <Button onClick={handleCreateCategory} disabled={!newCatName} className="w-full">Create Category</Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
               </div>
               <div>
                 <label className="text-sm font-medium">Description</label>
