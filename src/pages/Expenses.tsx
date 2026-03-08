@@ -57,6 +57,11 @@ export default function Expenses() {
     updateExpense.mutate({ id, status });
   };
 
+  const totalAll = expenses?.reduce((s, e) => s + Number(e.amount), 0) || 0;
+  const totalApproved = expenses?.filter(e => e.status === "approved").reduce((s, e) => s + Number(e.amount), 0) || 0;
+  const totalPending = expenses?.filter(e => e.status === "pending").reduce((s, e) => s + Number(e.amount), 0) || 0;
+  const totalRejected = expenses?.filter(e => e.status === "rejected").reduce((s, e) => s + Number(e.amount), 0) || 0;
+
   return (
     <div className="space-y-6">
       <div className="page-header">
