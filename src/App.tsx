@@ -27,6 +27,7 @@ import ProductsTaxes from "./pages/ProductsTaxes";
 import Payroll from "./pages/Payroll";
 import TrialBalance from "./pages/TrialBalance";
 import DataExports from "./pages/DataExports";
+import FiscalPeriods from "./pages/FiscalPeriods";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
