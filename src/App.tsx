@@ -61,6 +61,7 @@ const App = () => (
                 <Route path="/audit-logs" element={<AuditLogs />} />
                 <Route path="/subscriptions" element={<Subscriptions />} />
                 <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/exports" element={<DataExports />} />
               </Route>
             </Route>
             <Route path="*" element={<NotFound />} />
