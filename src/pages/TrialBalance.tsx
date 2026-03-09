@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -63,9 +63,8 @@ export default function TrialBalance() {
     journalLines.forEach(line => {
       const entryDate = line.journal_entries?.entry_date;
       const status = line.journal_entries?.status;
-      const voidedAt = (line.journal_entries as any)?.voided_at;
       if (!entryDate || entryDate > asOfDate) return;
-      if (status === "draft" || status === "voided" || voidedAt) return; // only posted, non-voided entries
+      if (status !== "posted") return; // only posted entries
 
       const acc = map.get(line.account_id);
       if (acc) {
@@ -204,8 +203,8 @@ export default function TrialBalance() {
             </thead>
             <tbody>
               {grouped.map(group => (
-                <> 
-                  <tr key={`h-${group.type}`}>
+                <Fragment key={group.type}>
+                  <tr>
                     <td colSpan={6} className="font-semibold text-foreground bg-muted/40 py-2 text-xs uppercase tracking-wide">
                       {group.type}
                     </td>
@@ -221,23 +220,23 @@ export default function TrialBalance() {
                             {a.account_type}
                           </span>
                         </td>
-                        <td className="text-right font-mono">{a.total_debit > 0 ? `LKR ${fmt(a.total_debit)}` : "—"}</td>
-                        <td className="text-right font-mono">{a.total_credit > 0 ? `LKR ${fmt(a.total_credit)}` : "—"}</td>
-                        <td className={`text-right font-mono font-medium ${net >= 0 ? "text-foreground" : "text-destructive"}`}>
+                        <td className="text-right font-mono tabular-nums">{a.total_debit > 0 ? `LKR ${fmt(a.total_debit)}` : "—"}</td>
+                        <td className="text-right font-mono tabular-nums">{a.total_credit > 0 ? `LKR ${fmt(a.total_credit)}` : "—"}</td>
+                        <td className={`text-right font-mono tabular-nums font-medium ${net >= 0 ? "text-foreground" : "text-destructive"}`}>
                           {net < 0 ? `(LKR ${fmt(Math.abs(net))})` : `LKR ${fmt(net)}`}
                         </td>
                       </tr>
                     );
                   })}
-                </>
+                </Fragment>
               ))}
             </tbody>
             <tfoot>
               <tr className="font-bold border-t-2 border-foreground/20">
                 <td colSpan={3} className="text-foreground">Totals</td>
-                <td className="text-right font-mono text-foreground">LKR {fmt(totalDebit)}</td>
-                <td className="text-right font-mono text-foreground">LKR {fmt(totalCredit)}</td>
-                <td className={`text-right font-mono ${isBalanced ? "text-success" : "text-destructive"}`}>
+                <td className="text-right font-mono tabular-nums text-foreground">LKR {fmt(totalDebit)}</td>
+                <td className="text-right font-mono tabular-nums text-foreground">LKR {fmt(totalCredit)}</td>
+                <td className={`text-right font-mono tabular-nums ${isBalanced ? "text-primary" : "text-destructive"}`}>
                   LKR {fmt(Math.abs(totalDebit - totalCredit))}
                 </td>
               </tr>
