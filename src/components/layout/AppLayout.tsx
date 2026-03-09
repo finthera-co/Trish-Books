@@ -28,9 +28,7 @@ export default function AppLayout() {
             />
           </div>
           <div className="flex items-center gap-4">
-            <button className="relative p-2 rounded-md hover:bg-accent">
-              <Bell className="w-4 h-4 text-muted-foreground" />
-            </button>
+            <NotificationBell />
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-xs font-medium text-primary-foreground">
                 {appUser ? `${appUser.first_name[0]}${appUser.last_name[0]}` : "?"}
