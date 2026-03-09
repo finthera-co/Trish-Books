@@ -17,7 +17,7 @@ export default function AppLayout() {
       <AppSidebar />
       <div className="flex-1 flex flex-col">
         {/* Top Bar */}
-        <header className="h-16 border-b bg-card flex items-center justify-between px-6">
+        <header className="h-16 border-b bg-background flex items-center justify-between px-6">
           <div className="flex items-center gap-3 flex-1 max-w-md">
             <Search className="w-4 h-4 text-muted-foreground" />
             <input
