@@ -131,6 +131,8 @@ export default function UsersPage() {
         </Dialog>
         </div>
       </div>
+
+      <div className="stat-card">
         <div className="flex items-center gap-3 mb-4">
           <Search className="w-4 h-4 text-muted-foreground" />
           <input type="text" placeholder="Search users..." value={search} onChange={(e) => setSearch(e.target.value)}
