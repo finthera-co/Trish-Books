@@ -146,11 +146,11 @@
 
 @layer components {
   .stat-card {
-    @apply bg-card rounded-lg border p-6 shadow-sm;
+    @apply bg-card rounded-lg border p-6 shadow-sm transition-all duration-300 ease-out hover:shadow-md;
   }
 
   .page-header {
-    @apply flex items-center justify-between pb-6;
+    @apply flex items-center justify-between pb-6 animate-fade-in;
   }
 
   .page-title {
@@ -170,12 +170,35 @@
   }
 
   .data-table td {
-    @apply px-4 py-3 border-b;
+    @apply px-4 py-3 border-b transition-colors duration-150;
+  }
+
+  .data-table tr {
+    @apply transition-colors duration-150;
   }
 
   .data-table tr:hover td {
     @apply bg-muted/50;
   }
+
+  /* Animation utility classes */
+  .hover-scale {
+    @apply transition-transform duration-200 hover:scale-105;
+  }
+
+  .hover-lift {
+    @apply transition-all duration-200 hover:-translate-y-1 hover:shadow-lg;
+  }
+
+  .click-scale {
+    @apply transition-transform duration-100 active:scale-95;
+  }
+
+  .stagger-1 { animation-delay: 0.1s; }
+  .stagger-2 { animation-delay: 0.2s; }
+  .stagger-3 { animation-delay: 0.3s; }
+  .stagger-4 { animation-delay: 0.4s; }
+  .stagger-5 { animation-delay: 0.5s; }
 
   .sidebar-item {
     @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ease-out;
