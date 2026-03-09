@@ -1,7 +1,8 @@
 import { Outlet, useNavigate } from "react-router-dom";
 import AppSidebar from "./AppSidebar";
-import { Bell, Search, LogOut } from "lucide-react";
+import { Search, LogOut } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import NotificationBell from "@/components/NotificationBell";
 
 export default function AppLayout() {
   const { appUser, signOut } = useAuth();
