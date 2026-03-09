@@ -129,7 +129,7 @@ export default function UsersPage() {
             </div>
           </DialogContent>
         </Dialog>
-      </div>
+        </div>
 
       <div className="stat-card">
         <div className="flex items-center gap-3 mb-4">
