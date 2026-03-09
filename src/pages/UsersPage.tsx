@@ -69,10 +69,19 @@ export default function UsersPage() {
           <h1 className="page-title">User Management</h1>
           <p className="page-description">Manage user accounts and roles</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button><Plus className="w-4 h-4" />Add User</Button>
-          </DialogTrigger>
+        <div className="flex items-center gap-3">
+          {!isSuperAdmin && planName && (
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {currentUserCount}/{maxUsers} users
+            </span>
+          )}
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button disabled={!canAddUser}>
+                <Plus className="w-4 h-4" />
+                {canAddUser ? "Add User" : "User Limit Reached"}
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create New User</DialogTitle>
