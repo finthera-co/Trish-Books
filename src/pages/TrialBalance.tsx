@@ -234,9 +234,9 @@ export default function TrialBalance() {
             <tfoot>
               <tr className="font-bold border-t-2 border-foreground/20">
                 <td colSpan={3} className="text-foreground">Totals</td>
-                <td className="text-right font-mono text-foreground">LKR {fmt(totalDebit)}</td>
-                <td className="text-right font-mono text-foreground">LKR {fmt(totalCredit)}</td>
-                <td className={`text-right font-mono ${isBalanced ? "text-success" : "text-destructive"}`}>
+                <td className="text-right font-mono tabular-nums text-foreground">LKR {fmt(totalDebit)}</td>
+                <td className="text-right font-mono tabular-nums text-foreground">LKR {fmt(totalCredit)}</td>
+                <td className={`text-right font-mono tabular-nums ${isBalanced ? "text-primary" : "text-destructive"}`}>
                   LKR {fmt(Math.abs(totalDebit - totalCredit))}
                 </td>
               </tr>
