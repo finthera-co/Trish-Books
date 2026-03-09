@@ -184,8 +184,8 @@ export default function AppSidebar() {
       {/* Plan badge */}
       {planName && (
         <div className="px-4 py-2">
-          <div className="rounded-lg bg-sidebar-accent px-3 py-2 text-center">
-            <p className="text-[10px] uppercase tracking-wider text-sidebar-foreground/50">Current Plan</p>
+          <div className="rounded-lg bg-background/20 border border-border/30 px-3 py-2 text-center">
+            <p className="text-[10px] uppercase tracking-wider text-sidebar-foreground/60">Current Plan</p>
             <p className="text-sm font-semibold text-sidebar-foreground">{planName}</p>
           </div>
         </div>
