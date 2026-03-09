@@ -16,6 +16,7 @@ interface AccountBalance {
 }
 
 export default function TrialBalance() {
+  const navigate = useNavigate();
   const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   // Fetch accounts directly from DB
