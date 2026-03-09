@@ -125,6 +125,9 @@ export default function TrialBalance() {
           <p className="page-description">Verify that total debits equal total credits across all accounts</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button size="sm" onClick={() => navigate("/journals")} className="print:hidden">
+            <Plus className="w-4 h-4 mr-1" /> Create Journal Entry
+          </Button>
           <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={balances.length === 0}>
             <Download className="w-4 h-4 mr-1" /> Export CSV
           </Button>
