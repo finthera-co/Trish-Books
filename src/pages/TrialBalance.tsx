@@ -1,7 +1,8 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { FileText, Printer, Download } from "lucide-react";
+import { FileText, Printer, Download, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 
@@ -15,6 +16,7 @@ interface AccountBalance {
 }
 
 export default function TrialBalance() {
+  const navigate = useNavigate();
   const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   // Fetch accounts directly from DB
@@ -123,6 +125,9 @@ export default function TrialBalance() {
           <p className="page-description">Verify that total debits equal total credits across all accounts</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button size="sm" onClick={() => navigate("/journals")} className="print:hidden">
+            <Plus className="w-4 h-4 mr-1" /> Create Journal Entry
+          </Button>
           <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={balances.length === 0}>
             <Download className="w-4 h-4 mr-1" /> Export CSV
           </Button>
