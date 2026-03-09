@@ -28,6 +28,7 @@ export default function UsersPage() {
   const { data: tenants } = useTenants();
   const createUser = useCreateUser();
   const { isCompanyAdmin, isSuperAdmin, appUser } = useAuth();
+  const { canAddUser, currentUserCount, maxUsers, planName } = useSubscriptionLimits();
 
   const filtered = users?.filter(
     (u) => u.first_name.toLowerCase().includes(search.toLowerCase()) || 
