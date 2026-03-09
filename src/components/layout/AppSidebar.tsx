@@ -21,9 +21,12 @@ import {
   DollarSign,
   FileArchive,
   Calendar,
+  Lock,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSubscriptionLimits } from "@/hooks/useSubscriptionLimits";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface NavItem {
   label: string;
@@ -93,6 +96,7 @@ export default function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut } = useAuth();
+  const { isModuleAllowed, planName } = useSubscriptionLimits();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const handleSignOut = async () => {
@@ -135,6 +139,29 @@ export default function AppSidebar() {
               <div className="mt-1 space-y-0.5">
                 {group.items.map((item) => {
                   const isActive = location.pathname === item.path;
+                  const allowed = isModuleAllowed(item.path);
+
+                  if (!allowed) {
+                    return (
+                      <Tooltip key={item.path}>
+                        <TooltipTrigger asChild>
+                          <div
+                            className="sidebar-item sidebar-item-inactive opacity-40 cursor-not-allowed flex items-center justify-between"
+                          >
+                            <span className="flex items-center gap-2">
+                              <item.icon className="w-4 h-4" />
+                              {item.label}
+                            </span>
+                            <Lock className="w-3 h-3" />
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="right">
+                          <p className="text-xs">Upgrade from <strong>{planName}</strong> to access this module</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  }
+
                   return (
                     <NavLink
                       key={item.path}
@@ -153,6 +180,16 @@ export default function AppSidebar() {
           </div>
         ))}
       </nav>
+
+      {/* Plan badge */}
+      {planName && (
+        <div className="px-4 py-2">
+          <div className="rounded-lg bg-sidebar-accent px-3 py-2 text-center">
+            <p className="text-[10px] uppercase tracking-wider text-sidebar-foreground/50">Current Plan</p>
+            <p className="text-sm font-semibold text-sidebar-foreground">{planName}</p>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <div className="p-3 border-t border-sidebar-border">

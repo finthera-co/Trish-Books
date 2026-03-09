@@ -1,9 +1,11 @@
-import { Plus, Search, MoreHorizontal } from "lucide-react";
+import { Plus, Search, MoreHorizontal, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useUsers, useCreateUser, useRoles, useTenants } from "@/hooks/useData";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSubscriptionLimits } from "@/hooks/useSubscriptionLimits";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { toast } from "sonner";
 
 const roleColors: Record<string, string> = {
   "Super Admin": "bg-destructive/10 text-destructive",
@@ -26,6 +28,7 @@ export default function UsersPage() {
   const { data: tenants } = useTenants();
   const createUser = useCreateUser();
   const { isCompanyAdmin, isSuperAdmin, appUser } = useAuth();
+  const { canAddUser, currentUserCount, maxUsers, planName } = useSubscriptionLimits();
 
   const filtered = users?.filter(
     (u) => u.first_name.toLowerCase().includes(search.toLowerCase()) || 
@@ -33,6 +36,10 @@ export default function UsersPage() {
   ) || [];
 
   const handleCreate = async () => {
+    if (!canAddUser) {
+      toast.error(`User limit reached (${maxUsers} users on ${planName} plan). Upgrade to add more users.`);
+      return;
+    }
     await createUser.mutateAsync({
       email,
       first_name: firstName,
@@ -62,10 +69,19 @@ export default function UsersPage() {
           <h1 className="page-title">User Management</h1>
           <p className="page-description">Manage user accounts and roles</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button><Plus className="w-4 h-4" />Add User</Button>
-          </DialogTrigger>
+        <div className="flex items-center gap-3">
+          {!isSuperAdmin && planName && (
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {currentUserCount}/{maxUsers} users
+            </span>
+          )}
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button disabled={!canAddUser}>
+                <Plus className="w-4 h-4" />
+                {canAddUser ? "Add User" : "User Limit Reached"}
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create New User</DialogTitle>
@@ -113,6 +129,7 @@ export default function UsersPage() {
             </div>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="stat-card">
