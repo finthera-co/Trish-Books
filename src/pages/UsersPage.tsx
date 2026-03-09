@@ -1,9 +1,11 @@
-import { Plus, Search, MoreHorizontal } from "lucide-react";
+import { Plus, Search, MoreHorizontal, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useUsers, useCreateUser, useRoles, useTenants } from "@/hooks/useData";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSubscriptionLimits } from "@/hooks/useSubscriptionLimits";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { toast } from "sonner";
 
 const roleColors: Record<string, string> = {
   "Super Admin": "bg-destructive/10 text-destructive",
