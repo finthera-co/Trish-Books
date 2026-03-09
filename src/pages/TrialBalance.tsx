@@ -203,8 +203,8 @@ export default function TrialBalance() {
             </thead>
             <tbody>
               {grouped.map(group => (
-                <> 
-                  <tr key={`h-${group.type}`}>
+                <Fragment key={group.type}>
+                  <tr>
                     <td colSpan={6} className="font-semibold text-foreground bg-muted/40 py-2 text-xs uppercase tracking-wide">
                       {group.type}
                     </td>
@@ -220,15 +220,15 @@ export default function TrialBalance() {
                             {a.account_type}
                           </span>
                         </td>
-                        <td className="text-right font-mono">{a.total_debit > 0 ? `LKR ${fmt(a.total_debit)}` : "—"}</td>
-                        <td className="text-right font-mono">{a.total_credit > 0 ? `LKR ${fmt(a.total_credit)}` : "—"}</td>
-                        <td className={`text-right font-mono font-medium ${net >= 0 ? "text-foreground" : "text-destructive"}`}>
+                        <td className="text-right font-mono tabular-nums">{a.total_debit > 0 ? `LKR ${fmt(a.total_debit)}` : "—"}</td>
+                        <td className="text-right font-mono tabular-nums">{a.total_credit > 0 ? `LKR ${fmt(a.total_credit)}` : "—"}</td>
+                        <td className={`text-right font-mono tabular-nums font-medium ${net >= 0 ? "text-foreground" : "text-destructive"}`}>
                           {net < 0 ? `(LKR ${fmt(Math.abs(net))})` : `LKR ${fmt(net)}`}
                         </td>
                       </tr>
                     );
                   })}
-                </>
+                </Fragment>
               ))}
             </tbody>
             <tfoot>
