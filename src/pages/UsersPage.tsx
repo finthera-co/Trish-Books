@@ -36,6 +36,10 @@ export default function UsersPage() {
   ) || [];
 
   const handleCreate = async () => {
+    if (!canAddUser) {
+      toast.error(`User limit reached (${maxUsers} users on ${planName} plan). Upgrade to add more users.`);
+      return;
+    }
     await createUser.mutateAsync({
       email,
       first_name: firstName,
