@@ -1,8 +1,13 @@
-import { Plus, ChevronRight, Search, Download, BookOpen } from "lucide-react";
+import { Plus, ChevronRight, Search, Download, BookOpen, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useMemo } from "react";
 import { useAccounts, useCreateAccount } from "@/hooks/useData";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { formatCurrency } from "@/lib/currency";
+import { toast } from "sonner";
 
 const typeColors: Record<string, string> = {
   Asset: "bg-info/10 text-info",
@@ -39,7 +44,103 @@ function buildTree(accounts: Account[]): Account[] {
   return roots;
 }
 
-function AccountRow({ account, depth = 0 }: { account: Account; depth?: number }) {
+function OpeningBalanceCell({
+  accountId,
+  currentBalance,
+  activePeriodId,
+  tenantId,
+}: {
+  accountId: string;
+  currentBalance: number | null;
+  activePeriodId: string | null;
+  tenantId: string | undefined;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const queryClient = useQueryClient();
+
+  const saveMutation = useMutation({
+    mutationFn: async (amount: number) => {
+      if (!activePeriodId || !tenantId) throw new Error("No active fiscal period");
+      const { error } = await supabase.from("opening_balances").upsert(
+        {
+          account_id: accountId,
+          fiscal_period_id: activePeriodId,
+          tenant_id: tenantId,
+          balance: amount,
+        },
+        { onConflict: "account_id,fiscal_period_id" }
+      );
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["opening_balances"] });
+      toast.success("Opening balance saved");
+      setEditing(false);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  if (!activePeriodId) {
+    return <span className="text-xs text-muted-foreground">—</span>;
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1">
+        <input
+          type="number"
+          step="0.01"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className="w-28 text-sm border border-input rounded px-2 py-1 bg-background text-foreground text-right focus:outline-none focus:ring-2 focus:ring-ring/20"
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === "Enter") saveMutation.mutate(parseFloat(value) || 0);
+            if (e.key === "Escape") setEditing(false);
+          }}
+        />
+        <button
+          onClick={() => saveMutation.mutate(parseFloat(value) || 0)}
+          className="p-0.5 rounded hover:bg-success/10 text-success"
+          disabled={saveMutation.isPending}
+        >
+          <Check className="w-3.5 h-3.5" />
+        </button>
+        <button onClick={() => setEditing(false)} className="p-0.5 rounded hover:bg-destructive/10 text-destructive">
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => {
+        setValue(currentBalance?.toString() || "0");
+        setEditing(true);
+      }}
+      className="text-sm text-right w-full hover:underline cursor-pointer text-foreground/80"
+      title="Click to edit"
+    >
+      {currentBalance ? formatCurrency(currentBalance) : <span className="text-muted-foreground">—</span>}
+    </button>
+  );
+}
+
+function AccountRow({
+  account,
+  depth = 0,
+  balanceMap,
+  activePeriodId,
+  tenantId,
+}: {
+  account: Account;
+  depth?: number;
+  balanceMap: Map<string, number>;
+  activePeriodId: string | null;
+  tenantId: string | undefined;
+}) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = account.children && account.children.length > 0;
 
@@ -66,15 +167,24 @@ function AccountRow({ account, depth = 0 }: { account: Account; depth?: number }
         <td className="text-xs text-muted-foreground">
           {account.account_type === "Asset" || account.account_type === "Expense" || account.account_type === "COGS" ? "Debit" : "Credit"}
         </td>
+        <td className="text-right">
+          <OpeningBalanceCell
+            accountId={account.id}
+            currentBalance={balanceMap.get(account.id) ?? null}
+            activePeriodId={activePeriodId}
+            tenantId={tenantId}
+          />
+        </td>
       </tr>
       {expanded && account.children?.sort((a, b) => a.account_code.localeCompare(b.account_code)).map((child) => (
-        <AccountRow key={child.id} account={child} depth={depth + 1} />
+        <AccountRow key={child.id} account={child} depth={depth + 1} balanceMap={balanceMap} activePeriodId={activePeriodId} tenantId={tenantId} />
       ))}
     </>
   );
 }
 
 export default function ChartOfAccounts() {
+  const { appUser } = useAuth();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
@@ -85,6 +195,43 @@ export default function ChartOfAccounts() {
 
   const { data: accounts, isLoading } = useAccounts();
   const createAccount = useCreateAccount();
+
+  // Get the current open fiscal period
+  const { data: activePeriod } = useQuery({
+    queryKey: ["active_fiscal_period"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("fiscal_periods")
+        .select("id, name")
+        .eq("status", "open")
+        .order("period_start", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Get opening balances for the active period
+  const { data: openingBalances } = useQuery({
+    queryKey: ["opening_balances", activePeriod?.id],
+    queryFn: async () => {
+      if (!activePeriod?.id) return [];
+      const { data, error } = await supabase
+        .from("opening_balances")
+        .select("account_id, balance")
+        .eq("fiscal_period_id", activePeriod.id);
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!activePeriod?.id,
+  });
+
+  const balanceMap = useMemo(() => {
+    const m = new Map<string, number>();
+    openingBalances?.forEach((ob) => m.set(ob.account_id, Number(ob.balance)));
+    return m;
+  }, [openingBalances]);
 
   const filteredAccounts = useMemo(() => {
     if (!accounts) return [];
@@ -100,7 +247,6 @@ export default function ChartOfAccounts() {
 
   const tree = buildTree(filteredAccounts);
 
-  // Stats
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     accounts?.forEach(a => counts[a.account_type] = (counts[a.account_type] || 0) + 1);
@@ -194,6 +340,18 @@ export default function ChartOfAccounts() {
         </div>
       </div>
 
+      {/* Active period indicator */}
+      {activePeriod ? (
+        <div className="bg-info/10 text-info text-xs font-medium px-3 py-2 rounded-lg inline-flex items-center gap-1.5">
+          Opening balances for: <strong>{activePeriod.name}</strong>
+          <span className="text-info/60">— Click any balance to edit</span>
+        </div>
+      ) : (
+        <div className="bg-warning/10 text-warning text-xs font-medium px-3 py-2 rounded-lg">
+          No open fiscal period found. Create one in Fiscal Periods to enter opening balances.
+        </div>
+      )}
+
       {/* Type summary pills */}
       <div className="flex flex-wrap gap-2">
         <button onClick={() => setFilterType("all")}
@@ -230,10 +388,23 @@ export default function ChartOfAccounts() {
           </div>
         ) : (
           <table className="data-table">
-            <thead><tr><th>Account</th><th className="w-28">Type</th><th className="w-28">Normal Bal.</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Account</th>
+                <th className="w-28">Type</th>
+                <th className="w-28">Normal Bal.</th>
+                <th className="w-36 text-right">Opening Balance</th>
+              </tr>
+            </thead>
             <tbody>
               {tree.sort((a, b) => a.account_code.localeCompare(b.account_code)).map((account) => (
-                <AccountRow key={account.id} account={account} />
+                <AccountRow
+                  key={account.id}
+                  account={account}
+                  balanceMap={balanceMap}
+                  activePeriodId={activePeriod?.id ?? null}
+                  tenantId={appUser?.tenant_id}
+                />
               ))}
             </tbody>
           </table>
