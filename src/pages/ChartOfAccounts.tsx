@@ -196,21 +196,28 @@ export default function ChartOfAccounts() {
   const { data: accounts, isLoading } = useAccounts();
   const createAccount = useCreateAccount();
 
-  // Get the current open fiscal period
-  const { data: activePeriod } = useQuery({
-    queryKey: ["active_fiscal_period"],
+  // Get all fiscal periods for selection
+  const { data: fiscalPeriods } = useQuery({
+    queryKey: ["all_fiscal_periods"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("fiscal_periods")
-        .select("id, name")
-        .eq("status", "open")
-        .order("period_start", { ascending: true })
-        .limit(1)
-        .maybeSingle();
+        .select("id, name, status")
+        .order("period_start", { ascending: false });
       if (error) throw error;
       return data;
     },
   });
+
+  const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(null);
+
+  // Auto-select: prefer open period, then first available
+  const activePeriod = useMemo(() => {
+    if (!fiscalPeriods?.length) return null;
+    if (selectedPeriodId) return fiscalPeriods.find(p => p.id === selectedPeriodId) || null;
+    const openPeriod = fiscalPeriods.find(p => p.status === "open");
+    return openPeriod || fiscalPeriods[0];
+  }, [fiscalPeriods, selectedPeriodId]);
 
   // Get opening balances for the active period
   const { data: openingBalances } = useQuery({
