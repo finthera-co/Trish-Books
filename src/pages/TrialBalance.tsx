@@ -13,13 +13,15 @@ interface AccountBalance {
   account_type: string;
   total_debit: number;
   total_credit: number;
+  opening_balance: number;
 }
+
+const DEBIT_NORMAL_TYPES = ["Asset", "Expense", "COGS"];
 
 export default function TrialBalance() {
   const navigate = useNavigate();
   const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
 
-  // Fetch accounts directly from DB
   const { data: accounts, isLoading: accountsLoading } = useQuery({
     queryKey: ["tb_accounts"],
     queryFn: async () => {
@@ -32,7 +34,6 @@ export default function TrialBalance() {
     },
   });
 
-  // Fetch all journal lines with their entry dates (joined through journal_entries)
   const { data: journalLines, isLoading: linesLoading } = useQuery({
     queryKey: ["tb_journal_lines"],
     queryFn: async () => {
@@ -44,7 +45,41 @@ export default function TrialBalance() {
     },
   });
 
-  // Calculate balances filtered by date
+  const { data: fiscalPeriods } = useQuery({
+    queryKey: ["tb_fiscal_periods"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("fiscal_periods")
+        .select("id, period_start, period_end, status")
+        .order("period_start", { ascending: true });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: openingBalancesData } = useQuery({
+    queryKey: ["tb_opening_balances"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("opening_balances").select("*");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const matchingPeriod = useMemo(() => {
+    if (!fiscalPeriods) return null;
+    return fiscalPeriods.find(p => p.period_start <= asOfDate && p.period_end >= asOfDate) || null;
+  }, [fiscalPeriods, asOfDate]);
+
+  const obMap = useMemo(() => {
+    const m = new Map<string, number>();
+    if (!matchingPeriod || !openingBalancesData) return m;
+    openingBalancesData
+      .filter(ob => ob.fiscal_period_id === matchingPeriod.id)
+      .forEach(ob => m.set(ob.account_id, Number(ob.balance)));
+    return m;
+  }, [matchingPeriod, openingBalancesData]);
+
   const balances: AccountBalance[] = useMemo(() => {
     if (!accounts || !journalLines) return [];
 
@@ -57,6 +92,7 @@ export default function TrialBalance() {
         account_type: a.account_type,
         total_debit: 0,
         total_credit: 0,
+        opening_balance: obMap.get(a.id) || 0,
       })
     );
 
@@ -64,7 +100,8 @@ export default function TrialBalance() {
       const entryDate = line.journal_entries?.entry_date;
       const status = line.journal_entries?.status;
       if (!entryDate || entryDate > asOfDate) return;
-      if (status !== "posted") return; // only posted entries
+      if (status !== "posted") return;
+      if (matchingPeriod && entryDate < matchingPeriod.period_start) return;
 
       const acc = map.get(line.account_id);
       if (acc) {
@@ -73,11 +110,28 @@ export default function TrialBalance() {
       }
     });
 
-    return Array.from(map.values()).filter(a => a.total_debit > 0 || a.total_credit > 0);
-  }, [accounts, journalLines, asOfDate]);
+    return Array.from(map.values()).filter(a => a.total_debit > 0 || a.total_credit > 0 || a.opening_balance !== 0);
+  }, [accounts, journalLines, asOfDate, obMap, matchingPeriod]);
 
-  const totalDebit = balances.reduce((s, a) => s + a.total_debit, 0);
-  const totalCredit = balances.reduce((s, a) => s + a.total_credit, 0);
+  // Calculate totals including opening balances converted to debit/credit columns
+  const { totalDebit, totalCredit } = useMemo(() => {
+    let dr = 0, cr = 0;
+    balances.forEach(a => {
+      const isDebitNormal = DEBIT_NORMAL_TYPES.includes(a.account_type);
+      // Opening balance adds to the normal side
+      if (a.opening_balance > 0) {
+        if (isDebitNormal) dr += a.opening_balance;
+        else cr += a.opening_balance;
+      } else if (a.opening_balance < 0) {
+        if (isDebitNormal) cr += Math.abs(a.opening_balance);
+        else dr += Math.abs(a.opening_balance);
+      }
+      dr += a.total_debit;
+      cr += a.total_credit;
+    });
+    return { totalDebit: dr, totalCredit: cr };
+  }, [balances]);
+
   const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
   const isLoading = accountsLoading || linesLoading;
 
@@ -96,15 +150,34 @@ export default function TrialBalance() {
 
   const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  // Get effective debit/credit for display (including opening balance)
+  const getEffectiveAmounts = (a: AccountBalance) => {
+    const isDebitNormal = DEBIT_NORMAL_TYPES.includes(a.account_type);
+    let dr = a.total_debit;
+    let cr = a.total_credit;
+    if (a.opening_balance > 0) {
+      if (isDebitNormal) dr += a.opening_balance;
+      else cr += a.opening_balance;
+    } else if (a.opening_balance < 0) {
+      if (isDebitNormal) cr += Math.abs(a.opening_balance);
+      else dr += Math.abs(a.opening_balance);
+    }
+    return { debit: dr, credit: cr };
+  };
+
   const handleExportCSV = () => {
     const rows = [
-      ["Account Code", "Account Name", "Type", "Debit", "Credit", "Net Balance"],
-      ...balances.map(a => [
-        a.account_code, a.account_name, a.account_type,
-        a.total_debit.toFixed(2), a.total_credit.toFixed(2),
-        (a.total_debit - a.total_credit).toFixed(2),
-      ]),
-      ["", "", "TOTALS", totalDebit.toFixed(2), totalCredit.toFixed(2), (totalDebit - totalCredit).toFixed(2)],
+      ["Account Code", "Account Name", "Type", "Opening Balance", "Debit", "Credit", "Net Balance"],
+      ...balances.map(a => {
+        const eff = getEffectiveAmounts(a);
+        return [
+          a.account_code, a.account_name, a.account_type,
+          a.opening_balance.toFixed(2),
+          eff.debit.toFixed(2), eff.credit.toFixed(2),
+          (eff.debit - eff.credit).toFixed(2),
+        ];
+      }),
+      ["", "", "TOTALS", "", totalDebit.toFixed(2), totalCredit.toFixed(2), (totalDebit - totalCredit).toFixed(2)],
     ];
     const csv = rows.map(r => r.map(c => `"${c}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -145,6 +218,11 @@ export default function TrialBalance() {
           onChange={e => setAsOfDate(e.target.value)}
           className="text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
         />
+        {matchingPeriod && (
+          <span className="text-xs text-muted-foreground bg-info/10 text-info px-2 py-1 rounded">
+            Period: {matchingPeriod.period_start} to {matchingPeriod.period_end}
+          </span>
+        )}
       </div>
 
       {/* Summary cards */}
@@ -176,7 +254,10 @@ export default function TrialBalance() {
         <div className="text-center mb-6 print:mb-4">
           <h2 className="text-lg font-bold text-foreground">Trial Balance</h2>
           <p className="text-sm text-muted-foreground">As of {format(new Date(asOfDate), "MMMM d, yyyy")}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">Only posted journal entries included</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Only posted journal entries included
+            {matchingPeriod && " • Opening balances applied"}
+          </p>
         </div>
 
         {isLoading ? (
@@ -196,6 +277,7 @@ export default function TrialBalance() {
                 <th className="w-28">Code</th>
                 <th>Account Name</th>
                 <th className="w-28">Type</th>
+                <th className="text-right w-32">Opening Bal.</th>
                 <th className="text-right w-36">Debit</th>
                 <th className="text-right w-36">Credit</th>
                 <th className="text-right w-36">Net Balance</th>
@@ -205,12 +287,13 @@ export default function TrialBalance() {
               {grouped.map(group => (
                 <Fragment key={group.type}>
                   <tr>
-                    <td colSpan={6} className="font-semibold text-foreground bg-muted/40 py-2 text-xs uppercase tracking-wide">
+                    <td colSpan={7} className="font-semibold text-foreground bg-muted/40 py-2 text-xs uppercase tracking-wide">
                       {group.type}
                     </td>
                   </tr>
                   {group.accounts.sort((a, b) => a.account_code.localeCompare(b.account_code)).map(a => {
-                    const net = a.total_debit - a.total_credit;
+                    const eff = getEffectiveAmounts(a);
+                    const net = eff.debit - eff.credit;
                     return (
                       <tr key={a.id}>
                         <td className="font-mono text-xs text-muted-foreground">{a.account_code}</td>
@@ -220,8 +303,11 @@ export default function TrialBalance() {
                             {a.account_type}
                           </span>
                         </td>
-                        <td className="text-right font-mono tabular-nums">{a.total_debit > 0 ? `LKR ${fmt(a.total_debit)}` : "—"}</td>
-                        <td className="text-right font-mono tabular-nums">{a.total_credit > 0 ? `LKR ${fmt(a.total_credit)}` : "—"}</td>
+                        <td className="text-right font-mono tabular-nums text-muted-foreground">
+                          {a.opening_balance !== 0 ? `LKR ${fmt(a.opening_balance)}` : "—"}
+                        </td>
+                        <td className="text-right font-mono tabular-nums">{eff.debit > 0 ? `LKR ${fmt(eff.debit)}` : "—"}</td>
+                        <td className="text-right font-mono tabular-nums">{eff.credit > 0 ? `LKR ${fmt(eff.credit)}` : "—"}</td>
                         <td className={`text-right font-mono tabular-nums font-medium ${net >= 0 ? "text-foreground" : "text-destructive"}`}>
                           {net < 0 ? `(LKR ${fmt(Math.abs(net))})` : `LKR ${fmt(net)}`}
                         </td>
@@ -233,7 +319,7 @@ export default function TrialBalance() {
             </tbody>
             <tfoot>
               <tr className="font-bold border-t-2 border-foreground/20">
-                <td colSpan={3} className="text-foreground">Totals</td>
+                <td colSpan={4} className="text-foreground">Totals</td>
                 <td className="text-right font-mono tabular-nums text-foreground">LKR {fmt(totalDebit)}</td>
                 <td className="text-right font-mono tabular-nums text-foreground">LKR {fmt(totalCredit)}</td>
                 <td className={`text-right font-mono tabular-nums ${isBalanced ? "text-primary" : "text-destructive"}`}>
