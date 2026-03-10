@@ -98,7 +98,7 @@ export default function Reports() {
     return map;
   }, [accounts, filteredEntries, openingBalanceMap]);
 
-  const balances = Array.from(accountBalances.values()).filter(a => a.debit > 0 || a.credit > 0);
+  const balances = Array.from(accountBalances.values()).filter(a => a.debit > 0 || a.credit > 0 || a.openingBalance !== 0);
 
   const reports = [
     { id: "trial-balance" as ReportType, name: "Trial Balance", description: "Verify total debits equal total credits across all accounts", icon: FileText, category: "Accounting" },
