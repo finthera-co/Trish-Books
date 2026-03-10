@@ -196,21 +196,28 @@ export default function ChartOfAccounts() {
   const { data: accounts, isLoading } = useAccounts();
   const createAccount = useCreateAccount();
 
-  // Get the current open fiscal period
-  const { data: activePeriod } = useQuery({
-    queryKey: ["active_fiscal_period"],
+  // Get all fiscal periods for selection
+  const { data: fiscalPeriods } = useQuery({
+    queryKey: ["all_fiscal_periods"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("fiscal_periods")
-        .select("id, name")
-        .eq("status", "open")
-        .order("period_start", { ascending: true })
-        .limit(1)
-        .maybeSingle();
+        .select("id, name, status")
+        .order("period_start", { ascending: false });
       if (error) throw error;
       return data;
     },
   });
+
+  const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(null);
+
+  // Auto-select: prefer open period, then first available
+  const activePeriod = useMemo(() => {
+    if (!fiscalPeriods?.length) return null;
+    if (selectedPeriodId) return fiscalPeriods.find(p => p.id === selectedPeriodId) || null;
+    const openPeriod = fiscalPeriods.find(p => p.status === "open");
+    return openPeriod || fiscalPeriods[0];
+  }, [fiscalPeriods, selectedPeriodId]);
 
   // Get opening balances for the active period
   const { data: openingBalances } = useQuery({
@@ -341,14 +348,27 @@ export default function ChartOfAccounts() {
       </div>
 
       {/* Active period indicator */}
-      {activePeriod ? (
-        <div className="bg-info/10 text-info text-xs font-medium px-3 py-2 rounded-lg inline-flex items-center gap-1.5">
-          Opening balances for: <strong>{activePeriod.name}</strong>
-          <span className="text-info/60">— Click any balance to edit</span>
+      {fiscalPeriods && fiscalPeriods.length > 0 ? (
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="bg-info/10 text-info text-xs font-medium px-3 py-2 rounded-lg inline-flex items-center gap-2">
+            Opening balances for:
+            <select
+              value={activePeriod?.id || ""}
+              onChange={(e) => setSelectedPeriodId(e.target.value)}
+              className="text-xs font-semibold bg-transparent border-none outline-none cursor-pointer text-info"
+            >
+              {fiscalPeriods.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.status})
+                </option>
+              ))}
+            </select>
+            <span className="text-info/60">— Click any balance to edit</span>
+          </div>
         </div>
       ) : (
         <div className="bg-warning/10 text-warning text-xs font-medium px-3 py-2 rounded-lg">
-          No open fiscal period found. Create one in Fiscal Periods to enter opening balances.
+          No fiscal periods found. Create one in Fiscal Periods to enter opening balances.
         </div>
       )}
 
