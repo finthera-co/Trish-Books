@@ -2,12 +2,16 @@ import { useState, useMemo } from "react";
 import { FileText, TrendingUp, DollarSign, BarChart3, Printer, ArrowLeft, Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAccounts, useJournalEntries, useInvoices, useExpenses, useBudgets } from "@/hooks/useData";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 import { format } from "date-fns";
 
 type ReportType = "trial-balance" | "pnl" | "balance-sheet" | "cash-flow" | "expense-summary" | "aged-receivables" | null;
 
 const COLORS = ["hsl(215, 60%, 42%)", "hsl(142, 71%, 35%)", "hsl(38, 92%, 50%)", "hsl(199, 89%, 48%)", "hsl(0, 72%, 51%)", "hsl(270, 60%, 50%)"];
+
+const DEBIT_NORMAL_TYPES = ["Asset", "Expense", "COGS"];
 
 export default function Reports() {
   const [activeReport, setActiveReport] = useState<ReportType>(null);
@@ -23,6 +27,48 @@ export default function Reports() {
   const { data: expenses } = useExpenses();
   const { data: budgets } = useBudgets();
 
+  // Fetch fiscal periods to find the matching period for opening balances
+  const { data: fiscalPeriods } = useQuery({
+    queryKey: ["fiscal_periods_for_reports"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("fiscal_periods")
+        .select("id, name, period_start, period_end, status")
+        .order("period_start", { ascending: true });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Fetch all opening balances
+  const { data: allOpeningBalances } = useQuery({
+    queryKey: ["opening_balances_for_reports"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("opening_balances").select("*");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Find the fiscal period that best matches the report date range
+  const matchingPeriod = useMemo(() => {
+    if (!fiscalPeriods) return null;
+    // Find period whose start date is closest to (and <= ) periodFrom
+    return fiscalPeriods.find(p => p.period_start <= periodFrom && p.period_end >= periodFrom)
+      || fiscalPeriods.find(p => p.period_start >= periodFrom && p.period_start <= periodTo)
+      || null;
+  }, [fiscalPeriods, periodFrom, periodTo]);
+
+  // Build opening balance map for the matching period
+  const openingBalanceMap = useMemo(() => {
+    const m = new Map<string, number>();
+    if (!matchingPeriod || !allOpeningBalances) return m;
+    allOpeningBalances
+      .filter(ob => ob.fiscal_period_id === matchingPeriod.id)
+      .forEach(ob => m.set(ob.account_id, Number(ob.balance)));
+    return m;
+  }, [matchingPeriod, allOpeningBalances]);
+
   // Filter journal entries by period
   const filteredEntries = useMemo(() => {
     return journalEntries?.filter(e => 
@@ -33,10 +79,13 @@ export default function Reports() {
     ) || [];
   }, [journalEntries, periodFrom, periodTo]);
 
-  // Build account balances from filtered journal lines
+  // Build account balances from opening balances + filtered journal lines
   const accountBalances = useMemo(() => {
-    const map = new Map<string, { id: string; name: string; code: string; type: string; debit: number; credit: number }>();
-    accounts?.forEach(a => map.set(a.id, { id: a.id, name: a.account_name, code: a.account_code, type: a.account_type, debit: 0, credit: 0 }));
+    const map = new Map<string, { id: string; name: string; code: string; type: string; debit: number; credit: number; openingBalance: number }>();
+    accounts?.forEach(a => {
+      const ob = openingBalanceMap.get(a.id) || 0;
+      map.set(a.id, { id: a.id, name: a.account_name, code: a.account_code, type: a.account_type, debit: 0, credit: 0, openingBalance: ob });
+    });
     filteredEntries.forEach(entry => {
       ((entry.journal_lines as any[]) || []).forEach(line => {
         const acc = map.get(line.account_id);
@@ -47,7 +96,7 @@ export default function Reports() {
       });
     });
     return map;
-  }, [accounts, filteredEntries]);
+  }, [accounts, filteredEntries, openingBalanceMap]);
 
   const balances = Array.from(accountBalances.values()).filter(a => a.debit > 0 || a.credit > 0);
 
