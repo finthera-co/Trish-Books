@@ -263,14 +263,21 @@ export default function Reports() {
     const liabilities = balances.filter(a => a.type === "Liability");
     const equity = balances.filter(a => a.type === "Equity");
     
+    // Helper to get net balance including opening balance
+    const getNetBalance = (a: typeof balances[0]) => {
+      const isDebitNormal = DEBIT_NORMAL_TYPES.includes(a.type);
+      const journalNet = isDebitNormal ? (a.debit - a.credit) : (a.credit - a.debit);
+      return a.openingBalance + journalNet;
+    };
+
     // Retained earnings = net income (revenue credits - expense debits)
     const revenue = balances.filter(a => a.type === "Revenue");
     const expenseAccounts = balances.filter(a => a.type === "Expense" || a.type === "COGS");
     const retainedEarnings = revenue.reduce((s, a) => s + (a.credit - a.debit), 0) - expenseAccounts.reduce((s, a) => s + (a.debit - a.credit), 0);
 
-    const totalAssets = assets.reduce((s, a) => s + (a.debit - a.credit), 0);
-    const totalLiabilities = liabilities.reduce((s, a) => s + (a.credit - a.debit), 0);
-    const totalEquity = equity.reduce((s, a) => s + (a.credit - a.debit), 0) + retainedEarnings;
+    const totalAssets = assets.reduce((s, a) => s + getNetBalance(a), 0);
+    const totalLiabilities = liabilities.reduce((s, a) => s + getNetBalance(a), 0);
+    const totalEquity = equity.reduce((s, a) => s + getNetBalance(a), 0) + retainedEarnings;
     const totalLiabEquity = totalLiabilities + totalEquity;
 
     const pieData = [
