@@ -289,7 +289,7 @@ export default function Reports() {
     const SectionRows = ({ items, sign }: { items: typeof assets; sign: "debit" | "credit" }) => (
       <>
         {items.map((a, i) => {
-          const bal = sign === "debit" ? a.debit - a.credit : a.credit - a.debit;
+          const bal = getNetBalance(a);
           return (
             <tr key={i}>
               <td className="pl-8 text-foreground">{a.name}</td>
