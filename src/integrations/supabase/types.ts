@@ -14,6 +14,41 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_categories: {
+        Row: {
+          account_type: string
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+          tenant_id: string
+        }
+        Insert: {
+          account_type: string
+          created_at?: string
+          id?: string
+          name: string
+          sort_order?: number
+          tenant_id: string
+        }
+        Update: {
+          account_type?: string
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_categories_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       account_types: {
         Row: {
           id: string
@@ -34,8 +69,10 @@ export type Database = {
           account_code: string
           account_name: string
           account_type: string
+          category_id: string | null
           created_at: string
           id: string
+          is_active: boolean
           parent_account_id: string | null
           tenant_id: string
           updated_at: string
@@ -44,8 +81,10 @@ export type Database = {
           account_code: string
           account_name: string
           account_type: string
+          category_id?: string | null
           created_at?: string
           id?: string
+          is_active?: boolean
           parent_account_id?: string | null
           tenant_id: string
           updated_at?: string
@@ -54,13 +93,22 @@ export type Database = {
           account_code?: string
           account_name?: string
           account_type?: string
+          category_id?: string | null
           created_at?: string
           id?: string
+          is_active?: boolean
           parent_account_id?: string | null
           tenant_id?: string
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "accounts_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "account_categories"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "accounts_parent_account_id_fkey"
             columns: ["parent_account_id"]
