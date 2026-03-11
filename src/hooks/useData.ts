@@ -116,7 +116,7 @@ export function useAccounts() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("accounts")
-        .select("*")
+        .select("*, account_categories(name)")
         .order("account_code");
       if (error) throw error;
       return data;
@@ -128,7 +128,7 @@ export function useCreateAccount() {
   const queryClient = useQueryClient();
   const { appUser } = useAuth();
   return useMutation({
-    mutationFn: async (account: { account_name: string; account_code: string; account_type: string; parent_account_id?: string }) => {
+    mutationFn: async (account: { account_name: string; account_code: string; account_type: string; parent_account_id?: string; category_id?: string }) => {
       const { data, error } = await supabase.from("accounts").insert({
         ...account,
         tenant_id: appUser?.tenant_id,
@@ -140,6 +140,22 @@ export function useCreateAccount() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       toast.success("Account created");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useUpdateAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...updates }: { id: string; account_name?: string; account_code?: string; account_type?: string; parent_account_id?: string | null; category_id?: string | null; is_active?: boolean }) => {
+      const { error } = await supabase.from("accounts").update(updates).eq("id", id);
+      if (error) throw error;
+      writeAuditLog("Account Updated", "accounts", id, updates);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      toast.success("Account updated");
     },
     onError: (e: Error) => toast.error(e.message),
   });
