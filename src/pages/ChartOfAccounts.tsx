@@ -49,6 +49,18 @@ function buildTree(accounts: Account[]): Account[] {
   return roots;
 }
 
+interface CategoryGroup {
+  id: string;
+  name: string;
+  accounts: Account[];
+}
+
+interface TypeGroup {
+  type: string;
+  categories: CategoryGroup[];
+  uncategorized: Account[];
+}
+
 function AccountRow({
   account,
   depth = 0,
