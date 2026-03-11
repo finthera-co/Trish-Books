@@ -49,6 +49,18 @@ function buildTree(accounts: Account[]): Account[] {
   return roots;
 }
 
+interface CategoryGroup {
+  id: string;
+  name: string;
+  accounts: Account[];
+}
+
+interface TypeGroup {
+  type: string;
+  categories: CategoryGroup[];
+  uncategorized: Account[];
+}
+
 function AccountRow({
   account,
   depth = 0,
@@ -72,7 +84,7 @@ function AccountRow({
   return (
     <>
       <tr className={`hover:bg-muted/20 transition-colors ${!account.is_active ? "opacity-50" : ""}`}>
-        <td style={{ paddingLeft: `${depth * 24 + 16}px` }}>
+        <td style={{ paddingLeft: `${depth * 20 + 16}px` }}>
           <div className="flex items-center gap-2">
             {hasChildren ? (
               <button onClick={() => setExpanded(!expanded)} className="p-0.5 rounded hover:bg-muted">
@@ -80,22 +92,13 @@ function AccountRow({
               </button>
             ) : <span className="w-4" />}
             <span className="font-mono text-xs text-muted-foreground">{account.account_code}</span>
-            <span className={`font-medium text-sm ${depth === 0 ? "text-foreground" : "text-foreground/80"}`}>
+            <span className="font-medium text-sm text-foreground/80">
               {account.account_name}
             </span>
             {!account.is_active && (
               <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">Inactive</span>
             )}
-            {hasChildren && <span className="text-[10px] text-muted-foreground">({account.children!.length})</span>}
           </div>
-        </td>
-        <td>
-          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${typeColors[account.account_type] || "bg-muted text-muted-foreground"}`}>
-            {account.account_type}
-          </span>
-        </td>
-        <td className="text-xs text-muted-foreground">
-          {account.account_categories?.name || "—"}
         </td>
         <td className="text-xs text-muted-foreground">
           {["Asset", "Expense", "COGS"].includes(account.account_type) ? "Debit" : "Credit"}
@@ -143,13 +146,135 @@ function AccountRow({
   );
 }
 
+function TypeSection({
+  typeGroup,
+  balanceMap,
+  activePeriodId,
+  tenantId,
+  onEdit,
+  onToggleActive,
+}: {
+  typeGroup: TypeGroup;
+  balanceMap: Map<string, number>;
+  activePeriodId: string | null;
+  tenantId: string | undefined;
+  onEdit: (a: Account) => void;
+  onToggleActive: (a: Account) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const totalAccounts = typeGroup.categories.reduce((s, c) => s + c.accounts.length, 0) + typeGroup.uncategorized.length;
+
+  return (
+    <>
+      <tr
+        className="cursor-pointer hover:bg-muted/30 transition-colors"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <td colSpan={4} className="py-2">
+          <div className="flex items-center gap-2">
+            <ChevronRight className={`w-4 h-4 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`} />
+            <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold ${typeColors[typeGroup.type] || "bg-muted text-muted-foreground"}`}>
+              {typeGroup.type}
+            </span>
+            <span className="text-xs text-muted-foreground font-medium">
+              {totalAccounts} account{totalAccounts !== 1 ? "s" : ""}
+            </span>
+          </div>
+        </td>
+      </tr>
+      {expanded && typeGroup.categories.map(cat => (
+        <CategorySection
+          key={cat.id}
+          category={cat}
+          accountType={typeGroup.type}
+          balanceMap={balanceMap}
+          activePeriodId={activePeriodId}
+          tenantId={tenantId}
+          onEdit={onEdit}
+          onToggleActive={onToggleActive}
+        />
+      ))}
+      {expanded && typeGroup.uncategorized.length > 0 && (
+        <>
+          <tr className="bg-muted/10">
+            <td colSpan={4} style={{ paddingLeft: "32px" }}>
+              <span className="text-xs font-semibold text-muted-foreground italic">Uncategorized</span>
+            </td>
+          </tr>
+          {buildTree(typeGroup.uncategorized).sort((a, b) => a.account_code.localeCompare(b.account_code)).map(account => (
+            <AccountRow
+              key={account.id}
+              account={account}
+              depth={2}
+              balanceMap={balanceMap}
+              activePeriodId={activePeriodId}
+              tenantId={tenantId}
+              onEdit={onEdit}
+              onToggleActive={onToggleActive}
+            />
+          ))}
+        </>
+      )}
+    </>
+  );
+}
+
+function CategorySection({
+  category,
+  accountType,
+  balanceMap,
+  activePeriodId,
+  tenantId,
+  onEdit,
+  onToggleActive,
+}: {
+  category: CategoryGroup;
+  accountType: string;
+  balanceMap: Map<string, number>;
+  activePeriodId: string | null;
+  tenantId: string | undefined;
+  onEdit: (a: Account) => void;
+  onToggleActive: (a: Account) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const tree = buildTree(category.accounts).sort((a, b) => a.account_code.localeCompare(b.account_code));
+
+  return (
+    <>
+      <tr
+        className="cursor-pointer hover:bg-muted/20 transition-colors bg-muted/5"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <td colSpan={4} style={{ paddingLeft: "32px" }}>
+          <div className="flex items-center gap-2 py-0.5">
+            <ChevronRight className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`} />
+            <span className="text-xs font-semibold text-foreground/70">{category.name}</span>
+            <span className="text-[10px] text-muted-foreground">({category.accounts.length})</span>
+          </div>
+        </td>
+      </tr>
+      {expanded && tree.map(account => (
+        <AccountRow
+          key={account.id}
+          account={account}
+          depth={2}
+          balanceMap={balanceMap}
+          activePeriodId={activePeriodId}
+          tenantId={tenantId}
+          onEdit={onEdit}
+          onToggleActive={onToggleActive}
+        />
+      ))}
+    </>
+  );
+}
+
 export default function ChartOfAccounts() {
   const { appUser } = useAuth();
   const [formOpen, setFormOpen] = useState(false);
   const [editAccount, setEditAccount] = useState<Account | null>(null);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
-  const [filterCategory, setFilterCategory] = useState("all");
   const [showInactive, setShowInactive] = useState(false);
 
   const { data: accounts, isLoading } = useAccounts();
@@ -203,16 +328,32 @@ export default function ChartOfAccounts() {
     return (accounts as Account[]).filter(a => {
       if (!showInactive && !a.is_active) return false;
       if (filterType !== "all" && a.account_type !== filterType) return false;
-      if (filterCategory !== "all" && a.category_id !== filterCategory) return false;
       if (search) {
         const s = search.toLowerCase();
         return a.account_code.toLowerCase().includes(s) || a.account_name.toLowerCase().includes(s);
       }
       return true;
     });
-  }, [accounts, search, filterType, filterCategory, showInactive]);
+  }, [accounts, search, filterType, showInactive]);
 
-  const tree = buildTree(filteredAccounts);
+  // Build Type → Category → Account hierarchy
+  const typeGroups = useMemo((): TypeGroup[] => {
+    const types = filterType !== "all" ? [filterType] : ACCOUNT_TYPES;
+    return types.map(type => {
+      const typeAccounts = filteredAccounts.filter(a => a.account_type === type);
+      const typeCats = (categories || []).filter(c => c.account_type === type);
+      const catGroups: CategoryGroup[] = typeCats
+        .map(cat => ({
+          id: cat.id,
+          name: cat.name,
+          accounts: typeAccounts.filter(a => a.category_id === cat.id),
+        }))
+        .filter(g => g.accounts.length > 0);
+      const categorizedIds = new Set(catGroups.flatMap(g => g.accounts.map(a => a.id)));
+      const uncategorized = typeAccounts.filter(a => !categorizedIds.has(a.id));
+      return { type, categories: catGroups, uncategorized };
+    }).filter(g => g.categories.length > 0 || g.uncategorized.length > 0);
+  }, [filteredAccounts, categories, filterType]);
 
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -264,21 +405,19 @@ export default function ChartOfAccounts() {
         <div>
           <h1 className="page-title">Chart of Accounts</h1>
           <p className="page-description">
-            Manage your financial account structure ({activeCount} active accounts)
+            Type → Category → Account hierarchy ({activeCount} active)
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          {(!accounts || accounts.length === 0) && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => seedDefaults.mutate()}
-              disabled={seedDefaults.isPending}
-            >
-              <Sprout className="w-4 h-4 mr-1" />
-              {seedDefaults.isPending ? "Seeding..." : "Seed Defaults"}
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => seedDefaults.mutate()}
+            disabled={seedDefaults.isPending}
+          >
+            <Sprout className="w-4 h-4 mr-1" />
+            {seedDefaults.isPending ? "Seeding..." : "Seed Defaults"}
+          </Button>
           <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={!accounts?.length}>
             <Download className="w-4 h-4 mr-1" /> Export
           </Button>
@@ -314,7 +453,7 @@ export default function ChartOfAccounts() {
       {/* Type filter pills */}
       <div className="flex flex-wrap gap-2 items-center">
         <button
-          onClick={() => { setFilterType("all"); setFilterCategory("all"); }}
+          onClick={() => setFilterType("all")}
           className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${filterType === "all" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
         >
           All ({activeCount})
@@ -322,7 +461,7 @@ export default function ChartOfAccounts() {
         {ACCOUNT_TYPES.map(t => (
           <button
             key={t}
-            onClick={() => { setFilterType(t); setFilterCategory("all"); }}
+            onClick={() => setFilterType(t)}
             className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${filterType === t ? "bg-primary text-primary-foreground" : `${typeColors[t] || "bg-muted text-muted-foreground"} hover:opacity-80`}`}
           >
             {t} ({typeCounts[t] || 0})
@@ -338,29 +477,6 @@ export default function ChartOfAccounts() {
           Show inactive
         </label>
       </div>
-
-      {/* Category filter (when a type is selected) */}
-      {filterType !== "all" && categories && categories.filter(c => c.account_type === filterType).length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setFilterCategory("all")}
-            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${filterCategory === "all" ? "bg-accent text-accent-foreground" : "bg-muted/50 text-muted-foreground hover:bg-muted"}`}
-          >
-            All Categories
-          </button>
-          {categories
-            .filter(c => c.account_type === filterType)
-            .map(c => (
-              <button
-                key={c.id}
-                onClick={() => setFilterCategory(c.id)}
-                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${filterCategory === c.id ? "bg-accent text-accent-foreground" : "bg-muted/50 text-muted-foreground hover:bg-muted"}`}
-              >
-                {c.name}
-              </button>
-            ))}
-        </div>
-      )}
 
       <div className="stat-card">
         {/* Search */}
@@ -379,11 +495,11 @@ export default function ChartOfAccounts() {
           <div className="flex items-center justify-center py-16">
             <span className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
           </div>
-        ) : tree.length === 0 ? (
+        ) : typeGroups.length === 0 ? (
           <div className="text-center py-16">
             <BookOpen className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
             <p className="text-muted-foreground font-medium">
-              {search || filterType !== "all" || filterCategory !== "all" ? "No matching accounts" : "No accounts yet"}
+              {search || filterType !== "all" ? "No matching accounts" : "No accounts yet"}
             </p>
             <p className="text-sm text-muted-foreground mt-1">
               {search || filterType !== "all" ? "Try adjusting your filters." : "Click 'Seed Defaults' to create a standard chart of accounts, or add accounts manually."}
@@ -394,18 +510,16 @@ export default function ChartOfAccounts() {
             <thead>
               <tr>
                 <th>Account</th>
-                <th className="w-24">Type</th>
-                <th className="w-36">Category</th>
                 <th className="w-24">Normal Bal.</th>
                 <th className="w-36 text-right">Opening Balance</th>
                 <th className="w-20 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {tree.sort((a, b) => a.account_code.localeCompare(b.account_code)).map((account) => (
-                <AccountRow
-                  key={account.id}
-                  account={account}
+              {typeGroups.map((tg) => (
+                <TypeSection
+                  key={tg.type}
+                  typeGroup={tg}
                   balanceMap={balanceMap}
                   activePeriodId={activePeriod?.id ?? null}
                   tenantId={appUser?.tenant_id}
