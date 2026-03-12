@@ -115,21 +115,64 @@ export default function FiscalPeriods() {
       if (nextPeriod) {
         // Separate balance sheet accounts (carry forward) vs income/expense (close to retained earnings)
         const balanceSheetTypes = ["Asset", "Liability", "Equity"];
-        const openingBalances = accounts
-          .filter(a => {
+        const incomeExpenseTypes = ["Revenue", "Expense", "COGS"];
+        
+        // Calculate net income from income/expense accounts to carry to Retained Earnings
+        let netIncome = 0;
+        accounts.forEach(a => {
+          if (incomeExpenseTypes.includes(a.account_type)) {
             const bal = balanceMap.get(a.id) || 0;
-            return bal !== 0;
-          })
-          .map(a => {
-            const isBalanceSheet = balanceSheetTypes.includes(a.account_type);
-            return {
-              tenant_id: appUser?.tenant_id!,
-              account_id: a.id,
-              fiscal_period_id: nextPeriod.id,
-              balance: isBalanceSheet ? (balanceMap.get(a.id) || 0) : 0,
-            };
-          })
-          .filter(ob => ob.balance !== 0);
+            if (a.account_type === "Revenue") {
+              netIncome += bal; // Credit-normal: positive balance = income
+            } else {
+              netIncome -= bal; // Debit-normal: positive balance = expense
+            }
+          }
+        });
+        
+        // Find the Retained Earnings account to carry net income forward
+        const retainedEarningsAccount = accounts.find(a => 
+          a.account_type === "Equity" && 
+          (a.id === accounts.find(ac => ac.account_type === "Equity" && 
+            (balanceMap.get(ac.id) !== undefined || true))?.id) &&
+          // Match by common naming convention
+          true
+        );
+        
+        // Look for a "Retained Earnings" account specifically
+        const { data: reAccount } = await supabase
+          .from("accounts")
+          .select("id")
+          .eq("tenant_id", appUser?.tenant_id!)
+          .eq("account_type", "Equity")
+          .ilike("account_name", "%retained earnings%")
+          .limit(1)
+          .maybeSingle();
+        
+        const openingBalances: { tenant_id: string; account_id: string; fiscal_period_id: string; balance: number }[] = [];
+        
+        accounts.forEach(a => {
+          if (balanceSheetTypes.includes(a.account_type)) {
+            let bal = balanceMap.get(a.id) || 0;
+            // Add net income to Retained Earnings account
+            if (reAccount && a.id === reAccount.id) {
+              bal += netIncome;
+            }
+            if (bal !== 0) {
+              openingBalances.push({
+                tenant_id: appUser?.tenant_id!,
+                account_id: a.id,
+                fiscal_period_id: nextPeriod.id,
+                balance: bal,
+              });
+            }
+          }
+        });
+        
+        // If no Retained Earnings account found but there's net income, warn
+        if (!reAccount && netIncome !== 0) {
+          console.warn("No 'Retained Earnings' equity account found. Net income of", netIncome, "was not carried forward.");
+        }
 
         if (openingBalances.length > 0) {
           const { error: obErr } = await supabase

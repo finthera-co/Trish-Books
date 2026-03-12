@@ -386,10 +386,16 @@ export default function Reports() {
   };
 
   const renderCashFlow = () => {
-    // Classify cash flows based on account types
+    // Classify cash flows based on account types — Direct Method
     const cashAccounts = balances.filter(a => 
       a.name.toLowerCase().includes("cash") || a.name.toLowerCase().includes("bank")
     );
+    
+    // Beginning cash = sum of opening balances for cash/bank accounts
+    const beginningCash = cashAccounts.reduce((s, a) => {
+      const isDebitNormal = DEBIT_NORMAL_TYPES.includes(a.type);
+      return s + (isDebitNormal ? a.openingBalance : -a.openingBalance);
+    }, 0);
     
     // Build monthly cash flow data
     const monthlyData = new Map<string, { operating: number; investing: number; financing: number }>();
@@ -432,7 +438,7 @@ export default function Reports() {
       }));
 
     // Running totals
-    let runningTotal = 0;
+    let runningTotal = beginningCash;
     const chartData = sortedMonths.map(d => {
       runningTotal += d.total;
       return { ...d, cumulative: runningTotal };
@@ -443,7 +449,6 @@ export default function Reports() {
     const totalFinancing = sortedMonths.reduce((s, d) => s + d.financing, 0);
     const netChange = totalOperating + totalInvesting + totalFinancing;
     
-    const beginningCash = 0; // simplified
     const endingCash = beginningCash + netChange;
 
     return (
@@ -472,7 +477,7 @@ export default function Reports() {
         )}
 
         <div className="stat-card print:shadow-none">
-          <StatementHeader title="Statement of Cash Flows" subtitle="Indirect Method" />
+          <StatementHeader title="Statement of Cash Flows" subtitle="Direct Method" />
           {sortedMonths.length === 0 ? (
             <p className="text-center py-12 text-muted-foreground">No cash transactions found for this period. Post journal entries affecting Cash/Bank accounts.</p>
           ) : (
