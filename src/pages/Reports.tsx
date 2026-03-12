@@ -127,8 +127,30 @@ export default function Reports() {
 
   const renderTrialBalance = () => {
     const sorted = [...balances].sort((a, b) => a.code.localeCompare(b.code));
-    const totalDebit = sorted.reduce((s, a) => s + a.debit, 0);
-    const totalCredit = sorted.reduce((s, a) => s + a.credit, 0);
+    
+    // Include opening balances in debit/credit totals (industry standard)
+    const getEffectiveAmounts = (a: typeof balances[0]) => {
+      const isDebitNormal = DEBIT_NORMAL_TYPES.includes(a.type);
+      let dr = a.debit;
+      let cr = a.credit;
+      if (a.openingBalance > 0) {
+        if (isDebitNormal) dr += a.openingBalance;
+        else cr += a.openingBalance;
+      } else if (a.openingBalance < 0) {
+        if (isDebitNormal) cr += Math.abs(a.openingBalance);
+        else dr += Math.abs(a.openingBalance);
+      }
+      return { debit: dr, credit: cr };
+    };
+    
+    let totalDebit = 0, totalCredit = 0;
+    sorted.forEach(a => {
+      const eff = getEffectiveAmounts(a);
+      totalDebit += eff.debit;
+      totalCredit += eff.credit;
+    });
+    const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
+    
     return (
       <div className="stat-card print:shadow-none">
         <StatementHeader title="Trial Balance" />
@@ -149,14 +171,15 @@ export default function Reports() {
               </thead>
               <tbody>
                 {sorted.map((a, i) => {
-                  const net = a.debit - a.credit;
+                  const eff = getEffectiveAmounts(a);
+                  const net = eff.debit - eff.credit;
                   return (
                     <tr key={i}>
                       <td className="font-mono text-xs text-muted-foreground">{a.code}</td>
                       <td className="font-medium text-foreground">{a.name}</td>
                       <td><span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-secondary text-secondary-foreground">{a.type}</span></td>
-                      <td className="text-right font-mono">{fmt(a.debit)}</td>
-                      <td className="text-right font-mono">{fmt(a.credit)}</td>
+                      <td className="text-right font-mono">{eff.debit > 0 ? fmt(eff.debit) : "—"}</td>
+                      <td className="text-right font-mono">{eff.credit > 0 ? fmt(eff.credit) : "—"}</td>
                       <td className={`text-right font-mono font-medium ${net >= 0 ? "text-foreground" : "text-destructive"}`}>{fmt(net)}</td>
                     </tr>
                   );
@@ -171,8 +194,8 @@ export default function Reports() {
                 </tr>
               </tfoot>
             </table>
-            <div className={`mt-4 px-4 py-2 rounded-md text-sm font-medium ${totalDebit.toFixed(2) === totalCredit.toFixed(2) ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
-              {totalDebit.toFixed(2) === totalCredit.toFixed(2) ? "✓ Trial balance is in balance — debits equal credits" : `✗ Out of balance by ${fmt(Math.abs(totalDebit - totalCredit))}`}
+            <div className={`mt-4 px-4 py-2 rounded-md text-sm font-medium ${isBalanced ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
+              {isBalanced ? "✓ Trial balance is in balance — debits equal credits" : `✗ Out of balance by ${fmt(Math.abs(totalDebit - totalCredit))}`}
             </div>
           </>
         )}
@@ -363,10 +386,16 @@ export default function Reports() {
   };
 
   const renderCashFlow = () => {
-    // Classify cash flows based on account types
+    // Classify cash flows based on account types — Direct Method
     const cashAccounts = balances.filter(a => 
       a.name.toLowerCase().includes("cash") || a.name.toLowerCase().includes("bank")
     );
+    
+    // Beginning cash = sum of opening balances for cash/bank accounts
+    const beginningCash = cashAccounts.reduce((s, a) => {
+      const isDebitNormal = DEBIT_NORMAL_TYPES.includes(a.type);
+      return s + (isDebitNormal ? a.openingBalance : -a.openingBalance);
+    }, 0);
     
     // Build monthly cash flow data
     const monthlyData = new Map<string, { operating: number; investing: number; financing: number }>();
@@ -409,7 +438,7 @@ export default function Reports() {
       }));
 
     // Running totals
-    let runningTotal = 0;
+    let runningTotal = beginningCash;
     const chartData = sortedMonths.map(d => {
       runningTotal += d.total;
       return { ...d, cumulative: runningTotal };
@@ -420,7 +449,6 @@ export default function Reports() {
     const totalFinancing = sortedMonths.reduce((s, d) => s + d.financing, 0);
     const netChange = totalOperating + totalInvesting + totalFinancing;
     
-    const beginningCash = 0; // simplified
     const endingCash = beginningCash + netChange;
 
     return (
@@ -449,7 +477,7 @@ export default function Reports() {
         )}
 
         <div className="stat-card print:shadow-none">
-          <StatementHeader title="Statement of Cash Flows" subtitle="Indirect Method" />
+          <StatementHeader title="Statement of Cash Flows" subtitle="Direct Method" />
           {sortedMonths.length === 0 ? (
             <p className="text-center py-12 text-muted-foreground">No cash transactions found for this period. Post journal entries affecting Cash/Bank accounts.</p>
           ) : (
