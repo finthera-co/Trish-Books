@@ -218,11 +218,55 @@ export function useInvoices() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("invoices")
-        .select("*, customers(name)")
+        .select("*, customers(name), payments_received(amount)")
         .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data?.map((inv) => {
+        const amountPaid = ((inv.payments_received as any[]) || []).reduce(
+          (sum: number, p: any) => sum + Number(p.amount), 0
+        );
+        return { ...inv, amount_paid: amountPaid, balance_due: Number(inv.total_amount) - amountPaid };
+      });
+    },
+  });
+}
+
+export function usePaymentsReceived(invoiceId?: string) {
+  return useQuery({
+    queryKey: ["payments_received", invoiceId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("payments_received")
+        .select("*")
+        .eq("invoice_id", invoiceId!)
+        .order("payment_date", { ascending: false });
       if (error) throw error;
       return data;
     },
+    enabled: !!invoiceId,
+  });
+}
+
+export function useRecordPayment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payment: { invoice_id: string; amount: number; payment_method?: string; reference?: string; payment_date?: string }) => {
+      const { data, error } = await supabase.from("payments_received").insert({
+        ...payment,
+        payment_date: payment.payment_date || new Date().toISOString(),
+      }).select().single();
+      if (error) throw error;
+      writeAuditLog("Payment Received", "payments_received", data.id, {
+        invoice_id: payment.invoice_id, amount: payment.amount, method: payment.payment_method,
+      });
+      return data;
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["payments_received", vars.invoice_id] });
+      toast.success("Payment recorded");
+    },
+    onError: (e: Error) => toast.error(e.message),
   });
 }
 
