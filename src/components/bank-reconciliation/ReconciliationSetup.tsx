@@ -1,12 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { useAccounts } from "@/hooks/useData";
 import { useCreateReconciliation, useLastReconciliation } from "@/hooks/useBankReconciliation";
+import { formatCurrency } from "@/lib/currency";
 import { Landmark } from "lucide-react";
 
 interface Props {
@@ -26,11 +28,17 @@ export default function ReconciliationSetup({ onStarted, onCancel }: Props) {
   const [statementEndDate, setStatementEndDate] = useState("");
   const [statementEndBalance, setStatementEndBalance] = useState("");
   const [serviceCharges, setServiceCharges] = useState("");
+  const [serviceChargeAccount, setServiceChargeAccount] = useState("");
   const [interestEarned, setInterestEarned] = useState("");
+  const [interestAccount, setInterestAccount] = useState("");
+  const [statementRef, setStatementRef] = useState("");
   const [notes, setNotes] = useState("");
 
   const { data: lastRecon } = useLastReconciliation(bankAccountId || undefined);
   const beginningBalance = lastRecon?.statement_ending_balance ?? 0;
+
+  const expenseAccounts = (accounts || []).filter((a: any) => a.account_type === "Expense");
+  const incomeAccounts = (accounts || []).filter((a: any) => a.account_type === "Revenue");
 
   const handleStart = async () => {
     if (!bankAccountId || !statementEndDate || !statementEndBalance) return;
@@ -46,72 +54,139 @@ export default function ReconciliationSetup({ onStarted, onCancel }: Props) {
     onStarted(result.id);
   };
 
+  const selectedAccount = bankAccounts.find((a: any) => a.id === bankAccountId);
+
   return (
     <Card className="max-w-2xl mx-auto">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+      <CardHeader className="pb-4">
+        <CardTitle className="flex items-center gap-2 text-lg">
           <Landmark className="w-5 h-5 text-primary" />
-          Start Bank Reconciliation
+          Begin Reconciliation
         </CardTitle>
+        <CardDescription>
+          Select an account to reconcile, then enter the ending balance from your bank statement.
+        </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label>Bank Account *</Label>
-            <Select value={bankAccountId} onValueChange={setBankAccountId}>
-              <SelectTrigger><SelectValue placeholder="Select bank account" /></SelectTrigger>
-              <SelectContent>
-                {bankAccounts.map((a: any) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.account_code} – {a.account_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Statement Ending Date *</Label>
-            <Input type="date" value={statementEndDate} onChange={(e) => setStatementEndDate(e.target.value)} />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label>Beginning Balance</Label>
-            <Input type="number" value={beginningBalance} readOnly className="bg-muted/30" />
-            <p className="text-xs text-muted-foreground">Auto-filled from last reconciliation</p>
-          </div>
-          <div className="space-y-2">
-            <Label>Statement Ending Balance *</Label>
-            <Input type="number" step="0.01" value={statementEndBalance} onChange={(e) => setStatementEndBalance(e.target.value)} placeholder="0.00" />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label>Service Charges</Label>
-            <Input type="number" step="0.01" value={serviceCharges} onChange={(e) => setServiceCharges(e.target.value)} placeholder="0.00" />
-          </div>
-          <div className="space-y-2">
-            <Label>Interest Earned</Label>
-            <Input type="number" step="0.01" value={interestEarned} onChange={(e) => setInterestEarned(e.target.value)} placeholder="0.00" />
-          </div>
-        </div>
-
+      <CardContent className="space-y-5">
+        {/* Account Selection */}
         <div className="space-y-2">
-          <Label>Notes</Label>
-          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes..." />
+          <Label className="font-semibold">Account *</Label>
+          <Select value={bankAccountId} onValueChange={setBankAccountId}>
+            <SelectTrigger><SelectValue placeholder="Select bank account to reconcile" /></SelectTrigger>
+            <SelectContent>
+              {bankAccounts.map((a: any) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.account_code} – {a.account_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        <div className="flex justify-end gap-3 pt-4">
-          <Button variant="outline" onClick={onCancel}>Cancel</Button>
-          <Button
-            onClick={handleStart}
-            disabled={!bankAccountId || !statementEndDate || !statementEndBalance || createReconciliation.isPending}
-          >
-            {createReconciliation.isPending ? "Starting..." : "Start Reconciliation"}
-          </Button>
-        </div>
+        {bankAccountId && (
+          <>
+            <Separator />
+
+            {/* Statement Info */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="font-semibold">Statement Date *</Label>
+                <Input type="date" value={statementEndDate} onChange={(e) => setStatementEndDate(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label className="font-semibold">Statement Ending Balance *</Label>
+                <Input type="number" step="0.01" value={statementEndBalance} onChange={(e) => setStatementEndBalance(e.target.value)} placeholder="0.00" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Statement Reference</Label>
+                <Input value={statementRef} onChange={(e) => setStatementRef(e.target.value)} placeholder="e.g. Feb 2026 Statement" />
+              </div>
+              <div className="space-y-1">
+                <Label>Beginning Balance</Label>
+                <div className="h-10 flex items-center px-3 rounded-md border bg-muted/30 text-sm font-medium">
+                  {formatCurrency(beginningBalance)}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {lastRecon ? "From last reconciliation" : "No prior reconciliation — defaults to 0"}
+                </p>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Service Charges */}
+            <div>
+              <p className="text-sm font-semibold mb-2">Service Charge</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Date</Label>
+                  <Input type="date" value={statementEndDate} readOnly className="bg-muted/20 text-xs" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Amount</Label>
+                  <Input type="number" step="0.01" value={serviceCharges} onChange={(e) => setServiceCharges(e.target.value)} placeholder="0.00" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Account</Label>
+                  <Select value={serviceChargeAccount} onValueChange={setServiceChargeAccount}>
+                    <SelectTrigger className="text-xs"><SelectValue placeholder="Expense account" /></SelectTrigger>
+                    <SelectContent>
+                      {expenseAccounts.map((a: any) => (
+                        <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+
+            {/* Interest Earned */}
+            <div>
+              <p className="text-sm font-semibold mb-2">Interest Earned</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Date</Label>
+                  <Input type="date" value={statementEndDate} readOnly className="bg-muted/20 text-xs" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Amount</Label>
+                  <Input type="number" step="0.01" value={interestEarned} onChange={(e) => setInterestEarned(e.target.value)} placeholder="0.00" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Account</Label>
+                  <Select value={interestAccount} onValueChange={setInterestAccount}>
+                    <SelectTrigger className="text-xs"><SelectValue placeholder="Income account" /></SelectTrigger>
+                    <SelectContent>
+                      {incomeAccounts.map((a: any) => (
+                        <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-2">
+              <Label>Notes</Label>
+              <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes for this reconciliation..." rows={2} />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="outline" onClick={onCancel}>Cancel</Button>
+              <Button
+                onClick={handleStart}
+                disabled={!bankAccountId || !statementEndDate || !statementEndBalance || createReconciliation.isPending}
+              >
+                {createReconciliation.isPending ? "Starting..." : "Start Reconciliation"}
+              </Button>
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );
