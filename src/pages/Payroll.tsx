@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Search, Eye, DollarSign, Users, TrendingUp, FileText } from "lucide-react";
+import { Plus, Search, Eye, DollarSign, Users, TrendingUp, FileText, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -10,6 +10,7 @@ import PayrollRunForm from "@/components/payroll/PayrollRunForm";
 import PayrollRunDetails from "@/components/payroll/PayrollRunDetails";
 import PayStub from "@/components/payroll/PayStub";
 import PayScheduleManager from "@/components/payroll/PayScheduleManager";
+import { exportToCsv } from "@/lib/csvExport";
 
 const statusColors: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -45,6 +46,19 @@ export default function Payroll() {
 
   const pendingRuns = runs?.filter((r: any) => r.status === "draft" || r.status === "approved").length || 0;
 
+  const exportRunsSummary = () => {
+    if (!filteredRuns.length) return;
+    const headers = ["Run #", "Period Start", "Period End", "Schedule", "Status", "Total Gross", "Total Deductions", "Total Net", "Employer EPF", "Employer ETF", "Payment Date"];
+    const rows = filteredRuns.map((r: any) => [
+      r.run_number, r.period_start, r.period_end,
+      (r.pay_schedules as any)?.name || "Manual", r.status,
+      Number(r.total_gross).toFixed(2), Number(r.total_deductions).toFixed(2), Number(r.total_net).toFixed(2),
+      Number(r.total_employer_epf).toFixed(2), Number(r.total_employer_etf).toFixed(2),
+      r.payment_date || "",
+    ]);
+    exportToCsv(`payroll-runs-summary-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+  };
+
   const openDetails = (run: any) => {
     setSelectedRun(run);
     setDetailsOpen(true);
@@ -57,9 +71,14 @@ export default function Payroll() {
           <h1 className="page-title">Payroll Management</h1>
           <p className="page-description">Run payroll, manage schedules, and generate pay stubs (Sri Lanka EPF/ETF)</p>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="w-4 h-4" /> Run Payroll
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={exportRunsSummary} disabled={!filteredRuns.length}>
+            <Download className="w-4 h-4" /> Export CSV
+          </Button>
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="w-4 h-4" /> Run Payroll
+          </Button>
+        </div>
       </div>
 
       {/* KPI Cards */}

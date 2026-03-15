@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { usePayrollRunItems, useApprovePayrollRun, useProcessPayrollRun, useVoidPayrollRun } from "@/hooks/usePayroll";
 import { formatCurrency } from "@/lib/currency";
-import { CheckCircle, XCircle, Printer, FileText } from "lucide-react";
+import { exportToCsv } from "@/lib/csvExport";
+import { CheckCircle, XCircle, Printer, FileText, Download } from "lucide-react";
 
 interface Props {
   run: any;
@@ -26,8 +27,32 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
 
   if (!run) return null;
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = () => window.print();
+
+  const handleExportCsv = () => {
+    if (!items?.length) return;
+    const headers = [
+      "Employee", "Department", "EPF No.", "Basic Salary", "Overtime Pay", "Bonuses",
+      "Allowances", "Gross Pay", "Employee EPF (8%)", "Employer EPF (12%)", "Employer ETF (3%)",
+      "Other Deductions", "Net Pay", "Payment Method",
+    ];
+    const rows = items.map((item: any) => [
+      `${(item.employees as any)?.first_name || ""} ${(item.employees as any)?.last_name || ""}`.trim(),
+      (item.employees as any)?.department || "",
+      (item.employees as any)?.epf_number || "",
+      Number(item.basic_salary).toFixed(2),
+      Number(item.overtime_pay).toFixed(2),
+      Number(item.bonuses).toFixed(2),
+      Number(item.allowances).toFixed(2),
+      Number(item.gross_pay).toFixed(2),
+      Number(item.employee_epf).toFixed(2),
+      Number(item.employer_epf).toFixed(2),
+      Number(item.employer_etf).toFixed(2),
+      Number(item.other_deductions).toFixed(2),
+      Number(item.net_pay).toFixed(2),
+      item.payment_method === "bank_transfer" ? "Bank Transfer" : "Cash",
+    ]);
+    exportToCsv(`${run.run_number}-details.csv`, headers, rows);
   };
 
   return (
@@ -118,9 +143,14 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
 
         {/* Actions */}
         <div className="flex justify-between items-center pt-2">
-          <Button variant="outline" size="sm" onClick={handlePrint}>
-            <Printer className="w-4 h-4" /> Print
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handlePrint}>
+              <Printer className="w-4 h-4" /> Print
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleExportCsv} disabled={!items?.length}>
+              <Download className="w-4 h-4" /> Export CSV
+            </Button>
+          </div>
           <div className="flex gap-2">
             {run.status === "draft" && (
               <>
