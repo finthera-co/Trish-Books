@@ -29,6 +29,7 @@ import TrialBalance from "./pages/TrialBalance";
 import DataExports from "./pages/DataExports";
 import FiscalPeriods from "./pages/FiscalPeriods";
 import PaymentVouchers from "./pages/PaymentVouchers";
+import BankReconciliation from "./pages/BankReconciliation";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
