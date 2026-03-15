@@ -116,13 +116,12 @@ export default function TrialBalance() {
   const { totalDebit, totalCredit } = useMemo(() => {
     let dr = 0, cr = 0;
     balances.forEach(a => {
-      const isDebitNormal = DEBIT_NORMAL_TYPES.includes(a.account_type);
-      // Opening balance adds to the normal side
+      const debitNormal = isDebitNormal(a.account_type);
       if (a.opening_balance > 0) {
-        if (isDebitNormal) dr += a.opening_balance;
+        if (debitNormal) dr += a.opening_balance;
         else cr += a.opening_balance;
       } else if (a.opening_balance < 0) {
-        if (isDebitNormal) cr += Math.abs(a.opening_balance);
+        if (debitNormal) cr += Math.abs(a.opening_balance);
         else dr += Math.abs(a.opening_balance);
       }
       dr += a.total_debit;
