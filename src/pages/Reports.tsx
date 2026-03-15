@@ -203,16 +203,20 @@ export default function Reports() {
   };
 
   const renderPnL = () => {
-    const revenue = balances.filter(a => a.type === "Revenue");
-    const cogs = balances.filter(a => a.type === "COGS" || a.name.toLowerCase().includes("cost of"));
-    const opex = balances.filter(a => a.type === "Expense" && !a.name.toLowerCase().includes("cost of"));
+    const revenue = balances.filter(a => a.type === "Income" || a.type === "Revenue");
+    const cogs = balances.filter(a => a.type === "Cost of Goods Sold" || a.type === "COGS");
+    const opex = balances.filter(a => a.type === "Expense");
+    const otherIncome = balances.filter(a => a.type === "Other Income");
+    const otherExpense = balances.filter(a => a.type === "Other Expense");
     
     const totalRevenue = revenue.reduce((s, a) => s + (a.credit - a.debit), 0);
     const totalCOGS = cogs.reduce((s, a) => s + (a.debit - a.credit), 0);
     const grossProfit = totalRevenue - totalCOGS;
     const totalOpex = opex.reduce((s, a) => s + (a.debit - a.credit), 0);
     const operatingIncome = grossProfit - totalOpex;
-    const netIncome = operatingIncome; // simplified - no tax/interest for now
+    const totalOtherIncome = otherIncome.reduce((s, a) => s + (a.credit - a.debit), 0);
+    const totalOtherExpense = otherExpense.reduce((s, a) => s + (a.debit - a.credit), 0);
+    const netIncome = operatingIncome + totalOtherIncome - totalOtherExpense;
     const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
     const netMargin = totalRevenue > 0 ? (netIncome / totalRevenue) * 100 : 0;
 
