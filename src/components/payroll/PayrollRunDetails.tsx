@@ -27,8 +27,32 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
 
   if (!run) return null;
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = () => window.print();
+
+  const handleExportCsv = () => {
+    if (!items?.length) return;
+    const headers = [
+      "Employee", "Department", "EPF No.", "Basic Salary", "Overtime Pay", "Bonuses",
+      "Allowances", "Gross Pay", "Employee EPF (8%)", "Employer EPF (12%)", "Employer ETF (3%)",
+      "Other Deductions", "Net Pay", "Payment Method",
+    ];
+    const rows = items.map((item: any) => [
+      `${(item.employees as any)?.first_name || ""} ${(item.employees as any)?.last_name || ""}`.trim(),
+      (item.employees as any)?.department || "",
+      (item.employees as any)?.epf_number || "",
+      Number(item.basic_salary).toFixed(2),
+      Number(item.overtime_pay).toFixed(2),
+      Number(item.bonuses).toFixed(2),
+      Number(item.allowances).toFixed(2),
+      Number(item.gross_pay).toFixed(2),
+      Number(item.employee_epf).toFixed(2),
+      Number(item.employer_epf).toFixed(2),
+      Number(item.employer_etf).toFixed(2),
+      Number(item.other_deductions).toFixed(2),
+      Number(item.net_pay).toFixed(2),
+      item.payment_method === "bank_transfer" ? "Bank Transfer" : "Cash",
+    ]);
+    exportToCsv(`${run.run_number}-details.csv`, headers, rows);
   };
 
   return (
