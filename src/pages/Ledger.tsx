@@ -3,9 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAccounts, useJournalEntries } from "@/hooks/useData";
 import { Button } from "@/components/ui/button";
-import { Download, Printer, Search, BookOpen, ArrowUpRight, ArrowDownRight, Filter } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Download, Printer, Search, BookOpen, ArrowUpRight, ArrowDownRight, Filter, FileText, Users, Building2 } from "lucide-react";
 import { format } from "date-fns";
 import { isDebitNormal as checkDebitNormal, getTypeLabel } from "@/lib/accountTypes";
+import GeneralLedgerReport from "@/components/ledger/GeneralLedgerReport";
+import { ARSubledger, APSubledger } from "@/components/ledger/SubsidiaryLedger";
 
 interface LedgerRow {
   date: string;
@@ -39,6 +42,7 @@ export default function Ledger() {
   const [dateTo, setDateTo] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [showFilters, setShowFilters] = useState(false);
+  const [activeTab, setActiveTab] = useState("register");
 
   // Fetch fiscal periods
   const { data: fiscalPeriods } = useQuery({
@@ -183,348 +187,390 @@ export default function Ledger() {
         <div>
           <h1 className="page-title">General Ledger</h1>
           <p className="page-description">
-            Detailed transaction register with running balances per account
+            Account registers, general ledger report, and subsidiary ledgers
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={ledger.length === 0}>
-            <Download className="w-4 h-4 mr-1" /> Export CSV
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => window.print()}>
-            <Printer className="w-4 h-4 mr-1" /> Print
-          </Button>
         </div>
       </div>
 
-      {/* Account Selector */}
-      <div className="stat-card print:shadow-none">
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="flex-1 min-w-[250px]">
-            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">Account</label>
-            <select
-              value={selectedAccountId || selectedAccount?.id || ""}
-              onChange={(e) => setSelectedAccountId(e.target.value)}
-              className="w-full text-sm border border-input rounded-lg px-3 py-2.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
-            >
-              {accountsByType.map(([type, accs]) => (
-                <optgroup key={type} label={type}>
-                  {accs.map(a => (
-                    <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </div>
+      {/* Tab Navigation */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="register" className="flex items-center gap-1.5">
+            <BookOpen className="w-3.5 h-3.5" />
+            Account Register
+          </TabsTrigger>
+          <TabsTrigger value="general-ledger" className="flex items-center gap-1.5">
+            <FileText className="w-3.5 h-3.5" />
+            General Ledger
+          </TabsTrigger>
+          <TabsTrigger value="ar" className="flex items-center gap-1.5">
+            <Users className="w-3.5 h-3.5" />
+            AR Subledger
+          </TabsTrigger>
+          <TabsTrigger value="ap" className="flex items-center gap-1.5">
+            <Building2 className="w-3.5 h-3.5" />
+            AP Subledger
+          </TabsTrigger>
+        </TabsList>
 
-          <div className="min-w-[200px]">
-            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">Period</label>
-            <select
-              value={periodFilter}
-              onChange={(e) => { setPeriodFilter(e.target.value); setDateFrom(""); setDateTo(""); }}
-              className="w-full text-sm border border-input rounded-lg px-3 py-2.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
-            >
-              <option value="all">All Periods</option>
-              {fiscalPeriods?.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.name} {p.status === "closed" ? "🔒" : ""}
-                </option>
-              ))}
-            </select>
-          </div>
+        {/* Account Register Tab */}
+        <TabsContent value="register">
+          <div className="space-y-6">
+            {/* Controls */}
+            <div className="stat-card print:shadow-none">
+              <div className="flex flex-wrap items-end gap-4">
+                <div className="flex-1 min-w-[250px]">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">Account</label>
+                  <select
+                    value={selectedAccountId || selectedAccount?.id || ""}
+                    onChange={(e) => setSelectedAccountId(e.target.value)}
+                    className="w-full text-sm border border-input rounded-lg px-3 py-2.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+                  >
+                    {accountsByType.map(([type, accs]) => (
+                      <optgroup key={type} label={type}>
+                        {accs.map(a => (
+                          <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </div>
 
-          <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)} className="print:hidden">
-            <Filter className="w-4 h-4 mr-1" /> Filters
-          </Button>
-        </div>
+                <div className="min-w-[200px]">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">Period</label>
+                  <select
+                    value={periodFilter}
+                    onChange={(e) => { setPeriodFilter(e.target.value); setDateFrom(""); setDateTo(""); }}
+                    className="w-full text-sm border border-input rounded-lg px-3 py-2.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+                  >
+                    <option value="all">All Periods</option>
+                    {fiscalPeriods?.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} {p.status === "closed" ? "🔒" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-        {/* Advanced filters */}
-        {showFilters && (
-          <div className="mt-4 pt-4 border-t border-border flex flex-wrap items-end gap-4 print:hidden">
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">From Date</label>
-              <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPeriodFilter("all"); }}
-                className="text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20" />
-            </div>
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">To Date</label>
-              <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPeriodFilter("all"); }}
-                className="text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20" />
-            </div>
-            <div className="flex-1 min-w-[200px]">
-              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">Search</label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-                  placeholder="Search description or reference..."
-                  className="w-full text-sm border border-input rounded-lg pl-9 pr-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 placeholder:text-muted-foreground" />
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)} className="print:hidden">
+                    <Filter className="w-4 h-4 mr-1" /> Filters
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={ledger.length === 0}>
+                    <Download className="w-4 h-4 mr-1" /> Export
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => window.print()}>
+                    <Printer className="w-4 h-4 mr-1" /> Print
+                  </Button>
+                </div>
               </div>
+
+              {/* Advanced filters */}
+              {showFilters && (
+                <div className="mt-4 pt-4 border-t border-border flex flex-wrap items-end gap-4 print:hidden">
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">From Date</label>
+                    <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPeriodFilter("all"); }}
+                      className="text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">To Date</label>
+                    <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPeriodFilter("all"); }}
+                      className="text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20" />
+                  </div>
+                  <div className="flex-1 min-w-[200px]">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">Search</label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                        placeholder="Search description or reference..."
+                        className="w-full text-sm border border-input rounded-lg pl-9 pr-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 placeholder:text-muted-foreground" />
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); setSearchTerm(""); setPeriodFilter("all"); }}>
+                    Clear
+                  </Button>
+                </div>
+              )}
+
+              {/* Account info bar */}
+              {selectedAccount && (
+                <div className="mt-4 pt-3 border-t border-border flex flex-wrap items-center gap-3 text-xs">
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-primary/10 text-primary font-semibold">
+                    <BookOpen className="w-3 h-3" />
+                    {selectedAccount.account_code}
+                  </span>
+                  <span className="font-medium text-foreground">{selectedAccount.account_name}</span>
+                  <span className="px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground font-medium">
+                    {selectedAccount.account_type}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
+                    Normal {isDebitNormal ? "Debit" : "Credit"} Balance
+                  </span>
+                  {effectiveDateFrom && (
+                    <span className="text-muted-foreground">
+                      {effectiveDateFrom} → {effectiveDateTo || "present"}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
-            <Button variant="ghost" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); setSearchTerm(""); setPeriodFilter("all"); }}>
-              Clear
-            </Button>
-          </div>
-        )}
 
-        {/* Account info bar */}
-        {selectedAccount && (
-          <div className="mt-4 pt-3 border-t border-border flex flex-wrap items-center gap-3 text-xs">
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-primary/10 text-primary font-semibold">
-              <BookOpen className="w-3 h-3" />
-              {selectedAccount.account_code}
-            </span>
-            <span className="font-medium text-foreground">{selectedAccount.account_name}</span>
-            <span className="px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground font-medium">
-              {selectedAccount.account_type}
-            </span>
-            <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
-              Normal {isDebitNormal ? "Debit" : "Credit"} Balance
-            </span>
-            {effectiveDateFrom && (
-              <span className="text-muted-foreground">
-                {effectiveDateFrom} → {effectiveDateTo || "present"}
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <div className="stat-card">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Opening Balance</p>
-          <p className="text-lg font-bold text-foreground mt-1">{fmtBalance(openingBalance)}</p>
-        </div>
-        <div className="stat-card">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Debits</p>
-          <p className="text-lg font-bold text-foreground mt-1">{fmtAmount(totalDebit) === "—" ? "LKR 0.00" : fmtAmount(totalDebit)}</p>
-        </div>
-        <div className="stat-card">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Credits</p>
-          <p className="text-lg font-bold text-foreground mt-1">{fmtAmount(totalCredit) === "—" ? "LKR 0.00" : fmtAmount(totalCredit)}</p>
-        </div>
-        <div className="stat-card">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Net Movement</p>
-          <div className="flex items-center gap-1.5 mt-1">
-            {netMovement >= 0 ? (
-              <ArrowUpRight className="w-4 h-4 text-success" />
-            ) : (
-              <ArrowDownRight className="w-4 h-4 text-destructive" />
-            )}
-            <p className={`text-lg font-bold ${netMovement >= 0 ? "text-success" : "text-destructive"}`}>
-              {fmtBalance(netMovement)}
-            </p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Closing Balance</p>
-          <p className={`text-lg font-bold mt-1 ${closingBalance < 0 ? "text-destructive" : "text-foreground"}`}>
-            {fmtBalance(closingBalance)}
-          </p>
-          <p className="text-[10px] text-muted-foreground mt-0.5">{transactionCount} transaction{transactionCount !== 1 ? "s" : ""}</p>
-        </div>
-      </div>
-
-      {/* Ledger Table */}
-      <div className="stat-card print:shadow-none overflow-x-auto">
-        {/* Print header */}
-        <div className="hidden print:block text-center mb-4">
-          <h2 className="text-lg font-bold">General Ledger</h2>
-          <p className="text-sm text-muted-foreground">
-            Account: {selectedAccount?.account_code} — {selectedAccount?.account_name}
-            {effectiveDateFrom && ` | ${effectiveDateFrom} to ${effectiveDateTo || "present"}`}
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Generated: {format(new Date(), "PPpp")}
-          </p>
-        </div>
-
-        {isLoading ? (
-          <div className="flex items-center justify-center py-16">
-            <span className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-          </div>
-        ) : !accounts?.length ? (
-          <div className="text-center py-16">
-            <BookOpen className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
-            <p className="text-muted-foreground font-medium">No accounts found</p>
-            <p className="text-sm text-muted-foreground mt-1">Create accounts in Chart of Accounts first.</p>
-          </div>
-        ) : ledgerWithBalance.length === 0 && openingBalance === 0 ? (
-          <div className="text-center py-16">
-            <BookOpen className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
-            <p className="text-muted-foreground font-medium">No transactions found</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              {searchTerm
-                ? `No results matching "${searchTerm}"`
-                : selectedPeriod
-                  ? `No posted entries in ${selectedPeriod.name}`
-                  : "Post journal entries to see activity here."}
-            </p>
-          </div>
-        ) : (
-          <table className="data-table w-full">
-            <thead>
-              <tr>
-                <th className="w-28">Date</th>
-                <th>Description</th>
-                <th className="w-32">Reference</th>
-                <th className="text-right w-36">Debit (LKR)</th>
-                <th className="text-right w-36">Credit (LKR)</th>
-                <th className="text-right w-40">Balance (LKR)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* Opening balance row */}
-              <tr className="bg-muted/30 border-b-2 border-border">
-                <td className="text-muted-foreground text-xs">
-                  {effectiveDateFrom || "—"}
-                </td>
-                <td colSpan={2} className="font-medium text-muted-foreground italic text-sm">
-                  Opening Balance
-                  {selectedPeriod && <span className="text-xs ml-1">(carried forward from prior period)</span>}
-                </td>
-                <td className="text-right font-mono text-muted-foreground">—</td>
-                <td className="text-right font-mono text-muted-foreground">—</td>
-                <td className="text-right font-mono font-semibold text-foreground">
-                  {fmtBalance(openingBalance)}
-                </td>
-              </tr>
-
-              {/* Transaction rows */}
-              {ledgerWithBalance.map((row, i) => (
-                <tr
-                  key={`${row.entryId}-${i}`}
-                  className={`
-                    hover:bg-muted/20 transition-colors
-                    ${row.isReversal ? "bg-destructive/5" : ""}
-                  `}
-                >
-                  <td className="text-muted-foreground text-sm tabular-nums">{row.date}</td>
-                  <td className="text-foreground text-sm">
-                    <span className="font-medium">{row.description}</span>
-                    {row.isReversal && (
-                      <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-destructive/10 text-destructive">
-                        REVERSAL
-                      </span>
-                    )}
-                  </td>
-                  <td className="font-mono text-xs text-muted-foreground">{row.reference || "—"}</td>
-                  <td className="text-right font-mono text-sm tabular-nums">
-                    {row.debit > 0 ? (
-                      <span className="text-foreground">{row.debit.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                    ) : (
-                      <span className="text-muted-foreground/40">—</span>
-                    )}
-                  </td>
-                  <td className="text-right font-mono text-sm tabular-nums">
-                    {row.credit > 0 ? (
-                      <span className="text-foreground">{row.credit.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                    ) : (
-                      <span className="text-muted-foreground/40">—</span>
-                    )}
-                  </td>
-                  <td className={`text-right font-mono text-sm tabular-nums font-semibold ${
-                    row.balance < 0 ? "text-destructive" : "text-foreground"
-                  }`}>
-                    {fmtBalance(row.balance)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-
-            {/* Footer totals */}
-            <tfoot>
-              <tr className="border-t-2 border-foreground/20">
-                <td colSpan={3} className="font-bold text-foreground text-sm">
-                  Period Totals
-                </td>
-                <td className="text-right font-mono font-bold text-sm tabular-nums text-foreground">
-                  {totalDebit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                </td>
-                <td className="text-right font-mono font-bold text-sm tabular-nums text-foreground">
-                  {totalCredit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                </td>
-                <td className="text-right font-mono text-sm tabular-nums text-muted-foreground">
-                  —
-                </td>
-              </tr>
-              <tr className="border-t border-foreground/10">
-                <td colSpan={3} className="font-bold text-foreground text-sm">
-                  Closing Balance
-                </td>
-                <td className="text-right" colSpan={2}></td>
-                <td className={`text-right font-mono font-bold text-sm tabular-nums ${
-                  closingBalance < 0 ? "text-destructive" : "text-foreground"
-                }`}>
+            {/* Summary Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <div className="stat-card">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Opening Balance</p>
+                <p className="text-lg font-bold text-foreground mt-1">{fmtBalance(openingBalance)}</p>
+              </div>
+              <div className="stat-card">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Debits</p>
+                <p className="text-lg font-bold text-foreground mt-1">{fmtAmount(totalDebit) === "—" ? "LKR 0.00" : fmtAmount(totalDebit)}</p>
+              </div>
+              <div className="stat-card">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Credits</p>
+                <p className="text-lg font-bold text-foreground mt-1">{fmtAmount(totalCredit) === "—" ? "LKR 0.00" : fmtAmount(totalCredit)}</p>
+              </div>
+              <div className="stat-card">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Net Movement</p>
+                <div className="flex items-center gap-1.5 mt-1">
+                  {netMovement >= 0 ? (
+                    <ArrowUpRight className="w-4 h-4 text-success" />
+                  ) : (
+                    <ArrowDownRight className="w-4 h-4 text-destructive" />
+                  )}
+                  <p className={`text-lg font-bold ${netMovement >= 0 ? "text-success" : "text-destructive"}`}>
+                    {fmtBalance(netMovement)}
+                  </p>
+                </div>
+              </div>
+              <div className="stat-card">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Closing Balance</p>
+                <p className={`text-lg font-bold mt-1 ${closingBalance < 0 ? "text-destructive" : "text-foreground"}`}>
                   {fmtBalance(closingBalance)}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        )}
-      </div>
+                </p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">{transactionCount} transaction{transactionCount !== 1 ? "s" : ""}</p>
+              </div>
+            </div>
 
-      {/* T-Account Summary */}
-      {selectedAccount && ledger.length > 0 && (
-        <div className="stat-card print:shadow-none">
-          <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
-            <BookOpen className="w-4 h-4" />
-            T-Account Summary — {selectedAccount.account_code} {selectedAccount.account_name}
-          </h3>
-          <div className="grid grid-cols-2 border-2 border-foreground/20 rounded-lg overflow-hidden">
-            <div className="border-r border-foreground/20 p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-center text-muted-foreground mb-3">Debit</p>
-              <div className="space-y-1.5 text-sm">
-                {openingBalance > 0 && isDebitNormal && (
-                  <div className="flex justify-between text-muted-foreground italic">
-                    <span>Opening bal.</span>
-                    <span className="font-mono tabular-nums">{openingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            {/* Ledger Table */}
+            <div className="stat-card print:shadow-none overflow-x-auto">
+              {/* Print header */}
+              <div className="hidden print:block text-center mb-4">
+                <h2 className="text-lg font-bold">General Ledger</h2>
+                <p className="text-sm text-muted-foreground">
+                  Account: {selectedAccount?.account_code} — {selectedAccount?.account_name}
+                  {effectiveDateFrom && ` | ${effectiveDateFrom} to ${effectiveDateTo || "present"}`}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Generated: {format(new Date(), "PPpp")}
+                </p>
+              </div>
+
+              {isLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <span className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                </div>
+              ) : !accounts?.length ? (
+                <div className="text-center py-16">
+                  <BookOpen className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+                  <p className="text-muted-foreground font-medium">No accounts found</p>
+                  <p className="text-sm text-muted-foreground mt-1">Create accounts in Chart of Accounts first.</p>
+                </div>
+              ) : ledgerWithBalance.length === 0 && openingBalance === 0 ? (
+                <div className="text-center py-16">
+                  <BookOpen className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+                  <p className="text-muted-foreground font-medium">No transactions found</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {searchTerm
+                      ? `No results matching "${searchTerm}"`
+                      : selectedPeriod
+                        ? `No posted entries in ${selectedPeriod.name}`
+                        : "Post journal entries to see activity here."}
+                  </p>
+                </div>
+              ) : (
+                <table className="data-table w-full">
+                  <thead>
+                    <tr>
+                      <th className="w-28">Date</th>
+                      <th>Description</th>
+                      <th className="w-32">Reference</th>
+                      <th className="text-right w-36">Debit (LKR)</th>
+                      <th className="text-right w-36">Credit (LKR)</th>
+                      <th className="text-right w-40">Balance (LKR)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {/* Opening balance row */}
+                    <tr className="bg-muted/30 border-b-2 border-border">
+                      <td className="text-muted-foreground text-xs">
+                        {effectiveDateFrom || "—"}
+                      </td>
+                      <td colSpan={2} className="font-medium text-muted-foreground italic text-sm">
+                        Opening Balance
+                        {selectedPeriod && <span className="text-xs ml-1">(carried forward from prior period)</span>}
+                      </td>
+                      <td className="text-right font-mono text-muted-foreground">—</td>
+                      <td className="text-right font-mono text-muted-foreground">—</td>
+                      <td className="text-right font-mono font-semibold text-foreground">
+                        {fmtBalance(openingBalance)}
+                      </td>
+                    </tr>
+
+                    {/* Transaction rows */}
+                    {ledgerWithBalance.map((row, i) => (
+                      <tr
+                        key={`${row.entryId}-${i}`}
+                        className={`
+                          hover:bg-muted/20 transition-colors
+                          ${row.isReversal ? "bg-destructive/5" : ""}
+                        `}
+                      >
+                        <td className="text-muted-foreground text-sm tabular-nums">{row.date}</td>
+                        <td className="text-foreground text-sm">
+                          <span className="font-medium">{row.description}</span>
+                          {row.isReversal && (
+                            <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-destructive/10 text-destructive">
+                              REVERSAL
+                            </span>
+                          )}
+                        </td>
+                        <td className="font-mono text-xs text-muted-foreground">{row.reference || "—"}</td>
+                        <td className="text-right font-mono text-sm tabular-nums">
+                          {row.debit > 0 ? (
+                            <span className="text-foreground">{row.debit.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                          ) : (
+                            <span className="text-muted-foreground/40">—</span>
+                          )}
+                        </td>
+                        <td className="text-right font-mono text-sm tabular-nums">
+                          {row.credit > 0 ? (
+                            <span className="text-foreground">{row.credit.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                          ) : (
+                            <span className="text-muted-foreground/40">—</span>
+                          )}
+                        </td>
+                        <td className={`text-right font-mono text-sm tabular-nums font-semibold ${
+                          row.balance < 0 ? "text-destructive" : "text-foreground"
+                        }`}>
+                          {fmtBalance(row.balance)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+
+                  {/* Footer totals */}
+                  <tfoot>
+                    <tr className="border-t-2 border-foreground/20">
+                      <td colSpan={3} className="font-bold text-foreground text-sm">
+                        Period Totals
+                      </td>
+                      <td className="text-right font-mono font-bold text-sm tabular-nums text-foreground">
+                        {totalDebit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="text-right font-mono font-bold text-sm tabular-nums text-foreground">
+                        {totalCredit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="text-right font-mono text-sm tabular-nums text-muted-foreground">
+                        —
+                      </td>
+                    </tr>
+                    <tr className="border-t border-foreground/10">
+                      <td colSpan={3} className="font-bold text-foreground text-sm">
+                        Closing Balance
+                      </td>
+                      <td className="text-right" colSpan={2}></td>
+                      <td className={`text-right font-mono font-bold text-sm tabular-nums ${
+                        closingBalance < 0 ? "text-destructive" : "text-foreground"
+                      }`}>
+                        {fmtBalance(closingBalance)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </div>
+
+            {/* T-Account Summary */}
+            {selectedAccount && ledger.length > 0 && (
+              <div className="stat-card print:shadow-none">
+                <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
+                  <BookOpen className="w-4 h-4" />
+                  T-Account Summary — {selectedAccount.account_code} {selectedAccount.account_name}
+                </h3>
+                <div className="grid grid-cols-2 border-2 border-foreground/20 rounded-lg overflow-hidden">
+                  <div className="border-r border-foreground/20 p-4">
+                    <p className="text-xs font-bold uppercase tracking-wide text-center text-muted-foreground mb-3">Debit</p>
+                    <div className="space-y-1.5 text-sm">
+                      {openingBalance > 0 && isDebitNormal && (
+                        <div className="flex justify-between text-muted-foreground italic">
+                          <span>Opening bal.</span>
+                          <span className="font-mono tabular-nums">{openingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                      {ledger.filter(r => r.debit > 0).map((r, i) => (
+                        <div key={i} className="flex justify-between">
+                          <span className="text-muted-foreground truncate mr-2">{r.description}</span>
+                          <span className="font-mono tabular-nums text-foreground">{r.debit.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      ))}
+                      <div className="border-t border-foreground/20 pt-1.5 flex justify-between font-bold">
+                        <span>Total</span>
+                        <span className="font-mono tabular-nums">
+                          {(totalDebit + (openingBalance > 0 && isDebitNormal ? openingBalance : 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                )}
-                {ledger.filter(r => r.debit > 0).map((r, i) => (
-                  <div key={i} className="flex justify-between">
-                    <span className="text-muted-foreground truncate mr-2">{r.description}</span>
-                    <span className="font-mono tabular-nums text-foreground">{r.debit.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  <div className="p-4">
+                    <p className="text-xs font-bold uppercase tracking-wide text-center text-muted-foreground mb-3">Credit</p>
+                    <div className="space-y-1.5 text-sm">
+                      {openingBalance > 0 && !isDebitNormal && (
+                        <div className="flex justify-between text-muted-foreground italic">
+                          <span>Opening bal.</span>
+                          <span className="font-mono tabular-nums">{openingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                      {ledger.filter(r => r.credit > 0).map((r, i) => (
+                        <div key={i} className="flex justify-between">
+                          <span className="text-muted-foreground truncate mr-2">{r.description}</span>
+                          <span className="font-mono tabular-nums text-foreground">{r.credit.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      ))}
+                      <div className="border-t border-foreground/20 pt-1.5 flex justify-between font-bold">
+                        <span>Total</span>
+                        <span className="font-mono tabular-nums">
+                          {(totalCredit + (openingBalance > 0 && !isDebitNormal ? openingBalance : 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                ))}
-                <div className="border-t border-foreground/20 pt-1.5 flex justify-between font-bold">
-                  <span>Total</span>
-                  <span className="font-mono tabular-nums">
-                    {(totalDebit + (openingBalance > 0 && isDebitNormal ? openingBalance : 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </span>
+                </div>
+                <div className={`mt-3 px-4 py-2 rounded-lg text-sm font-medium text-center ${
+                  closingBalance < 0 ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success"
+                }`}>
+                  Closing Balance: {fmtBalance(closingBalance)} ({isDebitNormal ? "Debit" : "Credit"} Normal)
                 </div>
               </div>
-            </div>
-            <div className="p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-center text-muted-foreground mb-3">Credit</p>
-              <div className="space-y-1.5 text-sm">
-                {openingBalance > 0 && !isDebitNormal && (
-                  <div className="flex justify-between text-muted-foreground italic">
-                    <span>Opening bal.</span>
-                    <span className="font-mono tabular-nums">{openingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                  </div>
-                )}
-                {ledger.filter(r => r.credit > 0).map((r, i) => (
-                  <div key={i} className="flex justify-between">
-                    <span className="text-muted-foreground truncate mr-2">{r.description}</span>
-                    <span className="font-mono tabular-nums text-foreground">{r.credit.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                  </div>
-                ))}
-                <div className="border-t border-foreground/20 pt-1.5 flex justify-between font-bold">
-                  <span>Total</span>
-                  <span className="font-mono tabular-nums">
-                    {(totalCredit + (openingBalance > 0 && !isDebitNormal ? openingBalance : 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-              </div>
-            </div>
+            )}
           </div>
-          <div className={`mt-3 px-4 py-2 rounded-lg text-sm font-medium text-center ${
-            closingBalance < 0 ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success"
-          }`}>
-            Closing Balance: {fmtBalance(closingBalance)} ({isDebitNormal ? "Debit" : "Credit"} Normal)
-          </div>
-        </div>
-      )}
+        </TabsContent>
+
+        {/* General Ledger Report Tab */}
+        <TabsContent value="general-ledger">
+          <GeneralLedgerReport />
+        </TabsContent>
+
+        {/* AR Subledger Tab */}
+        <TabsContent value="ar">
+          <ARSubledger />
+        </TabsContent>
+
+        {/* AP Subledger Tab */}
+        <TabsContent value="ap">
+          <APSubledger />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
