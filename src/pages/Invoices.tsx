@@ -1,13 +1,16 @@
-import { Plus, Search, MoreHorizontal } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useInvoices, useCreateInvoice, useUpdateInvoice, useCustomers, useCreateCustomer } from "@/hooks/useData";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { formatCurrency } from "@/lib/currency";
+import InvoiceDetails from "@/components/invoices/InvoiceDetails";
 
 const statusColors: Record<string, string> = {
-  paid: "bg-success/10 text-success",
-  sent: "bg-info/10 text-info",
+  paid: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+  partial: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
+  sent: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
   overdue: "bg-destructive/10 text-destructive",
   draft: "bg-muted text-muted-foreground",
 };
@@ -21,7 +24,9 @@ export default function Invoices() {
   const [issueDate, setIssueDate] = useState(new Date().toISOString().split("T")[0]);
   const [dueDate, setDueDate] = useState("");
   const [totalAmount, setTotalAmount] = useState(0);
-  
+  const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
   // New customer form
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
@@ -63,11 +68,21 @@ export default function Invoices() {
     updateInvoice.mutate({ id, status });
   };
 
+  const getEffectiveStatus = (inv: any) => {
+    if (inv.balance_due <= 0) return "paid";
+    if (inv.amount_paid > 0) return "partial";
+    return inv.status;
+  };
+
   const stats = {
-    outstanding: invoices?.filter(i => i.status === "sent").reduce((s, i) => s + Number(i.total_amount), 0) || 0,
-    paid: invoices?.filter(i => i.status === "paid").reduce((s, i) => s + Number(i.total_amount), 0) || 0,
-    overdue: invoices?.filter(i => i.status === "overdue").reduce((s, i) => s + Number(i.total_amount), 0) || 0,
-    drafts: invoices?.filter(i => i.status === "draft").reduce((s, i) => s + Number(i.total_amount), 0) || 0,
+    outstanding: invoices?.filter(i => getEffectiveStatus(i) === "sent" || getEffectiveStatus(i) === "partial")
+      .reduce((s, i) => s + Number(i.balance_due), 0) || 0,
+    paid: invoices?.filter(i => getEffectiveStatus(i) === "paid")
+      .reduce((s, i) => s + Number(i.total_amount), 0) || 0,
+    overdue: invoices?.filter(i => i.status === "overdue")
+      .reduce((s, i) => s + Number(i.balance_due), 0) || 0,
+    partial: invoices?.filter(i => getEffectiveStatus(i) === "partial")
+      .reduce((s, i) => s + Number(i.amount_paid), 0) || 0,
   };
 
   return (
@@ -75,7 +90,7 @@ export default function Invoices() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Invoices</h1>
-          <p className="page-description">Create and manage customer invoices</p>
+          <p className="page-description">Create and manage customer invoices with partial payment tracking</p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
@@ -150,10 +165,10 @@ export default function Invoices() {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        <div className="stat-card"><p className="text-sm text-muted-foreground">Total Outstanding</p><p className="text-xl font-semibold text-foreground mt-1">LKR {stats.outstanding.toLocaleString()}</p></div>
-        <div className="stat-card"><p className="text-sm text-muted-foreground">Paid This Month</p><p className="text-xl font-semibold text-success mt-1">LKR {stats.paid.toLocaleString()}</p></div>
-        <div className="stat-card"><p className="text-sm text-muted-foreground">Overdue</p><p className="text-xl font-semibold text-destructive mt-1">LKR {stats.overdue.toLocaleString()}</p></div>
-        <div className="stat-card"><p className="text-sm text-muted-foreground">Drafts</p><p className="text-xl font-semibold text-muted-foreground mt-1">LKR {stats.drafts.toLocaleString()}</p></div>
+        <div className="stat-card"><p className="text-sm text-muted-foreground">Outstanding Balance</p><p className="text-xl font-semibold text-foreground mt-1">{formatCurrency(stats.outstanding)}</p></div>
+        <div className="stat-card"><p className="text-sm text-muted-foreground">Fully Paid</p><p className="text-xl font-semibold text-foreground mt-1">{formatCurrency(stats.paid)}</p></div>
+        <div className="stat-card"><p className="text-sm text-muted-foreground">Overdue</p><p className="text-xl font-semibold text-destructive mt-1">{formatCurrency(stats.overdue)}</p></div>
+        <div className="stat-card"><p className="text-sm text-muted-foreground">Partial Payments</p><p className="text-xl font-semibold text-foreground mt-1">{formatCurrency(stats.partial)}</p></div>
       </div>
 
       <div className="stat-card">
@@ -168,35 +183,69 @@ export default function Invoices() {
         ) : filtered.length === 0 ? (
           <p className="text-center py-8 text-muted-foreground">No invoices found</p>
         ) : (
-          <table className="data-table">
-            <thead><tr><th>Invoice</th><th>Customer</th><th>Date</th><th>Due Date</th><th>Status</th><th className="text-right">Amount</th><th></th></tr></thead>
-            <tbody>
-              {filtered.map((inv) => (
-                <tr key={inv.id}>
-                  <td className="font-medium text-foreground">{inv.invoice_number}</td>
-                  <td>{(inv.customers as any)?.name || "-"}</td>
-                  <td className="text-muted-foreground">{inv.issue_date}</td>
-                  <td className="text-muted-foreground">{inv.due_date || "-"}</td>
-                  <td><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[inv.status] || ""}`}>{inv.status}</span></td>
-                  <td className="text-right font-medium text-foreground">LKR {Number(inv.total_amount).toLocaleString()}</td>
-                  <td>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button className="p-1 rounded hover:bg-accent"><MoreHorizontal className="w-4 h-4 text-muted-foreground" /></button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "sent")}>Mark as Sent</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "paid")}>Mark as Paid</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "overdue")}>Mark as Overdue</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </td>
+          <div className="border border-border rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Invoice</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Customer</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Date</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Due Date</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
+                  <th className="px-4 py-3 text-right font-medium text-muted-foreground">Total</th>
+                  <th className="px-4 py-3 text-right font-medium text-muted-foreground">Paid</th>
+                  <th className="px-4 py-3 text-right font-medium text-muted-foreground">Balance</th>
+                  <th className="px-4 py-3 text-center font-medium text-muted-foreground">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filtered.map((inv) => {
+                  const status = getEffectiveStatus(inv);
+                  return (
+                    <tr key={inv.id} className="border-t border-border hover:bg-muted/30 transition-colors">
+                      <td className="px-4 py-3 font-medium text-foreground">{inv.invoice_number}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{(inv.customers as any)?.name || "-"}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{inv.issue_date}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{inv.due_date || "-"}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[status] || ""}`}>
+                          {status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right text-foreground">{formatCurrency(Number(inv.total_amount))}</td>
+                      <td className="px-4 py-3 text-right text-foreground">
+                        {inv.amount_paid > 0 ? formatCurrency(inv.amount_paid) : "—"}
+                      </td>
+                      <td className={`px-4 py-3 text-right font-semibold ${inv.balance_due > 0 ? "text-destructive" : "text-primary"}`}>
+                        {formatCurrency(inv.balance_due)}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => { setSelectedInvoice(inv); setDetailsOpen(true); }}>
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button className="p-1 rounded hover:bg-accent"><MoreHorizontal className="w-4 h-4 text-muted-foreground" /></button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                              <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "sent")}>Mark as Sent</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "paid")}>Mark as Paid</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "overdue")}>Mark as Overdue</DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
+
+      <InvoiceDetails invoice={selectedInvoice} open={detailsOpen} onOpenChange={setDetailsOpen} />
     </div>
   );
 }
