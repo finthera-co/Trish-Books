@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { usePayrollRunItems, useApprovePayrollRun, useProcessPayrollRun, useVoidPayrollRun } from "@/hooks/usePayroll";
 import { formatCurrency } from "@/lib/currency";
-import { CheckCircle, XCircle, Printer, FileText } from "lucide-react";
+import { exportToCsv } from "@/lib/csvExport";
+import { CheckCircle, XCircle, Printer, FileText, Download } from "lucide-react";
 
 interface Props {
   run: any;
