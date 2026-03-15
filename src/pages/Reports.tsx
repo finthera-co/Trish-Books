@@ -129,7 +129,7 @@ export default function Reports() {
     
     // Include opening balances in debit/credit totals (industry standard)
     const getEffectiveAmounts = (a: typeof balances[0]) => {
-      const isDebitNormal = DEBIT_NORMAL_TYPES.includes(a.type);
+      const isDebitNormal = checkDebitNormal(a.type);
       let dr = a.debit;
       let cr = a.credit;
       if (a.openingBalance > 0) {
