@@ -5,6 +5,7 @@ import { useAccounts, useJournalEntries } from "@/hooks/useData";
 import { Button } from "@/components/ui/button";
 import { Download, Printer, Search, BookOpen, ArrowUpRight, ArrowDownRight, Filter } from "lucide-react";
 import { format } from "date-fns";
+import { isDebitNormal as checkDebitNormal, getTypeLabel } from "@/lib/accountTypes";
 
 interface LedgerRow {
   date: string;
@@ -17,8 +18,6 @@ interface LedgerRow {
   isReversal: boolean;
   isVoided: boolean;
 }
-
-const DEBIT_NORMAL_TYPES = ["Asset", "Expense", "COGS"];
 
 const fmtAmount = (n: number): string => {
   if (n === 0) return "—";
