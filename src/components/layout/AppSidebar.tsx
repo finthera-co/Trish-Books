@@ -61,6 +61,7 @@ const navGroups: NavGroup[] = [
       { label: "Journal Entries", path: "/journals", icon: FileText },
       { label: "Ledger", path: "/ledger", icon: Receipt },
       { label: "Trial Balance", path: "/trial-balance", icon: FileText },
+      { label: "Bank Reconciliation", path: "/bank-reconciliation", icon: Banknote },
       { label: "Fiscal Periods", path: "/fiscal-periods", icon: Calendar },
     ],
   },
