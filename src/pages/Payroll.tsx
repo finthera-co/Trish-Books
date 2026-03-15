@@ -46,6 +46,19 @@ export default function Payroll() {
 
   const pendingRuns = runs?.filter((r: any) => r.status === "draft" || r.status === "approved").length || 0;
 
+  const exportRunsSummary = () => {
+    if (!filteredRuns.length) return;
+    const headers = ["Run #", "Period Start", "Period End", "Schedule", "Status", "Total Gross", "Total Deductions", "Total Net", "Employer EPF", "Employer ETF", "Payment Date"];
+    const rows = filteredRuns.map((r: any) => [
+      r.run_number, r.period_start, r.period_end,
+      (r.pay_schedules as any)?.name || "Manual", r.status,
+      Number(r.total_gross).toFixed(2), Number(r.total_deductions).toFixed(2), Number(r.total_net).toFixed(2),
+      Number(r.total_employer_epf).toFixed(2), Number(r.total_employer_etf).toFixed(2),
+      r.payment_date || "",
+    ]);
+    exportToCsv(`payroll-runs-summary-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+  };
+
   const openDetails = (run: any) => {
     setSelectedRun(run);
     setDetailsOpen(true);
