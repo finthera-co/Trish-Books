@@ -1022,6 +1022,149 @@ export type Database = {
           },
         ]
       }
+      payment_voucher_lines: {
+        Row: {
+          account_id: string
+          amount: number
+          created_at: string
+          description: string | null
+          id: string
+          voucher_id: string
+        }
+        Insert: {
+          account_id: string
+          amount?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          voucher_id: string
+        }
+        Update: {
+          account_id?: string
+          amount?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          voucher_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_voucher_lines_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_voucher_lines_voucher_id_fkey"
+            columns: ["voucher_id"]
+            isOneToOne: false
+            referencedRelation: "payment_vouchers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payment_vouchers: {
+        Row: {
+          account_number: string | null
+          accountant: string | null
+          approved_by: string | null
+          bills_attached: number | null
+          checked_by: string | null
+          cheque_number: string | null
+          created_at: string
+          id: string
+          journal_entry_id: string | null
+          made_by: string | null
+          memo: string | null
+          payee_id: string | null
+          payment_account_id: string
+          payment_date: string
+          payment_method: string
+          reference_number: string | null
+          status: string
+          tenant_id: string
+          total_amount: number
+          updated_at: string
+          voucher_number: string
+        }
+        Insert: {
+          account_number?: string | null
+          accountant?: string | null
+          approved_by?: string | null
+          bills_attached?: number | null
+          checked_by?: string | null
+          cheque_number?: string | null
+          created_at?: string
+          id?: string
+          journal_entry_id?: string | null
+          made_by?: string | null
+          memo?: string | null
+          payee_id?: string | null
+          payment_account_id: string
+          payment_date?: string
+          payment_method?: string
+          reference_number?: string | null
+          status?: string
+          tenant_id: string
+          total_amount?: number
+          updated_at?: string
+          voucher_number: string
+        }
+        Update: {
+          account_number?: string | null
+          accountant?: string | null
+          approved_by?: string | null
+          bills_attached?: number | null
+          checked_by?: string | null
+          cheque_number?: string | null
+          created_at?: string
+          id?: string
+          journal_entry_id?: string | null
+          made_by?: string | null
+          memo?: string | null
+          payee_id?: string | null
+          payment_account_id?: string
+          payment_date?: string
+          payment_method?: string
+          reference_number?: string | null
+          status?: string
+          tenant_id?: string
+          total_amount?: number
+          updated_at?: string
+          voucher_number?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_vouchers_journal_entry_id_fkey"
+            columns: ["journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_vouchers_payee_id_fkey"
+            columns: ["payee_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_vouchers_payment_account_id_fkey"
+            columns: ["payment_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_vouchers_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payments: {
         Row: {
           amount: number
@@ -1637,6 +1780,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      generate_voucher_number: {
+        Args: { p_tenant_id: string }
+        Returns: string
+      }
       get_user_role_name: { Args: never; Returns: string }
       get_user_tenant_id: { Args: never; Returns: string }
       is_super_admin: { Args: never; Returns: boolean }
