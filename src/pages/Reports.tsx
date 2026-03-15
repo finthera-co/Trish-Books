@@ -6,12 +6,11 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 import { format } from "date-fns";
+import { isDebitNormal as checkDebitNormal } from "@/lib/accountTypes";
 
 type ReportType = "trial-balance" | "pnl" | "balance-sheet" | "cash-flow" | "expense-summary" | "aged-receivables" | null;
 
 const COLORS = ["hsl(215, 60%, 42%)", "hsl(142, 71%, 35%)", "hsl(38, 92%, 50%)", "hsl(199, 89%, 48%)", "hsl(0, 72%, 51%)", "hsl(270, 60%, 50%)"];
-
-const DEBIT_NORMAL_TYPES = ["Asset", "Expense", "COGS"];
 
 export default function Reports() {
   const [activeReport, setActiveReport] = useState<ReportType>(null);
