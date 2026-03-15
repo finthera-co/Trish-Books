@@ -65,7 +65,7 @@ export default function Ledger() {
 
   const selectedAccount = accounts?.find(a => a.id === selectedAccountId) || accounts?.[0];
   const selectedPeriod = fiscalPeriods?.find(p => p.id === periodFilter);
-  const isDebitNormal = selectedAccount ? DEBIT_NORMAL_TYPES.includes(selectedAccount.account_type) : true;
+  const isDebitNormalAccount = selectedAccount ? checkDebitNormal(selectedAccount.account_type) : true;
 
   // Effective date range (period overrides custom dates)
   const effectiveDateFrom = selectedPeriod ? selectedPeriod.period_start : dateFrom;
