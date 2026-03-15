@@ -150,14 +150,14 @@ export default function TrialBalance() {
 
   // Get effective debit/credit for display (including opening balance)
   const getEffectiveAmounts = (a: AccountBalance) => {
-    const isDebitNormal = DEBIT_NORMAL_TYPES.includes(a.account_type);
+    const debitNormal = isDebitNormal(a.account_type);
     let dr = a.total_debit;
     let cr = a.total_credit;
     if (a.opening_balance > 0) {
-      if (isDebitNormal) dr += a.opening_balance;
+      if (debitNormal) dr += a.opening_balance;
       else cr += a.opening_balance;
     } else if (a.opening_balance < 0) {
-      if (isDebitNormal) cr += Math.abs(a.opening_balance);
+      if (debitNormal) cr += Math.abs(a.opening_balance);
       else dr += Math.abs(a.opening_balance);
     }
     return { debit: dr, credit: cr };
