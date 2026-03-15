@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { FileText, Printer, Download, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
+import { isDebitNormal, ACCOUNT_TYPES, getTypeLabel } from "@/lib/accountTypes";
 
 interface AccountBalance {
   id: string;
@@ -15,8 +16,6 @@ interface AccountBalance {
   total_credit: number;
   opening_balance: number;
 }
-
-const DEBIT_NORMAL_TYPES = ["Asset", "Expense", "COGS"];
 
 export default function TrialBalance() {
   const navigate = useNavigate();
@@ -117,13 +116,12 @@ export default function TrialBalance() {
   const { totalDebit, totalCredit } = useMemo(() => {
     let dr = 0, cr = 0;
     balances.forEach(a => {
-      const isDebitNormal = DEBIT_NORMAL_TYPES.includes(a.account_type);
-      // Opening balance adds to the normal side
+      const debitNormal = isDebitNormal(a.account_type);
       if (a.opening_balance > 0) {
-        if (isDebitNormal) dr += a.opening_balance;
+        if (debitNormal) dr += a.opening_balance;
         else cr += a.opening_balance;
       } else if (a.opening_balance < 0) {
-        if (isDebitNormal) cr += Math.abs(a.opening_balance);
+        if (debitNormal) cr += Math.abs(a.opening_balance);
         else dr += Math.abs(a.opening_balance);
       }
       dr += a.total_debit;
@@ -137,7 +135,7 @@ export default function TrialBalance() {
 
   // Group by account type
   const grouped = useMemo(() => {
-    const order = ["Asset", "Liability", "Equity", "Revenue", "COGS", "Expense"];
+    const order = [...ACCOUNT_TYPES];
     const groups = new Map<string, AccountBalance[]>();
     balances.forEach(b => {
       if (!groups.has(b.account_type)) groups.set(b.account_type, []);
@@ -152,14 +150,14 @@ export default function TrialBalance() {
 
   // Get effective debit/credit for display (including opening balance)
   const getEffectiveAmounts = (a: AccountBalance) => {
-    const isDebitNormal = DEBIT_NORMAL_TYPES.includes(a.account_type);
+    const debitNormal = isDebitNormal(a.account_type);
     let dr = a.total_debit;
     let cr = a.total_credit;
     if (a.opening_balance > 0) {
-      if (isDebitNormal) dr += a.opening_balance;
+      if (debitNormal) dr += a.opening_balance;
       else cr += a.opening_balance;
     } else if (a.opening_balance < 0) {
-      if (isDebitNormal) cr += Math.abs(a.opening_balance);
+      if (debitNormal) cr += Math.abs(a.opening_balance);
       else dr += Math.abs(a.opening_balance);
     }
     return { debit: dr, credit: cr };

@@ -124,11 +124,27 @@ export function useAccounts() {
   });
 }
 
+// Active accounts only (for selectors/forms)
+export function useActiveAccounts() {
+  return useQuery({
+    queryKey: ["accounts_active"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("accounts")
+        .select("id, account_code, account_name, account_type, account_subtype, is_active")
+        .eq("is_active", true)
+        .order("account_code");
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
 export function useCreateAccount() {
   const queryClient = useQueryClient();
   const { appUser } = useAuth();
   return useMutation({
-    mutationFn: async (account: { account_name: string; account_code: string; account_type: string; parent_account_id?: string; category_id?: string }) => {
+    mutationFn: async (account: { account_name: string; account_code: string; account_type: string; account_subtype?: string; parent_account_id?: string; category_id?: string }) => {
       const { data, error } = await supabase.from("accounts").insert({
         ...account,
         tenant_id: appUser?.tenant_id,
@@ -139,6 +155,7 @@ export function useCreateAccount() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["accounts_active"] });
       toast.success("Account created");
     },
     onError: (e: Error) => toast.error(e.message),

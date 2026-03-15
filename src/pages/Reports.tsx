@@ -6,12 +6,11 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 import { format } from "date-fns";
+import { isDebitNormal as checkDebitNormal } from "@/lib/accountTypes";
 
 type ReportType = "trial-balance" | "pnl" | "balance-sheet" | "cash-flow" | "expense-summary" | "aged-receivables" | null;
 
 const COLORS = ["hsl(215, 60%, 42%)", "hsl(142, 71%, 35%)", "hsl(38, 92%, 50%)", "hsl(199, 89%, 48%)", "hsl(0, 72%, 51%)", "hsl(270, 60%, 50%)"];
-
-const DEBIT_NORMAL_TYPES = ["Asset", "Expense", "COGS"];
 
 export default function Reports() {
   const [activeReport, setActiveReport] = useState<ReportType>(null);
@@ -130,7 +129,7 @@ export default function Reports() {
     
     // Include opening balances in debit/credit totals (industry standard)
     const getEffectiveAmounts = (a: typeof balances[0]) => {
-      const isDebitNormal = DEBIT_NORMAL_TYPES.includes(a.type);
+      const isDebitNormal = checkDebitNormal(a.type);
       let dr = a.debit;
       let cr = a.credit;
       if (a.openingBalance > 0) {
@@ -204,16 +203,20 @@ export default function Reports() {
   };
 
   const renderPnL = () => {
-    const revenue = balances.filter(a => a.type === "Revenue");
-    const cogs = balances.filter(a => a.type === "COGS" || a.name.toLowerCase().includes("cost of"));
-    const opex = balances.filter(a => a.type === "Expense" && !a.name.toLowerCase().includes("cost of"));
+    const revenue = balances.filter(a => a.type === "Income" || a.type === "Revenue");
+    const cogs = balances.filter(a => a.type === "Cost of Goods Sold" || a.type === "COGS");
+    const opex = balances.filter(a => a.type === "Expense");
+    const otherIncome = balances.filter(a => a.type === "Other Income");
+    const otherExpense = balances.filter(a => a.type === "Other Expense");
     
     const totalRevenue = revenue.reduce((s, a) => s + (a.credit - a.debit), 0);
     const totalCOGS = cogs.reduce((s, a) => s + (a.debit - a.credit), 0);
     const grossProfit = totalRevenue - totalCOGS;
     const totalOpex = opex.reduce((s, a) => s + (a.debit - a.credit), 0);
     const operatingIncome = grossProfit - totalOpex;
-    const netIncome = operatingIncome; // simplified - no tax/interest for now
+    const totalOtherIncome = otherIncome.reduce((s, a) => s + (a.credit - a.debit), 0);
+    const totalOtherExpense = otherExpense.reduce((s, a) => s + (a.debit - a.credit), 0);
+    const netIncome = operatingIncome + totalOtherIncome - totalOtherExpense;
     const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
     const netMargin = totalRevenue > 0 ? (netIncome / totalRevenue) * 100 : 0;
 
@@ -269,6 +272,14 @@ export default function Reports() {
                   <tr className="font-semibold border-t"><td className="pl-4">Total Operating Expenses</td><td className="text-right font-mono text-destructive">({fmt(totalOpex)})</td></tr>
                 )}
 
+                <tr className="font-bold border-t-2 border-foreground/20 bg-muted/20">
+                  <td>Operating Income</td>
+                  <td className={`text-right font-mono ${operatingIncome >= 0 ? "text-success" : "text-destructive"}`}>{fmt(operatingIncome)}</td>
+                </tr>
+
+                {otherIncome.length > 0 && <Section title="Other Income" items={otherIncome} sign="credit" />}
+                {otherExpense.length > 0 && <Section title="Other Expense" items={otherExpense} sign="debit" />}
+
                 <tr className="font-bold text-base border-t-2 border-foreground/30 bg-primary/5">
                   <td>Net Income</td>
                   <td className={`text-right font-mono ${netIncome >= 0 ? "text-success" : "text-destructive"}`}>{fmt(netIncome)}</td>
@@ -288,14 +299,14 @@ export default function Reports() {
     
     // Helper to get net balance including opening balance
     const getNetBalance = (a: typeof balances[0]) => {
-      const isDebitNormal = DEBIT_NORMAL_TYPES.includes(a.type);
+      const isDebitNormal = checkDebitNormal(a.type);
       const journalNet = isDebitNormal ? (a.debit - a.credit) : (a.credit - a.debit);
       return a.openingBalance + journalNet;
     };
 
     // Retained earnings = net income (revenue credits - expense debits)
-    const revenue = balances.filter(a => a.type === "Revenue");
-    const expenseAccounts = balances.filter(a => a.type === "Expense" || a.type === "COGS");
+    const revenue = balances.filter(a => a.type === "Income" || a.type === "Revenue" || a.type === "Other Income");
+    const expenseAccounts = balances.filter(a => a.type === "Expense" || a.type === "Cost of Goods Sold" || a.type === "COGS" || a.type === "Other Expense");
     const retainedEarnings = revenue.reduce((s, a) => s + (a.credit - a.debit), 0) - expenseAccounts.reduce((s, a) => s + (a.debit - a.credit), 0);
 
     const totalAssets = assets.reduce((s, a) => s + getNetBalance(a), 0);
@@ -393,7 +404,7 @@ export default function Reports() {
     
     // Beginning cash = sum of opening balances for cash/bank accounts
     const beginningCash = cashAccounts.reduce((s, a) => {
-      const isDebitNormal = DEBIT_NORMAL_TYPES.includes(a.type);
+      const isDebitNormal = checkDebitNormal(a.type);
       return s + (isDebitNormal ? a.openingBalance : -a.openingBalance);
     }, 0);
     

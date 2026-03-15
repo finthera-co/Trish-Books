@@ -5,6 +5,7 @@ import { useAccounts, useJournalEntries } from "@/hooks/useData";
 import { Button } from "@/components/ui/button";
 import { Download, Printer, Search, BookOpen, ArrowUpRight, ArrowDownRight, Filter } from "lucide-react";
 import { format } from "date-fns";
+import { isDebitNormal as checkDebitNormal, getTypeLabel } from "@/lib/accountTypes";
 
 interface LedgerRow {
   date: string;
@@ -17,8 +18,6 @@ interface LedgerRow {
   isReversal: boolean;
   isVoided: boolean;
 }
-
-const DEBIT_NORMAL_TYPES = ["Asset", "Expense", "COGS"];
 
 const fmtAmount = (n: number): string => {
   if (n === 0) return "—";
@@ -66,7 +65,7 @@ export default function Ledger() {
 
   const selectedAccount = accounts?.find(a => a.id === selectedAccountId) || accounts?.[0];
   const selectedPeriod = fiscalPeriods?.find(p => p.id === periodFilter);
-  const isDebitNormal = selectedAccount ? DEBIT_NORMAL_TYPES.includes(selectedAccount.account_type) : true;
+  const isDebitNormal = selectedAccount ? checkDebitNormal(selectedAccount.account_type) : true;
 
   // Effective date range (period overrides custom dates)
   const effectiveDateFrom = selectedPeriod ? selectedPeriod.period_start : dateFrom;

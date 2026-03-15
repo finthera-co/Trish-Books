@@ -10,23 +10,20 @@ import { formatCurrency } from "@/lib/currency";
 import AccountForm from "@/components/chart-of-accounts/AccountForm";
 import OpeningBalanceCell from "@/components/chart-of-accounts/OpeningBalanceCell";
 import { toast } from "sonner";
-
-const typeColors: Record<string, string> = {
-  Asset: "bg-info/10 text-info",
-  Liability: "bg-warning/10 text-warning",
-  Equity: "bg-primary/10 text-primary",
-  Revenue: "bg-success/10 text-success",
-  COGS: "bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400",
-  Expense: "bg-destructive/10 text-destructive",
-};
-
-const ACCOUNT_TYPES = ["Asset", "Liability", "Equity", "Revenue", "Expense"];
+import {
+  ACCOUNT_TYPES,
+  typeColors,
+  getTypeLabel,
+  getNormalBalance,
+  getStatementPlacement,
+} from "@/lib/accountTypes";
 
 interface Account {
   id: string;
   account_code: string;
   account_name: string;
   account_type: string;
+  account_subtype?: string | null;
   parent_account_id: string | null;
   category_id: string | null;
   is_active: boolean;
@@ -95,13 +92,18 @@ function AccountRow({
             <span className="font-medium text-sm text-foreground/80">
               {account.account_name}
             </span>
+            {account.account_subtype && (
+              <span className="text-[10px] bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded">
+                {account.account_subtype}
+              </span>
+            )}
             {!account.is_active && (
               <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">Inactive</span>
             )}
           </div>
         </td>
         <td className="text-xs text-muted-foreground">
-          {["Asset", "Expense", "COGS"].includes(account.account_type) ? "Debit" : "Credit"}
+          {getNormalBalance(account.account_type)}
         </td>
         <td className="text-right">
           <OpeningBalanceCell
@@ -174,10 +176,13 @@ function TypeSection({
           <div className="flex items-center gap-2">
             <ChevronRight className={`w-4 h-4 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`} />
             <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold ${typeColors[typeGroup.type] || "bg-muted text-muted-foreground"}`}>
-              {typeGroup.type}
+              {getTypeLabel(typeGroup.type)}
             </span>
             <span className="text-xs text-muted-foreground font-medium">
               {totalAccounts} account{totalAccounts !== 1 ? "s" : ""}
+            </span>
+            <span className="text-[10px] text-muted-foreground/60">
+              {getNormalBalance(typeGroup.type)} balance · {getStatementPlacement(typeGroup.type)}
             </span>
           </div>
         </td>
@@ -330,7 +335,9 @@ export default function ChartOfAccounts() {
       if (filterType !== "all" && a.account_type !== filterType) return false;
       if (search) {
         const s = search.toLowerCase();
-        return a.account_code.toLowerCase().includes(s) || a.account_name.toLowerCase().includes(s);
+        return a.account_code.toLowerCase().includes(s) ||
+          a.account_name.toLowerCase().includes(s) ||
+          (a.account_subtype || "").toLowerCase().includes(s);
       }
       return true;
     });
@@ -338,7 +345,7 @@ export default function ChartOfAccounts() {
 
   // Build Type → Category → Account hierarchy
   const typeGroups = useMemo((): TypeGroup[] => {
-    const types = filterType !== "all" ? [filterType] : ACCOUNT_TYPES;
+    const types = filterType !== "all" ? [filterType] : [...ACCOUNT_TYPES];
     return types.map(type => {
       const typeAccounts = filteredAccounts.filter(a => a.account_type === type);
       const typeCats = (categories || []).filter(c => c.account_type === type);
@@ -381,11 +388,13 @@ export default function ChartOfAccounts() {
   const handleExportCSV = () => {
     if (!accounts) return;
     const rows = [
-      ["Code", "Name", "Type", "Category", "Normal Balance", "Status"],
+      ["Code", "Name", "Type", "Detail Type", "Category", "Normal Balance", "Statement", "Status"],
       ...(accounts as Account[]).map(a => [
         a.account_code, a.account_name, a.account_type,
+        a.account_subtype || "",
         a.account_categories?.name || "",
-        ["Asset", "Expense", "COGS"].includes(a.account_type) ? "Debit" : "Credit",
+        getNormalBalance(a.account_type),
+        getStatementPlacement(a.account_type),
         a.is_active ? "Active" : "Inactive",
       ]),
     ];
@@ -464,7 +473,7 @@ export default function ChartOfAccounts() {
             onClick={() => setFilterType(t)}
             className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${filterType === t ? "bg-primary text-primary-foreground" : `${typeColors[t] || "bg-muted text-muted-foreground"} hover:opacity-80`}`}
           >
-            {t} ({typeCounts[t] || 0})
+            {getTypeLabel(t)} ({typeCounts[t] || 0})
           </button>
         ))}
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground ml-auto cursor-pointer">
@@ -484,7 +493,7 @@ export default function ChartOfAccounts() {
           <Search className="w-4 h-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Search by code or name..."
+            placeholder="Search by code, name, or detail type..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="bg-transparent text-sm outline-none flex-1 text-foreground placeholder:text-muted-foreground"
