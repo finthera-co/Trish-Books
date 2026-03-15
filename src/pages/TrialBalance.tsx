@@ -135,7 +135,7 @@ export default function TrialBalance() {
 
   // Group by account type
   const grouped = useMemo(() => {
-    const order = ["Asset", "Liability", "Equity", "Revenue", "COGS", "Expense"];
+    const order = [...ACCOUNT_TYPES];
     const groups = new Map<string, AccountBalance[]>();
     balances.forEach(b => {
       if (!groups.has(b.account_type)) groups.set(b.account_type, []);
