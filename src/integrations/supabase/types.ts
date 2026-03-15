@@ -176,6 +176,85 @@ export type Database = {
           },
         ]
       }
+      bank_reconciliations: {
+        Row: {
+          bank_account_id: string
+          beginning_balance: number
+          cleared_balance: number
+          created_at: string
+          difference: number
+          id: string
+          interest_earned: number | null
+          notes: string | null
+          reconciled_at: string | null
+          reconciled_by: string | null
+          service_charges: number | null
+          statement_ending_balance: number
+          statement_ending_date: string
+          status: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          bank_account_id: string
+          beginning_balance?: number
+          cleared_balance?: number
+          created_at?: string
+          difference?: number
+          id?: string
+          interest_earned?: number | null
+          notes?: string | null
+          reconciled_at?: string | null
+          reconciled_by?: string | null
+          service_charges?: number | null
+          statement_ending_balance?: number
+          statement_ending_date: string
+          status?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          bank_account_id?: string
+          beginning_balance?: number
+          cleared_balance?: number
+          created_at?: string
+          difference?: number
+          id?: string
+          interest_earned?: number | null
+          notes?: string | null
+          reconciled_at?: string | null
+          reconciled_by?: string | null
+          service_charges?: number | null
+          statement_ending_balance?: number
+          statement_ending_date?: string
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bank_reconciliations_bank_account_id_fkey"
+            columns: ["bank_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bank_reconciliations_reconciled_by_fkey"
+            columns: ["reconciled_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bank_reconciliations_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       budget_items: {
         Row: {
           account_id: string
@@ -1453,6 +1532,138 @@ export type Database = {
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reconciliation_adjustments: {
+        Row: {
+          adjustment_type: string
+          amount: number
+          created_at: string
+          description: string | null
+          id: string
+          journal_entry_id: string | null
+          reconciliation_id: string
+        }
+        Insert: {
+          adjustment_type?: string
+          amount?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          journal_entry_id?: string | null
+          reconciliation_id: string
+        }
+        Update: {
+          adjustment_type?: string
+          amount?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          journal_entry_id?: string | null
+          reconciliation_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reconciliation_adjustments_journal_entry_id_fkey"
+            columns: ["journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_adjustments_reconciliation_id_fkey"
+            columns: ["reconciliation_id"]
+            isOneToOne: false
+            referencedRelation: "bank_reconciliations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reconciliation_logs: {
+        Row: {
+          action: string
+          affected_transaction_id: string | null
+          created_at: string
+          details: Json | null
+          id: string
+          reconciliation_id: string
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          affected_transaction_id?: string | null
+          created_at?: string
+          details?: Json | null
+          id?: string
+          reconciliation_id: string
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          affected_transaction_id?: string | null
+          created_at?: string
+          details?: Json | null
+          id?: string
+          reconciliation_id?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reconciliation_logs_reconciliation_id_fkey"
+            columns: ["reconciliation_id"]
+            isOneToOne: false
+            referencedRelation: "bank_reconciliations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_logs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reconciliation_transactions: {
+        Row: {
+          cleared: boolean
+          cleared_date: string | null
+          created_at: string
+          id: string
+          journal_line_id: string
+          reconciliation_id: string
+        }
+        Insert: {
+          cleared?: boolean
+          cleared_date?: string | null
+          created_at?: string
+          id?: string
+          journal_line_id: string
+          reconciliation_id: string
+        }
+        Update: {
+          cleared?: boolean
+          cleared_date?: string | null
+          created_at?: string
+          id?: string
+          journal_line_id?: string
+          reconciliation_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reconciliation_transactions_journal_line_id_fkey"
+            columns: ["journal_line_id"]
+            isOneToOne: false
+            referencedRelation: "journal_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_transactions_reconciliation_id_fkey"
+            columns: ["reconciliation_id"]
+            isOneToOne: false
+            referencedRelation: "bank_reconciliations"
             referencedColumns: ["id"]
           },
         ]

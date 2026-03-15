@@ -29,6 +29,7 @@ import TrialBalance from "./pages/TrialBalance";
 import DataExports from "./pages/DataExports";
 import FiscalPeriods from "./pages/FiscalPeriods";
 import PaymentVouchers from "./pages/PaymentVouchers";
+import BankReconciliation from "./pages/BankReconciliation";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -58,6 +59,7 @@ const App = () => (
                 <Route path="/products-taxes" element={<ProductsTaxes />} />
                 <Route path="/expenses" element={<Expenses />} />
                 <Route path="/payment-vouchers" element={<PaymentVouchers />} />
+                <Route path="/bank-reconciliation" element={<BankReconciliation />} />
                 <Route path="/petty-cash" element={<PettyCash />} />
                 <Route path="/budgets" element={<Budgets />} />
                 <Route path="/payroll" element={<Payroll />} />
