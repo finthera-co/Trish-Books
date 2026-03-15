@@ -392,7 +392,7 @@ export default function Reports() {
     
     // Beginning cash = sum of opening balances for cash/bank accounts
     const beginningCash = cashAccounts.reduce((s, a) => {
-      const isDebitNormal = DEBIT_NORMAL_TYPES.includes(a.type);
+      const isDebitNormal = checkDebitNormal(a.type);
       return s + (isDebitNormal ? a.openingBalance : -a.openingBalance);
     }, 0);
     
