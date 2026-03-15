@@ -305,8 +305,8 @@ export default function Reports() {
     };
 
     // Retained earnings = net income (revenue credits - expense debits)
-    const revenue = balances.filter(a => a.type === "Revenue");
-    const expenseAccounts = balances.filter(a => a.type === "Expense" || a.type === "COGS");
+    const revenue = balances.filter(a => a.type === "Income" || a.type === "Revenue" || a.type === "Other Income");
+    const expenseAccounts = balances.filter(a => a.type === "Expense" || a.type === "Cost of Goods Sold" || a.type === "COGS" || a.type === "Other Expense");
     const retainedEarnings = revenue.reduce((s, a) => s + (a.credit - a.debit), 0) - expenseAccounts.reduce((s, a) => s + (a.debit - a.credit), 0);
 
     const totalAssets = assets.reduce((s, a) => s + getNetBalance(a), 0);
