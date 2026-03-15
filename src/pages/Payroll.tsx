@@ -122,8 +122,8 @@ export default function Payroll() {
           <p className="page-description">Run payroll, manage schedules, and generate pay stubs (Sri Lanka EPF/ETF)</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={exportRunsSummary} disabled={!filteredRuns.length}>
-            <Download className="w-4 h-4" /> Export CSV
+          <Button variant="outline" onClick={exportFullBreakdown} disabled={!filteredRuns.length || exporting}>
+            <Download className="w-4 h-4" /> {exporting ? "Exporting..." : "Export CSV"}
           </Button>
           <Button onClick={() => setCreateOpen(true)}>
             <Plus className="w-4 h-4" /> Run Payroll
