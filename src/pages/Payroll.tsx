@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePayrollRuns, usePayrollRunItems } from "@/hooks/usePayroll";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import { useEmployees } from "@/hooks/useData";
 import { formatCurrency } from "@/lib/currency";
 import PayrollRunForm from "@/components/payroll/PayrollRunForm";
@@ -46,17 +48,65 @@ export default function Payroll() {
 
   const pendingRuns = runs?.filter((r: any) => r.status === "draft" || r.status === "approved").length || 0;
 
-  const exportRunsSummary = () => {
+  const [exporting, setExporting] = useState(false);
+
+  const exportFullBreakdown = async () => {
     if (!filteredRuns.length) return;
-    const headers = ["Run #", "Period Start", "Period End", "Schedule", "Status", "Total Gross", "Total Deductions", "Total Net", "Employer EPF", "Employer ETF", "Payment Date"];
-    const rows = filteredRuns.map((r: any) => [
-      r.run_number, r.period_start, r.period_end,
-      (r.pay_schedules as any)?.name || "Manual", r.status,
-      Number(r.total_gross).toFixed(2), Number(r.total_deductions).toFixed(2), Number(r.total_net).toFixed(2),
-      Number(r.total_employer_epf).toFixed(2), Number(r.total_employer_etf).toFixed(2),
-      r.payment_date || "",
-    ]);
-    exportToCsv(`payroll-runs-summary-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+    setExporting(true);
+    try {
+      // Fetch all run items with employee details for all visible runs
+      const runIds = filteredRuns.map((r: any) => r.id);
+      const { data: allItems, error } = await supabase
+        .from("payroll_run_items")
+        .select("*, employees(first_name, last_name, department, epf_number, bank_name, bank_account_no)")
+        .in("run_id", runIds)
+        .order("created_at");
+      if (error) throw error;
+
+      // Build a lookup for run info
+      const runMap: Record<string, any> = {};
+      filteredRuns.forEach((r: any) => { runMap[r.id] = r; });
+
+      const headers = [
+        "Run #", "Period Start", "Period End", "Status", "Payment Date",
+        "Employee Name", "Department", "EPF No.", "Bank", "Account No.",
+        "Basic Salary", "Overtime Pay", "Bonuses", "Allowances", "Gross Pay",
+        "Employee EPF (8%)", "Employer EPF (12%)", "Employer ETF (3%)",
+        "Other Deductions", "Total Deductions", "Net Pay", "Payment Method",
+      ];
+
+      const rows = (allItems || []).map((item: any) => {
+        const run = runMap[item.run_id];
+        const emp = item.employees as any;
+        const totalDed = Number(item.employee_epf) + Number(item.other_deductions);
+        return [
+          run?.run_number || "", run?.period_start || "", run?.period_end || "",
+          run?.status || "", run?.payment_date || "",
+          `${emp?.first_name || ""} ${emp?.last_name || ""}`.trim(),
+          emp?.department || "", emp?.epf_number || "",
+          emp?.bank_name || "", emp?.bank_account_no || "",
+          Number(item.basic_salary).toFixed(2),
+          Number(item.overtime_pay).toFixed(2),
+          Number(item.bonuses).toFixed(2),
+          Number(item.allowances).toFixed(2),
+          Number(item.gross_pay).toFixed(2),
+          Number(item.employee_epf).toFixed(2),
+          Number(item.employer_epf).toFixed(2),
+          Number(item.employer_etf).toFixed(2),
+          Number(item.other_deductions).toFixed(2),
+          totalDed.toFixed(2),
+          Number(item.net_pay).toFixed(2),
+          item.payment_method === "bank_transfer" ? "Bank Transfer" : "Cash",
+        ];
+      });
+
+      exportToCsv(`payroll-employee-breakdown-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+      toast.success(`Exported ${rows.length} employee records`);
+    } catch (e: any) {
+      toast.error("Export failed: " + e.message);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const openDetails = (run: any) => {
@@ -72,8 +122,8 @@ export default function Payroll() {
           <p className="page-description">Run payroll, manage schedules, and generate pay stubs (Sri Lanka EPF/ETF)</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={exportRunsSummary} disabled={!filteredRuns.length}>
-            <Download className="w-4 h-4" /> Export CSV
+          <Button variant="outline" onClick={exportFullBreakdown} disabled={!filteredRuns.length || exporting}>
+            <Download className="w-4 h-4" /> {exporting ? "Exporting..." : "Export CSV"}
           </Button>
           <Button onClick={() => setCreateOpen(true)}>
             <Plus className="w-4 h-4" /> Run Payroll
