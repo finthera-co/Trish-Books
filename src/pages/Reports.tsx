@@ -272,6 +272,14 @@ export default function Reports() {
                   <tr className="font-semibold border-t"><td className="pl-4">Total Operating Expenses</td><td className="text-right font-mono text-destructive">({fmt(totalOpex)})</td></tr>
                 )}
 
+                <tr className="font-bold border-t-2 border-foreground/20 bg-muted/20">
+                  <td>Operating Income</td>
+                  <td className={`text-right font-mono ${operatingIncome >= 0 ? "text-success" : "text-destructive"}`}>{fmt(operatingIncome)}</td>
+                </tr>
+
+                {otherIncome.length > 0 && <Section title="Other Income" items={otherIncome} sign="credit" />}
+                {otherExpense.length > 0 && <Section title="Other Expense" items={otherExpense} sign="debit" />}
+
                 <tr className="font-bold text-base border-t-2 border-foreground/30 bg-primary/5">
                   <td>Net Income</td>
                   <td className={`text-right font-mono ${netIncome >= 0 ? "text-success" : "text-destructive"}`}>{fmt(netIncome)}</td>
