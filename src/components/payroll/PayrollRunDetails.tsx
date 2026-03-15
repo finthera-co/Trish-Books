@@ -143,9 +143,14 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
 
         {/* Actions */}
         <div className="flex justify-between items-center pt-2">
-          <Button variant="outline" size="sm" onClick={handlePrint}>
-            <Printer className="w-4 h-4" /> Print
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handlePrint}>
+              <Printer className="w-4 h-4" /> Print
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleExportCsv} disabled={!items?.length}>
+              <Download className="w-4 h-4" /> Export CSV
+            </Button>
+          </div>
           <div className="flex gap-2">
             {run.status === "draft" && (
               <>
