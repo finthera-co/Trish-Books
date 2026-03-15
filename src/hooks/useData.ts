@@ -124,6 +124,22 @@ export function useAccounts() {
   });
 }
 
+// Active accounts only (for selectors/forms)
+export function useActiveAccounts() {
+  return useQuery({
+    queryKey: ["accounts_active"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("accounts")
+        .select("id, account_code, account_name, account_type, account_subtype, is_active")
+        .eq("is_active", true)
+        .order("account_code");
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
 export function useCreateAccount() {
   const queryClient = useQueryClient();
   const { appUser } = useAuth();
