@@ -287,7 +287,7 @@ export default function Reports() {
     
     // Helper to get net balance including opening balance
     const getNetBalance = (a: typeof balances[0]) => {
-      const isDebitNormal = DEBIT_NORMAL_TYPES.includes(a.type);
+      const isDebitNormal = checkDebitNormal(a.type);
       const journalNet = isDebitNormal ? (a.debit - a.credit) : (a.credit - a.debit);
       return a.openingBalance + journalNet;
     };
