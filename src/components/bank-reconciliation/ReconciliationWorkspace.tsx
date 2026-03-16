@@ -664,38 +664,99 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
 
       {/* Adjustment Dialog */}
       <Dialog open={showAdjDialog} onOpenChange={setShowAdjDialog}>
-        <DialogContent>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Add {adjType === "charge" ? "Bank Service Charge" : "Interest Income"}</DialogTitle>
+            <DialogTitle>{adjType === "charge" ? "Add Bank Service Charge" : "Add Interest Earned"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label>Date</Label>
-              <Input type="date" value={adjDate} onChange={(e) => setAdjDate(e.target.value)} />
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Date</Label>
+                <Input type="date" value={adjDate} onChange={(e) => setAdjDate(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label>Amount <span className="text-destructive">*</span></Label>
+                <Input type="number" step="0.01" min="0.01" value={adjAmount} onChange={(e) => setAdjAmount(e.target.value)} placeholder="0.00" />
+                {adjAmount && parseFloat(adjAmount) <= 0 && (
+                  <p className="text-[11px] text-destructive">Amount must be greater than zero</p>
+                )}
+              </div>
             </div>
             <div className="space-y-1">
               <Label>Description</Label>
-              <Input value={adjDesc} onChange={(e) => setAdjDesc(e.target.value)} placeholder={adjType === "charge" ? "e.g. Monthly service charge" : "e.g. Interest earned"} />
+              <Input value={adjDesc} onChange={(e) => setAdjDesc(e.target.value)} placeholder={adjType === "charge" ? "e.g. Monthly service charge" : "e.g. Bank Interest Earned"} />
             </div>
             <div className="space-y-1">
-              <Label>{adjType === "charge" ? "Expense Account" : "Income Account"}</Label>
+              <Label>{adjType === "charge" ? "Expense Account" : "Income Account"} <span className="text-destructive">*</span></Label>
               <Select value={adjAccountId} onValueChange={setAdjAccountId}>
                 <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
                 <SelectContent>
-                  {(accounts || [])
-                    .filter((a: any) => adjType === "charge" ? a.account_type === "Expense" : a.account_type === "Revenue")
-                    .map((a: any) => (
-                      <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
-                    ))}
+                  {(adjType === "charge" ? expenseAccounts : incomeAccounts).map((a: any) => (
+                    <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
+              {adjType === "interest" && incomeAccounts.length === 0 && (
+                <p className="text-[11px] text-amber-600">No income accounts found. Please create an "Interest Income" account in your Chart of Accounts (Type: Other Income).</p>
+              )}
             </div>
-            <div className="space-y-1">
-              <Label>Amount</Label>
-              <Input type="number" step="0.01" value={adjAmount} onChange={(e) => setAdjAmount(e.target.value)} placeholder="0.00" />
-            </div>
-            <Button onClick={handleAddAdjustment} disabled={createAdj.isPending} className="w-full">
-              {createAdj.isPending ? "Adding..." : "Add Adjustment"}
+
+            {/* Journal Entry Preview */}
+            {adjAmount && parseFloat(adjAmount) > 0 && adjAccountId && (
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Journal Entry Preview</p>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs h-7">Account</TableHead>
+                      <TableHead className="text-xs text-right h-7">Debit</TableHead>
+                      <TableHead className="text-xs text-right h-7">Credit</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {adjType === "interest" ? (
+                      <>
+                        <TableRow>
+                          <TableCell className="text-xs py-1">{(recon as any).accounts?.account_name || "Bank Account"}</TableCell>
+                          <TableCell className="text-xs text-right py-1 font-mono">{formatCurrency(parseFloat(adjAmount))}</TableCell>
+                          <TableCell className="text-xs text-right py-1">—</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="text-xs py-1">
+                            {(adjType === "interest" ? incomeAccounts : expenseAccounts).find((a: any) => a.id === adjAccountId)?.account_name || "—"}
+                          </TableCell>
+                          <TableCell className="text-xs text-right py-1">—</TableCell>
+                          <TableCell className="text-xs text-right py-1 font-mono">{formatCurrency(parseFloat(adjAmount))}</TableCell>
+                        </TableRow>
+                      </>
+                    ) : (
+                      <>
+                        <TableRow>
+                          <TableCell className="text-xs py-1">
+                            {expenseAccounts.find((a: any) => a.id === adjAccountId)?.account_name || "—"}
+                          </TableCell>
+                          <TableCell className="text-xs text-right py-1 font-mono">{formatCurrency(parseFloat(adjAmount))}</TableCell>
+                          <TableCell className="text-xs text-right py-1">—</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="text-xs py-1">{(recon as any).accounts?.account_name || "Bank Account"}</TableCell>
+                          <TableCell className="text-xs text-right py-1">—</TableCell>
+                          <TableCell className="text-xs text-right py-1 font-mono">{formatCurrency(parseFloat(adjAmount))}</TableCell>
+                        </TableRow>
+                      </>
+                    )}
+                  </TableBody>
+                </Table>
+                <p className="text-[10px] text-muted-foreground">Ref: Reconciliation Adjustment · {adjDesc || "—"}</p>
+              </div>
+            )}
+
+            <Button
+              onClick={handleAddAdjustment}
+              disabled={createAdj.isPending || !adjAmount || parseFloat(adjAmount) <= 0 || !adjAccountId || !adjDesc}
+              className="w-full"
+            >
+              {createAdj.isPending ? "Adding..." : "Save Adjustment & Create Journal Entry"}
             </Button>
           </div>
         </DialogContent>
