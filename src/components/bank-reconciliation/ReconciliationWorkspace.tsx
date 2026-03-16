@@ -74,6 +74,29 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
   const [adjAccountId, setAdjAccountId] = useState("");
   const [adjDate, setAdjDate] = useState(new Date().toISOString().split("T")[0]);
   const createAdj = useCreateReconciliationAdjustment();
+
+  // Income accounts for interest earned (Income + Other Income types)
+  const incomeAccounts = useMemo(() => {
+    if (!accounts) return [];
+    return (accounts as any[]).filter((a: any) =>
+      a.account_type === "Income" || a.account_type === "Other Income"
+    );
+  }, [accounts]);
+
+  // Expense accounts for bank charges
+  const expenseAccounts = useMemo(() => {
+    if (!accounts) return [];
+    return (accounts as any[]).filter((a: any) => a.account_type === "Expense" || a.account_type === "Other Expense");
+  }, [accounts]);
+
+  // Auto-default to "Interest Income" account when opening interest dialog
+  const defaultInterestAccountId = useMemo(() => {
+    const match = incomeAccounts.find((a: any) =>
+      a.account_name.toLowerCase().includes("interest income") ||
+      a.account_name.toLowerCase().includes("interest earned")
+    );
+    return match?.id || "";
+  }, [incomeAccounts]);
   const [paymentsOpen, setPaymentsOpen] = useState(true);
   const [depositsOpen, setDepositsOpen] = useState(true);
   const [showReport, setShowReport] = useState(false);
