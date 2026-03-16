@@ -133,6 +133,7 @@ export default function PettyCash() {
               </DialogContent>
             </Dialog>
           </>}
+        </div>
       </div>
 
       {accounts && accounts.length > 1 && (
