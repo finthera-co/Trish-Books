@@ -5,11 +5,21 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Plus, Search, ArrowRight } from "lucide-react";
 import { useMyPermissions } from "@/hooks/usePermissions";
-import { cn } from "@/lib/utils";
-import { Plus, Search, ArrowRight } from "lucide-react";
+
+// Map module IDs to permission keys
+const MODULE_PERMISSION_MAP: Record<string, string> = {
+  accounting: "accounts",
+  banking: "banking",
+  sales: "sales",
+  expenses: "expenses",
+  payroll: "payroll",
+  reports: "reports",
+  admin: "settings",
+};
 
 export default function Home() {
   const { appUser } = useAuth();
+  const { canView } = useMyPermissions();
   const navigate = useNavigate();
 
   return (
