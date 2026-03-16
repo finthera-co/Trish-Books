@@ -2,13 +2,13 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { AccountCategory } from "@/hooks/useAccountCategories";
+import { Plus } from "lucide-react";
 import {
   ACCOUNT_TYPES,
   ACCOUNT_SUBTYPES,
   ACCOUNT_NUMBER_RANGES,
   getNormalBalance,
   getStatementPlacement,
-  getTypeLabel,
 } from "@/lib/accountTypes";
 
 interface Account {
@@ -37,6 +37,7 @@ interface AccountFormProps {
   categories: AccountCategory[];
   isPending: boolean;
   editAccount?: Account | null;
+  onCreateCategory?: (data: { name: string; account_type: string }) => Promise<AccountCategory | undefined>;
 }
 
 export default function AccountForm({
@@ -47,6 +48,7 @@ export default function AccountForm({
   categories,
   isPending,
   editAccount,
+  onCreateCategory,
 }: AccountFormProps) {
   const [accountName, setAccountName] = useState("");
   const [accountCode, setAccountCode] = useState("");
@@ -54,6 +56,9 @@ export default function AccountForm({
   const [accountSubtype, setAccountSubtype] = useState("");
   const [parentId, setParentId] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [showNewCategory, setShowNewCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [creatingCategory, setCreatingCategory] = useState(false);
 
   useEffect(() => {
     if (editAccount) {
@@ -71,11 +76,28 @@ export default function AccountForm({
       setParentId("");
       setCategoryId("");
     }
+    setShowNewCategory(false);
+    setNewCategoryName("");
   }, [editAccount, open]);
 
   const filteredCategories = categories.filter(c => c.account_type === accountType);
   const subtypes = ACCOUNT_SUBTYPES[accountType] || [];
   const numberRange = ACCOUNT_NUMBER_RANGES[accountType];
+
+  const handleAddCategory = async () => {
+    if (!newCategoryName.trim() || !onCreateCategory) return;
+    setCreatingCategory(true);
+    try {
+      const created = await onCreateCategory({ name: newCategoryName.trim(), account_type: accountType });
+      if (created) {
+        setCategoryId(created.id);
+      }
+      setNewCategoryName("");
+      setShowNewCategory(false);
+    } finally {
+      setCreatingCategory(false);
+    }
+  };
 
   const handleSubmit = async () => {
     await onSubmit({
@@ -115,6 +137,7 @@ export default function AccountForm({
                 setAccountType(e.target.value);
                 setAccountSubtype("");
                 setCategoryId("");
+                setShowNewCategory(false);
               }}
               className={inputClass}
             >
@@ -122,6 +145,67 @@ export default function AccountForm({
                 <option key={t} value={t}>{t}</option>
               ))}
             </select>
+          </div>
+
+          {/* Category - prominent placement */}
+          <div>
+            <label className="text-sm font-medium">Category <span className="text-destructive">*</span></label>
+            <p className="text-[11px] text-muted-foreground mb-1">
+              e.g. Current Assets, Non-Current Assets, Current Liabilities
+            </p>
+            {!showNewCategory ? (
+              <div className="flex gap-2">
+                <select
+                  value={categoryId}
+                  onChange={(e) => setCategoryId(e.target.value)}
+                  className={`${inputClass} flex-1`}
+                >
+                  <option value="">— Select category —</option>
+                  {filteredCategories.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                {onCreateCategory && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-1 shrink-0"
+                    onClick={() => setShowNewCategory(true)}
+                  >
+                    <Plus className="h-4 w-4 mr-1" /> New
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="flex gap-2 mt-1">
+                <input
+                  type="text"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  className={`${inputClass} flex-1 !mt-0`}
+                  placeholder={`e.g. Current ${accountType}s`}
+                  autoFocus
+                  onKeyDown={(e) => e.key === "Enter" && handleAddCategory()}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={!newCategoryName.trim() || creatingCategory}
+                  onClick={handleAddCategory}
+                >
+                  {creatingCategory ? "..." : "Add"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { setShowNewCategory(false); setNewCategoryName(""); }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Detail Type (Subtype) */}
@@ -168,23 +252,6 @@ export default function AccountForm({
               />
             </div>
           </div>
-
-          {/* Category */}
-          {filteredCategories.length > 0 && (
-            <div>
-              <label className="text-sm font-medium">Category</label>
-              <select
-                value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
-                className={inputClass}
-              >
-                <option value="">None</option>
-                {filteredCategories.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
 
           {/* Parent Account */}
           <div>
