@@ -504,7 +504,7 @@ export default function JournalEntries() {
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
       </div>
 
       {/* Void Dialog */}
