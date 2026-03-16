@@ -100,7 +100,7 @@ export default function Employees() {
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
       </div>
 
       <div className="grid grid-cols-3 gap-4">
