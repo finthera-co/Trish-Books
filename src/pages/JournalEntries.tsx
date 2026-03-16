@@ -1,17 +1,25 @@
-import { Plus, Search, RotateCcw, Ban, ChevronDown, ChevronRight, Filter } from "lucide-react";
+import { Plus, Search, RotateCcw, Ban, ChevronDown, ChevronRight, Filter, AlertTriangle, CheckCircle2, XCircle, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState, Fragment } from "react";
-import { useJournalEntries, useCreateJournalEntry, useAccounts } from "@/hooks/useData";
+import { useState, Fragment, useMemo, useCallback } from "react";
+import { useJournalEntries, useAccounts } from "@/hooks/useData";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
+import {
+  validateJournalEntry,
+  getManualEntryAccounts,
+  isSubledgerAccount,
+  type AccountInfo,
+  type ValidationError,
+  type ValidationResult,
+  EPSILON,
+} from "@/lib/journalValidation";
+import { typeColors, getTypeLabel } from "@/lib/accountTypes";
 
 const fmt = (n: number) =>
   n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-const EPSILON = 0.005; // half a cent tolerance
 
 type StatusFilter = "all" | "posted" | "voided";
 
@@ -34,11 +42,81 @@ export default function JournalEntries() {
   const [description, setDescription] = useState("");
   const [entryDate, setEntryDate] = useState(new Date().toISOString().split("T")[0]);
   const [reference, setReference] = useState("");
-  const [lines, setLines] = useState([{ account_id: "", debit: 0, credit: 0 }]);
+  const [lines, setLines] = useState([
+    { account_id: "", debit: 0, credit: 0 },
+    { account_id: "", debit: 0, credit: 0 },
+  ]);
 
   const { data: entries, isLoading } = useJournalEntries();
   const { data: accounts } = useAccounts();
-  const createEntry = useCreateJournalEntry();
+
+  // Closed fiscal periods for date validation
+  const { data: closedPeriods } = useQuery({
+    queryKey: ["closed_fiscal_periods"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("fiscal_periods")
+        .select("period_start, period_end")
+        .eq("status", "closed");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Build accounts map for validation
+  const accountsMap = useMemo(() => {
+    const map = new Map<string, AccountInfo>();
+    accounts?.forEach((a) => {
+      map.set(a.id, {
+        id: a.id,
+        account_code: a.account_code,
+        account_name: a.account_name,
+        account_type: a.account_type,
+        account_subtype: a.account_subtype,
+        is_active: a.is_active,
+      });
+    });
+    return map;
+  }, [accounts]);
+
+  // Accounts filtered for manual entry (no control accounts)
+  const manualEntryAccounts = useMemo(() => {
+    if (!accounts) return [];
+    const infos: AccountInfo[] = accounts.map((a) => ({
+      id: a.id,
+      account_code: a.account_code,
+      account_name: a.account_name,
+      account_type: a.account_type,
+      account_subtype: a.account_subtype,
+      is_active: a.is_active,
+    }));
+    return getManualEntryAccounts(infos);
+  }, [accounts]);
+
+  // Group accounts by type for the dropdown
+  const groupedAccounts = useMemo(() => {
+    const groups: Record<string, AccountInfo[]> = {};
+    manualEntryAccounts.forEach((a) => {
+      if (!groups[a.account_type]) groups[a.account_type] = [];
+      groups[a.account_type].push(a);
+    });
+    return groups;
+  }, [manualEntryAccounts]);
+
+  // Real-time validation
+  const validation: ValidationResult = useMemo(() => {
+    return validateJournalEntry({
+      description,
+      entryDate,
+      lines,
+      accountsMap,
+      closedPeriods: closedPeriods || undefined,
+    });
+  }, [description, entryDate, lines, accountsMap, closedPeriods]);
+
+  const totalDebit = lines.reduce((sum, l) => sum + Number(l.debit || 0), 0);
+  const totalCredit = lines.reduce((sum, l) => sum + Number(l.credit || 0), 0);
+  const isBalanced = Math.abs(totalDebit - totalCredit) < EPSILON && totalDebit > 0;
 
   // Filter entries
   const filtered = entries?.filter((e) => {
@@ -55,7 +133,7 @@ export default function JournalEntries() {
 
   const addLine = () => setLines([...lines, { account_id: "", debit: 0, credit: 0 }]);
   const removeLine = (index: number) => {
-    if (lines.length > 1) setLines(lines.filter((_, i) => i !== index));
+    if (lines.length > 2) setLines(lines.filter((_, i) => i !== index));
   };
 
   const updateLine = (index: number, field: string, value: any) => {
@@ -69,37 +147,73 @@ export default function JournalEntries() {
     setLines(newLines);
   };
 
-  const totalDebit = lines.reduce((sum, l) => sum + Number(l.debit), 0);
-  const totalCredit = lines.reduce((sum, l) => sum + Number(l.credit), 0);
-  const isBalanced = Math.abs(totalDebit - totalCredit) < EPSILON && totalDebit > 0;
+  // Get inline warning for a specific line's account
+  const getLineWarning = useCallback(
+    (accountId: string): string | null => {
+      if (!accountId) return null;
+      const acc = accountsMap.get(accountId);
+      if (!acc) return null;
+      if (!acc.is_active) return `This account is inactive`;
+      const subType = isSubledgerAccount(acc);
+      if (subType === "AR") return "AR control account — use Invoices instead";
+      if (subType === "AP") return "AP control account — use Bills instead";
+      return null;
+    },
+    [accountsMap]
+  );
 
-  // Duplicate account validation
-  const activeLines = lines.filter(l => l.account_id && (Number(l.debit) > 0 || Number(l.credit) > 0));
-  const accountIds = activeLines.map(l => l.account_id);
-  const hasDuplicateAccounts = new Set(accountIds).size !== accountIds.length;
+  // Server-side validated create via edge function
+  const createEntry = useMutation({
+    mutationFn: async () => {
+      const activeLines = lines.filter(
+        (l) => l.account_id && (Number(l.debit) > 0 || Number(l.credit) > 0)
+      );
 
-  const handleCreate = async () => {
-    // Validate no line has both debit and credit
-    const invalidLines = lines.filter(l => Number(l.debit) > 0 && Number(l.credit) > 0);
-    if (invalidLines.length > 0) {
-      toast.error("A journal line cannot have both debit and credit amounts");
-      return;
-    }
-    if (hasDuplicateAccounts) {
-      toast.error("Each account should only appear once per entry. Combine amounts on the same account into one line.");
-      return;
-    }
-    await createEntry.mutateAsync({
-      description,
-      entry_date: entryDate,
-      reference,
-      lines: lines.filter(l => l.account_id && (l.debit > 0 || l.credit > 0)),
-    });
-    setOpen(false);
+      const { data, error } = await supabase.functions.invoke("validate-journal-entry", {
+        body: {
+          description: description.trim(),
+          entry_date: entryDate,
+          reference: reference.trim() || undefined,
+          lines: activeLines,
+        },
+      });
+
+      if (error) throw new Error(error.message || "Server validation failed");
+
+      // Edge function returns 422 for validation errors
+      if (data && !data.valid && data.errors) {
+        const msgs = data.errors.map((e: any) => e.message).join("; ");
+        throw new Error(msgs);
+      }
+
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      toast.success("Journal entry posted successfully");
+      setOpen(false);
+      resetForm();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const resetForm = () => {
     setDescription("");
     setReference("");
     setEntryDate(new Date().toISOString().split("T")[0]);
-    setLines([{ account_id: "", debit: 0, credit: 0 }]);
+    setLines([
+      { account_id: "", debit: 0, credit: 0 },
+      { account_id: "", debit: 0, credit: 0 },
+    ]);
+  };
+
+  const handleCreate = async () => {
+    // Client-side pre-check
+    if (!validation.valid) {
+      toast.error(validation.errors[0]?.message || "Please fix validation errors");
+      return;
+    }
+    createEntry.mutate();
   };
 
   // Void mutation
@@ -130,7 +244,6 @@ export default function JournalEntries() {
     mutationFn: async (entryId: string) => {
       const entry = entries?.find(e => e.id === entryId);
       if (!entry) throw new Error("Entry not found");
-
       const originalLines = (entry.journal_lines as any[]) || [];
 
       const { data: newEntry, error } = await supabase
@@ -171,6 +284,9 @@ export default function JournalEntries() {
     return acc ? `${acc.account_code} – ${acc.account_name}` : accountId;
   };
 
+  // Check if form has been touched (for showing validation)
+  const formTouched = description.length > 0 || lines.some(l => l.account_id || Number(l.debit) > 0 || Number(l.credit) > 0);
+
   return (
     <div className="space-y-6">
       <div className="page-header">
@@ -178,80 +294,211 @@ export default function JournalEntries() {
           <h1 className="page-title">Journal Entries</h1>
           <p className="page-description">Record and manage double-entry transactions</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
           <DialogTrigger asChild>
             <Button><Plus className="w-4 h-4" /> New Entry</Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create Journal Entry</DialogTitle>
-              <DialogDescription>Each entry must have balanced debits and credits.</DialogDescription>
+              <DialogDescription>
+                Double-entry validated. Control accounts (AR/AP) are excluded — use Invoices or Bills for those.
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 pt-4">
-              <div className="grid grid-cols-2 gap-4">
+              {/* Header fields */}
+              <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="text-sm font-medium text-foreground">Date <span className="text-destructive">*</span></label>
-                  <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)}
-                    className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+                  <label className="text-sm font-medium text-foreground">
+                    Date <span className="text-destructive">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={entryDate}
+                    onChange={(e) => setEntryDate(e.target.value)}
+                    className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+                  />
+                  {formTouched && validation.errors.find((e) => e.field === "entry_date") && (
+                    <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                      <XCircle className="w-3 h-3" />
+                      {validation.errors.find((e) => e.field === "entry_date")!.message}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="text-sm font-medium text-foreground">Reference</label>
-                  <input type="text" value={reference} onChange={(e) => setReference(e.target.value)}
-                    className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" placeholder="INV-001" />
+                  <input
+                    type="text"
+                    value={reference}
+                    onChange={(e) => setReference(e.target.value)}
+                    className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+                    placeholder="JV-00001"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground">
+                    Description <span className="text-destructive">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+                    placeholder="Office supplies purchase"
+                  />
                 </div>
               </div>
-              <div>
-                <label className="text-sm font-medium text-foreground">Description <span className="text-destructive">*</span></label>
-                <input type="text" value={description} onChange={(e) => setDescription(e.target.value)}
-                  className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" placeholder="Office supplies purchase" />
-              </div>
+
+              {/* Journal Lines */}
               <div>
                 <label className="text-sm font-medium text-foreground mb-2 block">Journal Lines</label>
-                <div className="space-y-2">
-                  <div className="grid grid-cols-[1fr_7rem_7rem_2rem] gap-2 text-xs font-medium text-muted-foreground px-1">
-                    <span>Account</span><span className="text-right">Debit</span><span className="text-right">Credit</span><span />
+                <div className="border border-border rounded-lg overflow-hidden">
+                  {/* Header */}
+                  <div className="grid grid-cols-[1fr_7rem_7rem_2.5rem] gap-0 bg-muted/50 px-3 py-2 text-xs font-semibold text-muted-foreground border-b border-border">
+                    <span>Account</span>
+                    <span className="text-right">Debit (LKR)</span>
+                    <span className="text-right">Credit (LKR)</span>
+                    <span />
                   </div>
-                  {lines.map((line, i) => (
-                    <div key={i} className="grid grid-cols-[1fr_7rem_7rem_2rem] gap-2 items-center">
-                      <select value={line.account_id} onChange={(e) => updateLine(i, "account_id", e.target.value)}
-                        className="text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors">
-                        <option value="">Select account…</option>
-                        {accounts?.map(a => <option key={a.id} value={a.id}>{a.account_code} – {a.account_name}</option>)}
-                      </select>
-                      <input type="number" min="0" step="0.01" value={line.debit || ""} onChange={(e) => updateLine(i, "debit", Number(e.target.value))}
-                        className="text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" placeholder="0.00" />
-                      <input type="number" min="0" step="0.01" value={line.credit || ""} onChange={(e) => updateLine(i, "credit", Number(e.target.value))}
-                        className="text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" placeholder="0.00" />
-                      <button onClick={() => removeLine(i)} className="text-muted-foreground hover:text-destructive text-sm px-1 h-9 flex items-center justify-center">✕</button>
+                  {/* Lines */}
+                  <div className="divide-y divide-border/50">
+                    {lines.map((line, i) => {
+                      const lineWarning = getLineWarning(line.account_id);
+                      const acc = line.account_id ? accountsMap.get(line.account_id) : null;
+                      return (
+                        <div key={i} className="px-3 py-2 space-y-1">
+                          <div className="grid grid-cols-[1fr_7rem_7rem_2.5rem] gap-2 items-center">
+                            <select
+                              value={line.account_id}
+                              onChange={(e) => updateLine(i, "account_id", e.target.value)}
+                              className={`text-sm border rounded-md px-2.5 py-1.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors ${
+                                lineWarning ? "border-warning" : "border-input"
+                              }`}
+                            >
+                              <option value="">Select account…</option>
+                              {Object.entries(groupedAccounts).map(([type, accs]) => (
+                                <optgroup key={type} label={getTypeLabel(type)}>
+                                  {accs.map((a) => (
+                                    <option key={a.id} value={a.id}>
+                                      {a.account_code} – {a.account_name}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              ))}
+                            </select>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={line.debit || ""}
+                              onChange={(e) => updateLine(i, "debit", Number(e.target.value))}
+                              className="text-sm border border-input rounded-md px-2.5 py-1.5 bg-background text-foreground text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+                              placeholder="0.00"
+                            />
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={line.credit || ""}
+                              onChange={(e) => updateLine(i, "credit", Number(e.target.value))}
+                              className="text-sm border border-input rounded-md px-2.5 py-1.5 bg-background text-foreground text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+                              placeholder="0.00"
+                            />
+                            <button
+                              onClick={() => removeLine(i)}
+                              disabled={lines.length <= 2}
+                              className="text-muted-foreground hover:text-destructive disabled:opacity-30 disabled:cursor-not-allowed text-sm px-1 h-8 flex items-center justify-center rounded-md transition-colors"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          {/* Inline account type badge + warning */}
+                          {acc && (
+                            <div className="flex items-center gap-2 pl-1">
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${typeColors[acc.account_type] || "bg-muted text-muted-foreground"}`}>
+                                {getTypeLabel(acc.account_type)}
+                              </span>
+                              {acc.account_subtype && (
+                                <span className="text-[10px] text-muted-foreground">{acc.account_subtype}</span>
+                              )}
+                            </div>
+                          )}
+                          {lineWarning && (
+                            <div className="flex items-center gap-1.5 text-xs text-warning pl-1">
+                              <AlertTriangle className="w-3 h-3 shrink-0" />
+                              {lineWarning}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Add line */}
+                  <div className="px-3 py-2 border-t border-border">
+                    <Button variant="ghost" size="sm" onClick={addLine} className="text-xs">
+                      + Add Line
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Validation Panel */}
+              {formTouched && (validation.errors.length > 0 || validation.warnings.length > 0) && (
+                <div className="space-y-2">
+                  {validation.errors.filter(e => !["entry_date", "description"].includes(e.field)).map((err, i) => (
+                    <div key={`err-${i}`} className="flex items-start gap-2 text-xs text-destructive bg-destructive/5 rounded-md px-3 py-2 border border-destructive/20">
+                      <XCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>{err.message}</span>
+                    </div>
+                  ))}
+                  {validation.warnings.map((w, i) => (
+                    <div key={`warn-${i}`} className="flex items-start gap-2 text-xs text-warning bg-warning/5 rounded-md px-3 py-2 border border-warning/20">
+                      <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>{w.message}</span>
                     </div>
                   ))}
                 </div>
-                <Button variant="outline" size="sm" onClick={addLine} className="mt-2">+ Add Line</Button>
-              </div>
-
-              {/* Validation warnings */}
-              {hasDuplicateAccounts && (
-                <p className="text-xs text-destructive bg-destructive/10 rounded-md px-3 py-2">
-                  ⚠️ Duplicate accounts detected — combine amounts into a single line per account.
-                </p>
               )}
 
               {/* Totals bar */}
-              <div className="flex items-center justify-between text-sm bg-muted/50 rounded-lg px-4 py-2.5 border border-border">
-                <span className="tabular-nums text-foreground">Debit: <strong>LKR {fmt(totalDebit)}</strong></span>
-                <span className="tabular-nums text-foreground">Credit: <strong>LKR {fmt(totalCredit)}</strong></span>
-                <span className={`font-semibold ${isBalanced ? "text-primary" : "text-destructive"}`}>
-                  {isBalanced ? "✓ Balanced" : `✗ Off by LKR ${fmt(Math.abs(totalDebit - totalCredit))}`}
+              <div className="flex items-center justify-between text-sm bg-card rounded-lg px-4 py-3 border border-border">
+                <span className="tabular-nums text-foreground">
+                  Debit: <strong>LKR {fmt(totalDebit)}</strong>
+                </span>
+                <span className="tabular-nums text-foreground">
+                  Credit: <strong>LKR {fmt(totalCredit)}</strong>
+                </span>
+                <span className={`font-semibold flex items-center gap-1.5 ${isBalanced ? "text-success" : "text-destructive"}`}>
+                  {isBalanced ? (
+                    <><CheckCircle2 className="w-4 h-4" /> Balanced</>
+                  ) : (
+                    <><XCircle className="w-4 h-4" /> Off by LKR {fmt(Math.abs(totalDebit - totalCredit))}</>
+                  )}
                 </span>
               </div>
 
-              <Button onClick={handleCreate} disabled={!isBalanced || !description || hasDuplicateAccounts || createEntry.isPending} className="w-full">
+              {/* Info banner */}
+              <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/30 rounded-md px-3 py-2">
+                <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                <span>
+                  Entries are validated both client-side and server-side. Control accounts (A/R, A/P, Inventory) 
+                  are automatically excluded — post to those via Invoices, Bills, or Payments.
+                </span>
+              </div>
+
+              <Button
+                onClick={handleCreate}
+                disabled={!validation.valid || createEntry.isPending}
+                className="w-full"
+              >
                 {createEntry.isPending ? (
                   <span className="flex items-center gap-2">
                     <span className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                    Posting…
+                    Validating & Posting…
                   </span>
-                ) : "Post Entry"}
+                ) : (
+                  "Post Entry"
+                )}
               </Button>
             </div>
           </DialogContent>
@@ -289,8 +536,7 @@ export default function JournalEntries() {
           <DialogHeader>
             <DialogTitle>Reverse Journal Entry</DialogTitle>
             <DialogDescription>
-              This will create a new posted entry with opposite debits and credits, effectively cancelling the original.
-              Both entries remain in the audit trail.
+              This creates a new posted entry with opposite debits and credits. Both entries remain in the audit trail.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-2">
@@ -334,11 +580,11 @@ export default function JournalEntries() {
         </div>
         <div className="stat-card">
           <p className="text-xs font-medium text-muted-foreground">Posted</p>
-          <p className="text-2xl font-bold text-foreground tabular-nums">{totalPosted}</p>
+          <p className="text-2xl font-bold text-success tabular-nums">{totalPosted}</p>
         </div>
         <div className="stat-card">
           <p className="text-xs font-medium text-muted-foreground">Voided</p>
-          <p className="text-2xl font-bold text-foreground tabular-nums">{totalVoided}</p>
+          <p className="text-2xl font-bold text-destructive tabular-nums">{totalVoided}</p>
         </div>
       </div>
 
@@ -357,7 +603,7 @@ export default function JournalEntries() {
                 className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
                   statusFilter === s
                     ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-accent"
+                    : "bg-muted/50 text-muted-foreground hover:bg-accent"
                 }`}>
                 {s.charAt(0).toUpperCase() + s.slice(1)}
               </button>
@@ -416,7 +662,7 @@ export default function JournalEntries() {
                       <td>
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                           isVoided ? "bg-destructive/10 text-destructive" :
-                          entry.status === "posted" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+                          entry.status === "posted" ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"
                         }`}>{entry.status}</span>
                       </td>
                       <td className="text-right" onClick={e => e.stopPropagation()}>
@@ -441,29 +687,40 @@ export default function JournalEntries() {
                             <thead>
                               <tr className="text-xs text-muted-foreground">
                                 <th className="text-left font-medium pb-1.5">Account</th>
+                                <th className="text-left font-medium pb-1.5 w-24">Type</th>
                                 <th className="text-right font-medium pb-1.5 w-36">Debit</th>
                                 <th className="text-right font-medium pb-1.5 w-36">Credit</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {entryLines.map((line: any, idx: number) => (
-                                <tr key={idx} className="border-t border-border/50">
-                                  <td className="py-1.5 text-foreground">
-                                    <span className="font-mono text-xs text-muted-foreground mr-2">{line.accounts?.account_code}</span>
-                                    {line.accounts?.account_name || line.account_id}
-                                  </td>
-                                  <td className="text-right tabular-nums py-1.5">
-                                    {Number(line.debit) > 0 ? `LKR ${fmt(Number(line.debit))}` : "—"}
-                                  </td>
-                                  <td className="text-right tabular-nums py-1.5">
-                                    {Number(line.credit) > 0 ? `LKR ${fmt(Number(line.credit))}` : "—"}
-                                  </td>
-                                </tr>
-                              ))}
+                              {entryLines.map((line: any, idx: number) => {
+                                const lineAcc = accounts?.find(a => a.id === line.account_id);
+                                return (
+                                  <tr key={idx} className="border-t border-border/50">
+                                    <td className="py-1.5 text-foreground">
+                                      <span className="font-mono text-xs text-muted-foreground mr-2">{line.accounts?.account_code}</span>
+                                      {line.accounts?.account_name || line.account_id}
+                                    </td>
+                                    <td className="py-1.5">
+                                      {lineAcc && (
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${typeColors[lineAcc.account_type] || "bg-muted text-muted-foreground"}`}>
+                                          {getTypeLabel(lineAcc.account_type)}
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="text-right tabular-nums py-1.5">
+                                      {Number(line.debit) > 0 ? `LKR ${fmt(Number(line.debit))}` : "—"}
+                                    </td>
+                                    <td className="text-right tabular-nums py-1.5">
+                                      {Number(line.credit) > 0 ? `LKR ${fmt(Number(line.credit))}` : "—"}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                             <tfoot>
                               <tr className="border-t border-border font-semibold text-foreground">
-                                <td className="pt-1.5">Totals</td>
+                                <td className="pt-1.5" colSpan={2}>Totals</td>
                                 <td className="text-right tabular-nums pt-1.5">LKR {fmt(entryTotalDebit)}</td>
                                 <td className="text-right tabular-nums pt-1.5">LKR {fmt(entryTotalCredit)}</td>
                               </tr>
