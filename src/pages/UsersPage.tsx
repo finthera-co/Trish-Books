@@ -259,13 +259,50 @@ export default function UsersPage() {
                   </div>
                 )}
                 {isSuperAdmin && (
-                  <div>
-                    <label className="text-sm font-medium text-foreground">Tenant</label>
-                    <select value={tenantId} onChange={(e) => setTenantId(e.target.value)}
-                      className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground">
-                      <option value="">Select tenant...</option>
-                      {tenants?.map((t) => <option key={t.id} value={t.id}>{t.company_name}</option>)}
-                    </select>
+                  <div className="space-y-3 border-t border-border pt-4">
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-medium text-foreground">Tenant <span className="text-destructive">*</span></label>
+                      <div className="flex rounded-md border border-input overflow-hidden ml-auto">
+                        <button type="button" onClick={() => { setTenantMode("existing"); setNewCompanyName(""); setNewCountry(""); setNewIndustry(""); }}
+                          className={`text-xs px-3 py-1 transition-colors ${tenantMode === "existing" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}>
+                          Existing
+                        </button>
+                        <button type="button" onClick={() => { setTenantMode("new"); setTenantId(""); }}
+                          className={`text-xs px-3 py-1 transition-colors ${tenantMode === "new" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}>
+                          <Building2 className="w-3 h-3 inline mr-1" />New Tenant
+                        </button>
+                      </div>
+                    </div>
+                    {tenantMode === "existing" ? (
+                      <select value={tenantId} onChange={(e) => setTenantId(e.target.value)}
+                        className="w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground">
+                        <option value="">Select tenant...</option>
+                        {tenants?.map((t) => <option key={t.id} value={t.id}>{t.company_name}</option>)}
+                      </select>
+                    ) : (
+                      <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3">
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Company Name <span className="text-destructive">*</span></label>
+                          <input type="text" value={newCompanyName} onChange={(e) => setNewCompanyName(e.target.value)}
+                            placeholder="Acme Holdings Pvt Ltd"
+                            className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Country</label>
+                            <input type="text" value={newCountry} onChange={(e) => setNewCountry(e.target.value)}
+                              placeholder="Sri Lanka"
+                              className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground" />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Industry</label>
+                            <input type="text" value={newIndustry} onChange={(e) => setNewIndustry(e.target.value)}
+                              placeholder="Technology"
+                              className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground" />
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
                 <Button onClick={handleCreate} disabled={!email || !firstName || !lastName || !roleId || password.length < 6 || createUser.isPending} className="w-full">
