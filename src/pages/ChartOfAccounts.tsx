@@ -2,7 +2,7 @@ import { Plus, Search, Download, BookOpen, ChevronRight, Edit2, Power, Sprout } 
 import { Button } from "@/components/ui/button";
 import { useState, useMemo } from "react";
 import { useAccounts, useCreateAccount, useUpdateAccount } from "@/hooks/useData";
-import { useAccountCategories, useSeedDefaultAccounts } from "@/hooks/useAccountCategories";
+import { useAccountCategories, useCreateAccountCategory, useSeedDefaultAccounts } from "@/hooks/useAccountCategories";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -289,6 +289,7 @@ export default function ChartOfAccounts() {
   const createAccount = useCreateAccount();
   const updateAccount = useUpdateAccount();
   const seedDefaults = useSeedDefaultAccounts();
+  const createCategory = useCreateAccountCategory();
 
   const { data: fiscalPeriods } = useQuery({
     queryKey: ["all_fiscal_periods"],
@@ -551,6 +552,10 @@ export default function ChartOfAccounts() {
         accounts={(accounts as Account[]) || []}
         categories={categories || []}
         isPending={createAccount.isPending}
+        onCreateCategory={async (data) => {
+          const result = await createCategory.mutateAsync(data);
+          return result;
+        }}
       />
 
       {/* Edit form */}
@@ -563,6 +568,10 @@ export default function ChartOfAccounts() {
           categories={categories || []}
           isPending={updateAccount.isPending}
           editAccount={editAccount}
+          onCreateCategory={async (data) => {
+            const result = await createCategory.mutateAsync(data);
+            return result;
+          }}
         />
       )}
     </div>
