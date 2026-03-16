@@ -35,10 +35,12 @@ function PermissionEditor({ userId, roleName }: { userId: string; roleName: stri
 
   const isAdminRole = ["Super Admin", "Primary Admin", "Company Admin"].includes(roleName);
 
-  // Initialize perms from existing data
-  const currentPerms = perms ?? (existingPerms
+  // Build full permission map: start with defaults, overlay existing DB values
+  const defaults = Object.fromEntries(getDefaultPermissionsForRole(roleName).map(p => [p.module_name, p.permission_level]));
+  const saved = existingPerms
     ? Object.fromEntries(existingPerms.map(p => [p.module_name, p.permission_level]))
-    : Object.fromEntries(getDefaultPermissionsForRole(roleName).map(p => [p.module_name, p.permission_level])));
+    : {};
+  const currentPerms = perms ?? { ...defaults, ...saved };
 
   if (isLoading) return <div className="py-4 text-center text-sm text-muted-foreground">Loading permissions...</div>;
 
