@@ -2,7 +2,7 @@ import { Plus, Search, Download, BookOpen, ChevronRight, Edit2, Power, Sprout } 
 import { Button } from "@/components/ui/button";
 import { useState, useMemo } from "react";
 import { useAccounts, useCreateAccount, useUpdateAccount } from "@/hooks/useData";
-import { useAccountCategories, useSeedDefaultAccounts } from "@/hooks/useAccountCategories";
+import { useAccountCategories, useCreateAccountCategory, useSeedDefaultAccounts } from "@/hooks/useAccountCategories";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
