@@ -35,8 +35,10 @@ export default function ReconciliationSetup({ onStarted, onCancel }: Props) {
   const [statementRef, setStatementRef] = useState("");
   const [notes, setNotes] = useState("");
 
-  const { data: lastRecon } = useLastReconciliation(bankAccountId || undefined);
-  const beginningBalance = lastRecon?.statement_ending_balance ?? 0;
+  const isFirstReconciliation = !lastRecon;
+  const beginningBalance = isFirstReconciliation
+    ? (manualBeginningBalance ? parseFloat(manualBeginningBalance) : 0)
+    : (lastRecon?.statement_ending_balance ?? 0);
 
   const expenseAccounts = (accounts || []).filter((a: any) => a.account_type === "Expense");
   const incomeAccounts = (accounts || []).filter((a: any) => a.account_type === "Revenue");
