@@ -40,9 +40,9 @@ export default function PaymentVouchers() {
           <h1 className="text-2xl font-bold text-foreground">Payment Vouchers</h1>
           <p className="text-sm text-muted-foreground">Manage payment vouchers and track disbursements</p>
         </div>
-        <Button onClick={() => { setEditId(null); setShowForm(true); }}>
+        {canEditBanking("banking") && <Button onClick={() => { setEditId(null); setShowForm(true); }}>
           <Plus className="w-4 h-4 mr-2" /> New Voucher
-        </Button>
+        </Button>}
       </div>
 
       <Card>
