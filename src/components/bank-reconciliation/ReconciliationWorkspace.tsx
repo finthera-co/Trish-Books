@@ -202,6 +202,14 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
 
   const openAdjDialog = (type: "charge" | "interest") => {
     setAdjType(type);
+    if (type === "interest") {
+      setAdjAccountId(defaultInterestAccountId);
+      setAdjDesc("Bank Interest Earned");
+    } else {
+      setAdjAccountId("");
+      setAdjDesc("");
+    }
+    setAdjAmount("");
     setShowAdjDialog(true);
   };
 
