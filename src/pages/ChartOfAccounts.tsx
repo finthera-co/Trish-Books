@@ -277,6 +277,7 @@ function CategorySection({
 
 export default function ChartOfAccounts() {
   const { appUser } = useAuth();
+  const { canEdit: canEditAccounts } = useMyPermissions();
   const [formOpen, setFormOpen] = useState(false);
   const [editAccount, setEditAccount] = useState<Account | null>(null);
   const [search, setSearch] = useState("");

@@ -29,6 +29,7 @@ export default function PettyCash() {
   const createTransaction = useCreatePettyCashTransaction();
   const { appUser } = useAuth();
   const queryClient = useQueryClient();
+  const { canEdit: canEditBanking } = useMyPermissions();
 
   const currentAccount = accounts?.find(a => a.id === (selectedAccount || accounts?.[0]?.id));
 

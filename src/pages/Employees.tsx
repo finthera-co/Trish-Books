@@ -17,6 +17,7 @@ export default function Employees() {
 
   const { data: employees, isLoading } = useEmployees();
   const createEmployee = useCreateEmployee();
+  const { canEdit: canEditPayroll } = useMyPermissions();
 
   const filtered = employees?.filter((e) =>
     `${e.first_name} ${e.last_name}`.toLowerCase().includes(search.toLowerCase()) ||

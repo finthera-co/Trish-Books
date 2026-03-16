@@ -16,6 +16,7 @@ import { formatCurrency } from "@/lib/currency";
 export default function PaymentVouchers() {
   const { data: vouchers, isLoading } = usePaymentVouchers();
   const deleteMutation = useDeletePaymentVoucher();
+  const { canEdit: canEditBanking, canDelete: canDeleteBanking } = useMyPermissions();
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);

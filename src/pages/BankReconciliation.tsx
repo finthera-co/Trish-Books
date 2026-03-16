@@ -20,6 +20,7 @@ export default function BankReconciliation() {
   const [search, setSearch] = useState("");
   const { data: reconciliations, isLoading } = useBankReconciliations();
   const undoRecon = useUndoReconciliation();
+  const { canEdit: canEditBanking } = useMyPermissions();
 
   const filtered = (reconciliations || []).filter((r: any) => {
     if (!search) return true;

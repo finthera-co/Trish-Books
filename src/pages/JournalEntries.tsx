@@ -296,7 +296,7 @@ export default function JournalEntries() {
           <h1 className="page-title">Journal Entries</h1>
           <p className="page-description">Record and manage double-entry transactions</p>
         </div>
-        <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
+        {canEditJournals("journals") && <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
           <DialogTrigger asChild>
             <Button><Plus className="w-4 h-4" /> New Entry</Button>
           </DialogTrigger>
