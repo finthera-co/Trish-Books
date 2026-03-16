@@ -179,6 +179,99 @@ export type Database = {
           },
         ]
       }
+      bank_feed_transactions: {
+        Row: {
+          amount: number
+          bank_account_id: string
+          bank_balance: number | null
+          created_at: string
+          description: string | null
+          duplicate_of: string | null
+          id: string
+          import_batch: string | null
+          is_duplicate: boolean
+          match_confidence: number | null
+          matched_journal_line_id: string | null
+          reconciliation_id: string | null
+          reference_number: string | null
+          status: string
+          tenant_id: string
+          transaction_date: string
+        }
+        Insert: {
+          amount?: number
+          bank_account_id: string
+          bank_balance?: number | null
+          created_at?: string
+          description?: string | null
+          duplicate_of?: string | null
+          id?: string
+          import_batch?: string | null
+          is_duplicate?: boolean
+          match_confidence?: number | null
+          matched_journal_line_id?: string | null
+          reconciliation_id?: string | null
+          reference_number?: string | null
+          status?: string
+          tenant_id: string
+          transaction_date: string
+        }
+        Update: {
+          amount?: number
+          bank_account_id?: string
+          bank_balance?: number | null
+          created_at?: string
+          description?: string | null
+          duplicate_of?: string | null
+          id?: string
+          import_batch?: string | null
+          is_duplicate?: boolean
+          match_confidence?: number | null
+          matched_journal_line_id?: string | null
+          reconciliation_id?: string | null
+          reference_number?: string | null
+          status?: string
+          tenant_id?: string
+          transaction_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bank_feed_transactions_bank_account_id_fkey"
+            columns: ["bank_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bank_feed_transactions_duplicate_of_fkey"
+            columns: ["duplicate_of"]
+            isOneToOne: false
+            referencedRelation: "bank_feed_transactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bank_feed_transactions_matched_journal_line_id_fkey"
+            columns: ["matched_journal_line_id"]
+            isOneToOne: false
+            referencedRelation: "journal_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bank_feed_transactions_reconciliation_id_fkey"
+            columns: ["reconciliation_id"]
+            isOneToOne: false
+            referencedRelation: "bank_reconciliations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bank_feed_transactions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bank_reconciliations: {
         Row: {
           bank_account_id: string
@@ -2009,6 +2102,75 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reconciliation_rules: {
+        Row: {
+          action_account_id: string | null
+          action_create_expense: boolean
+          action_type: string
+          condition_amount_max: number | null
+          condition_amount_min: number | null
+          condition_field: string
+          condition_operator: string
+          condition_value: string
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          priority: number
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          action_account_id?: string | null
+          action_create_expense?: boolean
+          action_type?: string
+          condition_amount_max?: number | null
+          condition_amount_min?: number | null
+          condition_field?: string
+          condition_operator?: string
+          condition_value: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          priority?: number
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          action_account_id?: string | null
+          action_create_expense?: boolean
+          action_type?: string
+          condition_amount_max?: number | null
+          condition_amount_min?: number | null
+          condition_field?: string
+          condition_operator?: string
+          condition_value?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          priority?: number
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reconciliation_rules_action_account_id_fkey"
+            columns: ["action_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_rules_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
         ]
