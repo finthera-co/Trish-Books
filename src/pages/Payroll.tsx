@@ -127,9 +127,9 @@ export default function Payroll() {
           <Button variant="outline" onClick={exportFullBreakdown} disabled={!filteredRuns.length || exporting}>
             <Download className="w-4 h-4" /> {exporting ? "Exporting..." : "Export CSV"}
           </Button>
-          <Button onClick={() => setCreateOpen(true)}>
+          {canEditPayroll("payroll") && <Button onClick={() => setCreateOpen(true)}>
             <Plus className="w-4 h-4" /> Run Payroll
-          </Button>
+          </Button>}
         </div>
       </div>
 

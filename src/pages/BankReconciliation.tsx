@@ -66,9 +66,9 @@ export default function BankReconciliation() {
             Compare bank statements with your general ledger
           </p>
         </div>
-        <Button onClick={() => setView("setup")}>
+        {canEditBanking("banking") && <Button onClick={() => setView("setup")}>
           <Plus className="w-4 h-4 mr-1" /> New Reconciliation
-        </Button>
+        </Button>}
       </div>
 
       {/* Search */}

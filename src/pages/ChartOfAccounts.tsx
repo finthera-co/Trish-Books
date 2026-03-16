@@ -432,9 +432,9 @@ export default function ChartOfAccounts() {
           <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={!accounts?.length}>
             <Download className="w-4 h-4 mr-1" /> Export
           </Button>
-          <Button onClick={() => setFormOpen(true)}>
+          {canEditAccounts("accounts") && <Button onClick={() => setFormOpen(true)}>
             <Plus className="w-4 h-4" /> Add Account
-          </Button>
+          </Button>}
         </div>
       </div>
 

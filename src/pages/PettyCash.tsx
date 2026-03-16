@@ -81,7 +81,7 @@ export default function PettyCash() {
           <p className="page-description">Manage petty cash accounts and transactions</p>
         </div>
         <div className="flex gap-2">
-          <Dialog open={accountOpen} onOpenChange={setAccountOpen}>
+          {canEditBanking("banking") && <Dialog open={accountOpen} onOpenChange={setAccountOpen}>
             <DialogTrigger asChild>
               <Button variant="outline">New Account</Button>
             </DialogTrigger>

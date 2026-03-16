@@ -103,12 +103,12 @@ export default function PaymentVouchers() {
                         <Button variant="ghost" size="icon" onClick={() => setViewId(v.id)}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => { setEditId(v.id); setShowForm(true); }}>
+                        {canEditBanking("banking") && <Button variant="ghost" size="icon" onClick={() => { setEditId(v.id); setShowForm(true); }}>
                           <Edit className="w-4 h-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => setDeleteId(v.id)}>
+                        </Button>}
+                        {canDeleteBanking("banking") && <Button variant="ghost" size="icon" onClick={() => setDeleteId(v.id)}>
                           <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
+                        </Button>}
                       </div>
                     </TableCell>
                   </TableRow>
