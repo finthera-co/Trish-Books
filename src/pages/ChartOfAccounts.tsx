@@ -568,6 +568,10 @@ export default function ChartOfAccounts() {
           categories={categories || []}
           isPending={updateAccount.isPending}
           editAccount={editAccount}
+          onCreateCategory={async (data) => {
+            const result = await createCategory.mutateAsync(data);
+            return result;
+          }}
         />
       )}
     </div>
