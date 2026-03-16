@@ -163,7 +163,7 @@ export default function Invoices() {
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
       </div>
 
       <div className="grid grid-cols-4 gap-4">
