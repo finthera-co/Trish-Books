@@ -234,7 +234,7 @@ export default function KPICards({ metrics }: Props) {
                   <Tooltip key={kpi.key}>
                     <TooltipTrigger asChild>
                       <div className={cn(
-                        "group relative bg-card rounded-lg border p-3.5 hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 cursor-default",
+                        "group relative bg-card rounded-xl border p-5 hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 cursor-default",
                         pinnedKeys.includes(kpi.key) ? "border-primary/40 bg-primary/5" : "border-border"
                       )}>
                         {/* Quick actions on hover */}
