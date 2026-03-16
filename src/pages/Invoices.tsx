@@ -94,7 +94,7 @@ export default function Invoices() {
           <h1 className="page-title">Invoices</h1>
           <p className="page-description">Create and manage customer invoices with partial payment tracking</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
+        {canEditSales("sales") && <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button><Plus className="w-4 h-4" />New Invoice</Button>
           </DialogTrigger>
