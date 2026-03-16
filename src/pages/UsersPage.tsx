@@ -232,7 +232,7 @@ export default function UsersPage() {
                     </select>
                   </div>
                 )}
-                <Button onClick={handleCreate} disabled={!email || !firstName || !lastName || !roleId || createUser.isPending} className="w-full">
+                <Button onClick={handleCreate} disabled={!email || !firstName || !lastName || !roleId || password.length < 6 || createUser.isPending} className="w-full">
                   {createUser.isPending ? "Creating..." : "Create User"}
                 </Button>
               </div>
