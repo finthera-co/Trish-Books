@@ -10,6 +10,7 @@ interface AppUser {
   first_name: string;
   last_name: string;
   role_name: string;
+  is_primary: boolean;
 }
 
 interface AuthContextType {
@@ -22,6 +23,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   isSuperAdmin: boolean;
   isCompanyAdmin: boolean;
+  isPrimaryAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -42,6 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email,
         first_name,
         last_name,
+        is_primary,
         roles(role_name)
       `)
       .eq("auth_user_id", authUserId)
@@ -56,19 +59,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         first_name: data.first_name,
         last_name: data.last_name,
         role_name: (data.roles as any)?.role_name || "Staff",
+        is_primary: (data as any).is_primary || false,
       });
     }
   };
 
   useEffect(() => {
-    // Set up auth listener first
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
-        
         if (session?.user) {
-          // Use setTimeout to avoid deadlock with Supabase client
           setTimeout(() => fetchAppUser(session.user.id), 0);
         } else {
           setAppUser(null);
@@ -77,7 +78,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     );
 
-    // Then get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
@@ -96,17 +96,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signUp = async (email: string, password: string, firstName: string, lastName: string, tenantId?: string) => {
-    const { data, error } = await supabase.auth.signUp({ 
-      email, 
+    const { data, error } = await supabase.auth.signUp({
+      email,
       password,
-      options: {
-        emailRedirectTo: window.location.origin,
-      }
+      options: { emailRedirectTo: window.location.origin },
     });
-    
     if (error) return { error: new Error(error.message) };
-    
-    // Create user record after signup
+
     if (data.user && tenantId) {
       const { data: roleData } = await supabase
         .from("roles")
@@ -123,7 +119,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role_id: roleData?.id,
       });
     }
-    
     return { error: null };
   };
 
@@ -133,19 +128,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const isSuperAdmin = appUser?.role_name === "Super Admin";
-  const isCompanyAdmin = appUser?.role_name === "Company Admin" || isSuperAdmin;
+  const isPrimaryAdmin = appUser?.role_name === "Primary Admin" || appUser?.is_primary === true;
+  const isCompanyAdmin = ["Company Admin", "Primary Admin"].includes(appUser?.role_name || "") || isSuperAdmin || isPrimaryAdmin;
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      appUser, 
-      session, 
-      loading, 
-      signIn, 
-      signUp, 
-      signOut,
-      isSuperAdmin,
-      isCompanyAdmin,
+    <AuthContext.Provider value={{
+      user, appUser, session, loading,
+      signIn, signUp, signOut,
+      isSuperAdmin, isCompanyAdmin, isPrimaryAdmin,
     }}>
       {children}
     </AuthContext.Provider>
