@@ -35,6 +35,7 @@ export default function ReconciliationSetup({ onStarted, onCancel }: Props) {
   const [statementRef, setStatementRef] = useState("");
   const [notes, setNotes] = useState("");
 
+  const { data: lastRecon } = useLastReconciliation(bankAccountId || undefined);
   const isFirstReconciliation = !lastRecon;
   const beginningBalance = isFirstReconciliation
     ? (manualBeginningBalance ? parseFloat(manualBeginningBalance) : 0)
