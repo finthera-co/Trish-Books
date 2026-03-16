@@ -37,6 +37,7 @@ export default function Invoices() {
   const createInvoice = useCreateInvoice();
   const updateInvoice = useUpdateInvoice();
   const createCustomer = useCreateCustomer();
+  const { canEdit: canEditSales, canDelete: canDeleteSales } = useMyPermissions();
 
   const filtered = invoices?.filter((i) =>
     i.invoice_number.toLowerCase().includes(search.toLowerCase()) ||
