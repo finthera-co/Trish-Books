@@ -6,30 +6,35 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "./components/layout/AppLayout";
-import Index from "./pages/Index";
+import ModuleLayout from "./components/layout/ModuleLayout";
+import { MODULE_CONFIGS } from "./config/modules";
+import ModuleDashboard from "./pages/ModuleDashboard";
+
+// Pages
+import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
-import Tenants from "./pages/Tenants";
-import UsersPage from "./pages/UsersPage";
 import ChartOfAccounts from "./pages/ChartOfAccounts";
 import JournalEntries from "./pages/JournalEntries";
 import Ledger from "./pages/Ledger";
-import Invoices from "./pages/Invoices";
-import Expenses from "./pages/Expenses";
-import PettyCash from "./pages/PettyCash";
-import Budgets from "./pages/Budgets";
-import Reports from "./pages/Reports";
-import AuditLogs from "./pages/AuditLogs";
-import Subscriptions from "./pages/Subscriptions";
-import SettingsPage from "./pages/SettingsPage";
-import Employees from "./pages/Employees";
-import ProductsTaxes from "./pages/ProductsTaxes";
-import Payroll from "./pages/Payroll";
 import TrialBalance from "./pages/TrialBalance";
-import DataExports from "./pages/DataExports";
 import FiscalPeriods from "./pages/FiscalPeriods";
-import PaymentVouchers from "./pages/PaymentVouchers";
 import BankReconciliation from "./pages/BankReconciliation";
+import PaymentVouchers from "./pages/PaymentVouchers";
+import PettyCash from "./pages/PettyCash";
+import Invoices from "./pages/Invoices";
+import ProductsTaxes from "./pages/ProductsTaxes";
+import Expenses from "./pages/Expenses";
+import Payroll from "./pages/Payroll";
+import Employees from "./pages/Employees";
+import Reports from "./pages/Reports";
+import Budgets from "./pages/Budgets";
+import DataExports from "./pages/DataExports";
+import SettingsPage from "./pages/SettingsPage";
+import UsersPage from "./pages/UsersPage";
+import Tenants from "./pages/Tenants";
+import Subscriptions from "./pages/Subscriptions";
+import AuditLogs from "./pages/AuditLogs";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -46,28 +51,64 @@ const App = () => (
             <Route path="/signup" element={<Signup />} />
             <Route element={<ProtectedRoute />}>
               <Route element={<AppLayout />}>
-                <Route path="/" element={<Index />} />
-                <Route path="/tenants" element={<Tenants />} />
-                <Route path="/users" element={<UsersPage />} />
-                <Route path="/employees" element={<Employees />} />
-                <Route path="/accounts" element={<ChartOfAccounts />} />
-                <Route path="/journals" element={<JournalEntries />} />
-                <Route path="/ledger" element={<Ledger />} />
-                <Route path="/trial-balance" element={<TrialBalance />} />
-                <Route path="/fiscal-periods" element={<FiscalPeriods />} />
-                <Route path="/invoices" element={<Invoices />} />
-                <Route path="/products-taxes" element={<ProductsTaxes />} />
-                <Route path="/expenses" element={<Expenses />} />
-                <Route path="/payment-vouchers" element={<PaymentVouchers />} />
-                <Route path="/bank-reconciliation" element={<BankReconciliation />} />
-                <Route path="/petty-cash" element={<PettyCash />} />
-                <Route path="/budgets" element={<Budgets />} />
-                <Route path="/payroll" element={<Payroll />} />
-                <Route path="/reports" element={<Reports />} />
-                <Route path="/audit-logs" element={<AuditLogs />} />
-                <Route path="/subscriptions" element={<Subscriptions />} />
-                <Route path="/settings" element={<SettingsPage />} />
-                <Route path="/exports" element={<DataExports />} />
+                {/* Home launcher */}
+                <Route path="/" element={<Home />} />
+
+                {/* Accounting module */}
+                <Route element={<ModuleLayout config={MODULE_CONFIGS.accounting} />}>
+                  <Route path="/accounting" element={<ModuleDashboard config={MODULE_CONFIGS.accounting} />} />
+                  <Route path="/accounting/accounts" element={<ChartOfAccounts />} />
+                  <Route path="/accounting/journals" element={<JournalEntries />} />
+                  <Route path="/accounting/ledger" element={<Ledger />} />
+                  <Route path="/accounting/trial-balance" element={<TrialBalance />} />
+                  <Route path="/accounting/fiscal-periods" element={<FiscalPeriods />} />
+                </Route>
+
+                {/* Banking module */}
+                <Route element={<ModuleLayout config={MODULE_CONFIGS.banking} />}>
+                  <Route path="/banking" element={<ModuleDashboard config={MODULE_CONFIGS.banking} />} />
+                  <Route path="/banking/reconciliation" element={<BankReconciliation />} />
+                  <Route path="/banking/payment-vouchers" element={<PaymentVouchers />} />
+                  <Route path="/banking/petty-cash" element={<PettyCash />} />
+                </Route>
+
+                {/* Sales module */}
+                <Route element={<ModuleLayout config={MODULE_CONFIGS.sales} />}>
+                  <Route path="/sales" element={<ModuleDashboard config={MODULE_CONFIGS.sales} />} />
+                  <Route path="/sales/invoices" element={<Invoices />} />
+                  <Route path="/sales/products-taxes" element={<ProductsTaxes />} />
+                </Route>
+
+                {/* Expenses module */}
+                <Route element={<ModuleLayout config={MODULE_CONFIGS.expenses} />}>
+                  <Route path="/expenses" element={<ModuleDashboard config={MODULE_CONFIGS.expenses} />} />
+                  <Route path="/expenses/tracker" element={<Expenses />} />
+                </Route>
+
+                {/* Payroll module */}
+                <Route element={<ModuleLayout config={MODULE_CONFIGS.payroll} />}>
+                  <Route path="/payroll" element={<ModuleDashboard config={MODULE_CONFIGS.payroll} />} />
+                  <Route path="/payroll/runs" element={<Payroll />} />
+                  <Route path="/payroll/employees" element={<Employees />} />
+                </Route>
+
+                {/* Reports module */}
+                <Route element={<ModuleLayout config={MODULE_CONFIGS.reports} />}>
+                  <Route path="/reports" element={<ModuleDashboard config={MODULE_CONFIGS.reports} />} />
+                  <Route path="/reports/financial" element={<Reports />} />
+                  <Route path="/reports/budgets" element={<Budgets />} />
+                  <Route path="/reports/exports" element={<DataExports />} />
+                </Route>
+
+                {/* Admin/Settings module */}
+                <Route element={<ModuleLayout config={MODULE_CONFIGS.admin} />}>
+                  <Route path="/admin" element={<ModuleDashboard config={MODULE_CONFIGS.admin} />} />
+                  <Route path="/admin/settings" element={<SettingsPage />} />
+                  <Route path="/admin/users" element={<UsersPage />} />
+                  <Route path="/admin/tenants" element={<Tenants />} />
+                  <Route path="/admin/subscriptions" element={<Subscriptions />} />
+                  <Route path="/admin/audit-logs" element={<AuditLogs />} />
+                </Route>
               </Route>
             </Route>
             <Route path="*" element={<NotFound />} />
