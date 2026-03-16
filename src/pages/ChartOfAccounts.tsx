@@ -289,6 +289,7 @@ export default function ChartOfAccounts() {
   const createAccount = useCreateAccount();
   const updateAccount = useUpdateAccount();
   const seedDefaults = useSeedDefaultAccounts();
+  const createCategory = useCreateAccountCategory();
 
   const { data: fiscalPeriods } = useQuery({
     queryKey: ["all_fiscal_periods"],
