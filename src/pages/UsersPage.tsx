@@ -132,16 +132,45 @@ export default function UsersPage() {
       toast.error(`User limit reached (${maxUsers} users on ${planName} plan).`);
       return;
     }
+
+    let resolvedTenantId = isSuperAdmin ? tenantId : appUser?.tenant_id || "";
+
+    // If Super Admin chose to create a new tenant
+    if (isSuperAdmin && tenantMode === "new") {
+      if (!newCompanyName.trim()) {
+        toast.error("Company name is required for new tenant");
+        return;
+      }
+      try {
+        const { data, error } = await supabase
+          .from("tenants")
+          .insert({ company_name: newCompanyName, country: newCountry || null, industry: newIndustry || null })
+          .select("id")
+          .single();
+        if (error) throw error;
+        resolvedTenantId = data.id;
+      } catch (err: any) {
+        toast.error(`Failed to create tenant: ${err.message}`);
+        return;
+      }
+    }
+
+    if (isSuperAdmin && !resolvedTenantId) {
+      toast.error("Please select or create a tenant");
+      return;
+    }
+
     await createUser.mutateAsync({
       email,
       password,
       first_name: firstName,
       last_name: lastName,
       role_id: roleId,
-      tenant_id: isSuperAdmin ? tenantId : appUser?.tenant_id || "",
+      tenant_id: resolvedTenantId,
     });
     setOpen(false);
     setEmail(""); setPassword(""); setFirstName(""); setLastName(""); setRoleId("");
+    setTenantId(""); setTenantMode("existing"); setNewCompanyName(""); setNewCountry(""); setNewIndustry("");
   };
 
   const getSelectedRoleName = () => roles?.find(r => r.id === roleId)?.role_name || "";
