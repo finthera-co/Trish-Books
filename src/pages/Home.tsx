@@ -4,6 +4,9 @@ import { HOME_MODULES } from "@/config/modules";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Plus, Search, ArrowRight } from "lucide-react";
+import { useMyPermissions } from "@/hooks/usePermissions";
+import { cn } from "@/lib/utils";
+import { Plus, Search, ArrowRight } from "lucide-react";
 
 export default function Home() {
   const { appUser } = useAuth();
