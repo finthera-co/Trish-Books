@@ -127,7 +127,7 @@ export default function Expenses() {
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
       </div>
 
       {/* Summary Stats */}
