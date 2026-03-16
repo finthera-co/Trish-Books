@@ -94,6 +94,7 @@ export default function UsersPage() {
   const [open, setOpen] = useState(false);
   const [permDialogUser, setPermDialogUser] = useState<any>(null);
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [roleId, setRoleId] = useState("");
@@ -127,13 +128,14 @@ export default function UsersPage() {
     }
     await createUser.mutateAsync({
       email,
+      password,
       first_name: firstName,
       last_name: lastName,
       role_id: roleId,
       tenant_id: isSuperAdmin ? tenantId : appUser?.tenant_id || "",
     });
     setOpen(false);
-    setEmail(""); setFirstName(""); setLastName(""); setRoleId("");
+    setEmail(""); setPassword(""); setFirstName(""); setLastName(""); setRoleId("");
   };
 
   const getSelectedRoleName = () => roles?.find(r => r.id === roleId)?.role_name || "";
@@ -187,7 +189,13 @@ export default function UsersPage() {
                 </div>
                 <div>
                   <label className="text-sm font-medium text-foreground">Email <span className="text-destructive">*</span></label>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                      className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground" />
+                  </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground">Password <span className="text-destructive">*</span></label>
+                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Min 6 characters"
                     className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground" />
                 </div>
                 <div>
@@ -224,7 +232,7 @@ export default function UsersPage() {
                     </select>
                   </div>
                 )}
-                <Button onClick={handleCreate} disabled={!email || !firstName || !lastName || !roleId || createUser.isPending} className="w-full">
+                <Button onClick={handleCreate} disabled={!email || !firstName || !lastName || !roleId || password.length < 6 || createUser.isPending} className="w-full">
                   {createUser.isPending ? "Creating..." : "Create User"}
                 </Button>
               </div>
