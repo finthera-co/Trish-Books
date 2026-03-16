@@ -38,11 +38,12 @@ const PATH_TO_MODULE: Record<string, string> = {
 // These paths are always accessible regardless of plan
 const ALWAYS_ALLOWED_PATHS = [
   "/",
-  "/tenants",
-  "/users",
-  "/employees",
-  "/subscriptions",
-  "/settings",
+  "/admin",
+  "/admin/tenants",
+  "/admin/users",
+  "/admin/subscriptions",
+  "/admin/settings",
+  "/payroll/employees",
 ];
 
 export function useSubscriptionLimits(): PlanLimits {
