@@ -94,6 +94,7 @@ export default function UsersPage() {
   const [open, setOpen] = useState(false);
   const [permDialogUser, setPermDialogUser] = useState<any>(null);
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [roleId, setRoleId] = useState("");

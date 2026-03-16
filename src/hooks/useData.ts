@@ -95,15 +95,23 @@ export function useUsers() {
 export function useCreateUser() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (user: { email: string; first_name: string; last_name: string; role_id: string; tenant_id: string }) => {
-      const { data, error } = await supabase.from("users").insert(user).select().single();
-      if (error) throw error;
-      writeAuditLog("User Created", "users", data.id, { email: user.email });
-      return data;
+    mutationFn: async (user: { email: string; password: string; first_name: string; last_name: string; role_id: string; tenant_id: string }) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Not authenticated");
+
+      const res = await supabase.functions.invoke("create-user", {
+        body: user,
+      });
+
+      if (res.error) throw new Error(res.error.message);
+      if (!res.data.success) throw new Error(res.data.error || "Failed to create user");
+
+      writeAuditLog("User Created", "users", res.data.user?.id, { email: user.email });
+      return res.data.user;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
-      toast.success("User created");
+      toast.success("User created successfully");
     },
     onError: (e: Error) => toast.error(e.message),
   });
