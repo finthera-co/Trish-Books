@@ -1,4 +1,4 @@
-import { Plus, Search, Shield, ShieldCheck, Eye, Clock, UserCog, ChevronDown, ChevronRight, Settings2, Users2 } from "lucide-react";
+import { Plus, Search, Shield, ShieldCheck, Eye, Clock, UserCog, ChevronDown, ChevronRight, Settings2, Users2, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useUsers, useCreateUser, useRoles, useTenants } from "@/hooks/useData";
