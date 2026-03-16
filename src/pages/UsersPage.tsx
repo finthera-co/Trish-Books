@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useSubscriptionLimits } from "@/hooks/useSubscriptionLimits";
 import { useUserPermissions, useUpsertPermissions, PERMISSION_MODULES, PERMISSION_LEVELS, getDefaultPermissionsForRole, type PermissionLevel } from "@/hooks/usePermissions";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
+import { supabase } from "@/integrations/supabase/client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
