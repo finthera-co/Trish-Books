@@ -258,17 +258,17 @@ export default function KPICards({ metrics }: Props) {
                           </button>
                         </div>
 
-                        <div className="flex items-center justify-between mb-2">
-                          <kpi.icon className={cn("w-4 h-4", kpi.positive ? "text-[hsl(var(--success))]" : "text-destructive")} />
+                        <div className="flex items-center justify-between mb-3">
+                          <kpi.icon className={cn("w-5 h-5", kpi.positive ? "text-[hsl(var(--success))]" : "text-destructive")} />
                           {kpi.positive
-                            ? <ArrowUpRight className="w-3 h-3 text-[hsl(var(--success))]" />
-                            : <ArrowDownRight className="w-3 h-3 text-destructive" />
+                            ? <ArrowUpRight className="w-4 h-4 text-[hsl(var(--success))]" />
+                            : <ArrowDownRight className="w-4 h-4 text-destructive" />
                           }
                         </div>
-                        <p className={cn("text-lg font-bold tabular-nums leading-none", kpi.positive ? "text-foreground" : "text-destructive")}>
+                        <p className={cn("text-2xl font-bold tabular-nums leading-none", kpi.positive ? "text-foreground" : "text-destructive")}>
                           {kpi.value}
                         </p>
-                        <p className="text-[10px] text-muted-foreground mt-1.5 leading-tight">{kpi.label}</p>
+                        <p className="text-xs text-muted-foreground mt-2 leading-tight">{kpi.label}</p>
                       </div>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" className="max-w-[200px] text-xs">
