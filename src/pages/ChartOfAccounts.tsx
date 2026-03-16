@@ -6,6 +6,7 @@ import { useAccountCategories, useSeedDefaultAccounts } from "@/hooks/useAccount
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useMyPermissions } from "@/hooks/usePermissions";
 import { formatCurrency } from "@/lib/currency";
 import AccountForm from "@/components/chart-of-accounts/AccountForm";
 import OpeningBalanceCell from "@/components/chart-of-accounts/OpeningBalanceCell";

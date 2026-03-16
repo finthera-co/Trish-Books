@@ -70,7 +70,7 @@ export default function Expenses() {
           <h1 className="page-title">Expenses</h1>
           <p className="page-description">Track and approve expense submissions</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
+        {canEditExpenses("expenses") && <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button><Plus className="w-4 h-4" />Submit Expense</Button>
           </DialogTrigger>

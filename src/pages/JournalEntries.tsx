@@ -26,6 +26,7 @@ type StatusFilter = "all" | "posted" | "voided";
 
 export default function JournalEntries() {
   const { appUser } = useAuth();
+  const { canEdit: canEditJournals, canDelete: canDeleteJournals } = useMyPermissions();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");

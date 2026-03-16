@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useEmployees, useCreateEmployee } from "@/hooks/useData";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useMyPermissions } from "@/hooks/usePermissions";
 
 export default function Employees() {
   const [search, setSearch] = useState("");

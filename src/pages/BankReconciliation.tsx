@@ -10,6 +10,7 @@ import { formatCurrency } from "@/lib/currency";
 import ReconciliationSetup from "@/components/bank-reconciliation/ReconciliationSetup";
 import ReconciliationWorkspace from "@/components/bank-reconciliation/ReconciliationWorkspace";
 import { Landmark, Plus, RotateCcw, Eye } from "lucide-react";
+import { useMyPermissions } from "@/hooks/usePermissions";
 
 type View = "list" | "setup" | "workspace";
 

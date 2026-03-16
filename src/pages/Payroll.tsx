@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useMyPermissions } from "@/hooks/usePermissions";
 import { Plus, Search, Eye, DollarSign, Users, TrendingUp, FileText, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
