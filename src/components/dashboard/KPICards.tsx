@@ -229,12 +229,12 @@ export default function KPICards({ metrics }: Props) {
           return (
             <div key={cat}>
               <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">{cat}</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {items.map(kpi => (
                   <Tooltip key={kpi.key}>
                     <TooltipTrigger asChild>
                       <div className={cn(
-                        "group relative bg-card rounded-lg border p-3.5 hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 cursor-default",
+                        "group relative bg-card rounded-xl border p-5 hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 cursor-default",
                         pinnedKeys.includes(kpi.key) ? "border-primary/40 bg-primary/5" : "border-border"
                       )}>
                         {/* Quick actions on hover */}
@@ -258,17 +258,17 @@ export default function KPICards({ metrics }: Props) {
                           </button>
                         </div>
 
-                        <div className="flex items-center justify-between mb-2">
-                          <kpi.icon className={cn("w-4 h-4", kpi.positive ? "text-[hsl(var(--success))]" : "text-destructive")} />
+                        <div className="flex items-center justify-between mb-3">
+                          <kpi.icon className={cn("w-5 h-5", kpi.positive ? "text-[hsl(var(--success))]" : "text-destructive")} />
                           {kpi.positive
-                            ? <ArrowUpRight className="w-3 h-3 text-[hsl(var(--success))]" />
-                            : <ArrowDownRight className="w-3 h-3 text-destructive" />
+                            ? <ArrowUpRight className="w-4 h-4 text-[hsl(var(--success))]" />
+                            : <ArrowDownRight className="w-4 h-4 text-destructive" />
                           }
                         </div>
-                        <p className={cn("text-lg font-bold tabular-nums leading-none", kpi.positive ? "text-foreground" : "text-destructive")}>
+                        <p className={cn("text-2xl font-bold tabular-nums leading-none", kpi.positive ? "text-foreground" : "text-destructive")}>
                           {kpi.value}
                         </p>
-                        <p className="text-[10px] text-muted-foreground mt-1.5 leading-tight">{kpi.label}</p>
+                        <p className="text-xs text-muted-foreground mt-2 leading-tight">{kpi.label}</p>
                       </div>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" className="max-w-[200px] text-xs">
