@@ -26,6 +26,7 @@ export default function ReconciliationSetup({ onStarted, onCancel }: Props) {
 
   const [bankAccountId, setBankAccountId] = useState("");
   const [statementEndDate, setStatementEndDate] = useState("");
+  const [manualBeginningBalance, setManualBeginningBalance] = useState("");
   const [statementEndBalance, setStatementEndBalance] = useState("");
   const [serviceCharges, setServiceCharges] = useState("");
   const [serviceChargeAccount, setServiceChargeAccount] = useState("");
