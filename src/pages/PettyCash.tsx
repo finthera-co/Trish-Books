@@ -2,6 +2,7 @@ import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { usePettyCashAccounts, usePettyCashTransactions, useCreatePettyCashTransaction } from "@/hooks/useData";
+import { useMyPermissions } from "@/hooks/usePermissions";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -28,6 +29,7 @@ export default function PettyCash() {
   const createTransaction = useCreatePettyCashTransaction();
   const { appUser } = useAuth();
   const queryClient = useQueryClient();
+  const { canEdit: canEditBanking } = useMyPermissions();
 
   const currentAccount = accounts?.find(a => a.id === (selectedAccount || accounts?.[0]?.id));
 
@@ -79,56 +81,58 @@ export default function PettyCash() {
           <p className="page-description">Manage petty cash accounts and transactions</p>
         </div>
         <div className="flex gap-2">
-          <Dialog open={accountOpen} onOpenChange={setAccountOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline">New Account</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Create Petty Cash Account</DialogTitle></DialogHeader>
-              <div className="space-y-4 pt-4">
-                <div>
-                  <label className="text-sm font-medium">Account Name</label>
-                  <input type="text" value={accountName} onChange={(e) => setAccountName(e.target.value)}
-                    className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" placeholder="Office Petty Cash" />
-                </div>
-                <Button onClick={handleCreateAccount} disabled={!accountName} className="w-full">Create Account</Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button disabled={!accounts?.length}><Plus className="w-4 h-4" />New Transaction</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Record Transaction</DialogTitle></DialogHeader>
-              <div className="space-y-4 pt-4">
-                <div className="grid grid-cols-2 gap-4">
+          {canEditBanking("banking") && <>
+            <Dialog open={accountOpen} onOpenChange={setAccountOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline">New Account</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader><DialogTitle>Create Petty Cash Account</DialogTitle></DialogHeader>
+                <div className="space-y-4 pt-4">
                   <div>
-                    <label className="text-sm font-medium">Type</label>
-                    <select value={transactionType} onChange={(e) => setTransactionType(e.target.value)}
-                      className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground">
-                      <option value="expense">Expense</option>
-                      <option value="topup">Top-up</option>
-                      <option value="issue">Issue</option>
-                    </select>
+                    <label className="text-sm font-medium">Account Name</label>
+                    <input type="text" value={accountName} onChange={(e) => setAccountName(e.target.value)}
+                      className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" placeholder="Office Petty Cash" />
+                  </div>
+                  <Button onClick={handleCreateAccount} disabled={!accountName} className="w-full">Create Account</Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger asChild>
+                <Button disabled={!accounts?.length}><Plus className="w-4 h-4" />New Transaction</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader><DialogTitle>Record Transaction</DialogTitle></DialogHeader>
+                <div className="space-y-4 pt-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium">Type</label>
+                      <select value={transactionType} onChange={(e) => setTransactionType(e.target.value)}
+                        className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground">
+                        <option value="expense">Expense</option>
+                        <option value="topup">Top-up</option>
+                        <option value="issue">Issue</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium">Amount</label>
+                      <input type="number" value={amount || ""} onChange={(e) => setAmount(Number(e.target.value))}
+                        className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" />
+                    </div>
                   </div>
                   <div>
-                    <label className="text-sm font-medium">Amount</label>
-                    <input type="number" value={amount || ""} onChange={(e) => setAmount(Number(e.target.value))}
-                      className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" />
+                    <label className="text-sm font-medium">Description</label>
+                    <input type="text" value={description} onChange={(e) => setDescription(e.target.value)}
+                      className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" placeholder="Office snacks" />
                   </div>
+                  <Button onClick={handleCreate} disabled={!amount || createTransaction.isPending} className="w-full">
+                    {createTransaction.isPending ? "Recording..." : "Record Transaction"}
+                  </Button>
                 </div>
-                <div>
-                  <label className="text-sm font-medium">Description</label>
-                  <input type="text" value={description} onChange={(e) => setDescription(e.target.value)}
-                    className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" placeholder="Office snacks" />
-                </div>
-                <Button onClick={handleCreate} disabled={!amount || createTransaction.isPending} className="w-full">
-                  {createTransaction.isPending ? "Recording..." : "Record Transaction"}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogContent>
+            </Dialog>
+          </>}
         </div>
       </div>
 

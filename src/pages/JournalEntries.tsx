@@ -5,6 +5,7 @@ import { useJournalEntries, useAccounts } from "@/hooks/useData";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useMyPermissions } from "@/hooks/usePermissions";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -25,6 +26,7 @@ type StatusFilter = "all" | "posted" | "voided";
 
 export default function JournalEntries() {
   const { appUser } = useAuth();
+  const { canEdit: canEditJournals, canDelete: canDeleteJournals } = useMyPermissions();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -294,7 +296,7 @@ export default function JournalEntries() {
           <h1 className="page-title">Journal Entries</h1>
           <p className="page-description">Record and manage double-entry transactions</p>
         </div>
-        <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
+        {canEditJournals("journals") && <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
           <DialogTrigger asChild>
             <Button><Plus className="w-4 h-4" /> New Entry</Button>
           </DialogTrigger>
@@ -502,7 +504,7 @@ export default function JournalEntries() {
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
       </div>
 
       {/* Void Dialog */}

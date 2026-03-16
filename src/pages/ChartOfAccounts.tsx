@@ -6,6 +6,7 @@ import { useAccountCategories, useSeedDefaultAccounts } from "@/hooks/useAccount
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useMyPermissions } from "@/hooks/usePermissions";
 import { formatCurrency } from "@/lib/currency";
 import AccountForm from "@/components/chart-of-accounts/AccountForm";
 import OpeningBalanceCell from "@/components/chart-of-accounts/OpeningBalanceCell";
@@ -276,6 +277,7 @@ function CategorySection({
 
 export default function ChartOfAccounts() {
   const { appUser } = useAuth();
+  const { canEdit: canEditAccounts } = useMyPermissions();
   const [formOpen, setFormOpen] = useState(false);
   const [editAccount, setEditAccount] = useState<Account | null>(null);
   const [search, setSearch] = useState("");
@@ -430,9 +432,9 @@ export default function ChartOfAccounts() {
           <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={!accounts?.length}>
             <Download className="w-4 h-4 mr-1" /> Export
           </Button>
-          <Button onClick={() => setFormOpen(true)}>
+          {canEditAccounts("accounts") && <Button onClick={() => setFormOpen(true)}>
             <Plus className="w-4 h-4" /> Add Account
-          </Button>
+          </Button>}
         </div>
       </div>
 

@@ -4,9 +4,22 @@ import { HOME_MODULES } from "@/config/modules";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Plus, Search, ArrowRight } from "lucide-react";
+import { useMyPermissions } from "@/hooks/usePermissions";
+
+// Map module IDs to permission keys
+const MODULE_PERMISSION_MAP: Record<string, string> = {
+  accounting: "accounts",
+  banking: "banking",
+  sales: "sales",
+  expenses: "expenses",
+  payroll: "payroll",
+  reports: "reports",
+  admin: "settings",
+};
 
 export default function Home() {
   const { appUser } = useAuth();
+  const { canView } = useMyPermissions();
   const navigate = useNavigate();
 
   return (
@@ -23,32 +36,32 @@ export default function Home() {
 
       {/* Quick Actions */}
       <div className="flex flex-wrap gap-2">
-        <button
+        {canView("journals") && <button
           onClick={() => navigate("/accounting/journals")}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
         >
           <Plus className="w-3.5 h-3.5" />
           New Journal Entry
-        </button>
-        <button
+        </button>}
+        {canView("sales") && <button
           onClick={() => navigate("/sales/invoices")}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-card border border-border text-foreground hover:bg-accent transition-colors"
         >
           <Plus className="w-3.5 h-3.5" />
           New Invoice
-        </button>
-        <button
+        </button>}
+        {canView("expenses") && <button
           onClick={() => navigate("/expenses/tracker")}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-card border border-border text-foreground hover:bg-accent transition-colors"
         >
           <Plus className="w-3.5 h-3.5" />
           Log Expense
-        </button>
+        </button>}
       </div>
 
       {/* Module Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {HOME_MODULES.map((mod) => (
+        {HOME_MODULES.filter((mod) => canView(MODULE_PERMISSION_MAP[mod.id] || mod.id)).map((mod) => (
           <button
             key={mod.id}
             onClick={() => navigate(mod.path)}

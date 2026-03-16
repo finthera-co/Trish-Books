@@ -5,6 +5,7 @@ import { useExpenses, useCreateExpense, useUpdateExpense, useExpenseCategories, 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
+import { useMyPermissions } from "@/hooks/usePermissions";
 
 const statusColors: Record<string, string> = {
   approved: "bg-success/10 text-success",
@@ -28,6 +29,7 @@ export default function Expenses() {
   const updateExpense = useUpdateExpense();
   const createCategory = useCreateExpenseCategory();
   const { isCompanyAdmin } = useAuth();
+  const { canEdit: canEditExpenses } = useMyPermissions();
 
   const handleCreateCategory = async () => {
     const cat = await createCategory.mutateAsync({ name: newCatName });
@@ -69,7 +71,7 @@ export default function Expenses() {
           <h1 className="page-title">Expenses</h1>
           <p className="page-description">Track and approve expense submissions</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
+        {canEditExpenses("expenses") && <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button><Plus className="w-4 h-4" />Submit Expense</Button>
           </DialogTrigger>
@@ -126,7 +128,7 @@ export default function Expenses() {
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
       </div>
 
       {/* Summary Stats */}

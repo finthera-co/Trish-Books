@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { formatCurrency } from "@/lib/currency";
 import InvoiceDetails from "@/components/invoices/InvoiceDetails";
+import { useMyPermissions } from "@/hooks/usePermissions";
 
 const statusColors: Record<string, string> = {
   paid: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
@@ -36,6 +37,7 @@ export default function Invoices() {
   const createInvoice = useCreateInvoice();
   const updateInvoice = useUpdateInvoice();
   const createCustomer = useCreateCustomer();
+  const { canEdit: canEditSales, canDelete: canDeleteSales } = useMyPermissions();
 
   const filtered = invoices?.filter((i) =>
     i.invoice_number.toLowerCase().includes(search.toLowerCase()) ||
@@ -92,7 +94,7 @@ export default function Invoices() {
           <h1 className="page-title">Invoices</h1>
           <p className="page-description">Create and manage customer invoices with partial payment tracking</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
+        {canEditSales("sales") && <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button><Plus className="w-4 h-4" />New Invoice</Button>
           </DialogTrigger>
@@ -161,7 +163,7 @@ export default function Invoices() {
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
       </div>
 
       <div className="grid grid-cols-4 gap-4">

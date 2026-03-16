@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useEmployees, useCreateEmployee } from "@/hooks/useData";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useMyPermissions } from "@/hooks/usePermissions";
 
 export default function Employees() {
   const [search, setSearch] = useState("");
@@ -16,6 +17,7 @@ export default function Employees() {
 
   const { data: employees, isLoading } = useEmployees();
   const createEmployee = useCreateEmployee();
+  const { canEdit: canEditPayroll } = useMyPermissions();
 
   const filtered = employees?.filter((e) =>
     `${e.first_name} ${e.last_name}`.toLowerCase().includes(search.toLowerCase()) ||
@@ -50,7 +52,7 @@ export default function Employees() {
           <h1 className="page-title">Employees</h1>
           <p className="page-description">Manage employee records and departments</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
+        {canEditPayroll("payroll") && <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button><Plus className="w-4 h-4" />Add Employee</Button>
           </DialogTrigger>
@@ -98,7 +100,7 @@ export default function Employees() {
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
       </div>
 
       <div className="grid grid-cols-3 gap-4">

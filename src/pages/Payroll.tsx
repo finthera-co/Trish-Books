@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useMyPermissions } from "@/hooks/usePermissions";
 import { Plus, Search, Eye, DollarSign, Users, TrendingUp, FileText, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +33,7 @@ export default function Payroll() {
 
   const { data: runs, isLoading } = usePayrollRuns();
   const { data: employees } = useEmployees();
+  const { canEdit: canEditPayroll } = useMyPermissions();
 
   const filteredRuns = runs?.filter((r: any) =>
     r.run_number.toLowerCase().includes(search.toLowerCase()) ||
@@ -125,9 +127,9 @@ export default function Payroll() {
           <Button variant="outline" onClick={exportFullBreakdown} disabled={!filteredRuns.length || exporting}>
             <Download className="w-4 h-4" /> {exporting ? "Exporting..." : "Export CSV"}
           </Button>
-          <Button onClick={() => setCreateOpen(true)}>
+          {canEditPayroll("payroll") && <Button onClick={() => setCreateOpen(true)}>
             <Plus className="w-4 h-4" /> Run Payroll
-          </Button>
+          </Button>}
         </div>
       </div>
 

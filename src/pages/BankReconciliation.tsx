@@ -10,6 +10,7 @@ import { formatCurrency } from "@/lib/currency";
 import ReconciliationSetup from "@/components/bank-reconciliation/ReconciliationSetup";
 import ReconciliationWorkspace from "@/components/bank-reconciliation/ReconciliationWorkspace";
 import { Landmark, Plus, RotateCcw, Eye } from "lucide-react";
+import { useMyPermissions } from "@/hooks/usePermissions";
 
 type View = "list" | "setup" | "workspace";
 
@@ -19,6 +20,7 @@ export default function BankReconciliation() {
   const [search, setSearch] = useState("");
   const { data: reconciliations, isLoading } = useBankReconciliations();
   const undoRecon = useUndoReconciliation();
+  const { canEdit: canEditBanking } = useMyPermissions();
 
   const filtered = (reconciliations || []).filter((r: any) => {
     if (!search) return true;
@@ -64,9 +66,9 @@ export default function BankReconciliation() {
             Compare bank statements with your general ledger
           </p>
         </div>
-        <Button onClick={() => setView("setup")}>
+        {canEditBanking("banking") && <Button onClick={() => setView("setup")}>
           <Plus className="w-4 h-4 mr-1" /> New Reconciliation
-        </Button>
+        </Button>}
       </div>
 
       {/* Search */}

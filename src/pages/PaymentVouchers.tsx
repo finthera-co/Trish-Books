@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Plus, Search, Trash2, Eye, Edit, FileText } from "lucide-react";
+import { useMyPermissions } from "@/hooks/usePermissions";
 import PaymentVoucherForm from "@/components/payment-vouchers/PaymentVoucherForm";
 import PaymentVoucherDetails from "@/components/payment-vouchers/PaymentVoucherDetails";
 import { formatCurrency } from "@/lib/currency";
@@ -15,6 +16,7 @@ import { formatCurrency } from "@/lib/currency";
 export default function PaymentVouchers() {
   const { data: vouchers, isLoading } = usePaymentVouchers();
   const deleteMutation = useDeletePaymentVoucher();
+  const { canEdit: canEditBanking, canDelete: canDeleteBanking } = useMyPermissions();
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -38,9 +40,9 @@ export default function PaymentVouchers() {
           <h1 className="text-2xl font-bold text-foreground">Payment Vouchers</h1>
           <p className="text-sm text-muted-foreground">Manage payment vouchers and track disbursements</p>
         </div>
-        <Button onClick={() => { setEditId(null); setShowForm(true); }}>
+        {canEditBanking("banking") && <Button onClick={() => { setEditId(null); setShowForm(true); }}>
           <Plus className="w-4 h-4 mr-2" /> New Voucher
-        </Button>
+        </Button>}
       </div>
 
       <Card>
@@ -101,12 +103,12 @@ export default function PaymentVouchers() {
                         <Button variant="ghost" size="icon" onClick={() => setViewId(v.id)}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => { setEditId(v.id); setShowForm(true); }}>
+                        {canEditBanking("banking") && <Button variant="ghost" size="icon" onClick={() => { setEditId(v.id); setShowForm(true); }}>
                           <Edit className="w-4 h-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => setDeleteId(v.id)}>
+                        </Button>}
+                        {canDeleteBanking("banking") && <Button variant="ghost" size="icon" onClick={() => setDeleteId(v.id)}>
                           <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
+                        </Button>}
                       </div>
                     </TableCell>
                   </TableRow>
