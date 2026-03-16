@@ -101,6 +101,10 @@ export default function UsersPage() {
   const [lastName, setLastName] = useState("");
   const [roleId, setRoleId] = useState("");
   const [tenantId, setTenantId] = useState("");
+  const [tenantMode, setTenantMode] = useState<"existing" | "new">("existing");
+  const [newCompanyName, setNewCompanyName] = useState("");
+  const [newCountry, setNewCountry] = useState("");
+  const [newIndustry, setNewIndustry] = useState("");
 
   const { data: users, isLoading } = useUsers();
   const { data: roles } = useRoles();
