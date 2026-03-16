@@ -140,7 +140,7 @@ export default function AppSidebar() {
             (i) => location.pathname === i.path
           );
           return (
-            <SidebarGroup key={group.label} defaultOpen={groupHasActive || true}>
+            <SidebarGroup key={group.label}>
               {!collapsed && <SidebarGroupLabel>{group.label}</SidebarGroupLabel>}
               <SidebarGroupContent>
                 <SidebarMenu>
