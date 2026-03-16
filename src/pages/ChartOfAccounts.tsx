@@ -552,6 +552,10 @@ export default function ChartOfAccounts() {
         accounts={(accounts as Account[]) || []}
         categories={categories || []}
         isPending={createAccount.isPending}
+        onCreateCategory={async (data) => {
+          const result = await createCategory.mutateAsync(data);
+          return result;
+        }}
       />
 
       {/* Edit form */}
