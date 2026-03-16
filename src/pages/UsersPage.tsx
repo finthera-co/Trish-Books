@@ -305,7 +305,11 @@ export default function UsersPage() {
                     )}
                   </div>
                 )}
-                <Button onClick={handleCreate} disabled={!email || !firstName || !lastName || !roleId || password.length < 6 || createUser.isPending} className="w-full">
+                <Button onClick={handleCreate} disabled={
+                  !email || !firstName || !lastName || !roleId || password.length < 6 || createUser.isPending ||
+                  (isSuperAdmin && tenantMode === "existing" && !tenantId) ||
+                  (isSuperAdmin && tenantMode === "new" && !newCompanyName.trim())
+                } className="w-full">
                   {createUser.isPending ? "Creating..." : "Create User"}
                 </Button>
               </div>
