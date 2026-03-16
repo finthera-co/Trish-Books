@@ -109,12 +109,24 @@ export default function ReconciliationSetup({ onStarted, onCancel }: Props) {
                 <Input value={statementRef} onChange={(e) => setStatementRef(e.target.value)} placeholder="e.g. Feb 2026 Statement" />
               </div>
               <div className="space-y-1">
-                <Label>Beginning Balance</Label>
-                <div className="h-10 flex items-center px-3 rounded-md border bg-muted/30 text-sm font-medium">
-                  {formatCurrency(beginningBalance)}
-                </div>
+                <Label className="font-semibold">Beginning Balance {isFirstReconciliation ? "*" : ""}</Label>
+                {isFirstReconciliation ? (
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={manualBeginningBalance}
+                    onChange={(e) => setManualBeginningBalance(e.target.value)}
+                    placeholder="Enter opening balance"
+                  />
+                ) : (
+                  <div className="h-10 flex items-center px-3 rounded-md border bg-muted/30 text-sm font-medium">
+                    {formatCurrency(beginningBalance)}
+                  </div>
+                )}
                 <p className="text-xs text-muted-foreground">
-                  {lastRecon ? "From last reconciliation" : "No prior reconciliation — defaults to 0"}
+                  {isFirstReconciliation
+                    ? "First reconciliation — enter your bank's opening balance"
+                    : "From last reconciliation"}
                 </p>
               </div>
             </div>
