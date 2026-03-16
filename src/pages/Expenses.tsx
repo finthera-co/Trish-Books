@@ -5,6 +5,7 @@ import { useExpenses, useCreateExpense, useUpdateExpense, useExpenseCategories, 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
+import { useMyPermissions } from "@/hooks/usePermissions";
 
 const statusColors: Record<string, string> = {
   approved: "bg-success/10 text-success",
