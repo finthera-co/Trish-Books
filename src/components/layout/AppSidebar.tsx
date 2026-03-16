@@ -1,4 +1,4 @@
-import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Building2,
@@ -16,17 +16,29 @@ import {
   CreditCard,
   Settings,
   LogOut,
-  ChevronDown,
   Package,
   DollarSign,
   FileArchive,
   Calendar,
   Lock,
 } from "lucide-react";
-import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSubscriptionLimits } from "@/hooks/useSubscriptionLimits";
+import { NavLink } from "@/components/NavLink";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  useSidebar,
+} from "@/components/ui/sidebar";
 
 interface NavItem {
   label: string;
@@ -99,107 +111,112 @@ export default function AppSidebar() {
   const navigate = useNavigate();
   const { signOut } = useAuth();
   const { isModuleAllowed, planName } = useSubscriptionLimits();
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const { state } = useSidebar();
+  const collapsed = state === "collapsed";
 
   const handleSignOut = async () => {
     await signOut();
     navigate("/login");
   };
 
-  const toggleGroup = (label: string) => {
-    setCollapsed((prev) => ({ ...prev, [label]: !prev[label] }));
-  };
-
   return (
-    <aside className="w-64 min-h-screen bg-sidebar flex flex-col border-r border-sidebar-border">
-      {/* Logo */}
-      <div className="h-16 flex items-center px-6 border-b border-sidebar-border">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-sidebar-primary flex items-center justify-center">
+    <Sidebar collapsible="icon" className="border-r border-sidebar-border">
+      <SidebarHeader className="border-b border-sidebar-border px-3 py-3">
+        <div className="flex items-center gap-2 overflow-hidden">
+          <div className="w-8 h-8 shrink-0 rounded-lg bg-sidebar-primary flex items-center justify-center">
             <BookOpen className="w-4 h-4 text-sidebar-primary-foreground" />
           </div>
-          <span className="text-lg font-semibold text-sidebar-foreground">AccuBooks</span>
+          {!collapsed && (
+            <span className="text-lg font-semibold text-sidebar-foreground truncate">
+              AccuBooks
+            </span>
+          )}
         </div>
-      </div>
+      </SidebarHeader>
 
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-        {navGroups.map((group) => (
-          <div key={group.label} className="mb-2">
-            <button
-              onClick={() => toggleGroup(group.label)}
-              className="flex items-center justify-between w-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/50 hover:text-sidebar-foreground/70"
-            >
-              {group.label}
-              <ChevronDown
-                className={`w-3 h-3 transition-transform ${
-                  collapsed[group.label] ? "-rotate-90" : ""
-                }`}
-              />
-            </button>
-            {!collapsed[group.label] && (
-              <div className="mt-1 space-y-0.5">
-                {group.items.map((item) => {
-                  const isActive = location.pathname === item.path;
-                  const allowed = isModuleAllowed(item.path);
+      <SidebarContent>
+        {navGroups.map((group) => {
+          const groupHasActive = group.items.some(
+            (i) => location.pathname === i.path
+          );
+          return (
+            <SidebarGroup key={group.label}>
+              {!collapsed && <SidebarGroupLabel>{group.label}</SidebarGroupLabel>}
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {group.items.map((item) => {
+                    const isActive = location.pathname === item.path;
+                    const allowed = isModuleAllowed(item.path);
 
-                  if (!allowed) {
+                    if (!allowed) {
+                      return (
+                        <SidebarMenuItem key={item.path}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-sidebar-foreground/40 cursor-not-allowed">
+                                <item.icon className="w-4 h-4 shrink-0" />
+                                {!collapsed && (
+                                  <>
+                                    <span className="truncate flex-1">{item.label}</span>
+                                    <Lock className="w-3 h-3 shrink-0" />
+                                  </>
+                                )}
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="right">
+                              <p className="text-xs">
+                                Upgrade from <strong>{planName}</strong> to access
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </SidebarMenuItem>
+                      );
+                    }
+
                     return (
-                      <Tooltip key={item.path}>
-                        <TooltipTrigger asChild>
-                          <div
-                            className="sidebar-item sidebar-item-inactive opacity-40 cursor-not-allowed flex items-center justify-between"
+                      <SidebarMenuItem key={item.path}>
+                        <SidebarMenuButton asChild isActive={isActive}>
+                          <NavLink
+                            to={item.path}
+                            className="hover:bg-sidebar-accent/10"
+                            activeClassName="bg-primary text-primary-foreground font-medium"
                           >
-                            <span className="flex items-center gap-2">
-                              <item.icon className="w-4 h-4" />
-                              {item.label}
-                            </span>
-                            <Lock className="w-3 h-3" />
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent side="right">
-                          <p className="text-xs">Upgrade from <strong>{planName}</strong> to access this module</p>
-                        </TooltipContent>
-                      </Tooltip>
+                            <item.icon className="w-4 h-4 shrink-0" />
+                            {!collapsed && <span className="truncate">{item.label}</span>}
+                          </NavLink>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
                     );
-                  }
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          );
+        })}
+      </SidebarContent>
 
-                  return (
-                    <NavLink
-                      key={item.path}
-                      to={item.path}
-                      className={`sidebar-item ${
-                        isActive ? "sidebar-item-active" : "sidebar-item-inactive"
-                      }`}
-                    >
-                      <item.icon className="w-4 h-4" />
-                      {item.label}
-                    </NavLink>
-                  );
-                })}
-              </div>
-            )}
+      <SidebarFooter className="border-t border-sidebar-border">
+        {planName && !collapsed && (
+          <div className="px-3 py-2">
+            <div className="rounded-lg bg-muted/20 border border-border/30 px-3 py-2 text-center">
+              <p className="text-[10px] uppercase tracking-wider text-sidebar-foreground/60">
+                Current Plan
+              </p>
+              <p className="text-sm font-semibold text-sidebar-foreground">
+                {planName}
+              </p>
+            </div>
           </div>
-        ))}
-      </nav>
-
-      {/* Plan badge */}
-      {planName && (
-        <div className="px-4 py-2">
-          <div className="rounded-lg bg-background/20 border border-border/30 px-3 py-2 text-center">
-            <p className="text-[10px] uppercase tracking-wider text-sidebar-foreground/60">Current Plan</p>
-            <p className="text-sm font-semibold text-sidebar-foreground">{planName}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Footer */}
-      <div className="p-3 border-t border-sidebar-border">
-        <button onClick={handleSignOut} className="sidebar-item sidebar-item-inactive w-full">
-          <LogOut className="w-4 h-4" />
-          Sign Out
-        </button>
-      </div>
-    </aside>
+        )}
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton onClick={handleSignOut}>
+              <LogOut className="w-4 h-4 shrink-0" />
+              {!collapsed && <span>Sign Out</span>}
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
+    </Sidebar>
   );
 }
