@@ -27,8 +27,8 @@ export default function Expenses() {
   const { data: categories } = useExpenseCategories();
   const createExpense = useCreateExpense();
   const updateExpense = useUpdateExpense();
-  const createCategory = useCreateExpenseCategory();
   const { isCompanyAdmin } = useAuth();
+  const { canEdit: canEditExpenses } = useMyPermissions();
 
   const handleCreateCategory = async () => {
     const cat = await createCategory.mutateAsync({ name: newCatName });
