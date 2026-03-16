@@ -24,8 +24,8 @@ export function useKpiPreferences() {
   const upsert = useMutation({
     mutationFn: async ({ visible_kpis, pinned_kpis }: { visible_kpis: string[]; pinned_kpis: string[] }) => {
       if (!appUser?.id) throw new Error("Not authenticated");
-      const { error } = await supabase
-        .from("dashboard_kpi_preferences" as any)
+      const { error } = await (supabase as any)
+        .from("dashboard_kpi_preferences")
         .upsert(
           { user_id: appUser.id, visible_kpis, pinned_kpis, updated_at: new Date().toISOString() },
           { onConflict: "user_id" }
