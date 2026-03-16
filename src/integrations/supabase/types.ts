@@ -472,6 +472,41 @@ export type Database = {
           },
         ]
       }
+      dashboard_kpi_preferences: {
+        Row: {
+          created_at: string
+          id: string
+          pinned_kpis: string[]
+          updated_at: string
+          user_id: string
+          visible_kpis: string[]
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          pinned_kpis?: string[]
+          updated_at?: string
+          user_id: string
+          visible_kpis?: string[]
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          pinned_kpis?: string[]
+          updated_at?: string
+          user_id?: string
+          visible_kpis?: string[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dashboard_kpi_preferences_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       employees: {
         Row: {
           bank_account_no: string | null
