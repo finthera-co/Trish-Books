@@ -229,7 +229,7 @@ export default function KPICards({ metrics }: Props) {
           return (
             <div key={cat}>
               <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">{cat}</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {items.map(kpi => (
                   <Tooltip key={kpi.key}>
                     <TooltipTrigger asChild>
