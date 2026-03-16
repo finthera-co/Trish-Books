@@ -1,4 +1,4 @@
-import { Plus, Search, Shield, ShieldCheck, Eye, Clock, UserCog, ChevronDown, ChevronRight, Settings2, Users2 } from "lucide-react";
+import { Plus, Search, Shield, ShieldCheck, Eye, Clock, UserCog, ChevronDown, ChevronRight, Settings2, Users2, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useUsers, useCreateUser, useRoles, useTenants } from "@/hooks/useData";
@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useSubscriptionLimits } from "@/hooks/useSubscriptionLimits";
 import { useUserPermissions, useUpsertPermissions, PERMISSION_MODULES, PERMISSION_LEVELS, getDefaultPermissionsForRole, type PermissionLevel } from "@/hooks/usePermissions";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
+import { supabase } from "@/integrations/supabase/client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
@@ -101,6 +102,10 @@ export default function UsersPage() {
   const [lastName, setLastName] = useState("");
   const [roleId, setRoleId] = useState("");
   const [tenantId, setTenantId] = useState("");
+  const [tenantMode, setTenantMode] = useState<"existing" | "new">("existing");
+  const [newCompanyName, setNewCompanyName] = useState("");
+  const [newCountry, setNewCountry] = useState("");
+  const [newIndustry, setNewIndustry] = useState("");
 
   const { data: users, isLoading } = useUsers();
   const { data: roles } = useRoles();
@@ -128,16 +133,45 @@ export default function UsersPage() {
       toast.error(`User limit reached (${maxUsers} users on ${planName} plan).`);
       return;
     }
+
+    let resolvedTenantId = isSuperAdmin ? tenantId : appUser?.tenant_id || "";
+
+    // If Super Admin chose to create a new tenant
+    if (isSuperAdmin && tenantMode === "new") {
+      if (!newCompanyName.trim()) {
+        toast.error("Company name is required for new tenant");
+        return;
+      }
+      try {
+        const { data, error } = await supabase
+          .from("tenants")
+          .insert({ company_name: newCompanyName, country: newCountry || null, industry: newIndustry || null })
+          .select("id")
+          .single();
+        if (error) throw error;
+        resolvedTenantId = data.id;
+      } catch (err: any) {
+        toast.error(`Failed to create tenant: ${err.message}`);
+        return;
+      }
+    }
+
+    if (isSuperAdmin && !resolvedTenantId) {
+      toast.error("Please select or create a tenant");
+      return;
+    }
+
     await createUser.mutateAsync({
       email,
       password,
       first_name: firstName,
       last_name: lastName,
       role_id: roleId,
-      tenant_id: isSuperAdmin ? tenantId : appUser?.tenant_id || "",
+      tenant_id: resolvedTenantId,
     });
     setOpen(false);
     setEmail(""); setPassword(""); setFirstName(""); setLastName(""); setRoleId("");
+    setTenantId(""); setTenantMode("existing"); setNewCompanyName(""); setNewCountry(""); setNewIndustry("");
   };
 
   const getSelectedRoleName = () => roles?.find(r => r.id === roleId)?.role_name || "";
@@ -225,16 +259,57 @@ export default function UsersPage() {
                   </div>
                 )}
                 {isSuperAdmin && (
-                  <div>
-                    <label className="text-sm font-medium text-foreground">Tenant</label>
-                    <select value={tenantId} onChange={(e) => setTenantId(e.target.value)}
-                      className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground">
-                      <option value="">Select tenant...</option>
-                      {tenants?.map((t) => <option key={t.id} value={t.id}>{t.company_name}</option>)}
-                    </select>
+                  <div className="space-y-3 border-t border-border pt-4">
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-medium text-foreground">Tenant <span className="text-destructive">*</span></label>
+                      <div className="flex rounded-md border border-input overflow-hidden ml-auto">
+                        <button type="button" onClick={() => { setTenantMode("existing"); setNewCompanyName(""); setNewCountry(""); setNewIndustry(""); }}
+                          className={`text-xs px-3 py-1 transition-colors ${tenantMode === "existing" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}>
+                          Existing
+                        </button>
+                        <button type="button" onClick={() => { setTenantMode("new"); setTenantId(""); }}
+                          className={`text-xs px-3 py-1 transition-colors ${tenantMode === "new" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}>
+                          <Building2 className="w-3 h-3 inline mr-1" />New Tenant
+                        </button>
+                      </div>
+                    </div>
+                    {tenantMode === "existing" ? (
+                      <select value={tenantId} onChange={(e) => setTenantId(e.target.value)}
+                        className="w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground">
+                        <option value="">Select tenant...</option>
+                        {tenants?.map((t) => <option key={t.id} value={t.id}>{t.company_name}</option>)}
+                      </select>
+                    ) : (
+                      <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3">
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Company Name <span className="text-destructive">*</span></label>
+                          <input type="text" value={newCompanyName} onChange={(e) => setNewCompanyName(e.target.value)}
+                            placeholder="Acme Holdings Pvt Ltd"
+                            className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Country</label>
+                            <input type="text" value={newCountry} onChange={(e) => setNewCountry(e.target.value)}
+                              placeholder="Sri Lanka"
+                              className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground" />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Industry</label>
+                            <input type="text" value={newIndustry} onChange={(e) => setNewIndustry(e.target.value)}
+                              placeholder="Technology"
+                              className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground" />
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
-                <Button onClick={handleCreate} disabled={!email || !firstName || !lastName || !roleId || password.length < 6 || createUser.isPending} className="w-full">
+                <Button onClick={handleCreate} disabled={
+                  !email || !firstName || !lastName || !roleId || password.length < 6 || createUser.isPending ||
+                  (isSuperAdmin && tenantMode === "existing" && !tenantId) ||
+                  (isSuperAdmin && tenantMode === "new" && !newCompanyName.trim())
+                } className="w-full">
                   {createUser.isPending ? "Creating..." : "Create User"}
                 </Button>
               </div>
