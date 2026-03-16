@@ -61,7 +61,13 @@ function buildAllKPIs(m: DashboardMetrics): KPIItem[] {
   ];
 }
 
-const ALL_KPI_KEYS = buildAllKPIs({} as any).map(k => k.key);
+const ALL_KPI_KEYS = [
+  "gross_profit", "gross_margin", "operating_profit", "operating_margin", "net_profit", "net_profit_margin",
+  "current_ratio", "quick_ratio", "cash_ratio", "working_capital",
+  "roa", "roe",
+  "asset_turnover", "ar_turnover", "collection_period",
+  "total_inflows", "total_outflows", "net_cash_flow",
+];
 
 interface Props {
   metrics: DashboardMetrics;
