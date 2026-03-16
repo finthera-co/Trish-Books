@@ -128,13 +128,14 @@ export default function UsersPage() {
     }
     await createUser.mutateAsync({
       email,
+      password,
       first_name: firstName,
       last_name: lastName,
       role_id: roleId,
       tenant_id: isSuperAdmin ? tenantId : appUser?.tenant_id || "",
     });
     setOpen(false);
-    setEmail(""); setFirstName(""); setLastName(""); setRoleId("");
+    setEmail(""); setPassword(""); setFirstName(""); setLastName(""); setRoleId("");
   };
 
   const getSelectedRoleName = () => roles?.find(r => r.id === roleId)?.role_name || "";
