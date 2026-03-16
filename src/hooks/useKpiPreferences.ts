@@ -10,8 +10,8 @@ export function useKpiPreferences() {
     queryKey: ["kpi_preferences", appUser?.id],
     queryFn: async () => {
       if (!appUser?.id) return null;
-      const { data, error } = await supabase
-        .from("dashboard_kpi_preferences" as any)
+      const { data, error } = await (supabase as any)
+        .from("dashboard_kpi_preferences")
         .select("*")
         .eq("user_id", appUser.id)
         .maybeSingle();
