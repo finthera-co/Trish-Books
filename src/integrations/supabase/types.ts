@@ -2284,6 +2284,41 @@ export type Database = {
           },
         ]
       }
+      user_permissions: {
+        Row: {
+          created_at: string
+          id: string
+          module_name: string
+          permission_level: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          module_name: string
+          permission_level?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          module_name?: string
+          permission_level?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_permissions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       users: {
         Row: {
           auth_user_id: string | null
@@ -2291,6 +2326,7 @@ export type Database = {
           email: string
           first_name: string
           id: string
+          is_primary: boolean
           last_name: string
           role_id: string | null
           status: string
@@ -2303,6 +2339,7 @@ export type Database = {
           email: string
           first_name: string
           id?: string
+          is_primary?: boolean
           last_name: string
           role_id?: string | null
           status?: string
@@ -2315,6 +2352,7 @@ export type Database = {
           email?: string
           first_name?: string
           id?: string
+          is_primary?: boolean
           last_name?: string
           role_id?: string | null
           status?: string
@@ -2347,8 +2385,13 @@ export type Database = {
         Args: { p_tenant_id: string }
         Returns: string
       }
+      get_user_permission: {
+        Args: { p_module: string; p_user_id: string }
+        Returns: string
+      }
       get_user_role_name: { Args: never; Returns: string }
       get_user_tenant_id: { Args: never; Returns: string }
+      is_primary_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
     }
     Enums: {
