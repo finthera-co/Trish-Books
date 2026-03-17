@@ -806,10 +806,31 @@ export default function Ledger() {
                   <p className={`font-bold font-mono ${drillDownEntry.balance < 0 ? "text-destructive" : "text-foreground"}`}>{fmtBal(drillDownEntry.balance)}</p>
                 </div>
               </div>
-              <Button variant="outline" className="w-full" onClick={() => { navigateToSource(drillDownEntry); setDrillDownEntry(null); }}>
-                <ExternalLink className="w-4 h-4 mr-2" />
-                Go to Source Transaction
-              </Button>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                <span className="font-medium">Source:</span>
+                <span className="capitalize">{drillDownEntry.transaction_type.replace(/_/g, " ")}</span>
+                {drillDownEntry.transaction_id && (
+                  <span className="font-mono text-[10px] bg-muted px-1.5 py-0.5 rounded">{drillDownEntry.transaction_id.slice(0, 8)}…</span>
+                )}
+              </div>
+              {drillDownEntry.transaction_id ? (
+                <Button variant="outline" className="w-full" onClick={() => { navigateToSource(drillDownEntry); setDrillDownEntry(null); }}>
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  Go to Source Transaction
+                </Button>
+              ) : (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div>
+                      <Button variant="outline" className="w-full" disabled>
+                        <AlertCircle className="w-4 h-4 mr-2" />
+                        Go to Source Transaction
+                      </Button>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>Source transaction not available</TooltipContent>
+                </Tooltip>
+              )}
             </div>
           )}
         </DialogContent>
