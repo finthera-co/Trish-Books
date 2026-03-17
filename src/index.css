@@ -138,6 +138,15 @@
     @apply border-border;
   }
 
+  /* Hide scrollbars but keep scrolling */
+  *::-webkit-scrollbar {
+    display: none;
+  }
+  * {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-family: var(--font-sans);
