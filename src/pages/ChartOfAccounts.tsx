@@ -10,6 +10,8 @@ import { useMyPermissions } from "@/hooks/usePermissions";
 import { formatCurrency } from "@/lib/currency";
 import AccountForm from "@/components/chart-of-accounts/AccountForm";
 import OpeningBalanceCell from "@/components/chart-of-accounts/OpeningBalanceCell";
+import InlineOpeningBalance from "@/components/chart-of-accounts/InlineOpeningBalance";
+import { useSystemSetting } from "@/hooks/useOpeningBalanceSettings";
 import { toast } from "sonner";
 import {
   ACCOUNT_TYPES,
