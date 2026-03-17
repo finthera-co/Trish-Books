@@ -505,9 +505,6 @@ export default function ChartOfAccounts() {
                 <TypeSection
                   key={tg.type}
                   typeGroup={tg}
-                  balanceMap={balanceMap}
-                  activePeriodId={activePeriod?.id ?? null}
-                  tenantId={appUser?.tenant_id}
                   onEdit={(a) => setEditAccount(a)}
                   onToggleActive={handleToggleActive}
                 />
