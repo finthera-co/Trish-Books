@@ -145,16 +145,10 @@ function AccountRow({
 
 function TypeSection({
   typeGroup,
-  balanceMap,
-  activePeriodId,
-  tenantId,
   onEdit,
   onToggleActive,
 }: {
   typeGroup: TypeGroup;
-  balanceMap: Map<string, number>;
-  activePeriodId: string | null;
-  tenantId: string | undefined;
   onEdit: (a: Account) => void;
   onToggleActive: (a: Account) => void;
 }) {
