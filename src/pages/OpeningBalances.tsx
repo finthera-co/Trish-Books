@@ -26,7 +26,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { getNormalBalance } from "@/lib/accountTypes";
+import { getNormalBalance, isOpeningBalanceEligible, OPENING_BALANCE_INELIGIBLE_REASON } from "@/lib/accountTypes";
 
 interface BalanceLine {
   id: string;
@@ -60,22 +60,27 @@ export default function OpeningBalances() {
   const isDraft = !obStatus || obStatus === "draft";
   const isEditable = isDraft && !isClosed;
 
-  // Filter out system accounts from dropdown
+  // Filter to eligible accounts only (Asset, Liability, Equity) and exclude system accounts
   const selectableAccounts = useMemo(() => {
-    return (accounts || []).filter((a: any) => !a.is_system);
+    return (accounts || []).filter((a: any) => !a.is_system && isOpeningBalanceEligible(a.account_type));
   }, [accounts]);
 
   const totalDebits = useMemo(() => lines.reduce((s, l) => s + l.debit, 0), [lines]);
   const totalCredits = useMemo(() => lines.reduce((s, l) => s + l.credit, 0), [lines]);
   const difference = totalDebits - totalCredits;
 
-  // Validation: check account types vs normal balance
+  // Validation: check account types vs normal balance + eligibility
   const validationWarnings = useMemo(() => {
     const warnings: string[] = [];
     lines.forEach((l) => {
       if (!l.account_id) return;
       const acct = (accounts || []).find((a: any) => a.id === l.account_id) as any;
       if (!acct) return;
+      // Block ineligible account types
+      if (!isOpeningBalanceEligible(acct.account_type)) {
+        warnings.push(`❌ ${acct.account_name} (${acct.account_type}) cannot have an opening balance`);
+        return;
+      }
       const normal = getNormalBalance(acct.account_type);
       if (normal === "Debit" && l.credit > 0 && l.debit === 0) {
         warnings.push(`${acct.account_name} normally has a Debit balance but has a Credit entry`);
