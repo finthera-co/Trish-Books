@@ -1,6 +1,6 @@
 import { Plus, Search, Download, BookOpen, ChevronRight, Edit2, Power, Sprout } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useAccounts, useCreateAccount, useUpdateAccount } from "@/hooks/useData";
 import { useAccountCategories, useCreateAccountCategory, useSeedDefaultAccounts } from "@/hooks/useAccountCategories";
 import { useAuth } from "@/contexts/AuthContext";
@@ -10,6 +10,8 @@ import AccountForm from "@/components/chart-of-accounts/AccountForm";
 
 import InlineOpeningBalance from "@/components/chart-of-accounts/InlineOpeningBalance";
 import { useSystemSetting } from "@/hooks/useOpeningBalanceSettings";
+import { useFiscalPeriods, usePeriodOpeningBalances } from "@/hooks/useFiscalPeriodBalances";
+import FiscalPeriodSelector from "@/components/FiscalPeriodSelector";
 
 import {
   ACCOUNT_TYPES,
@@ -64,14 +66,27 @@ function AccountRow({
   depth = 0,
   onEdit,
   onToggleActive,
+  periodOBMap,
+  isPeriodClosed,
 }: {
   account: Account;
   depth?: number;
   onEdit: (a: Account) => void;
   onToggleActive: (a: Account) => void;
+  periodOBMap?: Map<string, { debit: number; credit: number }>;
+  isPeriodClosed?: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = account.children && account.children.length > 0;
+
+  // Use period-based opening balance if available
+  const periodOB = periodOBMap?.get(account.id);
+  const displayBalance = periodOB
+    ? (periodOB.debit > periodOB.credit ? periodOB.debit - periodOB.credit : periodOB.credit - periodOB.debit)
+    : (account as any).opening_balance ?? 0;
+  const displayType = periodOB
+    ? (periodOB.debit >= periodOB.credit ? "debit" : "credit")
+    : (account as any).opening_balance_type ?? "debit";
 
   return (
     <>
@@ -105,10 +120,10 @@ function AccountRow({
             accountId={account.id}
             accountType={account.account_type}
             accountSubtype={account.account_subtype}
-            currentBalance={(account as any).opening_balance ?? 0}
-            currentType={(account as any).opening_balance_type ?? "debit"}
+            currentBalance={displayBalance}
+            currentType={displayType}
             normalBalance={getNormalBalance(account.account_type)}
-            isLocked={(account as any).is_locked || false}
+            isLocked={(account as any).is_locked || isPeriodClosed || false}
           />
         </td>
         <td className="text-right">
@@ -137,6 +152,8 @@ function AccountRow({
           depth={depth + 1}
           onEdit={onEdit}
           onToggleActive={onToggleActive}
+          periodOBMap={periodOBMap}
+          isPeriodClosed={isPeriodClosed}
         />
       ))}
     </>
@@ -147,10 +164,14 @@ function TypeSection({
   typeGroup,
   onEdit,
   onToggleActive,
+  periodOBMap,
+  isPeriodClosed,
 }: {
   typeGroup: TypeGroup;
   onEdit: (a: Account) => void;
   onToggleActive: (a: Account) => void;
+  periodOBMap?: Map<string, { debit: number; credit: number }>;
+  isPeriodClosed?: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
   const totalAccounts = typeGroup.categories.reduce((s, c) => s + c.accounts.length, 0) + typeGroup.uncategorized.length;
@@ -183,6 +204,8 @@ function TypeSection({
           accountType={typeGroup.type}
           onEdit={onEdit}
           onToggleActive={onToggleActive}
+          periodOBMap={periodOBMap}
+          isPeriodClosed={isPeriodClosed}
         />
       ))}
       {expanded && typeGroup.uncategorized.length > 0 && (
@@ -199,6 +222,8 @@ function TypeSection({
               depth={2}
               onEdit={onEdit}
               onToggleActive={onToggleActive}
+              periodOBMap={periodOBMap}
+              isPeriodClosed={isPeriodClosed}
             />
           ))}
         </>
@@ -212,11 +237,15 @@ function CategorySection({
   accountType,
   onEdit,
   onToggleActive,
+  periodOBMap,
+  isPeriodClosed,
 }: {
   category: CategoryGroup;
   accountType: string;
   onEdit: (a: Account) => void;
   onToggleActive: (a: Account) => void;
+  periodOBMap?: Map<string, { debit: number; credit: number }>;
+  isPeriodClosed?: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
   const tree = buildTree(category.accounts).sort((a, b) => a.account_code.localeCompare(b.account_code));
@@ -242,6 +271,8 @@ function CategorySection({
           depth={2}
           onEdit={onEdit}
           onToggleActive={onToggleActive}
+          periodOBMap={periodOBMap}
+          isPeriodClosed={isPeriodClosed}
         />
       ))}
     </>
@@ -265,6 +296,32 @@ export default function ChartOfAccounts() {
   const createCategory = useCreateAccountCategory();
 
   const { data: obStatus } = useSystemSetting("opening_balance_status");
+
+  // Fiscal period selector
+  const { data: periods } = useFiscalPeriods();
+  const [selectedPeriodId, setSelectedPeriodId] = useState("");
+  const { data: periodBalances } = usePeriodOpeningBalances(selectedPeriodId || null);
+
+  // Auto-select first open period
+  useEffect(() => {
+    if (periods?.length && !selectedPeriodId) {
+      const openPeriod = periods.find((p: any) => p.status === "open");
+      if (openPeriod) setSelectedPeriodId(openPeriod.id);
+      else setSelectedPeriodId(periods[0].id);
+    }
+  }, [periods, selectedPeriodId]);
+
+  const selectedPeriod = periods?.find((p: any) => p.id === selectedPeriodId) as any;
+  const isPeriodClosed = selectedPeriod?.status === "closed";
+
+  // Build a map of period opening balances by account_id
+  const periodOBMap = useMemo(() => {
+    const map = new Map<string, { debit: number; credit: number }>();
+    (periodBalances || []).forEach((ob: any) => {
+      map.set(ob.account_id, { debit: Number(ob.debit) || 0, credit: Number(ob.credit) || 0 });
+    });
+    return map;
+  }, [periodBalances]);
 
   const filteredAccounts = useMemo(() => {
     if (!accounts) return [];
@@ -355,7 +412,8 @@ export default function ChartOfAccounts() {
             Type → Category → Account hierarchy ({activeCount} active)
           </p>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap items-center">
+          <FiscalPeriodSelector value={selectedPeriodId} onChange={setSelectedPeriodId} />
           <Button
             variant="outline"
             size="sm"
@@ -458,6 +516,8 @@ export default function ChartOfAccounts() {
                   typeGroup={tg}
                   onEdit={(a) => setEditAccount(a)}
                   onToggleActive={handleToggleActive}
+                  periodOBMap={periodOBMap}
+                  isPeriodClosed={isPeriodClosed}
                 />
               ))}
             </tbody>
