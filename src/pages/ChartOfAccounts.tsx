@@ -64,17 +64,11 @@ interface TypeGroup {
 function AccountRow({
   account,
   depth = 0,
-  balanceMap,
-  activePeriodId,
-  tenantId,
   onEdit,
   onToggleActive,
 }: {
   account: Account;
   depth?: number;
-  balanceMap: Map<string, number>;
-  activePeriodId: string | null;
-  tenantId: string | undefined;
   onEdit: (a: Account) => void;
   onToggleActive: (a: Account) => void;
 }) {
