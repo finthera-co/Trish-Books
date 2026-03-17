@@ -3,6 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { format, subMonths, startOfMonth } from "date-fns";
 import { useDashboardMetrics } from "@/hooks/useDashboardMetrics";
 import ModuleCards from "@/components/dashboard/ModuleCards";
+import OBEBanner from "@/components/dashboard/OBEBanner";
 import PeriodFilter from "@/components/dashboard/PeriodFilter";
 import DashboardCharts from "@/components/dashboard/DashboardCharts";
 import KPICards from "@/components/dashboard/KPICards";
@@ -35,6 +36,9 @@ export default function Home() {
         </div>
         <PeriodFilter from={fromDate} to={toDate} onFromChange={setFromDate} onToChange={setToDate} />
       </div>
+
+      {/* OBE Warning Banner */}
+      <OBEBanner />
 
       {/* Module Navigation */}
       <ModuleCards />

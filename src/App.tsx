@@ -17,6 +17,8 @@ import Signup from "./pages/Signup";
 import ChartOfAccounts from "./pages/ChartOfAccounts";
 import JournalEntries from "./pages/JournalEntries";
 import Ledger from "./pages/Ledger";
+import OpeningBalances from "./pages/OpeningBalances";
+import CloseOBE from "./pages/CloseOBE";
 import TrialBalance from "./pages/TrialBalance";
 import FiscalPeriods from "./pages/FiscalPeriods";
 import BankReconciliation from "./pages/BankReconciliation";
@@ -62,6 +64,8 @@ const App = () => (
                   <Route path="/accounting/ledger" element={<Ledger />} />
                   <Route path="/accounting/trial-balance" element={<TrialBalance />} />
                   <Route path="/accounting/fiscal-periods" element={<FiscalPeriods />} />
+                  <Route path="/accounting/opening-balances" element={<OpeningBalances />} />
+                  <Route path="/accounting/close-obe" element={<CloseOBE />} />
                 </Route>
 
                 {/* Banking module */}
