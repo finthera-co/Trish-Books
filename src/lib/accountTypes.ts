@@ -49,7 +49,6 @@ export function isOpeningBalanceEligible(accountType: string): boolean {
 
 export const OPENING_BALANCE_INELIGIBLE_REASON =
   "Opening balances are not allowed for Income or Expense accounts. These accounts start from zero for the selected accounting period.";
-}
 
 // Account type → badge color (uses semantic tokens)
 export const typeColors: Record<string, string> = {
