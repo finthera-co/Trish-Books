@@ -5,7 +5,7 @@ import { useAccounts, useCreateAccount, useUpdateAccount } from "@/hooks/useData
 import { useAccountCategories, useCreateAccountCategory, useSeedDefaultAccounts } from "@/hooks/useAccountCategories";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMyPermissions } from "@/hooks/usePermissions";
-import { formatCurrency } from "@/lib/currency";
+
 import AccountForm from "@/components/chart-of-accounts/AccountForm";
 
 import InlineOpeningBalance from "@/components/chart-of-accounts/InlineOpeningBalance";
