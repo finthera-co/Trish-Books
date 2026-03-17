@@ -1,7 +1,9 @@
-import { Plus, Search, RotateCcw, Ban, ChevronDown, ChevronRight, Filter, AlertTriangle, CheckCircle2, XCircle, Info } from "lucide-react";
+import { Plus, Search, RotateCcw, Ban, ChevronDown, ChevronRight, Filter, AlertTriangle, CheckCircle2, XCircle, Info, FileText, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState, Fragment, useMemo, useCallback } from "react";
+import { useState, Fragment, useMemo, useCallback, useEffect, useRef } from "react";
 import { useJournalEntries, useAccounts } from "@/hooks/useData";
+import { useSearchParams } from "react-router-dom";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
