@@ -109,11 +109,12 @@ function AccountRow({
           {getNormalBalance(account.account_type)}
         </td>
         <td className="text-right">
-          <OpeningBalanceCell
+          <InlineOpeningBalance
             accountId={account.id}
-            currentBalance={balanceMap.get(account.id) ?? null}
-            activePeriodId={activePeriodId}
-            tenantId={tenantId}
+            currentBalance={(account as any).opening_balance ?? 0}
+            currentType={(account as any).opening_balance_type ?? "debit"}
+            normalBalance={getNormalBalance(account.account_type)}
+            isLocked={(account as any).is_locked || false}
           />
         </td>
         <td className="text-right">
