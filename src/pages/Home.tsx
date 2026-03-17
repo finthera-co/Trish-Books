@@ -37,6 +37,9 @@ export default function Home() {
         <PeriodFilter from={fromDate} to={toDate} onFromChange={setFromDate} onToChange={setToDate} />
       </div>
 
+      {/* OBE Warning Banner */}
+      <OBEBanner />
+
       {/* Module Navigation */}
       <ModuleCards />
 

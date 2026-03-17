@@ -23,6 +23,7 @@ import {
   Box,
   Contact,
   Store,
+  Lock,
 } from "lucide-react";
 import type { ModuleConfig } from "@/components/layout/ModuleLayout";
 
