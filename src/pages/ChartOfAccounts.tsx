@@ -181,9 +181,6 @@ function TypeSection({
           key={cat.id}
           category={cat}
           accountType={typeGroup.type}
-          balanceMap={balanceMap}
-          activePeriodId={activePeriodId}
-          tenantId={tenantId}
           onEdit={onEdit}
           onToggleActive={onToggleActive}
         />
