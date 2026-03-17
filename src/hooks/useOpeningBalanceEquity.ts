@@ -82,24 +82,8 @@ export function useOBEBalance() {
   });
 }
 
-// Get system setting
-export function useSystemSetting(key: string) {
-  const { appUser } = useAuth();
-  return useQuery({
-    queryKey: ["system_setting", appUser?.tenant_id, key],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("system_settings")
-        .select("setting_value")
-        .eq("tenant_id", appUser!.tenant_id)
-        .eq("setting_key", key)
-        .maybeSingle();
-      if (error) throw error;
-      return data?.setting_value || null;
-    },
-    enabled: !!appUser?.tenant_id,
-  });
-}
+// Re-export useSystemSetting from settings module for backward compatibility
+export { useSystemSetting } from "@/hooks/useOpeningBalanceSettings";
 
 // Save opening balance journal entry with auto OBE balancing
 export function useSaveOpeningBalances() {
