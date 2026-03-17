@@ -659,11 +659,13 @@ export default function JournalEntries() {
                 const isReversal = !!(entry as any).reversal_of;
                 const isExpanded = expandedId === entry.id;
                 const entryLines = (entry.journal_lines as any[]) || [];
+                const isHighlighted = highlightId === entry.id;
 
                 return (
                   <Fragment key={entry.id}>
                     <tr
-                      className={`cursor-pointer hover:bg-muted/50 ${isVoided ? "opacity-50" : ""}`}
+                      ref={isHighlighted ? highlightRef : undefined}
+                      className={`cursor-pointer hover:bg-muted/50 ${isVoided ? "opacity-50" : ""} ${isHighlighted ? "ring-2 ring-primary ring-inset bg-primary/5" : ""}`}
                       onClick={() => setExpandedId(isExpanded ? null : entry.id)}
                     >
                       <td className="px-2">
@@ -703,6 +705,49 @@ export default function JournalEntries() {
                     {isExpanded && (
                       <tr>
                         <td colSpan={8} className="bg-muted/30 px-6 py-3">
+                          {/* Source Info Banner (shown when navigated from register) */}
+                          {isHighlighted && (
+                            <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 mb-4 space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+                                  <FileText className="w-3.5 h-3.5" />
+                                  Source Transaction Details
+                                </div>
+                                <button onClick={clearHighlight} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                                  Dismiss
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+                                <span className="text-muted-foreground font-medium">Type:</span>
+                                <span className="text-foreground">Journal Entry</span>
+                                <span className="text-muted-foreground font-medium">Reference:</span>
+                                <span className="font-mono text-foreground">{entry.reference || "—"}</span>
+                                <span className="text-muted-foreground font-medium">Transaction ID:</span>
+                                <div className="flex items-center gap-1.5">
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="font-mono text-foreground cursor-help">
+                                        {entry.id.slice(0, 8)}…{entry.id.slice(-4)}
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="font-mono text-xs">
+                                      {entry.id}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(entry.id);
+                                      import("sonner").then(({ toast }) => toast.success("Transaction ID copied"));
+                                    }}
+                                    className="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded"
+                                    title="Copy full ID"
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                           <table className="w-full text-sm">
                             <thead>
                               <tr className="text-xs text-muted-foreground">
