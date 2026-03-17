@@ -57,6 +57,19 @@ export default function JournalEntries() {
   const { data: entries, isLoading } = useJournalEntries();
   const { data: accounts } = useAccounts();
 
+  // Auto-scroll to highlighted entry from source navigation
+  useEffect(() => {
+    if (highlightId && highlightRef.current) {
+      setTimeout(() => {
+        highlightRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 300);
+    }
+  }, [highlightId, entries]);
+
+  const clearHighlight = () => {
+    setSearchParams((prev) => { prev.delete("highlight"); return prev; }, { replace: true });
+  };
+
   // Closed fiscal periods for date validation
   const { data: closedPeriods } = useQuery({
     queryKey: ["closed_fiscal_periods"],
