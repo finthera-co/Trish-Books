@@ -95,6 +95,35 @@ export default function Ledger() {
   const { data: accounts, isLoading: accountsLoading } = useAccounts();
   const { data: journalEntries, isLoading: entriesLoading } = useJournalEntries();
 
+  // Reverse-lookup: journal_entry_id → source transaction
+  const { data: voucherLookup } = useQuery({
+    queryKey: ["voucher_je_lookup"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("payment_vouchers")
+        .select("id, journal_entry_id, voucher_number")
+        .not("journal_entry_id", "is", null);
+      if (error) throw error;
+      const map = new Map<string, { id: string; ref: string }>();
+      data?.forEach(v => { if (v.journal_entry_id) map.set(v.journal_entry_id, { id: v.id, ref: v.voucher_number }); });
+      return map;
+    },
+  });
+
+  const { data: payrollLookup } = useQuery({
+    queryKey: ["payroll_je_lookup"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("payroll_runs")
+        .select("id, journal_entry_id, run_number")
+        .not("journal_entry_id", "is", null);
+      if (error) throw error;
+      const map = new Map<string, { id: string; ref: string }>();
+      data?.forEach(r => { if (r.journal_entry_id) map.set(r.journal_entry_id, { id: r.id, ref: r.run_number }); });
+      return map;
+    },
+  });
+
   // State
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [periodFilter, setPeriodFilter] = useState<string>("all");
@@ -155,6 +184,20 @@ export default function Ledger() {
     return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [accounts]);
 
+  /** Resolve source transaction for a journal entry */
+  const resolveSourceTransaction = useCallback((entryId: string, txnType: string): { transaction_id: string | null; transaction_type: TransactionType } => {
+    // Check if this journal entry was created by a payment voucher
+    if (voucherLookup?.has(entryId)) {
+      return { transaction_id: voucherLookup.get(entryId)!.id, transaction_type: "payment_voucher" };
+    }
+    // Check if this journal entry was created by a payroll run
+    if (payrollLookup?.has(entryId)) {
+      return { transaction_id: payrollLookup.get(entryId)!.id, transaction_type: "payroll" };
+    }
+    // Default: the journal entry itself is the source
+    return { transaction_id: entryId, transaction_type: "journal_entry" };
+  }, [voucherLookup, payrollLookup]);
+
   // Build register rows from journal entries
   const allRows = useMemo<RegisterRow[]>(() => {
     if (!journalEntries || !selectedAccount || !accounts) return [];
@@ -187,7 +230,6 @@ export default function Ledger() {
         // Extract entity name from description patterns
         let entityName = "";
         const desc = entry.description || "";
-        // Try to extract customer/vendor name from description patterns like "Invoice for ABC Ltd" or "Payment from XYZ"
         const namePatterns = [
           /(?:for|from|to|by)\s+(.+?)(?:\s*[-–—]|\s*$)/i,
           /^(?:Invoice|Payment|Expense|Bill)\s*[-–—:]\s*(.+?)(?:\s*[-–—]|\s*$)/i,
@@ -198,6 +240,7 @@ export default function Ledger() {
         }
 
         const txnType = detectTransactionType(entry.reference || "", desc);
+        const { transaction_id, transaction_type } = resolveSourceTransaction(entry.id, txnType);
 
         return myLines.map((line, idx) => ({
           id: `${entry.id}-${idx}`,
@@ -213,14 +256,11 @@ export default function Ledger() {
           entryId: entry.id,
           isReversal: !!(entry as any).reversal_of,
           isOpeningBalance: false,
-          sourceType: txnType === "Invoice" ? "invoice"
-            : txnType === "Payment" ? "payment"
-            : txnType === "Expense" ? "expense"
-            : txnType === "Bill Payment" ? "voucher"
-            : "journal" as RegisterRow["sourceType"],
+          transaction_id,
+          transaction_type,
         }));
       });
-  }, [journalEntries, selectedAccount, accounts, effectiveDateFrom, effectiveDateTo]);
+  }, [journalEntries, selectedAccount, accounts, effectiveDateFrom, effectiveDateTo, resolveSourceTransaction]);
 
   // Collect transaction types for filter dropdown
   const availableTypes = useMemo(() => {
