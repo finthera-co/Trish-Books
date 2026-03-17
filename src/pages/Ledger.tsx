@@ -352,11 +352,24 @@ export default function Ledger() {
   };
 
   const navigateToSource = (row: RegisterRow) => {
-    switch (row.sourceType) {
-      case "invoice": navigate("/invoices"); break;
-      case "expense": navigate("/expenses"); break;
-      case "voucher": navigate("/payment-vouchers"); break;
-      default: navigate("/journals"); break;
+    if (!row.transaction_id) return;
+    switch (row.transaction_type) {
+      case "payment_voucher":
+        navigate(`/banking/payment-vouchers?highlight=${row.transaction_id}`);
+        break;
+      case "payroll":
+        navigate(`/payroll/runs?highlight=${row.transaction_id}`);
+        break;
+      case "expense":
+        navigate(`/expenses/tracker?highlight=${row.transaction_id}`);
+        break;
+      case "invoice":
+        navigate(`/sales/invoices?highlight=${row.transaction_id}`);
+        break;
+      case "journal_entry":
+      default:
+        navigate(`/accounting/journals?highlight=${row.transaction_id}`);
+        break;
     }
   };
 
