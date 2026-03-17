@@ -164,10 +164,14 @@ function TypeSection({
   typeGroup,
   onEdit,
   onToggleActive,
+  periodOBMap,
+  isPeriodClosed,
 }: {
   typeGroup: TypeGroup;
   onEdit: (a: Account) => void;
   onToggleActive: (a: Account) => void;
+  periodOBMap?: Map<string, { debit: number; credit: number }>;
+  isPeriodClosed?: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
   const totalAccounts = typeGroup.categories.reduce((s, c) => s + c.accounts.length, 0) + typeGroup.uncategorized.length;
@@ -200,6 +204,8 @@ function TypeSection({
           accountType={typeGroup.type}
           onEdit={onEdit}
           onToggleActive={onToggleActive}
+          periodOBMap={periodOBMap}
+          isPeriodClosed={isPeriodClosed}
         />
       ))}
       {expanded && typeGroup.uncategorized.length > 0 && (
@@ -216,6 +222,8 @@ function TypeSection({
               depth={2}
               onEdit={onEdit}
               onToggleActive={onToggleActive}
+              periodOBMap={periodOBMap}
+              isPeriodClosed={isPeriodClosed}
             />
           ))}
         </>
@@ -229,11 +237,15 @@ function CategorySection({
   accountType,
   onEdit,
   onToggleActive,
+  periodOBMap,
+  isPeriodClosed,
 }: {
   category: CategoryGroup;
   accountType: string;
   onEdit: (a: Account) => void;
   onToggleActive: (a: Account) => void;
+  periodOBMap?: Map<string, { debit: number; credit: number }>;
+  isPeriodClosed?: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
   const tree = buildTree(category.accounts).sort((a, b) => a.account_code.localeCompare(b.account_code));
@@ -259,6 +271,8 @@ function CategorySection({
           depth={2}
           onEdit={onEdit}
           onToggleActive={onToggleActive}
+          periodOBMap={periodOBMap}
+          isPeriodClosed={isPeriodClosed}
         />
       ))}
     </>
