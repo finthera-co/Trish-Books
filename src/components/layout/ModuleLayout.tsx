@@ -26,7 +26,7 @@ export default function ModuleLayout({ config }: ModuleLayoutProps) {
   const isModuleRoot = location.pathname === config.basePath;
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full overflow-hidden">
       {/* Contextual Sidebar */}
       <aside className="w-56 shrink-0 border-r border-border bg-card hidden md:flex flex-col">
         <div className="p-4 border-b border-border">
