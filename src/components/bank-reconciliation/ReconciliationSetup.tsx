@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,7 +42,26 @@ export default function ReconciliationSetup({ onStarted, onCancel }: Props) {
     : (lastRecon?.statement_ending_balance ?? 0);
 
   const expenseAccounts = (accounts || []).filter((a: any) => a.account_type === "Expense");
-  const incomeAccounts = (accounts || []).filter((a: any) => a.account_type === "Revenue");
+  const incomeAccounts = useMemo(
+    () =>
+      (accounts || []).filter((a: any) => {
+        const categoryName = a.account_categories?.name;
+        return a.account_type === "Income" || a.account_type === "Other Income" || categoryName === "Other Income";
+      }),
+    [accounts]
+  );
+
+  const defaultInterestAccountId = useMemo(() => {
+    const exactMatch = incomeAccounts.find((a: any) => a.account_name.toLowerCase() === "interest income");
+    const fuzzyMatch = incomeAccounts.find((a: any) => a.account_name.toLowerCase().includes("interest"));
+    return exactMatch?.id || fuzzyMatch?.id || incomeAccounts[0]?.id || "";
+  }, [incomeAccounts]);
+
+  useEffect(() => {
+    if (!interestAccount && defaultInterestAccountId) {
+      setInterestAccount(defaultInterestAccountId);
+    }
+  }, [defaultInterestAccountId, interestAccount]);
 
   const handleStart = async () => {
     if (!bankAccountId || !statementEndDate || !statementEndBalance) return;
