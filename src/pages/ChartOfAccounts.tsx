@@ -1,6 +1,6 @@
 import { Plus, Search, Download, BookOpen, ChevronRight, Edit2, Power, Sprout } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useAccounts, useCreateAccount, useUpdateAccount } from "@/hooks/useData";
 import { useAccountCategories, useCreateAccountCategory, useSeedDefaultAccounts } from "@/hooks/useAccountCategories";
 import { useAuth } from "@/contexts/AuthContext";
@@ -10,6 +10,8 @@ import AccountForm from "@/components/chart-of-accounts/AccountForm";
 
 import InlineOpeningBalance from "@/components/chart-of-accounts/InlineOpeningBalance";
 import { useSystemSetting } from "@/hooks/useOpeningBalanceSettings";
+import { useFiscalPeriods, usePeriodOpeningBalances } from "@/hooks/useFiscalPeriodBalances";
+import FiscalPeriodSelector from "@/components/FiscalPeriodSelector";
 
 import {
   ACCOUNT_TYPES,
