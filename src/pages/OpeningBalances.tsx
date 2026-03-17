@@ -26,7 +26,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { getNormalBalance } from "@/lib/accountTypes";
+import { getNormalBalance, isOpeningBalanceEligible, OPENING_BALANCE_INELIGIBLE_REASON } from "@/lib/accountTypes";
 
 interface BalanceLine {
   id: string;
