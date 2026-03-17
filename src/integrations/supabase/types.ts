@@ -1439,6 +1439,8 @@ export type Database = {
           account_id: string
           balance: number
           created_at: string
+          credit: number
+          debit: number
           fiscal_period_id: string
           id: string
           tenant_id: string
@@ -1447,6 +1449,8 @@ export type Database = {
           account_id: string
           balance?: number
           created_at?: string
+          credit?: number
+          debit?: number
           fiscal_period_id: string
           id?: string
           tenant_id: string
@@ -1455,6 +1459,8 @@ export type Database = {
           account_id?: string
           balance?: number
           created_at?: string
+          credit?: number
+          debit?: number
           fiscal_period_id?: string
           id?: string
           tenant_id?: string
