@@ -10,7 +10,7 @@ import AccountForm from "@/components/chart-of-accounts/AccountForm";
 
 import InlineOpeningBalance from "@/components/chart-of-accounts/InlineOpeningBalance";
 import { useSystemSetting } from "@/hooks/useOpeningBalanceSettings";
-import { toast } from "sonner";
+
 import {
   ACCOUNT_TYPES,
   typeColors,
