@@ -516,6 +516,8 @@ export default function ChartOfAccounts() {
                   typeGroup={tg}
                   onEdit={(a) => setEditAccount(a)}
                   onToggleActive={handleToggleActive}
+                  periodOBMap={periodOBMap}
+                  isPeriodClosed={isPeriodClosed}
                 />
               ))}
             </tbody>
