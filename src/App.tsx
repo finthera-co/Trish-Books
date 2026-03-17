@@ -64,6 +64,8 @@ const App = () => (
                   <Route path="/accounting/ledger" element={<Ledger />} />
                   <Route path="/accounting/trial-balance" element={<TrialBalance />} />
                   <Route path="/accounting/fiscal-periods" element={<FiscalPeriods />} />
+                  <Route path="/accounting/opening-balances" element={<OpeningBalances />} />
+                  <Route path="/accounting/close-obe" element={<CloseOBE />} />
                 </Route>
 
                 {/* Banking module */}

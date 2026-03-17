@@ -38,6 +38,8 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "Journal Entries", path: "/accounting/journals", icon: FileText },
       { label: "General Ledger", path: "/accounting/ledger", icon: Receipt },
       { label: "Trial Balance", path: "/accounting/trial-balance", icon: FileText },
+      { label: "Opening Balances", path: "/accounting/opening-balances", icon: Wallet },
+      { label: "Close OBE", path: "/accounting/close-obe", icon: Lock },
       { label: "Fiscal Periods", path: "/accounting/fiscal-periods", icon: Calendar },
     ],
   },
