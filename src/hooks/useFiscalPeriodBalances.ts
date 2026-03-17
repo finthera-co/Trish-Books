@@ -187,7 +187,7 @@ export function useCloseFiscalPeriod() {
           const bal = closingBalances.get(a.id);
           if (!bal) return;
           // Revenue is credit-normal, Expense/COGS debit-normal
-          if (a.account_type === "Revenue") {
+          if (a.account_type === "Revenue" || a.account_type === "Income") {
             // Net revenue = credit - debit (positive = income)
             const net = bal.credit - bal.debit;
             if (net > 0) netIncomeCredit += net;
