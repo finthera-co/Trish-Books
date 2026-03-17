@@ -210,17 +210,11 @@ function TypeSection({
 function CategorySection({
   category,
   accountType,
-  balanceMap,
-  activePeriodId,
-  tenantId,
   onEdit,
   onToggleActive,
 }: {
   category: CategoryGroup;
   accountType: string;
-  balanceMap: Map<string, number>;
-  activePeriodId: string | null;
-  tenantId: string | undefined;
   onEdit: (a: Account) => void;
   onToggleActive: (a: Account) => void;
 }) {
