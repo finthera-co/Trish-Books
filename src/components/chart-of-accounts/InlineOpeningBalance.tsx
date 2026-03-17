@@ -1,10 +1,18 @@
 import { useState } from "react";
-import { Check, X } from "lucide-react";
+import { Check, X, Info } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { useSaveAccountOpeningBalance } from "@/hooks/useOpeningBalanceSettings";
+import { isOpeningBalanceEligible, OPENING_BALANCE_INELIGIBLE_REASON } from "@/lib/accountTypes";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface InlineOpeningBalanceProps {
   accountId: string;
+  accountType: string;
   currentBalance: number;
   currentType: string;
   normalBalance: string;
@@ -13,6 +21,7 @@ interface InlineOpeningBalanceProps {
 
 export default function InlineOpeningBalance({
   accountId,
+  accountType,
   currentBalance,
   currentType,
   normalBalance,
@@ -22,6 +31,25 @@ export default function InlineOpeningBalance({
   const [value, setValue] = useState("");
   const [balType, setBalType] = useState<"debit" | "credit">("debit");
   const saveMutation = useSaveAccountOpeningBalance();
+
+  // Ineligible account types cannot have opening balances
+  if (!isOpeningBalanceEligible(accountType)) {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/60 cursor-help">
+              <Info className="w-3 h-3" />
+              N/A
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="left" className="max-w-[260px] text-xs">
+            {OPENING_BALANCE_INELIGIBLE_REASON}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
 
   if (isLocked) {
     if (!currentBalance) return <span className="text-xs text-muted-foreground">—</span>;
@@ -44,7 +72,10 @@ export default function InlineOpeningBalance({
           className="w-24 text-sm border border-input rounded px-2 py-1 bg-background text-foreground text-right focus:outline-none focus:ring-2 focus:ring-ring/20"
           autoFocus
           onKeyDown={(e) => {
-            if (e.key === "Enter") saveMutation.mutate({ accountId, openingBalance: parseFloat(value) || 0, openingBalanceType: balType });
+            if (e.key === "Enter") {
+              saveMutation.mutate({ accountId, openingBalance: parseFloat(value) || 0, openingBalanceType: balType });
+              setEditing(false);
+            }
             if (e.key === "Escape") setEditing(false);
           }}
         />

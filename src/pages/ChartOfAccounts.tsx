@@ -103,6 +103,7 @@ function AccountRow({
         <td className="text-right">
           <InlineOpeningBalance
             accountId={account.id}
+            accountType={account.account_type}
             currentBalance={(account as any).opening_balance ?? 0}
             currentType={(account as any).opening_balance_type ?? "debit"}
             normalBalance={getNormalBalance(account.account_type)}

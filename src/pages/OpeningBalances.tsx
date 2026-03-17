@@ -69,13 +69,18 @@ export default function OpeningBalances() {
   const totalCredits = useMemo(() => lines.reduce((s, l) => s + l.credit, 0), [lines]);
   const difference = totalDebits - totalCredits;
 
-  // Validation: check account types vs normal balance
+  // Validation: check account types vs normal balance + eligibility
   const validationWarnings = useMemo(() => {
     const warnings: string[] = [];
     lines.forEach((l) => {
       if (!l.account_id) return;
       const acct = (accounts || []).find((a: any) => a.id === l.account_id) as any;
       if (!acct) return;
+      // Block ineligible account types
+      if (!isOpeningBalanceEligible(acct.account_type)) {
+        warnings.push(`❌ ${acct.account_name} (${acct.account_type}) cannot have an opening balance`);
+        return;
+      }
       const normal = getNormalBalance(acct.account_type);
       if (normal === "Debit" && l.credit > 0 && l.debit === 0) {
         warnings.push(`${acct.account_name} normally has a Debit balance but has a Credit entry`);

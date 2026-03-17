@@ -36,6 +36,21 @@ export function getStatementPlacement(accountType: string): "Balance Sheet" | "P
   return "Profit & Loss";
 }
 
+// Opening balance eligibility — only Balance Sheet accounts may have opening balances
+export const OPENING_BALANCE_ELIGIBLE_TYPES: AccountType[] = [
+  "Asset",
+  "Liability",
+  "Equity",
+];
+
+export function isOpeningBalanceEligible(accountType: string): boolean {
+  return OPENING_BALANCE_ELIGIBLE_TYPES.includes(accountType as AccountType);
+}
+
+export const OPENING_BALANCE_INELIGIBLE_REASON =
+  "Opening balances are not allowed for Income or Expense accounts. These accounts start from zero for the selected accounting period.";
+}
+
 // Account type → badge color (uses semantic tokens)
 export const typeColors: Record<string, string> = {
   Asset: "bg-info/10 text-info",
