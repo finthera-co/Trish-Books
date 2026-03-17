@@ -3,8 +3,6 @@ import { Button } from "@/components/ui/button";
 import { useState, useMemo } from "react";
 import { useAccounts, useCreateAccount, useUpdateAccount } from "@/hooks/useData";
 import { useAccountCategories, useCreateAccountCategory, useSeedDefaultAccounts } from "@/hooks/useAccountCategories";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMyPermissions } from "@/hooks/usePermissions";
 import { formatCurrency } from "@/lib/currency";
