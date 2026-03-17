@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import {
   Download, Printer, Search, BookOpen, Filter, FileText, Users, Building2,
   ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, X,
-  ChevronsLeft, ChevronsRight,
+  ChevronsLeft, ChevronsRight, AlertCircle,
 } from "lucide-react";
 import { format } from "date-fns";
 import { isDebitNormal as checkDebitNormal, getTypeLabel, ACCOUNT_TYPES, typeColors } from "@/lib/accountTypes";
@@ -16,8 +16,11 @@ import { formatCurrency } from "@/lib/currency";
 import GeneralLedgerReport from "@/components/ledger/GeneralLedgerReport";
 import { ARSubledger, APSubledger } from "@/components/ledger/SubsidiaryLedger";
 import { useNavigate } from "react-router-dom";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+type TransactionType = "journal_entry" | "payment_voucher" | "expense" | "invoice" | "payroll" | "opening";
 
 interface RegisterRow {
   id: string;
@@ -33,7 +36,10 @@ interface RegisterRow {
   entryId: string;
   isReversal: boolean;
   isOpeningBalance: boolean;
-  sourceType: "journal" | "invoice" | "expense" | "payment" | "voucher" | "opening";
+  /** UUID of the source transaction (journal entry, voucher, etc.) */
+  transaction_id: string | null;
+  /** Type of the source transaction for navigation */
+  transaction_type: TransactionType;
 }
 
 type SortField = "date" | "amount" | "refNumber";
