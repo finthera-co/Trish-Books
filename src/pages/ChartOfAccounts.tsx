@@ -268,6 +268,32 @@ export default function ChartOfAccounts() {
 
   const { data: obStatus } = useSystemSetting("opening_balance_status");
 
+  // Fiscal period selector
+  const { data: periods } = useFiscalPeriods();
+  const [selectedPeriodId, setSelectedPeriodId] = useState("");
+  const { data: periodBalances } = usePeriodOpeningBalances(selectedPeriodId || null);
+
+  // Auto-select first open period
+  useEffect(() => {
+    if (periods?.length && !selectedPeriodId) {
+      const openPeriod = periods.find((p: any) => p.status === "open");
+      if (openPeriod) setSelectedPeriodId(openPeriod.id);
+      else setSelectedPeriodId(periods[0].id);
+    }
+  }, [periods, selectedPeriodId]);
+
+  const selectedPeriod = periods?.find((p: any) => p.id === selectedPeriodId) as any;
+  const isPeriodClosed = selectedPeriod?.status === "closed";
+
+  // Build a map of period opening balances by account_id
+  const periodOBMap = useMemo(() => {
+    const map = new Map<string, { debit: number; credit: number }>();
+    (periodBalances || []).forEach((ob: any) => {
+      map.set(ob.account_id, { debit: Number(ob.debit) || 0, credit: Number(ob.credit) || 0 });
+    });
+    return map;
+  }, [periodBalances]);
+
   const filteredAccounts = useMemo(() => {
     if (!accounts) return [];
     return (accounts as Account[]).filter(a => {
