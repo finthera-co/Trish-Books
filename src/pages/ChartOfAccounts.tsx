@@ -104,6 +104,7 @@ function AccountRow({
           <InlineOpeningBalance
             accountId={account.id}
             accountType={account.account_type}
+            accountSubtype={account.account_subtype}
             currentBalance={(account as any).opening_balance ?? 0}
             currentType={(account as any).opening_balance_type ?? "debit"}
             normalBalance={getNormalBalance(account.account_type)}

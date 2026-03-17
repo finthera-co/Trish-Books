@@ -26,7 +26,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { getNormalBalance, isOpeningBalanceEligible, OPENING_BALANCE_INELIGIBLE_REASON } from "@/lib/accountTypes";
+import { getNormalBalance, isOpeningBalanceEligible, OPENING_BALANCE_INELIGIBLE_REASON, requiresSubledger } from "@/lib/accountTypes";
 
 interface BalanceLine {
   id: string;
@@ -69,7 +69,7 @@ export default function OpeningBalances() {
   const totalCredits = useMemo(() => lines.reduce((s, l) => s + l.credit, 0), [lines]);
   const difference = totalDebits - totalCredits;
 
-  // Validation: check account types vs normal balance + eligibility
+  // Validation: check account types vs normal balance + eligibility + subledger
   const validationWarnings = useMemo(() => {
     const warnings: string[] = [];
     lines.forEach((l) => {
@@ -81,12 +81,16 @@ export default function OpeningBalances() {
         warnings.push(`❌ ${acct.account_name} (${acct.account_type}) cannot have an opening balance`);
         return;
       }
+      // Warn about sub-ledger requirements
+      if (requiresSubledger(acct.account_subtype) && (l.debit > 0 || l.credit > 0)) {
+        warnings.push(`📋 ${acct.account_name} requires sub-ledger breakdown (per ${acct.account_subtype?.includes("Receivable") ? "customer" : acct.account_subtype?.includes("Payable") ? "vendor" : "item"})`);
+      }
       const normal = getNormalBalance(acct.account_type);
       if (normal === "Debit" && l.credit > 0 && l.debit === 0) {
-        warnings.push(`${acct.account_name} normally has a Debit balance but has a Credit entry`);
+        warnings.push(`⚠ ${acct.account_name} normally has a Debit balance but has a Credit entry`);
       }
       if (normal === "Credit" && l.debit > 0 && l.credit === 0) {
-        warnings.push(`${acct.account_name} normally has a Credit balance but has a Debit entry`);
+        warnings.push(`⚠ ${acct.account_name} normally has a Credit balance but has a Debit entry`);
       }
     });
     return warnings;

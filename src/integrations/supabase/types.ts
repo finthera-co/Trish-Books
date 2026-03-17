@@ -78,8 +78,10 @@ export type Database = {
           is_system: boolean
           normal_balance: string
           opening_balance: number
+          opening_balance_enabled: boolean
           opening_balance_type: string
           parent_account_id: string | null
+          requires_subledger: boolean
           tenant_id: string
           updated_at: string
         }
@@ -96,8 +98,10 @@ export type Database = {
           is_system?: boolean
           normal_balance?: string
           opening_balance?: number
+          opening_balance_enabled?: boolean
           opening_balance_type?: string
           parent_account_id?: string | null
+          requires_subledger?: boolean
           tenant_id: string
           updated_at?: string
         }
@@ -114,8 +118,10 @@ export type Database = {
           is_system?: boolean
           normal_balance?: string
           opening_balance?: number
+          opening_balance_enabled?: boolean
           opening_balance_type?: string
           parent_account_id?: string | null
+          requires_subledger?: boolean
           tenant_id?: string
           updated_at?: string
         }
@@ -923,6 +929,133 @@ export type Database = {
           },
         ]
       }
+      fixed_assets: {
+        Row: {
+          accumulated_depreciation: number
+          acquisition_date: string | null
+          asset_account_id: string | null
+          asset_name: string
+          cost: number
+          created_at: string
+          depreciation_account_id: string | null
+          description: string | null
+          id: string
+          net_book_value: number | null
+          status: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          accumulated_depreciation?: number
+          acquisition_date?: string | null
+          asset_account_id?: string | null
+          asset_name: string
+          cost?: number
+          created_at?: string
+          depreciation_account_id?: string | null
+          description?: string | null
+          id?: string
+          net_book_value?: number | null
+          status?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          accumulated_depreciation?: number
+          acquisition_date?: string | null
+          asset_account_id?: string | null
+          asset_name?: string
+          cost?: number
+          created_at?: string
+          depreciation_account_id?: string | null
+          description?: string | null
+          id?: string
+          net_book_value?: number | null
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fixed_assets_asset_account_id_fkey"
+            columns: ["asset_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixed_assets_depreciation_account_id_fkey"
+            columns: ["depreciation_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixed_assets_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      inventory_items: {
+        Row: {
+          account_id: string | null
+          created_at: string
+          description: string | null
+          id: string
+          item_name: string
+          quantity_on_hand: number
+          sku: string | null
+          tenant_id: string
+          total_value: number | null
+          unit_cost: number
+          updated_at: string
+        }
+        Insert: {
+          account_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          item_name: string
+          quantity_on_hand?: number
+          sku?: string | null
+          tenant_id: string
+          total_value?: number | null
+          unit_cost?: number
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          item_name?: string
+          quantity_on_hand?: number
+          sku?: string | null
+          tenant_id?: string
+          total_value?: number | null
+          unit_cost?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_items_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_items_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoice_items: {
         Row: {
           description: string | null
@@ -1246,6 +1379,57 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      opening_balance_details: {
+        Row: {
+          account_id: string
+          amount: number
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          notes: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          amount?: number
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          notes?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          amount?: number
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          notes?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opening_balance_details_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "opening_balance_details_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
         ]
@@ -2629,6 +2813,47 @@ export type Database = {
           },
           {
             foreignKeyName: "users_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vendors: {
+        Row: {
+          address: string | null
+          created_at: string
+          email: string | null
+          id: string
+          name: string
+          phone: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          name: string
+          phone?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          name?: string
+          phone?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vendors_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"

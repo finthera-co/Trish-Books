@@ -165,3 +165,17 @@ export function isControlSubtype(subtype: string | null | undefined): boolean {
   if (!subtype) return false;
   return CONTROL_ACCOUNTS.some(c => subtype.toLowerCase().includes(c.toLowerCase()));
 }
+
+// Subtypes that require sub-ledger breakdown for opening balances
+export const SUBLEDGER_SUBTYPES = [
+  "Accounts Receivable",
+  "Accounts Payable",
+  "Inventory",
+  "Fixed Assets",
+  "Accumulated Depreciation",
+];
+
+export function requiresSubledger(subtype: string | null | undefined): boolean {
+  if (!subtype) return false;
+  return SUBLEDGER_SUBTYPES.some(s => subtype.toLowerCase().includes(s.toLowerCase()));
+}
