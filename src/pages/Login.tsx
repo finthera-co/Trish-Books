@@ -151,7 +151,6 @@ export default function Login() {
     </div>
   );
 }
-          <div className="h-32 rounded-xl bg-muted/50 border border-border mb-4 flex items-end px-4 pb-2 gap-1">
             {[40, 55, 35, 60, 45, 70, 65, 50, 75, 55, 80, 60].map((h, i) => (
               <div key={i} className="flex-1 bg-primary/20 rounded-t" style={{ height: `${h}%` }} />
             ))}
