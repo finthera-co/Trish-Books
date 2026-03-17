@@ -240,9 +240,6 @@ function CategorySection({
           key={account.id}
           account={account}
           depth={2}
-          balanceMap={balanceMap}
-          activePeriodId={activePeriodId}
-          tenantId={tenantId}
           onEdit={onEdit}
           onToggleActive={onToggleActive}
         />
