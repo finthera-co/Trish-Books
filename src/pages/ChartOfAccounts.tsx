@@ -66,14 +66,27 @@ function AccountRow({
   depth = 0,
   onEdit,
   onToggleActive,
+  periodOBMap,
+  isPeriodClosed,
 }: {
   account: Account;
   depth?: number;
   onEdit: (a: Account) => void;
   onToggleActive: (a: Account) => void;
+  periodOBMap?: Map<string, { debit: number; credit: number }>;
+  isPeriodClosed?: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = account.children && account.children.length > 0;
+
+  // Use period-based opening balance if available
+  const periodOB = periodOBMap?.get(account.id);
+  const displayBalance = periodOB
+    ? (periodOB.debit > periodOB.credit ? periodOB.debit - periodOB.credit : periodOB.credit - periodOB.debit)
+    : (account as any).opening_balance ?? 0;
+  const displayType = periodOB
+    ? (periodOB.debit >= periodOB.credit ? "debit" : "credit")
+    : (account as any).opening_balance_type ?? "debit";
 
   return (
     <>
@@ -107,10 +120,10 @@ function AccountRow({
             accountId={account.id}
             accountType={account.account_type}
             accountSubtype={account.account_subtype}
-            currentBalance={(account as any).opening_balance ?? 0}
-            currentType={(account as any).opening_balance_type ?? "debit"}
+            currentBalance={displayBalance}
+            currentType={displayType}
             normalBalance={getNormalBalance(account.account_type)}
-            isLocked={(account as any).is_locked || false}
+            isLocked={(account as any).is_locked || isPeriodClosed || false}
           />
         </td>
         <td className="text-right">
@@ -139,6 +152,8 @@ function AccountRow({
           depth={depth + 1}
           onEdit={onEdit}
           onToggleActive={onToggleActive}
+          periodOBMap={periodOBMap}
+          isPeriodClosed={isPeriodClosed}
         />
       ))}
     </>
