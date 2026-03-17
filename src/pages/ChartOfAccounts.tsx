@@ -264,45 +264,7 @@ export default function ChartOfAccounts() {
   const seedDefaults = useSeedDefaultAccounts();
   const createCategory = useCreateAccountCategory();
 
-  const { data: fiscalPeriods } = useQuery({
-    queryKey: ["all_fiscal_periods"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("fiscal_periods")
-        .select("id, name, status")
-        .order("period_start", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
-  });
-
-  const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(null);
-
-  const activePeriod = useMemo(() => {
-    if (!fiscalPeriods?.length) return null;
-    if (selectedPeriodId) return fiscalPeriods.find(p => p.id === selectedPeriodId) || null;
-    return fiscalPeriods.find(p => p.status === "open") || fiscalPeriods[0];
-  }, [fiscalPeriods, selectedPeriodId]);
-
-  const { data: openingBalances } = useQuery({
-    queryKey: ["opening_balances", activePeriod?.id],
-    queryFn: async () => {
-      if (!activePeriod?.id) return [];
-      const { data, error } = await supabase
-        .from("opening_balances")
-        .select("account_id, balance")
-        .eq("fiscal_period_id", activePeriod.id);
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!activePeriod?.id,
-  });
-
-  const balanceMap = useMemo(() => {
-    const m = new Map<string, number>();
-    openingBalances?.forEach((ob) => m.set(ob.account_id, Number(ob.balance)));
-    return m;
-  }, [openingBalances]);
+  const { data: obStatus } = useSystemSetting("opening_balance_status");
 
   const filteredAccounts = useMemo(() => {
     if (!accounts) return [];
