@@ -30,10 +30,13 @@ export default function JournalEntries() {
   const { appUser } = useAuth();
   const { canEdit: canEditJournals, canDelete: canDeleteJournals } = useMyPermissions();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const highlightId = searchParams.get("highlight");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [open, setOpen] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(highlightId);
+  const highlightRef = useRef<HTMLTableRowElement>(null);
 
   // Void dialog
   const [voidDialogId, setVoidDialogId] = useState<string | null>(null);
