@@ -374,26 +374,15 @@ export default function ChartOfAccounts() {
         </div>
       </div>
 
-      {/* Period selector */}
-      {fiscalPeriods && fiscalPeriods.length > 0 ? (
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="bg-info/10 text-info text-xs font-medium px-3 py-2 rounded-lg inline-flex items-center gap-2">
-            Opening balances for:
-            <select
-              value={activePeriod?.id || ""}
-              onChange={(e) => setSelectedPeriodId(e.target.value)}
-              className="text-xs font-semibold bg-transparent border-none outline-none cursor-pointer text-info"
-            >
-              {fiscalPeriods.map(p => (
-                <option key={p.id} value={p.id}>{p.name} ({p.status})</option>
-              ))}
-            </select>
-            <span className="text-info/60">— Click any balance to edit</span>
-          </div>
+      {/* OB Status Banner */}
+      {obStatus === "finalized" && (
+        <div className="bg-info/10 text-info text-xs font-medium px-3 py-2 rounded-lg inline-flex items-center gap-2">
+          Opening balances are finalized — click any balance to view (read-only)
         </div>
-      ) : (
-        <div className="bg-warning/10 text-warning text-xs font-medium px-3 py-2 rounded-lg">
-          No fiscal periods found. Create one in Fiscal Periods to enter opening balances.
+      )}
+      {(!obStatus || obStatus === "draft") && (
+        <div className="bg-info/10 text-info text-xs font-medium px-3 py-2 rounded-lg inline-flex items-center gap-2">
+          Click any opening balance to edit inline
         </div>
       )}
 
