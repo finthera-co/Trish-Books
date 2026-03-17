@@ -74,7 +74,11 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          is_locked: boolean
           is_system: boolean
+          normal_balance: string
+          opening_balance: number
+          opening_balance_type: string
           parent_account_id: string | null
           tenant_id: string
           updated_at: string
@@ -88,7 +92,11 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_locked?: boolean
           is_system?: boolean
+          normal_balance?: string
+          opening_balance?: number
+          opening_balance_type?: string
           parent_account_id?: string | null
           tenant_id: string
           updated_at?: string
@@ -102,7 +110,11 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_locked?: boolean
           is_system?: boolean
+          normal_balance?: string
+          opening_balance?: number
+          opening_balance_type?: string
           parent_account_id?: string | null
           tenant_id?: string
           updated_at?: string
