@@ -17,6 +17,8 @@ import Signup from "./pages/Signup";
 import ChartOfAccounts from "./pages/ChartOfAccounts";
 import JournalEntries from "./pages/JournalEntries";
 import Ledger from "./pages/Ledger";
+import OpeningBalances from "./pages/OpeningBalances";
+import CloseOBE from "./pages/CloseOBE";
 import TrialBalance from "./pages/TrialBalance";
 import FiscalPeriods from "./pages/FiscalPeriods";
 import BankReconciliation from "./pages/BankReconciliation";
