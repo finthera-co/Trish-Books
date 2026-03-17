@@ -135,9 +135,6 @@ function AccountRow({
           key={child.id}
           account={child}
           depth={depth + 1}
-          balanceMap={balanceMap}
-          activePeriodId={activePeriodId}
-          tenantId={tenantId}
           onEdit={onEdit}
           onToggleActive={onToggleActive}
         />
