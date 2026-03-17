@@ -60,9 +60,9 @@ export default function OpeningBalances() {
   const isDraft = !obStatus || obStatus === "draft";
   const isEditable = isDraft && !isClosed;
 
-  // Filter out system accounts from dropdown
+  // Filter to eligible accounts only (Asset, Liability, Equity) and exclude system accounts
   const selectableAccounts = useMemo(() => {
-    return (accounts || []).filter((a: any) => !a.is_system);
+    return (accounts || []).filter((a: any) => !a.is_system && isOpeningBalanceEligible(a.account_type));
   }, [accounts]);
 
   const totalDebits = useMemo(() => lines.reduce((s, l) => s + l.debit, 0), [lines]);
