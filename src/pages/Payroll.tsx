@@ -49,9 +49,6 @@ export default function Payroll() {
     }
   }, [highlightId, runs]);
 
-  const { data: runs, isLoading } = usePayrollRuns();
-  const { data: employees } = useEmployees();
-  const { canEdit: canEditPayroll } = useMyPermissions();
 
   const filteredRuns = runs?.filter((r: any) =>
     r.run_number.toLowerCase().includes(search.toLowerCase()) ||
