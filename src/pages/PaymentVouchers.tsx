@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePaymentVouchers, useDeletePaymentVoucher } from "@/hooks/usePaymentVouchers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,16 +12,26 @@ import { useMyPermissions } from "@/hooks/usePermissions";
 import PaymentVoucherForm from "@/components/payment-vouchers/PaymentVoucherForm";
 import PaymentVoucherDetails from "@/components/payment-vouchers/PaymentVoucherDetails";
 import { formatCurrency } from "@/lib/currency";
+import { useSearchParams } from "react-router-dom";
 
 export default function PaymentVouchers() {
   const { data: vouchers, isLoading } = usePaymentVouchers();
   const deleteMutation = useDeletePaymentVoucher();
   const { canEdit: canEditBanking, canDelete: canDeleteBanking } = useMyPermissions();
+  const [searchParams] = useSearchParams();
+  const highlightId = searchParams.get("highlight");
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [viewId, setViewId] = useState<string | null>(null);
+  const [viewId, setViewId] = useState<string | null>(highlightId);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  // Auto-open highlighted voucher
+  useEffect(() => {
+    if (highlightId && vouchers?.some(v => v.id === highlightId)) {
+      setViewId(highlightId);
+    }
+  }, [highlightId, vouchers]);
 
   const filtered = vouchers?.filter((v) => {
     const q = search.toLowerCase();

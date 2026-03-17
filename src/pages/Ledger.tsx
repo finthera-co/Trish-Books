@@ -770,6 +770,49 @@ export default function Ledger() {
           </DialogHeader>
           {drillDownEntry && (
             <div className="space-y-4">
+              {/* ── Source Info Banner ── */}
+              <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 space-y-1.5">
+                <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+                  <FileText className="w-3.5 h-3.5" />
+                  Source Information
+                </div>
+                <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+                  <span className="text-muted-foreground font-medium">Type:</span>
+                  <span className="capitalize text-foreground">{drillDownEntry.transaction_type.replace(/_/g, " ")}</span>
+                  <span className="text-muted-foreground font-medium">Reference:</span>
+                  <span className="font-mono text-foreground">{drillDownEntry.refNumber || "—"}</span>
+                  <span className="text-muted-foreground font-medium">Transaction ID:</span>
+                  <div className="flex items-center gap-1.5">
+                    {drillDownEntry.transaction_id ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="font-mono text-foreground cursor-help">
+                            {drillDownEntry.transaction_id.slice(0, 8)}…{drillDownEntry.transaction_id.slice(-4)}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="font-mono text-xs">
+                          {drillDownEntry.transaction_id}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <span className="text-muted-foreground italic">Not linked</span>
+                    )}
+                    {drillDownEntry.transaction_id && (
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(drillDownEntry.transaction_id!);
+                          import("sonner").then(({ toast }) => toast.success("Transaction ID copied"));
+                        }}
+                        className="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded"
+                        title="Copy full ID"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Date</p>
@@ -805,13 +848,6 @@ export default function Ledger() {
                   <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Balance</p>
                   <p className={`font-bold font-mono ${drillDownEntry.balance < 0 ? "text-destructive" : "text-foreground"}`}>{fmtBal(drillDownEntry.balance)}</p>
                 </div>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-                <span className="font-medium">Source:</span>
-                <span className="capitalize">{drillDownEntry.transaction_type.replace(/_/g, " ")}</span>
-                {drillDownEntry.transaction_id && (
-                  <span className="font-mono text-[10px] bg-muted px-1.5 py-0.5 rounded">{drillDownEntry.transaction_id.slice(0, 8)}…</span>
-                )}
               </div>
               {drillDownEntry.transaction_id ? (
                 <Button variant="outline" className="w-full" onClick={() => { navigateToSource(drillDownEntry); setDrillDownEntry(null); }}>
