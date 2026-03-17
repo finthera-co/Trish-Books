@@ -74,6 +74,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          is_system: boolean
           parent_account_id: string | null
           tenant_id: string
           updated_at: string
@@ -87,6 +88,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_system?: boolean
           parent_account_id?: string | null
           tenant_id: string
           updated_at?: string
@@ -100,6 +102,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_system?: boolean
           parent_account_id?: string | null
           tenant_id?: string
           updated_at?: string
@@ -1026,7 +1029,9 @@ export type Database = {
           created_by: string | null
           description: string
           entry_date: string
+          entry_type: string | null
           id: string
+          is_system_generated: boolean
           reference: string | null
           reversal_of: string | null
           status: string
@@ -1040,7 +1045,9 @@ export type Database = {
           created_by?: string | null
           description: string
           entry_date?: string
+          entry_type?: string | null
           id?: string
+          is_system_generated?: boolean
           reference?: string | null
           reversal_of?: string | null
           status?: string
@@ -1054,7 +1061,9 @@ export type Database = {
           created_by?: string | null
           description?: string
           entry_date?: string
+          entry_type?: string | null
           id?: string
+          is_system_generated?: boolean
           reference?: string | null
           reversal_of?: string | null
           status?: string
@@ -2371,6 +2380,48 @@ export type Database = {
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      system_settings: {
+        Row: {
+          id: string
+          setting_key: string
+          setting_value: string
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          id?: string
+          setting_key: string
+          setting_value?: string
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          id?: string
+          setting_key?: string
+          setting_value?: string
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "system_settings_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "system_settings_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
