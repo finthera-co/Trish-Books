@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import dashboardPreview from "@/assets/login-dashboard-preview.png";
 import { Button } from "@/components/ui/button";
 import { BookOpen, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
