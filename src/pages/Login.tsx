@@ -118,9 +118,9 @@ export default function Login() {
       </div>
 
       {/* Right panel — product showcase */}
-      <div className="hidden lg:flex flex-1 flex-col p-10 overflow-hidden">
+      <div className="hidden lg:flex flex-1 flex-col p-10 overflow-hidden relative">
         {/* What's new header */}
-        <div className="flex items-start justify-between mb-6">
+        <div className="flex items-start justify-between mb-6 relative z-10">
           <div>
             <div className="flex items-center gap-2 mb-3">
               <span className="w-2 h-2 rounded-full bg-primary" />
@@ -137,56 +137,17 @@ export default function Login() {
           </button>
         </div>
 
-        {/* Dashboard preview card */}
-        <div className="flex-1 bg-background rounded-2xl border border-border shadow-sm overflow-hidden p-6">
-          {/* Mini header */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded bg-primary flex items-center justify-center">
-                <BookOpen className="w-3 h-3 text-primary-foreground" />
-              </div>
-              <span className="text-sm font-bold text-foreground">AccuBooks</span>
-            </div>
-          </div>
-
-          <h3 className="text-lg font-bold text-foreground mb-4">Overview</h3>
-
-          {/* KPI cards */}
-          <div className="grid grid-cols-4 gap-3 mb-6">
-            {[
-              { label: "Journal Entries", value: "1,483", change: "+12.5%", up: true },
-              { label: "Pending Reviews", value: "54", change: "-12.5%", up: false },
-              { label: "Reconciled", value: "27", change: "+4.1%", up: true },
-              { label: "Active Accounts", value: "259", change: "+41.4%", up: true },
-            ].map((kpi, i) => (
-              <div key={i} className="border border-border rounded-xl p-3">
-                <p className="text-xs text-muted-foreground mb-1">{kpi.label}</p>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-lg font-bold text-foreground tabular-nums">{kpi.value}</span>
-                  <span className={`text-xs font-medium ${kpi.up ? "text-emerald-600" : "text-destructive"}`}>
-                    {kpi.up ? "↑" : "↓"} {kpi.change}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Revenue placeholder */}
-          <div className="mb-4">
-            <p className="text-sm font-semibold text-foreground mb-1">Revenue</p>
-            <div className="flex items-baseline gap-6">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-sm bg-primary" />
-                <span className="text-xs text-muted-foreground">Gross</span>
-                <span className="text-sm font-bold text-foreground tabular-nums">LKR 96,540</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-sm bg-accent-foreground/30" />
-                <span className="text-xs text-muted-foreground">Net</span>
-                <span className="text-sm font-bold text-foreground tabular-nums">LKR 38,920</span>
-              </div>
-            </div>
-          </div>
+        {/* Dashboard preview image */}
+        <div className="flex-1 rounded-2xl border border-border shadow-lg overflow-hidden relative bg-background">
+          <img
+            src={dashboardPreview}
+            alt="AccuBooks financial dashboard showing charts, transactions and analytics"
+            className="w-full h-full object-cover object-top"
+          />
+          {/* Subtle gradient overlay at bottom for polish */}
+          <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background/80 to-transparent" />
+        </div>
+      </div>
 
           {/* Chart area placeholder */}
           <div className="h-32 rounded-xl bg-muted/50 border border-border mb-4 flex items-end px-4 pb-2 gap-1">
