@@ -63,6 +63,20 @@ export default function ReconciliationSetup({ onStarted, onCancel }: Props) {
     }
   }, [defaultInterestAccountId, interestAccount]);
 
+  // Auto-fill interest earned date & amount from last reconciliation
+  useEffect(() => {
+    if (lastRecon) {
+      if (lastRecon.interest_earned && Number(lastRecon.interest_earned) > 0) {
+        setInterestEarned(String(lastRecon.interest_earned));
+      }
+      if (lastRecon.statement_ending_date) {
+        // No-op: interest date is tied to statement date (read-only field)
+      }
+    } else {
+      setInterestEarned("");
+    }
+  }, [lastRecon]);
+
   const handleStart = async () => {
     if (!bankAccountId || !statementEndDate || !statementEndBalance) return;
     const result = await createReconciliation.mutateAsync({
