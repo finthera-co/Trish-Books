@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMyPermissions } from "@/hooks/usePermissions";
 import { Plus, Search, Eye, DollarSign, Users, TrendingUp, FileText, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import PayrollRunDetails from "@/components/payroll/PayrollRunDetails";
 import PayStub from "@/components/payroll/PayStub";
 import PayScheduleManager from "@/components/payroll/PayScheduleManager";
 import { exportToCsv } from "@/lib/csvExport";
+import { useSearchParams } from "react-router-dom";
 
 const statusColors: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -23,6 +24,8 @@ const statusColors: Record<string, string> = {
 };
 
 export default function Payroll() {
+  const [searchParams] = useSearchParams();
+  const highlightId = searchParams.get("highlight");
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedRun, setSelectedRun] = useState<any>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -30,6 +33,21 @@ export default function Payroll() {
   const [payStubItem, setPayStubItem] = useState<any>(null);
   const [payStubRun, setPayStubRun] = useState<any>(null);
   const [payStubOpen, setPayStubOpen] = useState(false);
+
+  const { data: runs, isLoading } = usePayrollRuns();
+  const { data: employees } = useEmployees();
+  const { canEdit: canEditPayroll } = useMyPermissions();
+
+  // Auto-open highlighted payroll run
+  useEffect(() => {
+    if (highlightId && runs) {
+      const run = runs.find((r: any) => r.id === highlightId);
+      if (run) {
+        setSelectedRun(run);
+        setDetailsOpen(true);
+      }
+    }
+  }, [highlightId, runs]);
 
   const { data: runs, isLoading } = usePayrollRuns();
   const { data: employees } = useEmployees();
