@@ -26,7 +26,7 @@ export default function ModuleLayout({ config }: ModuleLayoutProps) {
   const isModuleRoot = location.pathname === config.basePath;
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full overflow-hidden">
       {/* Contextual Sidebar */}
       <aside className="w-56 shrink-0 border-r border-border bg-card hidden md:flex flex-col">
         <div className="p-4 border-b border-border">
@@ -66,7 +66,7 @@ export default function ModuleLayout({ config }: ModuleLayoutProps) {
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Breadcrumb bar */}
         <div className="h-10 flex items-center gap-1.5 px-4 border-b border-border bg-card/50 text-xs shrink-0">
           <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">

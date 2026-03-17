@@ -22,7 +22,7 @@ export default function Home() {
   const { metrics, isLoading } = useDashboardMetrics(period);
 
   return (
-    <div className="max-w-[1400px] mx-auto px-4 py-6 space-y-6">
+    <div className="max-w-[1400px] mx-auto px-4 py-6 space-y-6 overflow-y-auto flex-1">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
