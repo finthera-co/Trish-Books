@@ -543,40 +543,58 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
             <CardHeader className="pb-2 px-4 pt-3">
               <CardTitle className="text-sm">Reconciliation Summary</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2 text-sm px-4 pb-4">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Beginning Balance</span>
-                <span className="font-medium">{formatCurrency(Number(recon.beginning_balance))}</span>
-              </div>
-              <Separator />
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Checks/Payments <span className="text-xs">({summary.paymentsCount})</span></span>
-                <span className="font-medium text-destructive">-{formatCurrency(summary.paymentsCleared)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Deposits/Credits <span className="text-xs">({summary.depositsCount})</span></span>
-                <span className="font-medium text-green-600">+{formatCurrency(summary.depositsCleared)}</span>
-              </div>
-              <Separator />
-              <div className="flex justify-between font-semibold">
-                <span>Cleared Balance</span>
-                <span>{formatCurrency(summary.clearedBalance)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Statement Balance</span>
-                <span className="font-medium">{formatCurrency(Number(recon.statement_ending_balance))}</span>
-              </div>
-              <Separator />
-              <div className={`flex justify-between items-center font-bold rounded-lg p-3 ${
+            <CardContent className="px-4 pb-4">
+              <table className="w-full text-sm">
+                <tbody>
+                  <tr>
+                    <td className="text-muted-foreground py-1.5">Beginning Balance</td>
+                    <td className="text-right font-medium font-mono py-1.5">{formatCurrency(Number(recon.beginning_balance))}</td>
+                  </tr>
+                  <tr>
+                    <td colSpan={2} className="py-0"><Separator /></td>
+                  </tr>
+                  <tr>
+                    <td className="text-muted-foreground py-1.5">
+                      Checks/Payments <span className="text-xs">({summary.paymentsCount})</span>
+                    </td>
+                    <td className="text-right font-medium font-mono text-destructive py-1.5">
+                      -{formatCurrency(summary.paymentsCleared)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="text-muted-foreground py-1.5">
+                      Deposits/Credits <span className="text-xs">({summary.depositsCount})</span>
+                    </td>
+                    <td className="text-right font-medium font-mono text-green-600 py-1.5">
+                      +{formatCurrency(summary.depositsCleared)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td colSpan={2} className="py-0"><Separator /></td>
+                  </tr>
+                  <tr className="font-semibold">
+                    <td className="py-1.5">Cleared Balance</td>
+                    <td className="text-right font-mono py-1.5">{formatCurrency(summary.clearedBalance)}</td>
+                  </tr>
+                  <tr>
+                    <td className="text-muted-foreground py-1.5">Statement Balance</td>
+                    <td className="text-right font-medium font-mono py-1.5">{formatCurrency(Number(recon.statement_ending_balance))}</td>
+                  </tr>
+                  <tr>
+                    <td colSpan={2} className="py-0"><Separator /></td>
+                  </tr>
+                </tbody>
+              </table>
+              <div className={`flex justify-between items-center font-bold rounded-lg p-3 mt-2 ${
                 canComplete ? "bg-green-100 text-green-800 dark:bg-green-950/30 dark:text-green-400" : "bg-red-100 text-red-800 dark:bg-red-950/30 dark:text-red-400"
               }`}>
                 <span className="flex items-center gap-1">
                   {canComplete ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
                   Difference
                 </span>
-                <span>{formatCurrency(summary.difference)}</span>
+                <span className="font-mono">{formatCurrency(summary.difference)}</span>
               </div>
-              <div className="pt-1">
+              <div className="pt-2">
                 <p className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">Not Yet Cleared</p>
                 <p className="text-xs mt-0.5">{(transactions || []).filter((t: any) => !t.cleared).length} transactions outstanding</p>
               </div>
