@@ -66,7 +66,7 @@ export default function ModuleLayout({ config }: ModuleLayoutProps) {
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Breadcrumb bar */}
         <div className="h-10 flex items-center gap-1.5 px-4 border-b border-border bg-card/50 text-xs shrink-0">
           <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
