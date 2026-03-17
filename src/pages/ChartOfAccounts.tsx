@@ -3,14 +3,14 @@ import { Button } from "@/components/ui/button";
 import { useState, useMemo } from "react";
 import { useAccounts, useCreateAccount, useUpdateAccount } from "@/hooks/useData";
 import { useAccountCategories, useCreateAccountCategory, useSeedDefaultAccounts } from "@/hooks/useAccountCategories";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMyPermissions } from "@/hooks/usePermissions";
-import { formatCurrency } from "@/lib/currency";
+
 import AccountForm from "@/components/chart-of-accounts/AccountForm";
-import OpeningBalanceCell from "@/components/chart-of-accounts/OpeningBalanceCell";
-import { toast } from "sonner";
+
+import InlineOpeningBalance from "@/components/chart-of-accounts/InlineOpeningBalance";
+import { useSystemSetting } from "@/hooks/useOpeningBalanceSettings";
+
 import {
   ACCOUNT_TYPES,
   typeColors,
@@ -62,17 +62,11 @@ interface TypeGroup {
 function AccountRow({
   account,
   depth = 0,
-  balanceMap,
-  activePeriodId,
-  tenantId,
   onEdit,
   onToggleActive,
 }: {
   account: Account;
   depth?: number;
-  balanceMap: Map<string, number>;
-  activePeriodId: string | null;
-  tenantId: string | undefined;
   onEdit: (a: Account) => void;
   onToggleActive: (a: Account) => void;
 }) {
@@ -107,11 +101,12 @@ function AccountRow({
           {getNormalBalance(account.account_type)}
         </td>
         <td className="text-right">
-          <OpeningBalanceCell
+          <InlineOpeningBalance
             accountId={account.id}
-            currentBalance={balanceMap.get(account.id) ?? null}
-            activePeriodId={activePeriodId}
-            tenantId={tenantId}
+            currentBalance={(account as any).opening_balance ?? 0}
+            currentType={(account as any).opening_balance_type ?? "debit"}
+            normalBalance={getNormalBalance(account.account_type)}
+            isLocked={(account as any).is_locked || false}
           />
         </td>
         <td className="text-right">
@@ -138,9 +133,6 @@ function AccountRow({
           key={child.id}
           account={child}
           depth={depth + 1}
-          balanceMap={balanceMap}
-          activePeriodId={activePeriodId}
-          tenantId={tenantId}
           onEdit={onEdit}
           onToggleActive={onToggleActive}
         />
@@ -151,16 +143,10 @@ function AccountRow({
 
 function TypeSection({
   typeGroup,
-  balanceMap,
-  activePeriodId,
-  tenantId,
   onEdit,
   onToggleActive,
 }: {
   typeGroup: TypeGroup;
-  balanceMap: Map<string, number>;
-  activePeriodId: string | null;
-  tenantId: string | undefined;
   onEdit: (a: Account) => void;
   onToggleActive: (a: Account) => void;
 }) {
@@ -193,9 +179,6 @@ function TypeSection({
           key={cat.id}
           category={cat}
           accountType={typeGroup.type}
-          balanceMap={balanceMap}
-          activePeriodId={activePeriodId}
-          tenantId={tenantId}
           onEdit={onEdit}
           onToggleActive={onToggleActive}
         />
@@ -212,9 +195,6 @@ function TypeSection({
               key={account.id}
               account={account}
               depth={2}
-              balanceMap={balanceMap}
-              activePeriodId={activePeriodId}
-              tenantId={tenantId}
               onEdit={onEdit}
               onToggleActive={onToggleActive}
             />
@@ -228,17 +208,11 @@ function TypeSection({
 function CategorySection({
   category,
   accountType,
-  balanceMap,
-  activePeriodId,
-  tenantId,
   onEdit,
   onToggleActive,
 }: {
   category: CategoryGroup;
   accountType: string;
-  balanceMap: Map<string, number>;
-  activePeriodId: string | null;
-  tenantId: string | undefined;
   onEdit: (a: Account) => void;
   onToggleActive: (a: Account) => void;
 }) {
@@ -264,9 +238,6 @@ function CategorySection({
           key={account.id}
           account={account}
           depth={2}
-          balanceMap={balanceMap}
-          activePeriodId={activePeriodId}
-          tenantId={tenantId}
           onEdit={onEdit}
           onToggleActive={onToggleActive}
         />
@@ -291,45 +262,7 @@ export default function ChartOfAccounts() {
   const seedDefaults = useSeedDefaultAccounts();
   const createCategory = useCreateAccountCategory();
 
-  const { data: fiscalPeriods } = useQuery({
-    queryKey: ["all_fiscal_periods"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("fiscal_periods")
-        .select("id, name, status")
-        .order("period_start", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
-  });
-
-  const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(null);
-
-  const activePeriod = useMemo(() => {
-    if (!fiscalPeriods?.length) return null;
-    if (selectedPeriodId) return fiscalPeriods.find(p => p.id === selectedPeriodId) || null;
-    return fiscalPeriods.find(p => p.status === "open") || fiscalPeriods[0];
-  }, [fiscalPeriods, selectedPeriodId]);
-
-  const { data: openingBalances } = useQuery({
-    queryKey: ["opening_balances", activePeriod?.id],
-    queryFn: async () => {
-      if (!activePeriod?.id) return [];
-      const { data, error } = await supabase
-        .from("opening_balances")
-        .select("account_id, balance")
-        .eq("fiscal_period_id", activePeriod.id);
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!activePeriod?.id,
-  });
-
-  const balanceMap = useMemo(() => {
-    const m = new Map<string, number>();
-    openingBalances?.forEach((ob) => m.set(ob.account_id, Number(ob.balance)));
-    return m;
-  }, [openingBalances]);
+  const { data: obStatus } = useSystemSetting("opening_balance_status");
 
   const filteredAccounts = useMemo(() => {
     if (!accounts) return [];
@@ -439,26 +372,15 @@ export default function ChartOfAccounts() {
         </div>
       </div>
 
-      {/* Period selector */}
-      {fiscalPeriods && fiscalPeriods.length > 0 ? (
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="bg-info/10 text-info text-xs font-medium px-3 py-2 rounded-lg inline-flex items-center gap-2">
-            Opening balances for:
-            <select
-              value={activePeriod?.id || ""}
-              onChange={(e) => setSelectedPeriodId(e.target.value)}
-              className="text-xs font-semibold bg-transparent border-none outline-none cursor-pointer text-info"
-            >
-              {fiscalPeriods.map(p => (
-                <option key={p.id} value={p.id}>{p.name} ({p.status})</option>
-              ))}
-            </select>
-            <span className="text-info/60">— Click any balance to edit</span>
-          </div>
+      {/* OB Status Banner */}
+      {obStatus === "finalized" && (
+        <div className="bg-info/10 text-info text-xs font-medium px-3 py-2 rounded-lg inline-flex items-center gap-2">
+          Opening balances are finalized — click any balance to view (read-only)
         </div>
-      ) : (
-        <div className="bg-warning/10 text-warning text-xs font-medium px-3 py-2 rounded-lg">
-          No fiscal periods found. Create one in Fiscal Periods to enter opening balances.
+      )}
+      {(!obStatus || obStatus === "draft") && (
+        <div className="bg-info/10 text-info text-xs font-medium px-3 py-2 rounded-lg inline-flex items-center gap-2">
+          Click any opening balance to edit inline
         </div>
       )}
 
@@ -532,9 +454,6 @@ export default function ChartOfAccounts() {
                 <TypeSection
                   key={tg.type}
                   typeGroup={tg}
-                  balanceMap={balanceMap}
-                  activePeriodId={activePeriod?.id ?? null}
-                  tenantId={appUser?.tenant_id}
                   onEdit={(a) => setEditAccount(a)}
                   onToggleActive={handleToggleActive}
                 />

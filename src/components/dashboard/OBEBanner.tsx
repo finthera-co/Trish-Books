@@ -1,5 +1,6 @@
 import { AlertTriangle } from "lucide-react";
-import { useOBEBalance, useSystemSetting } from "@/hooks/useOpeningBalanceEquity";
+import { useOBEBalance } from "@/hooks/useOpeningBalanceEquity";
+import { useSystemSetting } from "@/hooks/useOpeningBalanceSettings";
 import { formatCurrency } from "@/lib/currency";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";

@@ -3,7 +3,8 @@ import { AlertTriangle, CheckCircle2, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useActiveAccounts } from "@/hooks/useData";
-import { useOBEAccount, useOBEBalance, useCloseOBE, useSystemSetting } from "@/hooks/useOpeningBalanceEquity";
+import { useOBEAccount, useOBEBalance, useCloseOBE } from "@/hooks/useOpeningBalanceEquity";
+import { useSystemSetting } from "@/hooks/useOpeningBalanceSettings";
 import { formatCurrency } from "@/lib/currency";
 import {
   AlertDialog,
