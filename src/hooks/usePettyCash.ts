@@ -618,7 +618,8 @@ export function useCashAccounts() {
       const { data, error } = await supabase
         .from("accounts")
         .select("id, account_name, account_code, account_type, account_subtype")
-        .in("account_type", ["Bank", "Other Current Asset"])
+        .eq("account_type", "Asset")
+        .in("account_subtype", ["Bank", "Other Current Assets", "Prepaid Expenses"])
         .eq("is_active", true)
         .order("account_code");
       if (error) throw error;
