@@ -24,6 +24,7 @@ const assetSchema = z.object({
   description: z.string().optional(),
   asset_account_id: z.string().optional(),
   depreciation_account_id: z.string().optional(),
+  depr_expense_account_id: z.string().optional(),
 }).refine(d => d.salvage_value <= d.cost, { message: "Salvage value must be ≤ cost", path: ["salvage_value"] });
 
 type AssetFormValues = z.infer<typeof assetSchema>;
@@ -38,6 +39,7 @@ export default function AssetForm() {
   const updateAsset = useUpdateAsset();
 
   const assetAccounts = accounts?.filter(a => a.account_type === "Asset" && a.is_active) ?? [];
+  const expenseAccounts = accounts?.filter(a => a.account_type === "Expense" && a.is_active) ?? [];
 
   const form = useForm<AssetFormValues>({
     resolver: zodResolver(assetSchema),
@@ -58,14 +60,15 @@ export default function AssetForm() {
       form.reset({
         asset_name: existingAsset.asset_name,
         cost: existingAsset.cost,
-        salvage_value: (existingAsset as any).salvage_value ?? 0,
-        useful_life_months: (existingAsset as any).useful_life_months ?? 12,
-        depreciation_method: (existingAsset as any).depreciation_method ?? "straight_line",
+        salvage_value: existingAsset.salvage_value ?? 0,
+        useful_life_months: existingAsset.useful_life_months ?? 12,
+        depreciation_method: existingAsset.depreciation_method ?? "straight_line",
         acquisition_date: existingAsset.acquisition_date ?? "",
-        start_date: (existingAsset as any).start_date ?? existingAsset.acquisition_date ?? "",
+        start_date: existingAsset.start_date ?? existingAsset.acquisition_date ?? "",
         description: existingAsset.description ?? "",
         asset_account_id: existingAsset.asset_account_id ?? "",
         depreciation_account_id: existingAsset.depreciation_account_id ?? "",
+        depr_expense_account_id: (existingAsset as any).depr_expense_account_id ?? "",
       });
     }
   }, [existingAsset, isEdit]);
@@ -79,7 +82,6 @@ export default function AssetForm() {
     navigate("/assets");
   };
 
-  // Check if depreciation has started (has records)
   const hasDepreciation = isEdit && (existingAsset?.accumulated_depreciation ?? 0) > 0;
 
   return (
@@ -165,35 +167,55 @@ export default function AssetForm() {
                 )} />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <FormField control={form.control} name="asset_account_id" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Asset Account</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl><SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        {assetAccounts.map(a => (
-                          <SelectItem key={a.id} value={a.id}>{a.account_code} - {a.account_name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="depreciation_account_id" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Depreciation Account</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl><SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        {assetAccounts.map(a => (
-                          <SelectItem key={a.id} value={a.id}>{a.account_code} - {a.account_name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )} />
+              {/* COA Account Linking */}
+              <div className="border-t pt-4 mt-4">
+                <h3 className="text-sm font-semibold text-foreground mb-3">Account Linking (Chart of Accounts)</h3>
+                <div className="space-y-4">
+                  <FormField control={form.control} name="asset_account_id" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Asset Account</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Select asset account" /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {assetAccounts.map(a => (
+                            <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+
+                  <FormField control={form.control} name="depreciation_account_id" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Accumulated Depreciation Account (Contra Asset)</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Select contra asset account" /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {assetAccounts.map(a => (
+                            <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+
+                  <FormField control={form.control} name="depr_expense_account_id" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Depreciation Expense Account</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Select expense account" /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {expenseAccounts.map(a => (
+                            <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
               </div>
 
               <FormField control={form.control} name="description" render={({ field }) => (

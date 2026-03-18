@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { useFixedAsset, useAssetDepreciation, useDisposeAsset } from "@/hooks/useFixedAssets";
+import { useFixedAsset, useAssetDepreciation, useDisposeAsset, useAssetJournalEntries } from "@/hooks/useFixedAssets";
+import { useAccounts } from "@/hooks/useData";
 import { formatCurrency } from "@/lib/currency";
 import { generateDepreciationSchedule, type Asset } from "@/lib/depreciation";
 import { Progress } from "@/components/ui/progress";
@@ -17,6 +18,8 @@ export default function AssetDetail() {
   const navigate = useNavigate();
   const { data: asset, isLoading } = useFixedAsset(id);
   const { data: depRecords } = useAssetDepreciation(id);
+  const { data: journalEntries } = useAssetJournalEntries(id);
+  const { data: accounts } = useAccounts();
   const disposeAsset = useDisposeAsset();
   const [disposeOpen, setDisposeOpen] = useState(false);
   const [saleValue, setSaleValue] = useState(0);
@@ -28,13 +31,19 @@ export default function AssetDetail() {
   const nbv = asset.net_book_value ?? (asset.cost - (asset.accumulated_depreciation ?? 0));
   const depPercent = asset.cost > 0 ? ((asset.accumulated_depreciation ?? 0) / asset.cost) * 100 : 0;
 
+  const getAccountLabel = (accountId: string | null) => {
+    if (!accountId || !accounts) return "—";
+    const acct = accounts.find(a => a.id === accountId);
+    return acct ? `${acct.account_code} – ${acct.account_name}` : "—";
+  };
+
   // Generate projected schedule
   const assetForCalc: Asset = {
     id: asset.id,
     cost: asset.cost,
-    salvage_value: (asset as any).salvage_value ?? 0,
-    useful_life_months: (asset as any).useful_life_months ?? 12,
-    start_date: (asset as any).start_date || asset.acquisition_date || new Date().toISOString().split("T")[0],
+    salvage_value: asset.salvage_value ?? 0,
+    useful_life_months: asset.useful_life_months ?? 12,
+    start_date: asset.start_date || asset.acquisition_date || new Date().toISOString().split("T")[0],
     status: asset.status as "active" | "disposed",
   };
   const projectedSchedule = generateDepreciationSchedule(assetForCalc);
@@ -91,6 +100,27 @@ export default function AssetDetail() {
         </Card>
       </div>
 
+      {/* Linked Accounts */}
+      <Card>
+        <CardHeader><CardTitle className="text-lg">Linked Accounts</CardTitle></CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            <div>
+              <p className="text-muted-foreground mb-1">Asset Account</p>
+              <p className="font-medium">{getAccountLabel(asset.asset_account_id)}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground mb-1">Accumulated Depreciation</p>
+              <p className="font-medium">{getAccountLabel(asset.depreciation_account_id)}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground mb-1">Depreciation Expense</p>
+              <p className="font-medium">{getAccountLabel((asset as any).depr_expense_account_id)}</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Depreciation Progress */}
       <Card>
         <CardHeader><CardTitle className="text-lg">Depreciation Progress</CardTitle></CardHeader>
@@ -102,8 +132,8 @@ export default function AssetDetail() {
             </div>
             <Progress value={depPercent} className="h-3" />
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Salvage: {formatCurrency((asset as any).salvage_value ?? 0)}</span>
-              <span>Life: {(asset as any).useful_life_months ?? 12} months</span>
+              <span>Salvage: {formatCurrency(asset.salvage_value ?? 0)}</span>
+              <span>Life: {asset.useful_life_months ?? 12} months</span>
             </div>
           </div>
         </CardContent>
@@ -132,6 +162,51 @@ export default function AssetDetail() {
                     <TableCell className="text-right">{formatCurrency(r.net_book_value)}</TableCell>
                   </TableRow>
                 ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Linked Journal Entries */}
+      {journalEntries && journalEntries.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-lg">Linked Journal Entries</CardTitle></CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Account</TableHead>
+                  <TableHead className="text-right">Debit</TableHead>
+                  <TableHead className="text-right">Credit</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {journalEntries.map((je: any) =>
+                  (je.journal_lines ?? []).map((line: any, idx: number) => (
+                    <TableRow key={`${je.id}-${idx}`}>
+                      {idx === 0 ? (
+                        <>
+                          <TableCell rowSpan={je.journal_lines.length} className="font-medium align-top">{je.entry_date}</TableCell>
+                          <TableCell rowSpan={je.journal_lines.length} className="align-top">{je.description}</TableCell>
+                        </>
+                      ) : null}
+                      <TableCell className="text-sm">
+                        {line.accounts ? `${line.accounts.account_code} – ${line.accounts.account_name}` : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">{line.debit > 0 ? formatCurrency(line.debit) : ""}</TableCell>
+                      <TableCell className="text-right">{line.credit > 0 ? formatCurrency(line.credit) : ""}</TableCell>
+                      {idx === 0 ? (
+                        <TableCell rowSpan={je.journal_lines.length} className="align-top">
+                          <Badge variant={je.status === "posted" ? "default" : "secondary"}>{je.status}</Badge>
+                        </TableCell>
+                      ) : null}
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </CardContent>
