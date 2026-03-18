@@ -166,11 +166,16 @@ export default function Ledger() {
 
   // Opening balance
   const openingBalance = useMemo(() => {
-    if (!selectedAccount || !selectedPeriod || !openingBalances) return 0;
-    const ob = openingBalances.find(
-      (o: any) => o.account_id === selectedAccount.id && o.fiscal_period_id === selectedPeriod.id
-    );
-    return ob ? Number((ob as any).balance) : 0;
+    if (!selectedAccount) return 0;
+    // If a specific fiscal period is selected, use its opening balance record
+    if (selectedPeriod && openingBalances) {
+      const ob = openingBalances.find(
+        (o: any) => o.account_id === selectedAccount.id && o.fiscal_period_id === selectedPeriod.id
+      );
+      if (ob) return Number((ob as any).balance);
+    }
+    // Fall back to the account's opening_balance field
+    return Number(selectedAccount.opening_balance) || 0;
   }, [selectedAccount, selectedPeriod, openingBalances]);
 
   // Group accounts by type for selector
