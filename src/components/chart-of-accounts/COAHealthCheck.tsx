@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { ShieldCheck, AlertTriangle, CheckCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { ACCOUNT_SUBTYPES, ACCOUNT_TYPES, OPENING_BALANCE_ELIGIBLE_TYPES } from "@/lib/accountTypes";
 
