@@ -7,7 +7,8 @@ import OBEBanner from "@/components/dashboard/OBEBanner";
 import PeriodFilter from "@/components/dashboard/PeriodFilter";
 import DashboardCharts from "@/components/dashboard/DashboardCharts";
 import KPICards from "@/components/dashboard/KPICards";
-import { Loader2 } from "lucide-react";
+import { Loader2, Filter, Share2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export default function Home() {
   const { appUser } = useAuth();
@@ -23,18 +24,27 @@ export default function Home() {
   const { metrics, isLoading } = useDashboardMetrics(period);
 
   return (
-    <div className="max-w-[1400px] mx-auto px-4 py-6 space-y-6 overflow-y-auto flex-1">
+    <div className="max-w-[1440px] mx-auto px-6 py-6 space-y-6 overflow-y-auto flex-1">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 animate-fade-in">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">
+          <p className="text-xs font-medium text-primary mb-1">Dashboard → Overview</p>
+          <h1 className="text-2xl font-bold text-foreground tracking-tight">
             Financial Dashboard
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Welcome back, {appUser?.first_name || "User"}. {format(new Date(), "EEEE, MMMM d, yyyy")}
           </p>
         </div>
-        <PeriodFilter from={fromDate} to={toDate} onFromChange={setFromDate} onToChange={setToDate} />
+        <div className="flex items-center gap-2">
+          <PeriodFilter from={fromDate} to={toDate} onFromChange={setFromDate} onToChange={setToDate} />
+          <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5">
+            <Filter className="w-3.5 h-3.5" /> Filter
+          </Button>
+          <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5">
+            <Share2 className="w-3.5 h-3.5" /> Share
+          </Button>
+        </div>
       </div>
 
       {/* OBE Warning Banner */}
@@ -45,8 +55,10 @@ export default function Home() {
 
       {isLoading ? (
         <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-6 h-6 animate-spin text-primary" />
-          <span className="ml-2 text-sm text-muted-foreground">Loading financial data…</span>
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            <span className="text-sm text-muted-foreground">Loading financial data…</span>
+          </div>
         </div>
       ) : (
         <>

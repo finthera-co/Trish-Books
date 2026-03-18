@@ -27,37 +27,37 @@ export interface KPIItem {
   icon: React.ElementType;
   positive: boolean;
   category: string;
+  color: string;
 }
+
+const KPI_COLORS: Record<string, string> = {
+  "Profitability": "hsl(160, 84%, 39%)",
+  "Liquidity": "hsl(217, 91%, 60%)",
+  "Investment": "hsl(280, 65%, 60%)",
+  "Efficiency": "hsl(38, 92%, 50%)",
+  "Cash Flow": "hsl(199, 89%, 48%)",
+};
 
 function buildAllKPIs(m: DashboardMetrics): KPIItem[] {
   return [
-    // Profitability
-    { key: "gross_profit", label: "Gross Profit", value: fmt(m.grossProfit), formula: "Revenue − COGS", icon: TrendingUp, positive: m.grossProfit >= 0, category: "Profitability" },
-    { key: "gross_margin", label: "Gross Margin", value: pct(m.grossProfitMargin), formula: "(Gross Profit ÷ Revenue) × 100", icon: Percent, positive: m.grossProfitMargin >= 0, category: "Profitability" },
-    { key: "operating_profit", label: "Operating Profit", value: fmt(m.operatingProfit), formula: "Gross Profit − Operating Expenses", icon: Activity, positive: m.operatingProfit >= 0, category: "Profitability" },
-    { key: "operating_margin", label: "Operating Margin", value: pct(m.operatingMargin), formula: "(Operating Profit ÷ Revenue) × 100", icon: Percent, positive: m.operatingMargin >= 0, category: "Profitability" },
-    { key: "net_profit", label: "Net Profit", value: fmt(m.netProfit), formula: "Revenue − COGS − Expenses", icon: DollarSign, positive: m.netProfit >= 0, category: "Profitability" },
-    { key: "net_profit_margin", label: "Net Profit Margin", value: pct(m.netProfitMargin), formula: "(Net Profit ÷ Revenue) × 100", icon: Percent, positive: m.netProfitMargin >= 0, category: "Profitability" },
-
-    // Liquidity
-    { key: "current_ratio", label: "Current Ratio", value: ratio(m.currentRatio), formula: "Current Assets ÷ Current Liabilities", icon: Gauge, positive: m.currentRatio >= 1, category: "Liquidity" },
-    { key: "quick_ratio", label: "Quick Ratio", value: ratio(m.quickRatio), formula: "(Current Assets − Inventory) ÷ Current Liabilities", icon: Zap, positive: m.quickRatio >= 1, category: "Liquidity" },
-    { key: "cash_ratio", label: "Cash Ratio", value: ratio(m.cashRatio), formula: "Cash ÷ Current Liabilities", icon: PiggyBank, positive: m.cashRatio >= 0.5, category: "Liquidity" },
-    { key: "working_capital", label: "Working Capital", value: fmt(m.workingCapital), formula: "Current Assets − Current Liabilities", icon: Wallet, positive: m.workingCapital >= 0, category: "Liquidity" },
-
-    // Investment
-    { key: "roa", label: "ROA", value: pct(m.roa), formula: "(Net Profit ÷ Total Assets) × 100", icon: BarChart3, positive: m.roa >= 0, category: "Investment" },
-    { key: "roe", label: "ROE", value: pct(m.roe), formula: "(Net Profit ÷ Equity) × 100", icon: ShieldCheck, positive: m.roe >= 0, category: "Investment" },
-
-    // Efficiency
-    { key: "asset_turnover", label: "Asset Turnover", value: ratio(m.assetTurnover), formula: "Revenue ÷ Total Assets", icon: Layers, positive: m.assetTurnover > 0, category: "Efficiency" },
-    { key: "ar_turnover", label: "AR Turnover", value: ratio(m.arTurnover), formula: "Revenue ÷ Avg Accounts Receivable", icon: Target, positive: m.arTurnover > 0, category: "Efficiency" },
-    { key: "collection_period", label: "Collection Period", value: days(m.collectionPeriod), formula: "365 ÷ AR Turnover", icon: Clock, positive: m.collectionPeriod < 60, category: "Efficiency" },
-
-    // Cash Flow
-    { key: "total_inflows", label: "Total Inflows", value: fmt(m.totalInflows), formula: "Sum of cash debits", icon: ArrowUpRight, positive: true, category: "Cash Flow" },
-    { key: "total_outflows", label: "Total Outflows", value: fmt(m.totalOutflows), formula: "Sum of cash credits", icon: ArrowDownRight, positive: false, category: "Cash Flow" },
-    { key: "net_cash_flow", label: "Net Cash Flow", value: fmt(m.totalInflows - m.totalOutflows), formula: "Inflows − Outflows", icon: DollarSign, positive: m.totalInflows - m.totalOutflows >= 0, category: "Cash Flow" },
+    { key: "gross_profit", label: "Gross Profit", value: fmt(m.grossProfit), formula: "Revenue − COGS", icon: TrendingUp, positive: m.grossProfit >= 0, category: "Profitability", color: KPI_COLORS["Profitability"] },
+    { key: "gross_margin", label: "Gross Margin", value: pct(m.grossProfitMargin), formula: "(Gross Profit ÷ Revenue) × 100", icon: Percent, positive: m.grossProfitMargin >= 0, category: "Profitability", color: KPI_COLORS["Profitability"] },
+    { key: "operating_profit", label: "Operating Profit", value: fmt(m.operatingProfit), formula: "Gross Profit − Operating Expenses", icon: Activity, positive: m.operatingProfit >= 0, category: "Profitability", color: KPI_COLORS["Profitability"] },
+    { key: "operating_margin", label: "Operating Margin", value: pct(m.operatingMargin), formula: "(Operating Profit ÷ Revenue) × 100", icon: Percent, positive: m.operatingMargin >= 0, category: "Profitability", color: KPI_COLORS["Profitability"] },
+    { key: "net_profit", label: "Net Profit", value: fmt(m.netProfit), formula: "Revenue − COGS − Expenses", icon: DollarSign, positive: m.netProfit >= 0, category: "Profitability", color: KPI_COLORS["Profitability"] },
+    { key: "net_profit_margin", label: "Net Profit Margin", value: pct(m.netProfitMargin), formula: "(Net Profit ÷ Revenue) × 100", icon: Percent, positive: m.netProfitMargin >= 0, category: "Profitability", color: KPI_COLORS["Profitability"] },
+    { key: "current_ratio", label: "Current Ratio", value: ratio(m.currentRatio), formula: "Current Assets ÷ Current Liabilities", icon: Gauge, positive: m.currentRatio >= 1, category: "Liquidity", color: KPI_COLORS["Liquidity"] },
+    { key: "quick_ratio", label: "Quick Ratio", value: ratio(m.quickRatio), formula: "(Current Assets − Inventory) ÷ Current Liabilities", icon: Zap, positive: m.quickRatio >= 1, category: "Liquidity", color: KPI_COLORS["Liquidity"] },
+    { key: "cash_ratio", label: "Cash Ratio", value: ratio(m.cashRatio), formula: "Cash ÷ Current Liabilities", icon: PiggyBank, positive: m.cashRatio >= 0.5, category: "Liquidity", color: KPI_COLORS["Liquidity"] },
+    { key: "working_capital", label: "Working Capital", value: fmt(m.workingCapital), formula: "Current Assets − Current Liabilities", icon: Wallet, positive: m.workingCapital >= 0, category: "Liquidity", color: KPI_COLORS["Liquidity"] },
+    { key: "roa", label: "ROA", value: pct(m.roa), formula: "(Net Profit ÷ Total Assets) × 100", icon: BarChart3, positive: m.roa >= 0, category: "Investment", color: KPI_COLORS["Investment"] },
+    { key: "roe", label: "ROE", value: pct(m.roe), formula: "(Net Profit ÷ Equity) × 100", icon: ShieldCheck, positive: m.roe >= 0, category: "Investment", color: KPI_COLORS["Investment"] },
+    { key: "asset_turnover", label: "Asset Turnover", value: ratio(m.assetTurnover), formula: "Revenue ÷ Total Assets", icon: Layers, positive: m.assetTurnover > 0, category: "Efficiency", color: KPI_COLORS["Efficiency"] },
+    { key: "ar_turnover", label: "AR Turnover", value: ratio(m.arTurnover), formula: "Revenue ÷ Avg Accounts Receivable", icon: Target, positive: m.arTurnover > 0, category: "Efficiency", color: KPI_COLORS["Efficiency"] },
+    { key: "collection_period", label: "Collection Period", value: days(m.collectionPeriod), formula: "365 ÷ AR Turnover", icon: Clock, positive: m.collectionPeriod < 60, category: "Efficiency", color: KPI_COLORS["Efficiency"] },
+    { key: "total_inflows", label: "Total Inflows", value: fmt(m.totalInflows), formula: "Sum of cash debits", icon: ArrowUpRight, positive: true, category: "Cash Flow", color: KPI_COLORS["Cash Flow"] },
+    { key: "total_outflows", label: "Total Outflows", value: fmt(m.totalOutflows), formula: "Sum of cash credits", icon: ArrowDownRight, positive: false, category: "Cash Flow", color: KPI_COLORS["Cash Flow"] },
+    { key: "net_cash_flow", label: "Net Cash Flow", value: fmt(m.totalInflows - m.totalOutflows), formula: "Inflows − Outflows", icon: DollarSign, positive: m.totalInflows - m.totalOutflows >= 0, category: "Cash Flow", color: KPI_COLORS["Cash Flow"] },
   ];
 }
 
@@ -81,18 +81,14 @@ export default function KPICards({ metrics }: Props) {
 
   const allKpis = useMemo(() => buildAllKPIs(metrics), [metrics]);
 
-  // Determine visible keys: if no preference saved yet, show all
   const visibleKeys = useMemo(() => {
     if (prefsLoading) return ALL_KPI_KEYS;
     if (!preferences || preferences.visible_kpis.length === 0) return ALL_KPI_KEYS;
     return preferences.visible_kpis;
   }, [preferences, prefsLoading]);
 
-  const pinnedKeys = useMemo(() => {
-    return preferences?.pinned_kpis || [];
-  }, [preferences]);
+  const pinnedKeys = useMemo(() => preferences?.pinned_kpis || [], [preferences]);
 
-  // Filter and sort: pinned first
   const visibleKpis = useMemo(() => {
     const visible = allKpis.filter(k => visibleKeys.includes(k.key));
     const pinned = visible.filter(k => pinnedKeys.includes(k.key));
@@ -101,7 +97,6 @@ export default function KPICards({ metrics }: Props) {
   }, [allKpis, visibleKeys, pinnedKeys]);
 
   const categories = useMemo(() => {
-    // If there are pinned items, show "Pinned" category first
     const cats: string[] = [];
     if (visibleKpis.some(k => pinnedKeys.includes(k.key))) cats.push("⭐ Pinned");
     const otherCats = [...new Set(visibleKpis.filter(k => !pinnedKeys.includes(k.key)).map(k => k.category))];
@@ -114,9 +109,7 @@ export default function KPICards({ metrics }: Props) {
   };
 
   const handleTogglePin = (key: string) => {
-    const newPinned = pinnedKeys.includes(key)
-      ? pinnedKeys.filter(k => k !== key)
-      : [...pinnedKeys, key];
+    const newPinned = pinnedKeys.includes(key) ? pinnedKeys.filter(k => k !== key) : [...pinnedKeys, key];
     savePreferences({ visible_kpis: visibleKeys, pinned_kpis: newPinned });
     toast.success(pinnedKeys.includes(key) ? "KPI unpinned" : "KPI pinned to top");
   };
@@ -149,13 +142,13 @@ export default function KPICards({ metrics }: Props) {
   };
 
   return (
-    <div className="space-y-4">
-      {/* Header with manage button */}
+    <div className="space-y-5 animate-fade-in">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-foreground">Key Performance Indicators</h2>
+        <h2 className="text-sm font-bold text-foreground">Key Performance Indicators</h2>
         <Dialog open={manageOpen} onOpenChange={setManageOpen}>
           <DialogTrigger asChild>
-            <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={openManageDialog}>
+            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 rounded-lg" onClick={openManageDialog}>
               <Settings2 className="w-3.5 h-3.5" />
               Manage KPIs
             </Button>
@@ -173,11 +166,8 @@ export default function KPICards({ metrics }: Props) {
                   <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">{cat}</h4>
                   <div className="space-y-1.5">
                     {allKpis.filter(k => k.category === cat).map(kpi => (
-                      <div key={kpi.key} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border hover:bg-accent/50 transition-colors">
-                        <Checkbox
-                          checked={editVisible.includes(kpi.key)}
-                          onCheckedChange={() => toggleEditVisible(kpi.key)}
-                        />
+                      <div key={kpi.key} className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border hover:bg-muted/50 transition-all duration-200">
+                        <Checkbox checked={editVisible.includes(kpi.key)} onCheckedChange={() => toggleEditVisible(kpi.key)} />
                         <kpi.icon className="w-4 h-4 text-muted-foreground shrink-0" />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-foreground">{kpi.label}</p>
@@ -185,11 +175,7 @@ export default function KPICards({ metrics }: Props) {
                         </div>
                         <button
                           onClick={() => toggleEditPinned(kpi.key)}
-                          className={cn(
-                            "p-1 rounded transition-colors",
-                            editPinned.includes(kpi.key) ? "text-primary" : "text-muted-foreground hover:text-foreground"
-                          )}
-                          title={editPinned.includes(kpi.key) ? "Unpin" : "Pin to top"}
+                          className={cn("p-1 rounded transition-colors", editPinned.includes(kpi.key) ? "text-primary" : "text-muted-foreground hover:text-foreground")}
                         >
                           {editPinned.includes(kpi.key) ? <Pin className="w-3.5 h-3.5" /> : <PinOff className="w-3.5 h-3.5" />}
                         </button>
@@ -200,16 +186,11 @@ export default function KPICards({ metrics }: Props) {
               ))}
             </div>
             <div className="flex items-center justify-between pt-4 border-t border-border mt-4">
-              <div className="text-xs text-muted-foreground">
-                {editVisible.length} of {allKpis.length} selected
-              </div>
+              <div className="text-xs text-muted-foreground">{editVisible.length} of {allKpis.length} selected</div>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => { setEditVisible([...ALL_KPI_KEYS]); setEditPinned([]); }}>
-                  Reset All
-                </Button>
+                <Button variant="outline" size="sm" onClick={() => { setEditVisible([...ALL_KPI_KEYS]); setEditPinned([]); }}>Reset All</Button>
                 <Button size="sm" onClick={handleSaveManage} disabled={isSaving}>
-                  <Check className="w-3.5 h-3.5 mr-1" />
-                  Save
+                  <Check className="w-3.5 h-3.5 mr-1" /> Save
                 </Button>
               </div>
             </div>
@@ -230,42 +211,36 @@ export default function KPICards({ metrics }: Props) {
             <div key={cat}>
               <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">{cat}</h3>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {items.map(kpi => (
+                {items.map((kpi, i) => (
                   <Tooltip key={kpi.key}>
                     <TooltipTrigger asChild>
-                      <div className={cn(
-                        "group relative bg-card rounded-xl border p-5 hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 cursor-default",
-                        pinnedKeys.includes(kpi.key) ? "border-primary/40 bg-primary/5" : "border-border"
-                      )}>
-                        {/* Quick actions on hover */}
-                        <div className="absolute top-1.5 right-1.5 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleTogglePin(kpi.key); }}
-                            className="p-1 rounded hover:bg-accent transition-colors"
-                            title={pinnedKeys.includes(kpi.key) ? "Unpin" : "Pin to top"}
-                          >
-                            {pinnedKeys.includes(kpi.key)
-                              ? <PinOff className="w-3 h-3 text-primary" />
-                              : <Pin className="w-3 h-3 text-muted-foreground" />
-                            }
+                      <div
+                        className={cn(
+                          "group relative bg-card rounded-xl border p-5 hover:shadow-md transition-all duration-300 hover:-translate-y-0.5 cursor-default",
+                          pinnedKeys.includes(kpi.key) ? "border-primary/30 shadow-sm" : "border-border"
+                        )}
+                        style={{ animationDelay: `${i * 0.05}s` }}
+                      >
+                        {/* Quick actions */}
+                        <div className="absolute top-2 right-2 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-200">
+                          <button onClick={(e) => { e.stopPropagation(); handleTogglePin(kpi.key); }} className="p-1 rounded-md hover:bg-muted transition-colors">
+                            {pinnedKeys.includes(kpi.key) ? <PinOff className="w-3 h-3 text-primary" /> : <Pin className="w-3 h-3 text-muted-foreground" />}
                           </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleRemoveKpi(kpi.key); }}
-                            className="p-1 rounded hover:bg-destructive/10 transition-colors"
-                            title="Remove KPI"
-                          >
+                          <button onClick={(e) => { e.stopPropagation(); handleRemoveKpi(kpi.key); }} className="p-1 rounded-md hover:bg-destructive/10 transition-colors">
                             <X className="w-3 h-3 text-muted-foreground hover:text-destructive" />
                           </button>
                         </div>
 
                         <div className="flex items-center justify-between mb-3">
-                          <kpi.icon className={cn("w-5 h-5", kpi.positive ? "text-[hsl(var(--success))]" : "text-destructive")} />
+                          <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${kpi.color}15` }}>
+                            <kpi.icon className="w-4.5 h-4.5" style={{ color: kpi.color }} />
+                          </div>
                           {kpi.positive
                             ? <ArrowUpRight className="w-4 h-4 text-[hsl(var(--success))]" />
                             : <ArrowDownRight className="w-4 h-4 text-destructive" />
                           }
                         </div>
-                        <p className={cn("text-2xl font-bold tabular-nums leading-none", kpi.positive ? "text-foreground" : "text-destructive")}>
+                        <p className={cn("text-xl font-bold tabular-nums leading-none", kpi.positive ? "text-foreground" : "text-destructive")}>
                           {kpi.value}
                         </p>
                         <p className="text-xs text-muted-foreground mt-2 leading-tight">{kpi.label}</p>
