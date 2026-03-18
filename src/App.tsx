@@ -16,6 +16,8 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import ChartOfAccounts from "./pages/ChartOfAccounts";
 import JournalEntries from "./pages/JournalEntries";
+import JournalEntryView from "./pages/JournalEntryView";
+import JournalEntryEdit from "./pages/JournalEntryEdit";
 import Ledger from "./pages/Ledger";
 import OpeningBalances from "./pages/OpeningBalances";
 import CloseOBE from "./pages/CloseOBE";
