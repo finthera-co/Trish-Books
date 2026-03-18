@@ -2213,27 +2213,40 @@ export type Database = {
       }
       petty_cash_accounts: {
         Row: {
+          account_id: string
           account_name: string
-          balance: number
           created_at: string
+          float_amount: number
           id: string
+          is_active: boolean
           tenant_id: string
         }
         Insert: {
+          account_id: string
           account_name: string
-          balance?: number
           created_at?: string
+          float_amount?: number
           id?: string
+          is_active?: boolean
           tenant_id: string
         }
         Update: {
+          account_id?: string
           account_name?: string
-          balance?: number
           created_at?: string
+          float_amount?: number
           id?: string
+          is_active?: boolean
           tenant_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "petty_cash_accounts_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "petty_cash_accounts_tenant_id_fkey"
             columns: ["tenant_id"]
@@ -2243,40 +2256,199 @@ export type Database = {
           },
         ]
       }
-      petty_cash_transactions: {
+      petty_cash_replenishments: {
         Row: {
           amount: number
+          bank_account_id: string
           created_at: string
-          description: string | null
+          date: string
           id: string
+          journal_entry_id: string | null
           petty_cash_account_id: string
-          receipt_url: string | null
-          transaction_type: string
+          replenishment_number: string
+          status: string
+          tenant_id: string
         }
         Insert: {
-          amount: number
+          amount?: number
+          bank_account_id: string
           created_at?: string
-          description?: string | null
+          date?: string
           id?: string
+          journal_entry_id?: string | null
           petty_cash_account_id: string
-          receipt_url?: string | null
-          transaction_type: string
+          replenishment_number: string
+          status?: string
+          tenant_id: string
         }
         Update: {
           amount?: number
+          bank_account_id?: string
           created_at?: string
-          description?: string | null
+          date?: string
           id?: string
+          journal_entry_id?: string | null
           petty_cash_account_id?: string
-          receipt_url?: string | null
-          transaction_type?: string
+          replenishment_number?: string
+          status?: string
+          tenant_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "petty_cash_transactions_petty_cash_account_id_fkey"
+            foreignKeyName: "petty_cash_replenishments_bank_account_id_fkey"
+            columns: ["bank_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "petty_cash_replenishments_journal_entry_id_fkey"
+            columns: ["journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "petty_cash_replenishments_petty_cash_account_id_fkey"
             columns: ["petty_cash_account_id"]
             isOneToOne: false
             referencedRelation: "petty_cash_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "petty_cash_replenishments_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      petty_cash_voucher_lines: {
+        Row: {
+          account_id: string
+          amount: number
+          date: string
+          description: string | null
+          id: string
+          line_no: number
+          voucher_id: string
+        }
+        Insert: {
+          account_id: string
+          amount?: number
+          date?: string
+          description?: string | null
+          id?: string
+          line_no?: number
+          voucher_id: string
+        }
+        Update: {
+          account_id?: string
+          amount?: number
+          date?: string
+          description?: string | null
+          id?: string
+          line_no?: number
+          voucher_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "petty_cash_voucher_lines_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "petty_cash_voucher_lines_voucher_id_fkey"
+            columns: ["voucher_id"]
+            isOneToOne: false
+            referencedRelation: "petty_cash_vouchers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      petty_cash_vouchers: {
+        Row: {
+          approved_at: string | null
+          authorized_by: string | null
+          created_at: string
+          date: string
+          id: string
+          journal_entry_id: string | null
+          paid_to: string | null
+          petty_cash_account_id: string
+          prepared_by: string | null
+          status: string
+          tenant_id: string
+          total_amount: number
+          voucher_number: string
+        }
+        Insert: {
+          approved_at?: string | null
+          authorized_by?: string | null
+          created_at?: string
+          date?: string
+          id?: string
+          journal_entry_id?: string | null
+          paid_to?: string | null
+          petty_cash_account_id: string
+          prepared_by?: string | null
+          status?: string
+          tenant_id: string
+          total_amount?: number
+          voucher_number: string
+        }
+        Update: {
+          approved_at?: string | null
+          authorized_by?: string | null
+          created_at?: string
+          date?: string
+          id?: string
+          journal_entry_id?: string | null
+          paid_to?: string | null
+          petty_cash_account_id?: string
+          prepared_by?: string | null
+          status?: string
+          tenant_id?: string
+          total_amount?: number
+          voucher_number?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "petty_cash_vouchers_authorized_by_fkey"
+            columns: ["authorized_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "petty_cash_vouchers_journal_entry_id_fkey"
+            columns: ["journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "petty_cash_vouchers_petty_cash_account_id_fkey"
+            columns: ["petty_cash_account_id"]
+            isOneToOne: false
+            referencedRelation: "petty_cash_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "petty_cash_vouchers_prepared_by_fkey"
+            columns: ["prepared_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "petty_cash_vouchers_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
         ]
@@ -3007,6 +3179,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      generate_pcr_number: { Args: { p_tenant_id: string }; Returns: string }
+      generate_pcv_number: { Args: { p_tenant_id: string }; Returns: string }
       generate_voucher_number: {
         Args: { p_tenant_id: string }
         Returns: string
