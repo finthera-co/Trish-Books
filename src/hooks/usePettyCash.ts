@@ -62,7 +62,7 @@ export function usePCVoucher(id?: string) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("petty_cash_vouchers")
-        .select("*, petty_cash_accounts(account_name, account_id, float_amount), prepared_user:prepared_by(full_name), authorized_user:authorized_by(full_name)")
+        .select("*, petty_cash_accounts(account_name, account_id, float_amount), prepared_user:prepared_by(first_name, last_name), authorized_user:authorized_by(first_name, last_name)")
         .eq("id", id!)
         .single();
       if (error) throw error;
