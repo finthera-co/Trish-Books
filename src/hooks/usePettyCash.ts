@@ -113,11 +113,11 @@ export function useCreatePCVoucher() {
       paid_to: string;
       petty_cash_account_id: string;
       authorized_by?: string;
+      receipt_urls?: string[];
       lines: { date: string; description: string; account_id: string; amount: number }[];
     }) => {
       const total = input.lines.reduce((s, l) => s + l.amount, 0);
 
-      // Get prepared_by user id
       const { data: user } = await supabase
         .from("users")
         .select("id")
@@ -135,13 +135,13 @@ export function useCreatePCVoucher() {
           petty_cash_account_id: input.petty_cash_account_id,
           prepared_by: user?.id,
           authorized_by: input.authorized_by || null,
+          receipt_urls: input.receipt_urls || [],
           status: "draft",
         })
         .select()
         .single();
       if (error) throw error;
 
-      // Insert lines
       const lines = input.lines.map((l, i) => ({
         voucher_id: voucher.id,
         line_no: i + 1,
@@ -172,7 +172,6 @@ export function useUpdateVoucherStatus() {
   return useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
       if (status === "approved") {
-        // Fetch voucher + lines to create journal entry
         const { data: voucher } = await supabase
           .from("petty_cash_vouchers")
           .select("*, petty_cash_accounts(account_id)")
@@ -186,13 +185,12 @@ export function useUpdateVoucherStatus() {
           .eq("voucher_id", id);
         if (!lines?.length) throw new Error("No voucher lines");
 
-        // Balance check: get remaining cash
         const remaining = await getRemainingCash(voucher.petty_cash_account_id);
         if (remaining < voucher.total_amount) {
           throw new Error(`Insufficient petty cash balance. Available: ${remaining.toFixed(2)}, Required: ${voucher.total_amount}`);
         }
 
-        // Create journal entry: DR each expense, CR petty cash account
+        // Create journal entry with cash_flow_category
         const { data: je, error: jeErr } = await supabase
           .from("journal_entries")
           .insert({
@@ -203,21 +201,19 @@ export function useUpdateVoucherStatus() {
             is_system_generated: true,
             entry_type: "petty_cash",
             reference: voucher.voucher_number,
+            cash_flow_category: "operating",
           })
           .select()
           .single();
         if (jeErr) throw jeErr;
 
-        // Journal lines
         const journalLines = [
-          // Debit each expense account
           ...lines.map((l: any) => ({
             journal_entry_id: je.id,
             account_id: l.account_id,
             debit: Number(l.amount),
             credit: 0,
           })),
-          // Credit petty cash account
           {
             journal_entry_id: je.id,
             account_id: voucher.petty_cash_accounts?.account_id,
@@ -231,7 +227,6 @@ export function useUpdateVoucherStatus() {
           .insert(journalLines);
         if (jlErr) throw jlErr;
 
-        // Update voucher
         const { error } = await supabase
           .from("petty_cash_vouchers")
           .update({
@@ -259,6 +254,138 @@ export function useUpdateVoucherStatus() {
   });
 }
 
+// ─── Voucher Reversal ───
+export function useReverseVoucher() {
+  const qc = useQueryClient();
+  const { appUser } = useAuth();
+  return useMutation({
+    mutationFn: async (voucherId: string) => {
+      // Fetch original voucher
+      const { data: voucher } = await supabase
+        .from("petty_cash_vouchers")
+        .select("*, petty_cash_accounts(account_id)")
+        .eq("id", voucherId)
+        .single();
+      if (!voucher) throw new Error("Voucher not found");
+      if (voucher.status !== "approved") throw new Error("Only approved vouchers can be reversed");
+      if (voucher.reversed_at) throw new Error("Voucher already reversed");
+
+      // Fetch original lines
+      const { data: lines } = await supabase
+        .from("petty_cash_voucher_lines")
+        .select("*")
+        .eq("voucher_id", voucherId);
+      if (!lines?.length) throw new Error("No voucher lines found");
+
+      // Create reversing journal entry (opposite of original)
+      const { data: je, error: jeErr } = await supabase
+        .from("journal_entries")
+        .insert({
+          tenant_id: appUser!.tenant_id,
+          description: `Reversal: Petty Cash Voucher ${voucher.voucher_number}`,
+          entry_date: new Date().toISOString().split("T")[0],
+          status: "posted",
+          is_system_generated: true,
+          entry_type: "petty_cash_reversal",
+          reference: `REV-${voucher.voucher_number}`,
+          reversal_of: voucher.journal_entry_id,
+          cash_flow_category: "operating",
+        })
+        .select()
+        .single();
+      if (jeErr) throw jeErr;
+
+      // Reverse: CR each expense, DR petty cash
+      const reversalLines = [
+        ...lines.map((l: any) => ({
+          journal_entry_id: je.id,
+          account_id: l.account_id,
+          debit: 0,
+          credit: Number(l.amount),
+        })),
+        {
+          journal_entry_id: je.id,
+          account_id: voucher.petty_cash_accounts?.account_id,
+          debit: Number(voucher.total_amount),
+          credit: 0,
+        },
+      ];
+
+      const { error: jlErr } = await supabase
+        .from("journal_lines")
+        .insert(reversalLines);
+      if (jlErr) throw jlErr;
+
+      // Mark original voucher as reversed
+      const { error } = await supabase
+        .from("petty_cash_vouchers")
+        .update({
+          reversed_at: new Date().toISOString(),
+          status: "reversed",
+        })
+        .eq("id", voucherId);
+      if (error) throw error;
+
+      return je;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pc_vouchers"] });
+      qc.invalidateQueries({ queryKey: ["pc_voucher"] });
+      qc.invalidateQueries({ queryKey: ["pc_balance"] });
+      toast.success("Voucher reversed — correcting journal entry created");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ─── Receipt Upload ───
+export function useUploadReceipt() {
+  return useMutation({
+    mutationFn: async ({ file, voucherId }: { file: File; voucherId?: string }) => {
+      const ext = file.name.split(".").pop();
+      const path = `${voucherId || "draft"}/${Date.now()}.${ext}`;
+      const { error } = await supabase.storage
+        .from("petty-cash-receipts")
+        .upload(path, file);
+      if (error) throw error;
+      return path;
+    },
+    onError: (e: Error) => toast.error(`Upload failed: ${e.message}`),
+  });
+}
+
+export function useReceiptUrl(path?: string) {
+  if (!path) return null;
+  const { data } = supabase.storage.from("petty-cash-receipts").getPublicUrl(path);
+  return data?.publicUrl || null;
+}
+
+export async function getReceiptSignedUrl(path: string): Promise<string> {
+  const { data, error } = await supabase.storage
+    .from("petty-cash-receipts")
+    .createSignedUrl(path, 3600);
+  if (error) throw error;
+  return data.signedUrl;
+}
+
+export function useUpdateVoucherReceipts() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ voucherId, receiptUrls }: { voucherId: string; receiptUrls: string[] }) => {
+      const { error } = await supabase
+        .from("petty_cash_vouchers")
+        .update({ receipt_urls: receiptUrls })
+        .eq("id", voucherId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pc_voucher"] });
+      toast.success("Receipts updated");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
 // ─── Balance Helpers ───
 async function getRemainingCash(pcAccountId: string): Promise<number> {
   const { data: account } = await supabase
@@ -271,7 +398,7 @@ async function getRemainingCash(pcAccountId: string): Promise<number> {
     .from("petty_cash_vouchers")
     .select("total_amount")
     .eq("petty_cash_account_id", pcAccountId)
-    .eq("status", "approved");
+    .in("status", ["approved"]);
 
   const { data: replenished } = await supabase
     .from("petty_cash_replenishments")
@@ -303,7 +430,7 @@ export function usePCBalance(pcAccountId?: string) {
         .from("petty_cash_vouchers")
         .select("total_amount")
         .eq("petty_cash_account_id", pcAccountId)
-        .eq("status", "approved");
+        .in("status", ["approved"]);
 
       const { data: replenished } = await supabase
         .from("petty_cash_replenishments")
@@ -397,14 +524,13 @@ export function useApproveReplenishment() {
         .single();
       if (!rep) throw new Error("Not found");
 
-      // Prevent over-replenishment
       const remaining = await getRemainingCash(rep.petty_cash_account_id);
       const wouldExceed = remaining + Number(rep.amount) > Number(rep.petty_cash_accounts?.float_amount || 0);
       if (wouldExceed) {
         throw new Error("Replenishment would exceed defined float amount");
       }
 
-      // Create journal entry: DR Petty Cash, CR Bank
+      // Journal: DR Petty Cash, CR Bank — classified as internal_transfer
       const { data: je, error: jeErr } = await supabase
         .from("journal_entries")
         .insert({
@@ -415,6 +541,7 @@ export function useApproveReplenishment() {
           is_system_generated: true,
           entry_type: "petty_cash_replenishment",
           reference: rep.replenishment_number,
+          cash_flow_category: "internal_transfer",
         })
         .select()
         .single();

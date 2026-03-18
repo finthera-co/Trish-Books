@@ -1305,6 +1305,7 @@ export type Database = {
       }
       journal_entries: {
         Row: {
+          cash_flow_category: string | null
           created_at: string
           created_by: string | null
           description: string
@@ -1321,6 +1322,7 @@ export type Database = {
           voided_by: string | null
         }
         Insert: {
+          cash_flow_category?: string | null
           created_at?: string
           created_by?: string | null
           description: string
@@ -1337,6 +1339,7 @@ export type Database = {
           voided_by?: string | null
         }
         Update: {
+          cash_flow_category?: string | null
           created_at?: string
           created_by?: string | null
           description?: string
@@ -2380,6 +2383,9 @@ export type Database = {
           paid_to: string | null
           petty_cash_account_id: string
           prepared_by: string | null
+          receipt_urls: string[] | null
+          reversal_voucher_id: string | null
+          reversed_at: string | null
           status: string
           tenant_id: string
           total_amount: number
@@ -2395,6 +2401,9 @@ export type Database = {
           paid_to?: string | null
           petty_cash_account_id: string
           prepared_by?: string | null
+          receipt_urls?: string[] | null
+          reversal_voucher_id?: string | null
+          reversed_at?: string | null
           status?: string
           tenant_id: string
           total_amount?: number
@@ -2410,6 +2419,9 @@ export type Database = {
           paid_to?: string | null
           petty_cash_account_id?: string
           prepared_by?: string | null
+          receipt_urls?: string[] | null
+          reversal_voucher_id?: string | null
+          reversed_at?: string | null
           status?: string
           tenant_id?: string
           total_amount?: number
@@ -2442,6 +2454,13 @@ export type Database = {
             columns: ["prepared_by"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "petty_cash_vouchers_reversal_voucher_id_fkey"
+            columns: ["reversal_voucher_id"]
+            isOneToOne: false
+            referencedRelation: "petty_cash_vouchers"
             referencedColumns: ["id"]
           },
           {

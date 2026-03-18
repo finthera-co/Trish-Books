@@ -338,4 +338,13 @@
     page-break-inside: avoid;
     break-inside: avoid;
   }
+
+  /* Voucher print: keep grid for details */
+  #voucher-print .grid {
+    display: grid !important;
+  }
+
+  #voucher-print .grid > * {
+    margin-bottom: 0 !important;
+  }
 }
