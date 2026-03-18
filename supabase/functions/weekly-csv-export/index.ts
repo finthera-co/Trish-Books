@@ -110,13 +110,22 @@ Deno.serve(async (req) => {
             .eq("tenant_id", tenant.id);
           if (!empIds?.length) continue;
           query = query.in("employee_id", empIds.map((e) => e.id));
-        } else if (table === "petty_cash_transactions") {
+        } else if (table === "petty_cash_vouchers" || table === "petty_cash_voucher_lines" || table === "petty_cash_replenishments") {
           const { data: pcIds } = await supabase
             .from("petty_cash_accounts")
             .select("id")
             .eq("tenant_id", tenant.id);
           if (!pcIds?.length) continue;
-          query = query.in("petty_cash_account_id", pcIds.map((p) => p.id));
+          if (table === "petty_cash_voucher_lines") {
+            const { data: vIds } = await supabase
+              .from("petty_cash_vouchers")
+              .select("id")
+              .in("petty_cash_account_id", pcIds.map((p) => p.id));
+            if (!vIds?.length) continue;
+            query = query.in("voucher_id", vIds.map((v) => v.id));
+          } else {
+            query = query.in("petty_cash_account_id", pcIds.map((p) => p.id));
+          }
         }
 
         const { data: rows, error } = await query;
