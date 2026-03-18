@@ -81,6 +81,9 @@ const App = () => (
                   <Route path="/banking/reconciliation" element={<BankReconciliation />} />
                   <Route path="/banking/payment-vouchers" element={<PaymentVouchers />} />
                   <Route path="/banking/petty-cash" element={<PettyCash />} />
+                  <Route path="/banking/petty-cash/voucher/new" element={<PettyCashVoucherForm />} />
+                  <Route path="/banking/petty-cash/voucher/:id" element={<PettyCashVoucherDetail />} />
+                  <Route path="/banking/petty-cash/replenishments" element={<PettyCashReplenishments />} />
                 </Route>
 
                 {/* Sales module */}
