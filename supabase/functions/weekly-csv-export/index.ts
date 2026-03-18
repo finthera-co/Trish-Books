@@ -35,7 +35,9 @@ const TABLES = [
   "budgets",
   "budget_items",
   "petty_cash_accounts",
-  "petty_cash_transactions",
+  "petty_cash_vouchers",
+  "petty_cash_voucher_lines",
+  "petty_cash_replenishments",
 ] as const;
 
 Deno.serve(async (req) => {
