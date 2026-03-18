@@ -54,6 +54,44 @@ export function useAssetDepreciation(assetId: string | undefined) {
   });
 }
 
+export function useAssetJournalEntries(assetId: string | undefined) {
+  return useQuery({
+    queryKey: ["asset_journal_entries", assetId],
+    enabled: !!assetId,
+    queryFn: async () => {
+      // Get journal entry IDs from depreciation records
+      const { data: depRecs } = await supabase
+        .from("asset_depreciation")
+        .select("journal_entry_id, period")
+        .eq("asset_id", assetId!)
+        .not("journal_entry_id", "is", null)
+        .order("period", { ascending: true });
+
+      // Get journal entry IDs from disposals
+      const { data: dispRecs } = await supabase
+        .from("asset_disposals")
+        .select("journal_entry_id, disposal_date")
+        .eq("asset_id", assetId!)
+        .not("journal_entry_id", "is", null);
+
+      const jeIds = [
+        ...(depRecs?.map(r => r.journal_entry_id).filter(Boolean) ?? []),
+        ...(dispRecs?.map(r => r.journal_entry_id).filter(Boolean) ?? []),
+      ];
+
+      if (jeIds.length === 0) return [];
+
+      const { data: entries, error } = await supabase
+        .from("journal_entries")
+        .select("id, entry_date, description, status, journal_lines(id, account_id, debit, credit, accounts:account_id(account_code, account_name))")
+        .in("id", jeIds)
+        .order("entry_date", { ascending: true });
+      if (error) throw error;
+      return entries ?? [];
+    },
+  });
+}
+
 export function useCreateAsset() {
   const qc = useQueryClient();
   const { appUser } = useAuth();
@@ -69,6 +107,7 @@ export function useCreateAsset() {
       description?: string;
       asset_account_id?: string;
       depreciation_account_id?: string;
+      depr_expense_account_id?: string;
     }) => {
       const { data, error } = await supabase
         .from("fixed_assets")
@@ -127,8 +166,8 @@ export function useRunDepreciation() {
         .eq("status", "active");
       if (aErr) throw aErr;
 
-      // Fetch depreciation expense & accumulated depreciation accounts
-      const { data: depExpAcct } = await supabase
+      // Fallback: fetch default accounts by name if asset-level not set
+      const { data: fallbackExpAcct } = await supabase
         .from("accounts")
         .select("id")
         .eq("tenant_id", tenantId)
@@ -137,17 +176,13 @@ export function useRunDepreciation() {
         .limit(1)
         .maybeSingle();
 
-      const { data: accDepAcct } = await supabase
+      const { data: fallbackAccDepAcct } = await supabase
         .from("accounts")
         .select("id")
         .eq("tenant_id", tenantId)
         .ilike("account_name", "%accumulated depreciation%")
         .limit(1)
         .maybeSingle();
-
-      if (!depExpAcct || !accDepAcct) {
-        throw new Error("Please create a 'Depreciation Expense' account and an 'Accumulated Depreciation' account in your Chart of Accounts first.");
-      }
 
       let processed = 0;
       let skipped = 0;
@@ -156,6 +191,15 @@ export function useRunDepreciation() {
         const startDate = (raw as any).start_date || raw.acquisition_date;
         if (!startDate) { skipped++; continue; }
         if (!isPeriodEligible(startDate, period)) { skipped++; continue; }
+
+        // Resolve per-asset accounts, falling back to tenant defaults
+        const expenseAccountId = (raw as any).depr_expense_account_id || fallbackExpAcct?.id;
+        const accumAccountId = raw.depreciation_account_id || fallbackAccDepAcct?.id;
+
+        if (!expenseAccountId || !accumAccountId) {
+          skipped++;
+          continue;
+        }
 
         // Check duplicate
         const { data: existing } = await supabase
@@ -204,10 +248,10 @@ export function useRunDepreciation() {
           .single();
         if (jeErr) throw jeErr;
 
-        // Journal lines
+        // Journal lines: Dr Depreciation Expense, Cr Accumulated Depreciation
         await supabase.from("journal_lines").insert([
-          { journal_entry_id: je.id, account_id: depExpAcct.id, debit: depreciation, credit: 0 },
-          { journal_entry_id: je.id, account_id: accDepAcct.id, debit: 0, credit: depreciation },
+          { journal_entry_id: je.id, account_id: expenseAccountId, debit: depreciation, credit: 0 },
+          { journal_entry_id: je.id, account_id: accumAccountId, debit: 0, credit: depreciation },
         ]);
 
         // Insert depreciation record
@@ -238,6 +282,7 @@ export function useRunDepreciation() {
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ["fixed_assets"] });
       qc.invalidateQueries({ queryKey: ["asset_depreciation"] });
+      qc.invalidateQueries({ queryKey: ["asset_journal_entries"] });
       toast.success(`Depreciation run complete: ${result.processed} processed, ${result.skipped} skipped`);
     },
     onError: (e: any) => toast.error(e.message),
@@ -261,8 +306,17 @@ export function useDisposeAsset() {
 
       const nbv = asset.net_book_value ?? (asset.cost - (asset.accumulated_depreciation ?? 0));
       const gainLoss = saleValue - nbv;
+      const accumDepr = asset.accumulated_depreciation ?? 0;
 
-      // Fetch accounts
+      // Resolve accounts
+      const assetAccountId = asset.asset_account_id;
+      const accumAccountId = asset.depreciation_account_id;
+
+      if (!assetAccountId) {
+        throw new Error("Asset account is not configured. Please edit the asset and link an Asset Account.");
+      }
+
+      // Fetch cash account
       const { data: cashAcct } = await supabase
         .from("accounts")
         .select("id")
@@ -272,34 +326,50 @@ export function useDisposeAsset() {
         .limit(1)
         .maybeSingle();
 
-      const { data: assetAcct } = await supabase
-        .from("accounts")
-        .select("id")
-        .eq("id", asset.asset_account_id!)
-        .maybeSingle();
-
-      if (!cashAcct || !assetAcct) {
-        throw new Error("Cash or asset account not found. Please configure accounts first.");
+      if (!cashAcct) {
+        throw new Error("Cash account not found. Please create a Cash account in your Chart of Accounts.");
       }
 
-      // Create disposal journal entry
+      // Fetch gain/loss account
+      const gainLossType = gainLoss >= 0 ? "Income" : "Expense";
+      const gainLossPattern = gainLoss >= 0 ? "%gain%dispos%" : "%loss%dispos%";
+      const { data: gainLossAcct } = await supabase
+        .from("accounts")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("account_type", gainLossType)
+        .ilike("account_name", gainLossPattern)
+        .limit(1)
+        .maybeSingle();
+
+      // Build balanced journal entry lines
       const lines: { account_id: string; debit: number; credit: number }[] = [];
 
-      // Dr Cash for sale_value
+      // Dr Cash for sale proceeds
       if (saleValue > 0) {
         lines.push({ account_id: cashAcct.id, debit: saleValue, credit: 0 });
       }
 
-      // Cr Asset for NBV
-      lines.push({ account_id: assetAcct.id, debit: 0, credit: nbv });
+      // Dr Accumulated Depreciation (remove contra)
+      if (accumAccountId && accumDepr > 0) {
+        lines.push({ account_id: accumAccountId, debit: accumDepr, credit: 0 });
+      }
 
-      // Gain or Loss
-      if (gainLoss > 0) {
-        // Gain - credit
-        lines.push({ account_id: assetAcct.id, debit: 0, credit: gainLoss });
-      } else if (gainLoss < 0) {
-        // Loss - debit
-        lines.push({ account_id: assetAcct.id, debit: Math.abs(gainLoss), credit: 0 });
+      // Cr Asset Account (remove full cost)
+      lines.push({ account_id: assetAccountId, debit: 0, credit: asset.cost });
+
+      // Gain or Loss entry
+      if (gainLoss > 0 && gainLossAcct) {
+        lines.push({ account_id: gainLossAcct.id, debit: 0, credit: gainLoss });
+      } else if (gainLoss < 0 && gainLossAcct) {
+        lines.push({ account_id: gainLossAcct.id, debit: Math.abs(gainLoss), credit: 0 });
+      } else if (gainLoss !== 0) {
+        // Fallback: post gain/loss to asset account if no dedicated account exists
+        if (gainLoss > 0) {
+          lines.push({ account_id: assetAccountId, debit: 0, credit: gainLoss });
+        } else {
+          lines.push({ account_id: assetAccountId, debit: Math.abs(gainLoss), credit: 0 });
+        }
       }
 
       const { data: je, error: jeErr } = await supabase
@@ -338,6 +408,7 @@ export function useDisposeAsset() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["fixed_assets"] });
+      qc.invalidateQueries({ queryKey: ["asset_journal_entries"] });
       toast.success("Asset disposed successfully");
     },
     onError: (e: any) => toast.error(e.message),
