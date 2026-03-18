@@ -78,11 +78,11 @@ export default function PettyCashVoucherDetail() {
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <span className="text-muted-foreground">Prepared By</span>
-              <p className="font-medium">{(voucher as any).prepared_user?.full_name || "—"}</p>
+              <p className="font-medium">{(voucher as any).prepared_user ? `${(voucher as any).prepared_user.first_name} ${(voucher as any).prepared_user.last_name}` : "—"}</p>
             </div>
             <div>
               <span className="text-muted-foreground">Authorized By</span>
-              <p className="font-medium">{(voucher as any).authorized_user?.full_name || "—"}</p>
+              <p className="font-medium">{(voucher as any).authorized_user ? `${(voucher as any).authorized_user.first_name} ${(voucher as any).authorized_user.last_name}` : "—"}</p>
             </div>
             {voucher.approved_at && (
               <div>
