@@ -86,10 +86,10 @@ interface DefaultAccount {
 
 const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   // Assets – Bank (1000–1099)
-  { account_code: "1010", account_name: "Cash on Hand", account_type: "Asset", account_subtype: "Bank", category_name: "Bank" },
-  { account_code: "1020", account_name: "Business Checking", account_type: "Asset", account_subtype: "Bank", category_name: "Bank" },
-  { account_code: "1030", account_name: "Petty Cash", account_type: "Asset", account_subtype: "Bank", category_name: "Bank" },
-  { account_code: "1040", account_name: "Savings Account", account_type: "Asset", account_subtype: "Bank", category_name: "Bank" },
+  { account_code: "1010", account_name: "Cash on Hand", account_type: "Asset", account_subtype: "Cash on Hand", category_name: "Bank" },
+  { account_code: "1020", account_name: "Business Checking", account_type: "Asset", account_subtype: "Checking", category_name: "Bank" },
+  { account_code: "1030", account_name: "Petty Cash", account_type: "Asset", account_subtype: "Cash on Hand", category_name: "Bank" },
+  { account_code: "1040", account_name: "Savings Account", account_type: "Asset", account_subtype: "Savings", category_name: "Bank" },
   // Assets – Accounts Receivable (1100)
   { account_code: "1100", account_name: "Accounts Receivable", account_type: "Asset", account_subtype: "Accounts Receivable", category_name: "Accounts Receivable" },
   // Assets – Other Current Assets (1200–1399)
