@@ -108,6 +108,16 @@ const App = () => (
                   <Route path="/reports/exports" element={<DataExports />} />
                 </Route>
 
+                {/* Fixed Assets module */}
+                <Route element={<ModuleLayout config={MODULE_CONFIGS.assets} />}>
+                  <Route path="/assets" element={<ModuleDashboard config={MODULE_CONFIGS.assets} />} />
+                  <Route path="/assets/register" element={<AssetRegister />} />
+                  <Route path="/assets/new" element={<AssetForm />} />
+                  <Route path="/assets/:id/edit" element={<AssetForm />} />
+                  <Route path="/assets/:id" element={<AssetDetail />} />
+                  <Route path="/assets/depreciation" element={<DepreciationRun />} />
+                </Route>
+
                 {/* Admin/Settings module */}
                 <Route element={<ModuleLayout config={MODULE_CONFIGS.admin} />}>
                   <Route path="/admin" element={<ModuleDashboard config={MODULE_CONFIGS.admin} />} />

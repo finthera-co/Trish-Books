@@ -147,5 +147,6 @@ export const HOME_MODULES: ModuleCard[] = [
   { id: "expenses", label: "Expenses", description: "Track and manage business expenses", icon: Receipt, color: "bg-[hsl(var(--warning))]", path: "/expenses" },
   { id: "payroll", label: "Payroll", description: "Process payroll, manage employees & pay schedules", icon: DollarSign, color: "bg-[hsl(var(--info))]", path: "/payroll" },
   { id: "reports", label: "Reports", description: "Financial reports, budgets & data exports", icon: BarChart3, color: "bg-[hsl(var(--chart-5))]", path: "/reports" },
+  { id: "assets", label: "Fixed Assets", description: "Asset tracking, depreciation & disposal management", icon: Warehouse, color: "bg-[hsl(var(--chart-4))]", path: "/assets" },
   { id: "admin", label: "Settings", description: "Users, tenants, subscriptions & system config", icon: Settings, color: "bg-muted-foreground", path: "/admin" },
 ];
