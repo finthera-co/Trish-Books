@@ -458,8 +458,8 @@ export function useTenantUsers() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("users")
-        .select("id, full_name, email")
-        .order("full_name");
+        .select("id, first_name, last_name, email")
+        .order("first_name");
       if (error) throw error;
       return data;
     },
