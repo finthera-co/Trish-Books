@@ -24,6 +24,9 @@ import {
   Contact,
   Store,
   Lock,
+  Warehouse,
+  Calculator,
+  ClipboardList,
 } from "lucide-react";
 import type { ModuleConfig } from "@/components/layout/ModuleLayout";
 
