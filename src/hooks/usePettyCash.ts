@@ -46,7 +46,7 @@ export function usePCVouchers(pcAccountId?: string) {
     queryFn: async () => {
       let query = supabase
         .from("petty_cash_vouchers")
-        .select("*, petty_cash_accounts(account_name), prepared_user:prepared_by(full_name), authorized_user:authorized_by(full_name)")
+        .select("*, petty_cash_accounts(account_name), prepared_user:prepared_by(first_name, last_name), authorized_user:authorized_by(first_name, last_name)")
         .order("created_at", { ascending: false });
       if (pcAccountId) query = query.eq("petty_cash_account_id", pcAccountId);
       const { data, error } = await query;
