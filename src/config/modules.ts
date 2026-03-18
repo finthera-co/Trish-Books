@@ -103,6 +103,18 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "Data Exports", path: "/reports/exports", icon: FileArchive },
     ],
   },
+  assets: {
+    id: "assets",
+    label: "Fixed Assets",
+    icon: Warehouse,
+    color: "bg-[hsl(var(--chart-4))]",
+    basePath: "/assets",
+    sidebarItems: [
+      { label: "Asset Register", path: "/assets/register", icon: ClipboardList },
+      { label: "Add Asset", path: "/assets/new", icon: Warehouse },
+      { label: "Run Depreciation", path: "/assets/depreciation", icon: Calculator },
+    ],
+  },
   admin: {
     id: "admin",
     label: "Settings",
