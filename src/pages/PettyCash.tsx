@@ -77,10 +77,12 @@ export default function PettyCash() {
                       <Label>Linked COA Account (Cash / Current Asset)</Label>
                       <Select value={selectedCOAAccount} onValueChange={setSelectedCOAAccount}>
                         <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
-                        <SelectContent>
-                          {cashAccounts?.map((a) => (
+                        <SelectContent position="popper" className="z-[9999]">
+                          {(cashAccounts && cashAccounts.length > 0) ? cashAccounts.map((a) => (
                             <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
-                          ))}
+                          )) : (
+                            <div className="px-3 py-2 text-sm text-muted-foreground">No cash/bank accounts found in COA</div>
+                          )}
                         </SelectContent>
                       </Select>
                     </div>
