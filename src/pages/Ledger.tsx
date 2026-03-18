@@ -379,7 +379,7 @@ export default function Ledger() {
         break;
       case "journal_entry":
       default:
-        navigate(`/accounting/journals?highlight=${row.transaction_id}`);
+        navigate(`/accounting/journals/${row.transaction_id}`);
         break;
     }
   };

@@ -70,6 +70,8 @@ const App = () => (
                   <Route path="/accounting" element={<ModuleDashboard config={MODULE_CONFIGS.accounting} />} />
                   <Route path="/accounting/accounts" element={<ChartOfAccounts />} />
                   <Route path="/accounting/journals" element={<JournalEntries />} />
+                  <Route path="/accounting/journals/:id" element={<JournalEntryView />} />
+                  <Route path="/accounting/journals/:id/edit" element={<JournalEntryEdit />} />
                   <Route path="/accounting/ledger" element={<Ledger />} />
                   <Route path="/accounting/trial-balance" element={<TrialBalance />} />
                   <Route path="/accounting/fiscal-periods" element={<FiscalPeriods />} />
