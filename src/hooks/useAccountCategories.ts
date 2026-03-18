@@ -86,10 +86,10 @@ interface DefaultAccount {
 
 const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   // Assets – Bank (1000–1099)
-  { account_code: "1010", account_name: "Cash on Hand", account_type: "Asset", account_subtype: "Bank", category_name: "Bank" },
-  { account_code: "1020", account_name: "Business Checking", account_type: "Asset", account_subtype: "Bank", category_name: "Bank" },
-  { account_code: "1030", account_name: "Petty Cash", account_type: "Asset", account_subtype: "Bank", category_name: "Bank" },
-  { account_code: "1040", account_name: "Savings Account", account_type: "Asset", account_subtype: "Bank", category_name: "Bank" },
+  { account_code: "1010", account_name: "Cash on Hand", account_type: "Asset", account_subtype: "Cash on Hand", category_name: "Bank" },
+  { account_code: "1020", account_name: "Business Checking", account_type: "Asset", account_subtype: "Checking", category_name: "Bank" },
+  { account_code: "1030", account_name: "Petty Cash", account_type: "Asset", account_subtype: "Cash on Hand", category_name: "Bank" },
+  { account_code: "1040", account_name: "Savings Account", account_type: "Asset", account_subtype: "Savings", category_name: "Bank" },
   // Assets – Accounts Receivable (1100)
   { account_code: "1100", account_name: "Accounts Receivable", account_type: "Asset", account_subtype: "Accounts Receivable", category_name: "Accounts Receivable" },
   // Assets – Other Current Assets (1200–1399)
@@ -99,11 +99,11 @@ const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   { account_code: "1400", account_name: "VAT Receivable", account_type: "Asset", account_subtype: "Other Current Assets", category_name: "Other Current Assets" },
   // Assets – Fixed Assets (1500–1699)
   { account_code: "1500", account_name: "Land", account_type: "Asset", account_subtype: "Fixed Assets", category_name: "Fixed Assets" },
-  { account_code: "1510", account_name: "Buildings", account_type: "Asset", account_subtype: "Fixed Assets", category_name: "Fixed Assets" },
+  { account_code: "1510", account_name: "Buildings", account_type: "Asset", account_subtype: "Buildings", category_name: "Fixed Assets" },
   { account_code: "1520", account_name: "Machinery", account_type: "Asset", account_subtype: "Fixed Assets", category_name: "Fixed Assets" },
-  { account_code: "1530", account_name: "Equipment", account_type: "Asset", account_subtype: "Fixed Assets", category_name: "Fixed Assets" },
-  { account_code: "1540", account_name: "Vehicles", account_type: "Asset", account_subtype: "Fixed Assets", category_name: "Fixed Assets" },
-  { account_code: "1550", account_name: "Furniture & Fixtures", account_type: "Asset", account_subtype: "Fixed Assets", category_name: "Fixed Assets" },
+  { account_code: "1530", account_name: "Equipment", account_type: "Asset", account_subtype: "Furniture & Equipment", category_name: "Fixed Assets" },
+  { account_code: "1540", account_name: "Vehicles", account_type: "Asset", account_subtype: "Vehicles", category_name: "Fixed Assets" },
+  { account_code: "1550", account_name: "Furniture & Fixtures", account_type: "Asset", account_subtype: "Furniture & Equipment", category_name: "Fixed Assets" },
   { account_code: "1600", account_name: "Accumulated Depreciation", account_type: "Asset", account_subtype: "Accumulated Depreciation", category_name: "Fixed Assets" },
   // Liabilities – Accounts Payable (2000)
   { account_code: "2000", account_name: "Accounts Payable", account_type: "Liability", account_subtype: "Accounts Payable", category_name: "Accounts Payable" },

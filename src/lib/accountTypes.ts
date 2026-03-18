@@ -76,10 +76,16 @@ export function getTypeLabel(accountType: string): string {
 // QuickBooks-style detail types (subtypes) per account type
 export const ACCOUNT_SUBTYPES: Record<string, string[]> = {
   Asset: [
+    "Cash on Hand",
+    "Checking",
+    "Savings",
     "Bank",
     "Accounts Receivable",
     "Other Current Assets",
     "Fixed Assets",
+    "Furniture & Equipment",
+    "Vehicles",
+    "Buildings",
     "Inventory",
     "Prepaid Expenses",
     "Intangible Assets",
@@ -90,6 +96,7 @@ export const ACCOUNT_SUBTYPES: Record<string, string[]> = {
     "Credit Card",
     "Other Current Liability",
     "Long-term Liability",
+    "Long-Term Loan",
     "Payroll Liability",
     "Sales Tax Payable",
   ],
@@ -101,7 +108,9 @@ export const ACCOUNT_SUBTYPES: Record<string, string[]> = {
     "Dividends",
   ],
   Income: [
+    "Sales of Product",
     "Sales Revenue",
+    "Service Income",
     "Service Revenue",
     "Discount",
     "Other Revenue",
@@ -117,6 +126,7 @@ export const ACCOUNT_SUBTYPES: Record<string, string[]> = {
     "Bank Charges",
     "Rent",
     "Utilities",
+    "Supplies",
     "Insurance",
     "Payroll Expenses",
     "Office Supplies",
