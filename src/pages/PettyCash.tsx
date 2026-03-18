@@ -1,181 +1,204 @@
-import { Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { useState } from "react";
-import { usePettyCashAccounts, usePettyCashTransactions, useCreatePettyCashTransaction } from "@/hooks/useData";
-import { useMyPermissions } from "@/hooks/usePermissions";
+import { Plus, FileText, RefreshCw, Wallet } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
-import { toast } from "sonner";
-import { useQueryClient } from "@tanstack/react-query";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { usePettyCashAccounts, useCreatePCAccount, useCashAccounts, usePCBalance } from "@/hooks/usePettyCash";
+import { useMyPermissions } from "@/hooks/usePermissions";
+import { formatCurrency } from "@/lib/currency";
+import { useNavigate } from "react-router-dom";
 
-const typeColors: Record<string, string> = {
-  expense: "bg-destructive/10 text-destructive",
-  topup: "bg-success/10 text-success",
-  issue: "bg-info/10 text-info",
+const statusColor: Record<string, string> = {
+  draft: "bg-muted text-muted-foreground",
+  pending: "bg-warning/10 text-warning",
+  approved: "bg-success/10 text-success",
+  rejected: "bg-destructive/10 text-destructive",
 };
 
 export default function PettyCash() {
-  const [open, setOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
-  const [selectedAccount, setSelectedAccount] = useState<string>("");
-  const [amount, setAmount] = useState(0);
-  const [transactionType, setTransactionType] = useState("expense");
-  const [description, setDescription] = useState("");
+  const [selectedCOAAccount, setSelectedCOAAccount] = useState("");
   const [accountName, setAccountName] = useState("");
+  const [floatAmount, setFloatAmount] = useState(0);
 
-  const { data: accounts, isLoading: accountsLoading } = usePettyCashAccounts();
-  const { data: transactions, isLoading: txnLoading } = usePettyCashTransactions(selectedAccount || accounts?.[0]?.id);
-  const createTransaction = useCreatePettyCashTransaction();
-  const { appUser } = useAuth();
-  const queryClient = useQueryClient();
-  const { canEdit: canEditBanking } = useMyPermissions();
+  const { data: accounts, isLoading } = usePettyCashAccounts();
+  const { data: cashAccounts } = useCashAccounts();
+  const createAccount = useCreatePCAccount();
+  const { canEdit } = useMyPermissions();
+  const navigate = useNavigate();
 
-  const currentAccount = accounts?.find(a => a.id === (selectedAccount || accounts?.[0]?.id));
-
-  const handleCreate = async () => {
-    const accountId = selectedAccount || accounts?.[0]?.id;
-    if (!accountId) return;
-    
-    await createTransaction.mutateAsync({
-      petty_cash_account_id: accountId,
-      amount: transactionType === "expense" ? -Math.abs(amount) : Math.abs(amount),
-      transaction_type: transactionType,
-      description,
-    });
-    
-    // Update balance
-    const newBalance = Number(currentAccount?.balance || 0) + (transactionType === "expense" ? -Math.abs(amount) : Math.abs(amount));
-    await supabase.from("petty_cash_accounts").update({ balance: newBalance }).eq("id", accountId);
-    queryClient.invalidateQueries({ queryKey: ["petty_cash_accounts"] });
-    
-    setOpen(false);
-    setAmount(0);
-    setDescription("");
+  const handleCreateAccount = () => {
+    if (!selectedCOAAccount || !accountName || floatAmount <= 0) return;
+    createAccount.mutate(
+      { account_id: selectedCOAAccount, account_name: accountName, float_amount: floatAmount },
+      {
+        onSuccess: () => {
+          setAccountOpen(false);
+          setAccountName("");
+          setFloatAmount(0);
+          setSelectedCOAAccount("");
+        },
+      }
+    );
   };
-
-  const handleCreateAccount = async () => {
-    const { error } = await supabase.from("petty_cash_accounts").insert({
-      tenant_id: appUser?.tenant_id,
-      account_name: accountName,
-      balance: 0,
-    });
-    if (error) {
-      toast.error(error.message);
-    } else {
-      toast.success("Petty cash account created");
-      queryClient.invalidateQueries({ queryKey: ["petty_cash_accounts"] });
-      setAccountOpen(false);
-      setAccountName("");
-    }
-  };
-
-  const totalIssued = transactions?.filter(t => t.transaction_type === "issue" || t.transaction_type === "topup").reduce((s, t) => s + Math.abs(Number(t.amount)), 0) || 0;
-  const totalSpent = transactions?.filter(t => t.transaction_type === "expense").reduce((s, t) => s + Math.abs(Number(t.amount)), 0) || 0;
 
   return (
     <div className="space-y-6">
       <div className="page-header">
         <div>
           <h1 className="page-title">Petty Cash</h1>
-          <p className="page-description">Manage petty cash accounts and transactions</p>
+          <p className="page-description">Manage petty cash accounts, vouchers & replenishments</p>
         </div>
         <div className="flex gap-2">
-          {canEditBanking("banking") && <>
-            <Dialog open={accountOpen} onOpenChange={setAccountOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline">New Account</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader><DialogTitle>Create Petty Cash Account</DialogTitle></DialogHeader>
-                <div className="space-y-4 pt-4">
-                  <div>
-                    <label className="text-sm font-medium">Account Name</label>
-                    <input type="text" value={accountName} onChange={(e) => setAccountName(e.target.value)}
-                      className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" placeholder="Office Petty Cash" />
-                  </div>
-                  <Button onClick={handleCreateAccount} disabled={!accountName} className="w-full">Create Account</Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-            <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger asChild>
-                <Button disabled={!accounts?.length}><Plus className="w-4 h-4" />New Transaction</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader><DialogTitle>Record Transaction</DialogTitle></DialogHeader>
-                <div className="space-y-4 pt-4">
-                  <div className="grid grid-cols-2 gap-4">
+          {canEdit("banking") && (
+            <>
+              <Button variant="outline" onClick={() => navigate("/banking/petty-cash/replenishments")}>
+                <RefreshCw className="w-4 h-4 mr-1" /> Replenishments
+              </Button>
+              <Button variant="outline" onClick={() => navigate("/banking/petty-cash/voucher/new")}>
+                <FileText className="w-4 h-4 mr-1" /> New Voucher
+              </Button>
+              <Dialog open={accountOpen} onOpenChange={setAccountOpen}>
+                <DialogTrigger asChild>
+                  <Button><Plus className="w-4 h-4 mr-1" /> New Account</Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader><DialogTitle>Create Petty Cash Account</DialogTitle></DialogHeader>
+                  <div className="space-y-4 pt-4">
                     <div>
-                      <label className="text-sm font-medium">Type</label>
-                      <select value={transactionType} onChange={(e) => setTransactionType(e.target.value)}
-                        className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground">
-                        <option value="expense">Expense</option>
-                        <option value="topup">Top-up</option>
-                        <option value="issue">Issue</option>
-                      </select>
+                      <Label>Account Name</Label>
+                      <Input value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="Office Petty Cash" />
                     </div>
                     <div>
-                      <label className="text-sm font-medium">Amount</label>
-                      <input type="number" value={amount || ""} onChange={(e) => setAmount(Number(e.target.value))}
-                        className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" />
+                      <Label>Linked COA Account (Cash / Current Asset)</Label>
+                      <Select value={selectedCOAAccount} onValueChange={setSelectedCOAAccount}>
+                        <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
+                        <SelectContent>
+                          {cashAccounts?.map((a) => (
+                            <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
+                    <div>
+                      <Label>Float Amount (Imprest)</Label>
+                      <Input type="number" value={floatAmount || ""} onChange={(e) => setFloatAmount(Number(e.target.value))} />
+                    </div>
+                    <Button onClick={handleCreateAccount} disabled={!accountName || !selectedCOAAccount || floatAmount <= 0} className="w-full">
+                      Create Account
+                    </Button>
                   </div>
-                  <div>
-                    <label className="text-sm font-medium">Description</label>
-                    <input type="text" value={description} onChange={(e) => setDescription(e.target.value)}
-                      className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" placeholder="Office snacks" />
-                  </div>
-                  <Button onClick={handleCreate} disabled={!amount || createTransaction.isPending} className="w-full">
-                    {createTransaction.isPending ? "Recording..." : "Record Transaction"}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </>}
+                </DialogContent>
+              </Dialog>
+            </>
+          )}
         </div>
       </div>
 
-      {accounts && accounts.length > 1 && (
-        <div>
-          <select value={selectedAccount || accounts[0]?.id} onChange={(e) => setSelectedAccount(e.target.value)}
-            className="text-sm border rounded-md px-3 py-2 bg-card text-foreground">
-            {accounts.map(a => <option key={a.id} value={a.id}>{a.account_name}</option>)}
-          </select>
+      {isLoading ? (
+        <p className="text-center py-8 text-muted-foreground">Loading...</p>
+      ) : !accounts?.length ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <Wallet className="w-12 h-12 mx-auto mb-4 opacity-30" />
+            <p>No petty cash accounts yet. Create one to get started.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {accounts.map((account) => (
+            <PCAccountCard key={account.id} account={account} />
+          ))}
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-4">
-        <div className="stat-card"><p className="text-sm text-muted-foreground">Current Balance</p><p className="text-xl font-semibold text-foreground mt-1">LKR {Number(currentAccount?.balance || 0).toFixed(2)}</p></div>
-        <div className="stat-card"><p className="text-sm text-muted-foreground">Total Issued</p><p className="text-xl font-semibold text-info mt-1">LKR {totalIssued.toFixed(2)}</p></div>
-        <div className="stat-card"><p className="text-sm text-muted-foreground">Total Spent</p><p className="text-xl font-semibold text-destructive mt-1">LKR {totalSpent.toFixed(2)}</p></div>
-      </div>
+      {/* Vouchers list */}
+      {accounts && accounts.length > 0 && <VouchersList />}
+    </div>
+  );
+}
 
-      <div className="stat-card">
-        {accountsLoading || txnLoading ? (
-          <p className="text-center py-8 text-muted-foreground">Loading...</p>
-        ) : !accounts?.length ? (
-          <p className="text-center py-8 text-muted-foreground">Create a petty cash account to get started</p>
-        ) : !transactions?.length ? (
-          <p className="text-center py-8 text-muted-foreground">No transactions yet</p>
-        ) : (
+function PCAccountCard({ account }: { account: any }) {
+  const { data: balance } = usePCBalance(account.id);
+  const navigate = useNavigate();
+
+  return (
+    <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/banking/petty-cash/voucher/new?account=${account.id}`)}>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">{account.account_name}</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          {(account as any).accounts?.account_code} – {(account as any).accounts?.account_name}
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <div className="flex justify-between text-sm">
+          <span className="text-muted-foreground">Float:</span>
+          <span className="font-medium">{formatCurrency(account.float_amount)}</span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-muted-foreground">Spent:</span>
+          <span className="font-medium text-destructive">{formatCurrency(balance?.total_spent || 0)}</span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-muted-foreground">Remaining:</span>
+          <span className="font-semibold text-success">{formatCurrency(balance?.remaining || 0)}</span>
+        </div>
+        <Badge variant={account.is_active ? "default" : "secondary"} className="mt-1">
+          {account.is_active ? "Active" : "Inactive"}
+        </Badge>
+      </CardContent>
+    </Card>
+  );
+}
+
+function VouchersList() {
+  const { data: vouchers, isLoading } = usePCVouchers();
+  const navigate = useNavigate();
+
+  if (isLoading) return <p className="text-muted-foreground text-center py-4">Loading vouchers...</p>;
+
+  return (
+    <div className="space-y-3">
+      <h2 className="text-lg font-semibold">Recent Vouchers</h2>
+      {!vouchers?.length ? (
+        <p className="text-muted-foreground text-sm">No vouchers yet.</p>
+      ) : (
+        <div className="stat-card">
           <table className="data-table">
-            <thead><tr><th>Date</th><th>Description</th><th>Type</th><th className="text-right">Amount</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Voucher #</th>
+                <th>Date</th>
+                <th>Paid To</th>
+                <th>Account</th>
+                <th className="text-right">Amount</th>
+                <th>Status</th>
+              </tr>
+            </thead>
             <tbody>
-              {transactions.map((t) => (
-                <tr key={t.id}>
-                  <td className="text-muted-foreground">{new Date(t.created_at).toLocaleDateString()}</td>
-                  <td>{t.description || "-"}</td>
-                  <td><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${typeColors[t.transaction_type] || ""}`}>{t.transaction_type}</span></td>
-                  <td className={`text-right font-medium ${Number(t.amount) >= 0 ? "text-success" : "text-destructive"}`}>
-                    {Number(t.amount) >= 0 ? "+" : ""}LKR {Math.abs(Number(t.amount)).toFixed(2)}
+              {vouchers.map((v: any) => (
+                <tr key={v.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/banking/petty-cash/voucher/${v.id}`)}>
+                  <td className="font-mono text-sm">{v.voucher_number}</td>
+                  <td className="text-muted-foreground">{new Date(v.date).toLocaleDateString()}</td>
+                  <td>{v.paid_to || "—"}</td>
+                  <td className="text-muted-foreground">{v.petty_cash_accounts?.account_name}</td>
+                  <td className="text-right font-medium">{formatCurrency(v.total_amount)}</td>
+                  <td>
+                    <Badge className={statusColor[v.status] || ""}>{v.status}</Badge>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
+
+// Need to import this here since it's used in VouchersList
+import { usePCVouchers } from "@/hooks/usePettyCash";

@@ -24,6 +24,9 @@ import FiscalPeriods from "./pages/FiscalPeriods";
 import BankReconciliation from "./pages/BankReconciliation";
 import PaymentVouchers from "./pages/PaymentVouchers";
 import PettyCash from "./pages/PettyCash";
+import PettyCashVoucherForm from "./pages/PettyCashVoucherForm";
+import PettyCashVoucherDetail from "./pages/PettyCashVoucherDetail";
+import PettyCashReplenishments from "./pages/PettyCashReplenishments";
 import Invoices from "./pages/Invoices";
 import ProductsTaxes from "./pages/ProductsTaxes";
 import Expenses from "./pages/Expenses";
@@ -78,6 +81,9 @@ const App = () => (
                   <Route path="/banking/reconciliation" element={<BankReconciliation />} />
                   <Route path="/banking/payment-vouchers" element={<PaymentVouchers />} />
                   <Route path="/banking/petty-cash" element={<PettyCash />} />
+                  <Route path="/banking/petty-cash/voucher/new" element={<PettyCashVoucherForm />} />
+                  <Route path="/banking/petty-cash/voucher/:id" element={<PettyCashVoucherDetail />} />
+                  <Route path="/banking/petty-cash/replenishments" element={<PettyCashReplenishments />} />
                 </Route>
 
                 {/* Sales module */}

@@ -449,49 +449,7 @@ export function useCreateExpenseCategory() {
   });
 }
 
-// Petty Cash
-export function usePettyCashAccounts() {
-  return useQuery({
-    queryKey: ["petty_cash_accounts"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("petty_cash_accounts").select("*");
-      if (error) throw error;
-      return data;
-    },
-  });
-}
-
-export function usePettyCashTransactions(accountId?: string) {
-  return useQuery({
-    queryKey: ["petty_cash_transactions", accountId],
-    queryFn: async () => {
-      let query = supabase.from("petty_cash_transactions").select("*").order("created_at", { ascending: false });
-      if (accountId) query = query.eq("petty_cash_account_id", accountId);
-      const { data, error } = await query;
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!accountId,
-  });
-}
-
-export function useCreatePettyCashTransaction() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (txn: { petty_cash_account_id: string; amount: number; transaction_type: string; description?: string }) => {
-      const { data, error } = await supabase.from("petty_cash_transactions").insert(txn).select().single();
-      if (error) throw error;
-      writeAuditLog("Petty Cash Transaction", "petty_cash_transactions", data.id, { amount: txn.amount, type: txn.transaction_type });
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["petty_cash_transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["petty_cash_accounts"] });
-      toast.success("Transaction recorded");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-}
+// Petty Cash hooks moved to src/hooks/usePettyCash.ts
 
 // Budgets
 export function useBudgets() {
