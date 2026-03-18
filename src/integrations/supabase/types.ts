@@ -1050,6 +1050,7 @@ export type Database = {
           asset_name: string
           cost: number
           created_at: string
+          depr_expense_account_id: string | null
           depreciation_account_id: string | null
           depreciation_method: string
           description: string | null
@@ -1069,6 +1070,7 @@ export type Database = {
           asset_name: string
           cost?: number
           created_at?: string
+          depr_expense_account_id?: string | null
           depreciation_account_id?: string | null
           depreciation_method?: string
           description?: string | null
@@ -1088,6 +1090,7 @@ export type Database = {
           asset_name?: string
           cost?: number
           created_at?: string
+          depr_expense_account_id?: string | null
           depreciation_account_id?: string | null
           depreciation_method?: string
           description?: string | null
@@ -1104,6 +1107,13 @@ export type Database = {
           {
             foreignKeyName: "fixed_assets_asset_account_id_fkey"
             columns: ["asset_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixed_assets_depr_expense_account_id_fkey"
+            columns: ["depr_expense_account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
             referencedColumns: ["id"]

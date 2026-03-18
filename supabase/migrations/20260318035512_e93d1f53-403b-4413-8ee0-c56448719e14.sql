@@ -1,0 +1,1 @@
+ALTER TABLE public.fixed_assets ADD COLUMN IF NOT EXISTS depr_expense_account_id uuid REFERENCES public.accounts(id);
