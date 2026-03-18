@@ -149,6 +149,119 @@ export type Database = {
           },
         ]
       }
+      asset_depreciation: {
+        Row: {
+          accumulated_depreciation: number
+          asset_id: string
+          created_at: string
+          depreciation_amount: number
+          id: string
+          journal_entry_id: string | null
+          net_book_value: number
+          period: string
+          tenant_id: string
+        }
+        Insert: {
+          accumulated_depreciation?: number
+          asset_id: string
+          created_at?: string
+          depreciation_amount?: number
+          id?: string
+          journal_entry_id?: string | null
+          net_book_value?: number
+          period: string
+          tenant_id: string
+        }
+        Update: {
+          accumulated_depreciation?: number
+          asset_id?: string
+          created_at?: string
+          depreciation_amount?: number
+          id?: string
+          journal_entry_id?: string | null
+          net_book_value?: number
+          period?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_depreciation_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "fixed_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_depreciation_journal_entry_id_fkey"
+            columns: ["journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_depreciation_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      asset_disposals: {
+        Row: {
+          asset_id: string
+          created_at: string
+          disposal_date: string
+          gain_loss: number
+          id: string
+          journal_entry_id: string | null
+          sale_value: number
+          tenant_id: string
+        }
+        Insert: {
+          asset_id: string
+          created_at?: string
+          disposal_date?: string
+          gain_loss?: number
+          id?: string
+          journal_entry_id?: string | null
+          sale_value?: number
+          tenant_id: string
+        }
+        Update: {
+          asset_id?: string
+          created_at?: string
+          disposal_date?: string
+          gain_loss?: number
+          id?: string
+          journal_entry_id?: string | null
+          sale_value?: number
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_disposals_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "fixed_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_disposals_journal_entry_id_fkey"
+            columns: ["journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_disposals_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_logs: {
         Row: {
           action: string
@@ -938,12 +1051,16 @@ export type Database = {
           cost: number
           created_at: string
           depreciation_account_id: string | null
+          depreciation_method: string
           description: string | null
           id: string
           net_book_value: number | null
+          salvage_value: number
+          start_date: string | null
           status: string
           tenant_id: string
           updated_at: string
+          useful_life_months: number
         }
         Insert: {
           accumulated_depreciation?: number
@@ -953,12 +1070,16 @@ export type Database = {
           cost?: number
           created_at?: string
           depreciation_account_id?: string | null
+          depreciation_method?: string
           description?: string | null
           id?: string
           net_book_value?: number | null
+          salvage_value?: number
+          start_date?: string | null
           status?: string
           tenant_id: string
           updated_at?: string
+          useful_life_months?: number
         }
         Update: {
           accumulated_depreciation?: number
@@ -968,12 +1089,16 @@ export type Database = {
           cost?: number
           created_at?: string
           depreciation_account_id?: string | null
+          depreciation_method?: string
           description?: string | null
           id?: string
           net_book_value?: number | null
+          salvage_value?: number
+          start_date?: string | null
           status?: string
           tenant_id?: string
           updated_at?: string
+          useful_life_months?: number
         }
         Relationships: [
           {
