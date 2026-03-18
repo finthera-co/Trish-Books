@@ -617,13 +617,17 @@ export function useCashAccounts() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("accounts")
-        .select("id, account_name, account_code, account_type, account_subtype")
+        .select("id, account_name, account_code, account_type, account_subtype, category:category_id(name)")
         .eq("account_type", "Asset")
-        .in("account_subtype", ["Bank", "Other Current Assets", "Prepaid Expenses"])
         .eq("is_active", true)
         .order("account_code");
       if (error) throw error;
-      return data;
+      return (data ?? []).filter((account) => {
+        const categoryName = account.category?.name?.toLowerCase() ?? "";
+        const subtype = account.account_subtype?.toLowerCase() ?? "";
+
+        return categoryName === "current assets" || subtype === "bank" || subtype === "other current assets";
+      });
     },
   });
 }
