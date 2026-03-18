@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { ArrowRight, BookOpen, Landmark, ShoppingCart, Receipt, DollarSign, BarChart3, FileText, Users } from "lucide-react";
+import { ArrowRight, BookOpen, Landmark, ShoppingCart, Receipt, DollarSign, BarChart3, FileText, Users, Warehouse } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const MODULES = [
@@ -10,6 +10,7 @@ const MODULES = [
   { id: "bills", label: "Bills", desc: "Bills & payment vouchers", icon: Landmark, path: "/banking/payment-vouchers", gradient: "from-[hsl(270,60%,50%)] to-[hsl(280,50%,55%)]" },
   { id: "payroll", label: "Payroll", desc: "Process payroll runs", icon: DollarSign, path: "/payroll/runs", gradient: "from-[hsl(199,89%,48%)] to-[hsl(209,80%,55%)]" },
   { id: "bank", label: "Bank Accounts", desc: "Reconciliation & banking", icon: Landmark, path: "/banking/reconciliation", gradient: "from-[hsl(215,24%,26%)] to-[hsl(225,20%,35%)]" },
+  { id: "assets", label: "Fixed Assets", desc: "Asset tracking & depreciation", icon: Warehouse, path: "/assets/register", gradient: "from-[hsl(160,60%,40%)] to-[hsl(170,50%,45%)]" },
   { id: "reports", label: "Reports", desc: "Financial reports & analytics", icon: BarChart3, path: "/reports/financial", gradient: "from-[hsl(0,72%,50%)] to-[hsl(350,65%,55%)]" },
   { id: "journals", label: "Journal Entries", desc: "Double-entry bookkeeping", icon: BookOpen, path: "/accounting/journals", gradient: "from-[hsl(198,93%,59%)] to-[hsl(215,60%,55%)]" },
 ];
