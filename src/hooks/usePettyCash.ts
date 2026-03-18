@@ -639,7 +639,8 @@ export function useBankAccounts() {
       const { data, error } = await supabase
         .from("accounts")
         .select("id, account_name, account_code")
-        .eq("account_type", "Bank")
+        .eq("account_type", "Asset")
+        .eq("account_subtype", "Bank")
         .eq("is_active", true)
         .order("account_code");
       if (error) throw error;
