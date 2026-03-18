@@ -16,6 +16,8 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import ChartOfAccounts from "./pages/ChartOfAccounts";
 import JournalEntries from "./pages/JournalEntries";
+import JournalEntryView from "./pages/JournalEntryView";
+import JournalEntryEdit from "./pages/JournalEntryEdit";
 import Ledger from "./pages/Ledger";
 import OpeningBalances from "./pages/OpeningBalances";
 import CloseOBE from "./pages/CloseOBE";
@@ -68,6 +70,8 @@ const App = () => (
                   <Route path="/accounting" element={<ModuleDashboard config={MODULE_CONFIGS.accounting} />} />
                   <Route path="/accounting/accounts" element={<ChartOfAccounts />} />
                   <Route path="/accounting/journals" element={<JournalEntries />} />
+                  <Route path="/accounting/journals/:id" element={<JournalEntryView />} />
+                  <Route path="/accounting/journals/:id/edit" element={<JournalEntryEdit />} />
                   <Route path="/accounting/ledger" element={<Ledger />} />
                   <Route path="/accounting/trial-balance" element={<TrialBalance />} />
                   <Route path="/accounting/fiscal-periods" element={<FiscalPeriods />} />

@@ -1,0 +1,508 @@
+import { useParams, useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useAccounts } from "@/hooks/useData";
+import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
+import { ArrowLeft, CheckCircle2, XCircle, AlertTriangle, Info, FileText } from "lucide-react";
+import { toast } from "sonner";
+import { useState, useMemo, useCallback, useEffect } from "react";
+import {
+  validateJournalEntry,
+  getManualEntryAccounts,
+  isSubledgerAccount,
+  type AccountInfo,
+  type ValidationResult,
+  EPSILON,
+} from "@/lib/journalValidation";
+import { typeColors, getTypeLabel } from "@/lib/accountTypes";
+
+const fmt = (n: number) =>
+  n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+interface EditLine {
+  id?: string;
+  account_id: string;
+  debit: number;
+  credit: number;
+}
+
+export default function JournalEntryEdit() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { appUser } = useAuth();
+  const { data: accounts } = useAccounts();
+
+  const { data: entry, isLoading, error } = useQuery({
+    queryKey: ["journal_entry", id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("journal_entries")
+        .select("*, journal_lines(*, accounts(account_name, account_code, account_type))")
+        .eq("id", id!)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id,
+  });
+
+  // Check if in closed period
+  const { data: closedPeriods } = useQuery({
+    queryKey: ["closed_fiscal_periods"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("fiscal_periods")
+        .select("period_start, period_end")
+        .eq("status", "closed");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Form state
+  const [description, setDescription] = useState("");
+  const [entryDate, setEntryDate] = useState("");
+  const [reference, setReference] = useState("");
+  const [lines, setLines] = useState<EditLine[]>([]);
+  const [initialized, setInitialized] = useState(false);
+
+  // Pre-fill form when entry loads
+  useEffect(() => {
+    if (entry && !initialized) {
+      setDescription(entry.description);
+      setEntryDate(entry.entry_date);
+      setReference(entry.reference || "");
+      const entryLines = (entry.journal_lines as any[]) || [];
+      setLines(
+        entryLines.map((l: any) => ({
+          id: l.id,
+          account_id: l.account_id,
+          debit: Number(l.debit),
+          credit: Number(l.credit),
+        }))
+      );
+      setInitialized(true);
+    }
+  }, [entry, initialized]);
+
+  // Accounts map for validation
+  const accountsMap = useMemo(() => {
+    const map = new Map<string, AccountInfo>();
+    accounts?.forEach((a) => {
+      map.set(a.id, {
+        id: a.id,
+        account_code: a.account_code,
+        account_name: a.account_name,
+        account_type: a.account_type,
+        account_subtype: a.account_subtype,
+        is_active: a.is_active,
+      });
+    });
+    return map;
+  }, [accounts]);
+
+  const manualEntryAccounts = useMemo(() => {
+    if (!accounts) return [];
+    const infos: AccountInfo[] = accounts.map((a) => ({
+      id: a.id,
+      account_code: a.account_code,
+      account_name: a.account_name,
+      account_type: a.account_type,
+      account_subtype: a.account_subtype,
+      is_active: a.is_active,
+    }));
+    return getManualEntryAccounts(infos);
+  }, [accounts]);
+
+  const groupedAccounts = useMemo(() => {
+    const groups: Record<string, AccountInfo[]> = {};
+    manualEntryAccounts.forEach((a) => {
+      if (!groups[a.account_type]) groups[a.account_type] = [];
+      groups[a.account_type].push(a);
+    });
+    return groups;
+  }, [manualEntryAccounts]);
+
+  // Validation
+  const validation: ValidationResult = useMemo(() => {
+    return validateJournalEntry({
+      description,
+      entryDate,
+      lines,
+      accountsMap,
+      closedPeriods: closedPeriods || undefined,
+    });
+  }, [description, entryDate, lines, accountsMap, closedPeriods]);
+
+  const totalDebit = lines.reduce((sum, l) => sum + Number(l.debit || 0), 0);
+  const totalCredit = lines.reduce((sum, l) => sum + Number(l.credit || 0), 0);
+  const isBalanced = Math.abs(totalDebit - totalCredit) < EPSILON && totalDebit > 0;
+
+  const addLine = () => setLines([...lines, { account_id: "", debit: 0, credit: 0 }]);
+  const removeLine = (index: number) => {
+    if (lines.length > 2) setLines(lines.filter((_, i) => i !== index));
+  };
+
+  const updateLine = (index: number, field: string, value: any) => {
+    const newLines = [...lines];
+    if (field === "debit" && Number(value) > 0) {
+      (newLines[index] as any)["credit"] = 0;
+    } else if (field === "credit" && Number(value) > 0) {
+      (newLines[index] as any)["debit"] = 0;
+    }
+    (newLines[index] as any)[field] = value;
+    setLines(newLines);
+  };
+
+  const getLineWarning = useCallback(
+    (accountId: string): string | null => {
+      if (!accountId) return null;
+      const acc = accountsMap.get(accountId);
+      if (!acc) return null;
+      if (!acc.is_active) return "This account is inactive";
+      const subType = isSubledgerAccount(acc);
+      if (subType === "AR") return "AR control account — use Invoices instead";
+      if (subType === "AP") return "AP control account — use Bills instead";
+      return null;
+    },
+    [accountsMap]
+  );
+
+  // Save mutation — updates the SAME transaction
+  const saveEntry = useMutation({
+    mutationFn: async () => {
+      if (!id) throw new Error("No entry ID");
+
+      // 1. Update journal entry header
+      const { error: headerError } = await supabase
+        .from("journal_entries")
+        .update({
+          description: description.trim(),
+          entry_date: entryDate,
+          // reference stays the same (not editable in edit mode)
+        })
+        .eq("id", id);
+      if (headerError) throw headerError;
+
+      // 2. Delete existing lines
+      const { error: deleteError } = await supabase
+        .from("journal_lines")
+        .delete()
+        .eq("journal_entry_id", id);
+      if (deleteError) throw deleteError;
+
+      // 3. Insert updated lines
+      const activeLines = lines.filter(
+        (l) => l.account_id && (Number(l.debit) > 0 || Number(l.credit) > 0)
+      );
+      const newLines = activeLines.map((l) => ({
+        journal_entry_id: id,
+        account_id: l.account_id,
+        debit: Number(l.debit),
+        credit: Number(l.credit),
+      }));
+
+      const { error: linesError } = await supabase.from("journal_lines").insert(newLines);
+      if (linesError) throw linesError;
+
+      // 4. Audit log
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        const tenantId = await supabase.rpc("get_user_tenant_id");
+        const userId = await supabase
+          .from("users")
+          .select("id")
+          .eq("auth_user_id", user?.id || "")
+          .maybeSingle();
+
+        await supabase.from("audit_logs").insert({
+          action: "Journal Entry Updated",
+          table_name: "journal_entries",
+          record_id: id,
+          user_id: userId.data?.id,
+          tenant_id: tenantId.data,
+          details: { description, entry_date: entryDate, lines_count: activeLines.length },
+        });
+      } catch {
+        // Silently fail audit log
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["journal_entry", id] });
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      toast.success("Journal Entry updated successfully");
+      navigate(`/accounting/journals/${id}`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const handleSave = () => {
+    if (!validation.valid) {
+      toast.error(validation.errors[0]?.message || "Please fix validation errors");
+      return;
+    }
+    saveEntry.mutate();
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <span className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (error || !entry) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 space-y-4">
+        <FileText className="w-12 h-12 text-muted-foreground/30" />
+        <h2 className="text-lg font-semibold text-foreground">Journal Entry not found</h2>
+        <Button variant="outline" onClick={() => navigate("/accounting/ledger")}>
+          <ArrowLeft className="w-4 h-4 mr-2" /> Back to Register
+        </Button>
+      </div>
+    );
+  }
+
+  if (entry.status === "voided") {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 space-y-4">
+        <AlertTriangle className="w-12 h-12 text-warning" />
+        <h2 className="text-lg font-semibold text-foreground">Cannot edit voided entry</h2>
+        <Button variant="outline" onClick={() => navigate(`/accounting/journals/${id}`)}>
+          <ArrowLeft className="w-4 h-4 mr-2" /> Back to View
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 max-w-3xl mx-auto">
+      {/* Back nav */}
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="sm" onClick={() => navigate(`/accounting/journals/${id}`)}>
+          <ArrowLeft className="w-4 h-4 mr-1" /> Back to View
+        </Button>
+      </div>
+
+      <div className="stat-card">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-xl font-bold text-foreground">Edit Journal Entry</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Reference: <span className="font-mono">{entry.reference || "—"}</span> · ID: {entry.id.slice(0, 8)}…
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {/* Header fields */}
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="text-sm font-medium text-foreground">
+                Date <span className="text-destructive">*</span>
+              </label>
+              <input
+                type="date"
+                value={entryDate}
+                onChange={(e) => setEntryDate(e.target.value)}
+                className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+              />
+              {validation.errors.find((e) => e.field === "entry_date") && (
+                <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                  <XCircle className="w-3 h-3" />
+                  {validation.errors.find((e) => e.field === "entry_date")!.message}
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground">Reference</label>
+              <input
+                type="text"
+                value={reference}
+                disabled
+                className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-muted text-muted-foreground cursor-not-allowed"
+              />
+              <p className="text-[10px] text-muted-foreground mt-0.5">Reference cannot be changed</p>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground">
+                Description <span className="text-destructive">*</span>
+              </label>
+              <input
+                type="text"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+                placeholder="Office supplies purchase"
+              />
+              {validation.errors.find((e) => e.field === "description") && (
+                <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                  <XCircle className="w-3 h-3" />
+                  {validation.errors.find((e) => e.field === "description")!.message}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Journal Lines */}
+          <div>
+            <label className="text-sm font-medium text-foreground mb-2 block">Journal Lines</label>
+            <div className="border border-border rounded-lg overflow-hidden">
+              <div className="grid grid-cols-[1fr_7rem_7rem_2.5rem] gap-0 bg-muted/50 px-3 py-2 text-xs font-semibold text-muted-foreground border-b border-border">
+                <span>Account</span>
+                <span className="text-right">Debit (LKR)</span>
+                <span className="text-right">Credit (LKR)</span>
+                <span />
+              </div>
+              <div className="divide-y divide-border/50">
+                {lines.map((line, i) => {
+                  const lineWarning = getLineWarning(line.account_id);
+                  const acc = line.account_id ? accountsMap.get(line.account_id) : null;
+                  return (
+                    <div key={i} className="px-3 py-2 space-y-1">
+                      <div className="grid grid-cols-[1fr_7rem_7rem_2.5rem] gap-2 items-center">
+                        <select
+                          value={line.account_id}
+                          onChange={(e) => updateLine(i, "account_id", e.target.value)}
+                          className={`text-sm border rounded-md px-2.5 py-1.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors ${
+                            lineWarning ? "border-warning" : "border-input"
+                          }`}
+                        >
+                          <option value="">Select account…</option>
+                          {Object.entries(groupedAccounts).map(([type, accs]) => (
+                            <optgroup key={type} label={getTypeLabel(type)}>
+                              {accs.map((a) => (
+                                <option key={a.id} value={a.id}>
+                                  {a.account_code} – {a.account_name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.debit || ""}
+                          onChange={(e) => updateLine(i, "debit", Number(e.target.value))}
+                          className="text-sm border border-input rounded-md px-2.5 py-1.5 bg-background text-foreground text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+                          placeholder="0.00"
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.credit || ""}
+                          onChange={(e) => updateLine(i, "credit", Number(e.target.value))}
+                          className="text-sm border border-input rounded-md px-2.5 py-1.5 bg-background text-foreground text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+                          placeholder="0.00"
+                        />
+                        <button
+                          onClick={() => removeLine(i)}
+                          disabled={lines.length <= 2}
+                          className="text-muted-foreground hover:text-destructive disabled:opacity-30 disabled:cursor-not-allowed text-sm px-1 h-8 flex items-center justify-center rounded-md transition-colors"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      {acc && (
+                        <div className="flex items-center gap-2 pl-1">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${typeColors[acc.account_type] || "bg-muted text-muted-foreground"}`}>
+                            {getTypeLabel(acc.account_type)}
+                          </span>
+                          {acc.account_subtype && (
+                            <span className="text-[10px] text-muted-foreground">{acc.account_subtype}</span>
+                          )}
+                        </div>
+                      )}
+                      {lineWarning && (
+                        <div className="flex items-center gap-1.5 text-xs text-warning pl-1">
+                          <AlertTriangle className="w-3 h-3 shrink-0" />
+                          {lineWarning}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="px-3 py-2 border-t border-border">
+                <Button variant="ghost" size="sm" onClick={addLine} className="text-xs">
+                  + Add Line
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Validation Panel */}
+          {(validation.errors.length > 0 || validation.warnings.length > 0) && (
+            <div className="space-y-2">
+              {validation.errors.filter(e => !["entry_date", "description"].includes(e.field)).map((err, i) => (
+                <div key={`err-${i}`} className="flex items-start gap-2 text-xs text-destructive bg-destructive/5 rounded-md px-3 py-2 border border-destructive/20">
+                  <XCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                  <span>{err.message}</span>
+                </div>
+              ))}
+              {validation.warnings.map((w, i) => (
+                <div key={`warn-${i}`} className="flex items-start gap-2 text-xs text-warning bg-warning/5 rounded-md px-3 py-2 border border-warning/20">
+                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                  <span>{w.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Totals bar */}
+          <div className="flex items-center justify-between text-sm bg-card rounded-lg px-4 py-3 border border-border">
+            <span className="tabular-nums text-foreground">
+              Debit: <strong>LKR {fmt(totalDebit)}</strong>
+            </span>
+            <span className="tabular-nums text-foreground">
+              Credit: <strong>LKR {fmt(totalCredit)}</strong>
+            </span>
+            <span className={`font-semibold flex items-center gap-1.5 ${isBalanced ? "text-success" : "text-destructive"}`}>
+              {isBalanced ? (
+                <><CheckCircle2 className="w-4 h-4" /> Balanced</>
+              ) : (
+                <><XCircle className="w-4 h-4" /> Off by LKR {fmt(Math.abs(totalDebit - totalCredit))}</>
+              )}
+            </span>
+          </div>
+
+          {/* Info */}
+          <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/30 rounded-md px-3 py-2">
+            <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            <span>
+              Saving will update this journal entry in place. The same transaction ID and reference will be preserved.
+              All affected account balances will be recalculated automatically.
+            </span>
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-2">
+            <Button
+              onClick={handleSave}
+              disabled={!validation.valid || saveEntry.isPending}
+              className="flex-1"
+            >
+              {saveEntry.isPending ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                  Saving…
+                </span>
+              ) : (
+                "Save Changes"
+              )}
+            </Button>
+            <Button variant="outline" onClick={() => navigate(`/accounting/journals/${id}`)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
