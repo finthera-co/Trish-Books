@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Plus, Trash2, Save } from "lucide-react";
+import { Plus, Trash2, Save, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,9 +12,11 @@ import {
   useTenantUsers,
   useGenerateVoucherNumber,
   useCreatePCVoucher,
+  useUploadReceipt,
 } from "@/hooks/usePettyCash";
 import { formatCurrency } from "@/lib/currency";
 import { toast } from "sonner";
+import { useEffect } from "react";
 
 interface VoucherLine {
   date: string;
@@ -33,6 +35,8 @@ export default function PettyCashVoucherForm() {
   const { data: users } = useTenantUsers();
   const { data: voucherNumber } = useGenerateVoucherNumber();
   const createVoucher = useCreatePCVoucher();
+  const uploadReceipt = useUploadReceipt();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const today = new Date().toISOString().split("T")[0];
 
@@ -40,6 +44,7 @@ export default function PettyCashVoucherForm() {
   const [paidTo, setPaidTo] = useState("");
   const [pcAccountId, setPcAccountId] = useState(preselectedAccount);
   const [authorizedBy, setAuthorizedBy] = useState("");
+  const [receiptPaths, setReceiptPaths] = useState<string[]>([]);
   const [lines, setLines] = useState<VoucherLine[]>([
     { date: today, description: "", account_id: "", amount: 0 },
   ]);
@@ -61,6 +66,23 @@ export default function PettyCashVoucherForm() {
     setLines(updated);
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files?.length) return;
+    for (const file of Array.from(files)) {
+      try {
+        const path = await uploadReceipt.mutateAsync({ file });
+        setReceiptPaths((prev) => [...prev, path]);
+        toast.success(`Uploaded ${file.name}`);
+      } catch { /* error already toasted */ }
+    }
+    e.target.value = "";
+  };
+
+  const removeReceipt = (idx: number) => {
+    setReceiptPaths((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   const handleSubmit = () => {
     if (!pcAccountId) return toast.error("Select a petty cash account");
     if (!voucherNumber) return toast.error("Voucher number not generated");
@@ -76,6 +98,7 @@ export default function PettyCashVoucherForm() {
         paid_to: paidTo,
         petty_cash_account_id: pcAccountId,
         authorized_by: authorizedBy || undefined,
+        receipt_urls: receiptPaths,
         lines,
       },
       { onSuccess: () => navigate("/banking/petty-cash") }
@@ -190,6 +213,31 @@ export default function PettyCashVoucherForm() {
                 </tfoot>
               </table>
             </div>
+          </div>
+
+          {/* Receipt attachments */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <Label className="text-sm font-semibold">Receipt Attachments</Label>
+              <div>
+                <input ref={fileInputRef} type="file" accept="image/*,.pdf" multiple className="hidden" onChange={handleFileUpload} />
+                <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploadReceipt.isPending}>
+                  <Upload className="w-3 h-3 mr-1" /> {uploadReceipt.isPending ? "Uploading..." : "Upload"}
+                </Button>
+              </div>
+            </div>
+            {receiptPaths.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {receiptPaths.map((path, idx) => (
+                  <div key={idx} className="flex items-center gap-1 px-2 py-1 bg-muted rounded text-xs">
+                    <span>Receipt {idx + 1}</span>
+                    <Button type="button" variant="ghost" size="icon" className="h-4 w-4" onClick={() => removeReceipt(idx)}>
+                      <X className="w-3 h-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Footer */}
