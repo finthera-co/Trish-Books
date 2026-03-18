@@ -7,6 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useMyPermissions } from "@/hooks/usePermissions";
 
 import AccountForm from "@/components/chart-of-accounts/AccountForm";
+import COAHealthCheck from "@/components/chart-of-accounts/COAHealthCheck";
 
 import InlineOpeningBalance from "@/components/chart-of-accounts/InlineOpeningBalance";
 import { useSystemSetting } from "@/hooks/useOpeningBalanceSettings";
