@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { ShieldCheck, AlertTriangle, CheckCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { ACCOUNT_SUBTYPES, ACCOUNT_TYPES, OPENING_BALANCE_ELIGIBLE_TYPES } from "@/lib/accountTypes";
 
@@ -84,91 +86,93 @@ export default function COAHealthCheck({ accounts }: { accounts: Account[] }) {
         <ShieldCheck className="w-4 h-4 mr-1" /> Health Check
       </Button>
 
-      {open && report && (
-        <div className="mt-4 rounded-xl border border-border bg-card p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] p-0">
+          <DialogHeader className="px-6 pt-6 pb-0">
+            <DialogTitle className="flex items-center gap-2 text-sm font-bold">
               <ShieldCheck className="w-4 h-4" /> COA Health Report
-            </h3>
-            <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground">
-              <ChevronUp className="w-4 h-4" />
-            </button>
-          </div>
+            </DialogTitle>
+          </DialogHeader>
+          {report && (
+            <ScrollArea className="px-6 pb-6 max-h-[70vh]">
+              <div className="space-y-4 pr-3">
+                {/* Summary */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <Stat label="Total Accounts" value={report.totalAccounts} />
+                  <Stat label="Active Accounts" value={report.activeAccounts} />
+                  <Stat
+                    label="Without Subtype"
+                    value={report.accountsWithoutSubtype.length}
+                    warn={report.accountsWithoutSubtype.length > 0}
+                  />
+                  <Stat
+                    label="Missing Detail Types"
+                    value={report.missingDetailTypes.length}
+                    warn={report.missingDetailTypes.length > 10}
+                  />
+                </div>
 
-          {/* Summary */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <Stat label="Total Accounts" value={report.totalAccounts} />
-            <Stat label="Active Accounts" value={report.activeAccounts} />
-            <Stat
-              label="Without Subtype"
-              value={report.accountsWithoutSubtype.length}
-              warn={report.accountsWithoutSubtype.length > 0}
-            />
-            <Stat
-              label="Missing Detail Types"
-              value={report.missingDetailTypes.length}
-              warn={report.missingDetailTypes.length > 10}
-            />
-          </div>
+                {/* System readiness */}
+                <div
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium ${
+                    report.systemReady
+                      ? "bg-success/10 text-success"
+                      : "bg-warning/10 text-warning"
+                  }`}
+                >
+                  {report.systemReady ? (
+                    <CheckCircle className="w-4 h-4" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4" />
+                  )}
+                  {report.systemReady
+                    ? "System is ready — all accounts have detail types assigned"
+                    : "Action needed — some accounts are missing detail types or subtypes"}
+                </div>
 
-          {/* System readiness */}
-          <div
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium ${
-              report.systemReady
-                ? "bg-success/10 text-success"
-                : "bg-warning/10 text-warning"
-            }`}
-          >
-            {report.systemReady ? (
-              <CheckCircle className="w-4 h-4" />
-            ) : (
-              <AlertTriangle className="w-4 h-4" />
-            )}
-            {report.systemReady
-              ? "System is ready — all accounts have detail types assigned"
-              : "Action needed — some accounts are missing detail types or subtypes"}
-          </div>
+                {/* Type coverage */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    Coverage by Type
+                  </h4>
+                  {report.typeCoverage
+                    .filter((tc) => tc.count > 0 || tc.subtypesMissing.length > 0)
+                    .map((tc) => (
+                      <TypeCoverageRow key={tc.type} data={tc} />
+                    ))}
+                </div>
 
-          {/* Type coverage */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-              Coverage by Type
-            </h4>
-            {report.typeCoverage
-              .filter((tc) => tc.count > 0 || tc.subtypesMissing.length > 0)
-              .map((tc) => (
-                <TypeCoverageRow key={tc.type} data={tc} />
-              ))}
-          </div>
-
-          {/* Accounts without subtype */}
-          {report.accountsWithoutSubtype.length > 0 && (
-            <div className="space-y-1">
-              <h4 className="text-xs font-semibold text-warning uppercase tracking-wide">
-                Accounts Missing Detail Type
-              </h4>
-              <ul className="text-xs text-muted-foreground space-y-0.5">
-                {report.accountsWithoutSubtype.slice(0, 10).map((a) => (
-                  <li key={a.id}>
-                    <span className="font-mono">{a.account_code}</span> — {a.account_name} ({a.account_type})
-                  </li>
-                ))}
-                {report.accountsWithoutSubtype.length > 10 && (
-                  <li className="italic">...and {report.accountsWithoutSubtype.length - 10} more</li>
+                {/* Accounts without subtype */}
+                {report.accountsWithoutSubtype.length > 0 && (
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-semibold text-warning uppercase tracking-wide">
+                      Accounts Missing Detail Type
+                    </h4>
+                    <ul className="text-xs text-muted-foreground space-y-0.5">
+                      {report.accountsWithoutSubtype.slice(0, 10).map((a) => (
+                        <li key={a.id}>
+                          <span className="font-mono">{a.account_code}</span> — {a.account_name} ({a.account_type})
+                        </li>
+                      ))}
+                      {report.accountsWithoutSubtype.length > 10 && (
+                        <li className="italic">...and {report.accountsWithoutSubtype.length - 10} more</li>
+                      )}
+                    </ul>
+                  </div>
                 )}
-              </ul>
-            </div>
-          )}
 
-          {/* Balance sheet without OB */}
-          {report.balanceSheetWithoutOB.length > 0 && (
-            <CollapsibleSection
-              title={`Balance Sheet Accounts Without Opening Balance (${report.balanceSheetWithoutOB.length})`}
-              items={report.balanceSheetWithoutOB}
-            />
+                {/* Balance sheet without OB */}
+                {report.balanceSheetWithoutOB.length > 0 && (
+                  <CollapsibleSection
+                    title={`Balance Sheet Accounts Without Opening Balance (${report.balanceSheetWithoutOB.length})`}
+                    items={report.balanceSheetWithoutOB}
+                  />
+                )}
+              </div>
+            </ScrollArea>
           )}
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
