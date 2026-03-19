@@ -8,6 +8,8 @@ import { useEnhancedBudgets, useBudgetLineUsages, useUpdateBudgetStatus, useCrea
 import { formatCurrency } from "@/lib/currency";
 import BudgetCreateDialog from "./BudgetCreateDialog";
 import BudgetLineDialog from "./BudgetLineDialog";
+import BudgetTrendChart from "./BudgetTrendChart";
+import BudgetHierarchy from "./BudgetHierarchy";
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
