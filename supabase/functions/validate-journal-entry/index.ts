@@ -207,6 +207,7 @@ Deno.serve(async (req) => {
     }
 
     // ── 5. Create the journal entry atomically ──────────────────────
+    // Insert as draft first so the sync trigger doesn't fire before lines exist
     const { data: entry, error: entryErr } = await adminClient
       .from("journal_entries")
       .insert({
@@ -215,7 +216,7 @@ Deno.serve(async (req) => {
         entry_date,
         reference: reference?.trim() || null,
         created_by: appUser.id,
-        status: "posted",
+        status: "draft",
       })
       .select()
       .single();
@@ -241,6 +242,19 @@ Deno.serve(async (req) => {
       await adminClient.from("journal_entries").delete().eq("id", entry.id);
       return new Response(
         JSON.stringify({ error: `Failed to create lines: ${linesErr.message}` }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Now update to 'posted' — this fires the sync trigger AFTER lines exist
+    const { error: postErr } = await adminClient
+      .from("journal_entries")
+      .update({ status: "posted" })
+      .eq("id", entry.id);
+
+    if (postErr) {
+      return new Response(
+        JSON.stringify({ error: `Failed to post entry: ${postErr.message}` }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
