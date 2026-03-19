@@ -23,6 +23,7 @@ export default function BudgetWarningBanner({
     message: string;
   } | null>(null);
   const [loading, setLoading] = useState(false);
+  const notifiedRef = useRef<string>("");
 
   useEffect(() => {
     if (!accountId || amount <= 0 || !transactionDate) {
