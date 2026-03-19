@@ -215,7 +215,15 @@ export default function BudgetDashboard() {
                       )}
                     </div>
                   </div>
-                  {isExpanded && <BudgetDetail budgetId={b.id} />}
+                  {isExpanded && (
+                    <>
+                      <BudgetDetail budgetId={b.id} />
+                      <div className="px-4 pb-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <BudgetTrendChart budgetId={b.id} startDate={b.period_start} endDate={b.period_end} />
+                        <BudgetHierarchy budgetId={b.id} />
+                      </div>
+                    </>
+                  )}
                 </div>
               );
             })}
