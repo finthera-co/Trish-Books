@@ -772,6 +772,38 @@ export type Database = {
           },
         ]
       }
+      daily_balances: {
+        Row: {
+          closing_balance: number
+          created_at: string
+          date: string
+          id: string
+          tenant_id: string
+        }
+        Insert: {
+          closing_balance?: number
+          created_at?: string
+          date: string
+          id?: string
+          tenant_id: string
+        }
+        Update: {
+          closing_balance?: number
+          created_at?: string
+          date?: string
+          id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_balances_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dashboard_kpi_preferences: {
         Row: {
           created_at: string
@@ -3165,6 +3197,63 @@ export type Database = {
           },
         ]
       }
+      transactions: {
+        Row: {
+          account_id: string | null
+          amount: number
+          category: string | null
+          created_at: string
+          date: string
+          description: string | null
+          id: string
+          source_id: string | null
+          source_type: string | null
+          tenant_id: string
+          type: string
+        }
+        Insert: {
+          account_id?: string | null
+          amount?: number
+          category?: string | null
+          created_at?: string
+          date?: string
+          description?: string | null
+          id?: string
+          source_id?: string | null
+          source_type?: string | null
+          tenant_id: string
+          type: string
+        }
+        Update: {
+          account_id?: string | null
+          amount?: number
+          category?: string | null
+          created_at?: string
+          date?: string
+          description?: string | null
+          id?: string
+          source_id?: string | null
+          source_type?: string | null
+          tenant_id?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transactions_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_permissions: {
         Row: {
           created_at: string
@@ -3300,7 +3389,24 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      monthly_financials: {
+        Row: {
+          month: string | null
+          net: number | null
+          tenant_id: string | null
+          total_expense: number | null
+          total_income: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transactions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       calculate_budget_usage: {
@@ -3333,6 +3439,10 @@ export type Database = {
       get_user_tenant_id: { Args: never; Returns: string }
       is_primary_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
+      recalculate_daily_balance: {
+        Args: { p_date: string; p_tenant_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
