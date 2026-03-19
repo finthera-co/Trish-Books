@@ -48,6 +48,7 @@ import Subscriptions from "./pages/Subscriptions";
 import AuditLogs from "./pages/AuditLogs";
 import NotFound from "./pages/NotFound";
 import AnomalyDashboard from "./pages/AnomalyDashboard";
+import TransactionsLedger from "./pages/TransactionsLedger";
 
 const queryClient = new QueryClient();
 
