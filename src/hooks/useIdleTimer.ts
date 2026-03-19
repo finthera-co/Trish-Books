@@ -61,11 +61,11 @@ export function useIdleTimer(enabled: boolean): IdleTimerState {
   }, [startIdleTimer]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || isIdle) return;
 
     const events = ["mousemove", "mousedown", "keydown", "touchstart", "scroll"];
     const handleActivity = () => {
-      if (!isIdle) startIdleTimer();
+      startIdleTimer();
     };
 
     events.forEach((e) => window.addEventListener(e, handleActivity, { passive: true }));
