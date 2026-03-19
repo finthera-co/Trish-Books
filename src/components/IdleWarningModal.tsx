@@ -16,9 +16,6 @@ interface IdleWarningModalProps {
 }
 
 export default function IdleWarningModal({ open, countdown, onStayLoggedIn }: IdleWarningModalProps) {
-  const minutes = Math.floor(countdown / 60);
-  const seconds = countdown % 60;
-  const timeStr = `${minutes}:${seconds.toString().padStart(2, "0")}`;
   const progress = (countdown / 60) * 100;
 
   return (
@@ -31,14 +28,14 @@ export default function IdleWarningModal({ open, countdown, onStayLoggedIn }: Id
           <AlertDialogTitle className="text-xl">Are you still there?</AlertDialogTitle>
           <AlertDialogDescription className="text-sm text-muted-foreground">
             You'll be logged out in{" "}
-            <span className="font-semibold text-foreground tabular-nums">{timeStr}</span>{" "}
-            due to inactivity.
+            <span className="font-semibold text-foreground tabular-nums">{countdown}</span>{" "}
+            seconds due to inactivity.
           </AlertDialogDescription>
         </AlertDialogHeader>
 
-        {/* Progress ring */}
-        <div className="mx-auto my-2">
-          <div className="relative h-2 w-48 overflow-hidden rounded-full bg-muted">
+        <div className="mx-auto my-2 w-48">
+          <div className="mb-2 text-2xl font-semibold tabular-nums text-foreground">{countdown}</div>
+          <div className="relative h-2 overflow-hidden rounded-full bg-muted">
             <div
               className="h-full rounded-full bg-warning transition-all duration-1000 ease-linear"
               style={{ width: `${progress}%` }}
