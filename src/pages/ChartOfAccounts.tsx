@@ -1,4 +1,4 @@
-import { Plus, Search, Download, BookOpen, ChevronRight, Edit2, Power, Sprout } from "lucide-react";
+import { Plus, Search, Download, BookOpen, ChevronRight, Edit2, Power, Sprout, Trash2, LayoutList, LayoutGrid } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useMemo, useEffect } from "react";
 import { useAccounts, useCreateAccount, useUpdateAccount } from "@/hooks/useData";
@@ -8,6 +8,7 @@ import { useMyPermissions } from "@/hooks/usePermissions";
 
 import AccountForm from "@/components/chart-of-accounts/AccountForm";
 import COAHealthCheck from "@/components/chart-of-accounts/COAHealthCheck";
+import DeleteAccountDialog from "@/components/chart-of-accounts/DeleteAccountDialog";
 
 import InlineOpeningBalance from "@/components/chart-of-accounts/InlineOpeningBalance";
 import { useSystemSetting } from "@/hooks/useOpeningBalanceSettings";
@@ -67,20 +68,23 @@ function AccountRow({
   depth = 0,
   onEdit,
   onToggleActive,
+  onDelete,
   periodOBMap,
   isPeriodClosed,
+  canEdit,
 }: {
   account: Account;
   depth?: number;
   onEdit: (a: Account) => void;
   onToggleActive: (a: Account) => void;
+  onDelete: (a: Account) => void;
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
+  canEdit?: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = account.children && account.children.length > 0;
 
-  // Use period-based opening balance if available
   const periodOB = periodOBMap?.get(account.id);
   const displayBalance = periodOB
     ? (periodOB.debit > periodOB.credit ? periodOB.debit - periodOB.credit : periodOB.credit - periodOB.debit)
@@ -129,20 +133,33 @@ function AccountRow({
         </td>
         <td className="text-right">
           <div className="flex items-center justify-end gap-1">
-            <button
-              onClick={() => onEdit(account)}
-              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-              title="Edit"
-            >
-              <Edit2 className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => onToggleActive(account)}
-              className={`p-1 rounded hover:bg-muted ${account.is_active ? "text-muted-foreground hover:text-destructive" : "text-success hover:text-success"}`}
-              title={account.is_active ? "Deactivate" : "Activate"}
-            >
-              <Power className="w-3.5 h-3.5" />
-            </button>
+            {canEdit && (
+              <>
+                <button
+                  onClick={() => onEdit(account)}
+                  className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                  title="Edit"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => onToggleActive(account)}
+                  className={`p-1 rounded hover:bg-muted ${account.is_active ? "text-muted-foreground hover:text-destructive" : "text-success hover:text-success"}`}
+                  title={account.is_active ? "Deactivate" : "Activate"}
+                >
+                  <Power className="w-3.5 h-3.5" />
+                </button>
+                {!(account as any).is_system && (
+                  <button
+                    onClick={() => onDelete(account)}
+                    className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-destructive"
+                    title="Delete"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </>
+            )}
           </div>
         </td>
       </tr>
@@ -153,11 +170,104 @@ function AccountRow({
           depth={depth + 1}
           onEdit={onEdit}
           onToggleActive={onToggleActive}
+          onDelete={onDelete}
           periodOBMap={periodOBMap}
           isPeriodClosed={isPeriodClosed}
+          canEdit={canEdit}
         />
       ))}
     </>
+  );
+}
+
+// ─── Flat row for Classic view ──────────────────────────────
+function FlatAccountRow({
+  account,
+  onEdit,
+  onToggleActive,
+  onDelete,
+  periodOBMap,
+  isPeriodClosed,
+  canEdit,
+}: {
+  account: Account;
+  onEdit: (a: Account) => void;
+  onToggleActive: (a: Account) => void;
+  onDelete: (a: Account) => void;
+  periodOBMap?: Map<string, { debit: number; credit: number }>;
+  isPeriodClosed?: boolean;
+  canEdit?: boolean;
+}) {
+  const periodOB = periodOBMap?.get(account.id);
+  const displayBalance = periodOB
+    ? (periodOB.debit > periodOB.credit ? periodOB.debit - periodOB.credit : periodOB.credit - periodOB.debit)
+    : (account as any).opening_balance ?? 0;
+  const displayType = periodOB
+    ? (periodOB.debit >= periodOB.credit ? "debit" : "credit")
+    : (account as any).opening_balance_type ?? "debit";
+
+  return (
+    <tr className={`hover:bg-muted/20 transition-colors ${!account.is_active ? "opacity-50" : ""}`}>
+      <td className="pl-4">
+        <span className="font-mono text-xs text-muted-foreground">{account.account_code}</span>
+      </td>
+      <td>
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-sm text-foreground/80">{account.account_name}</span>
+          {!account.is_active && (
+            <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">Inactive</span>
+          )}
+        </div>
+      </td>
+      <td>
+        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${typeColors[account.account_type] || "bg-muted text-muted-foreground"}`}>
+          {getTypeLabel(account.account_type)}
+        </span>
+      </td>
+      <td className="text-xs text-muted-foreground">
+        {account.account_categories?.name || "—"}
+      </td>
+      <td className="text-xs text-muted-foreground">
+        {account.account_subtype || "—"}
+      </td>
+      <td className="text-xs text-muted-foreground">
+        {getNormalBalance(account.account_type)}
+      </td>
+      <td className="text-right">
+        <InlineOpeningBalance
+          accountId={account.id}
+          accountType={account.account_type}
+          accountSubtype={account.account_subtype}
+          currentBalance={displayBalance}
+          currentType={displayType}
+          normalBalance={getNormalBalance(account.account_type)}
+          isLocked={(account as any).is_locked || isPeriodClosed || false}
+        />
+      </td>
+      <td className="text-right">
+        <div className="flex items-center justify-end gap-1">
+          {canEdit && (
+            <>
+              <button onClick={() => onEdit(account)} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title="Edit">
+                <Edit2 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => onToggleActive(account)}
+                className={`p-1 rounded hover:bg-muted ${account.is_active ? "text-muted-foreground hover:text-destructive" : "text-success hover:text-success"}`}
+                title={account.is_active ? "Deactivate" : "Activate"}
+              >
+                <Power className="w-3.5 h-3.5" />
+              </button>
+              {!(account as any).is_system && (
+                <button onClick={() => onDelete(account)} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-destructive" title="Delete">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -165,14 +275,18 @@ function TypeSection({
   typeGroup,
   onEdit,
   onToggleActive,
+  onDelete,
   periodOBMap,
   isPeriodClosed,
+  canEdit,
 }: {
   typeGroup: TypeGroup;
   onEdit: (a: Account) => void;
   onToggleActive: (a: Account) => void;
+  onDelete: (a: Account) => void;
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
+  canEdit?: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
   const totalAccounts = typeGroup.categories.reduce((s, c) => s + c.accounts.length, 0) + typeGroup.uncategorized.length;
@@ -205,8 +319,10 @@ function TypeSection({
           accountType={typeGroup.type}
           onEdit={onEdit}
           onToggleActive={onToggleActive}
+          onDelete={onDelete}
           periodOBMap={periodOBMap}
           isPeriodClosed={isPeriodClosed}
+          canEdit={canEdit}
         />
       ))}
       {expanded && typeGroup.uncategorized.length > 0 && (
@@ -223,8 +339,10 @@ function TypeSection({
               depth={2}
               onEdit={onEdit}
               onToggleActive={onToggleActive}
+              onDelete={onDelete}
               periodOBMap={periodOBMap}
               isPeriodClosed={isPeriodClosed}
+              canEdit={canEdit}
             />
           ))}
         </>
@@ -238,15 +356,19 @@ function CategorySection({
   accountType,
   onEdit,
   onToggleActive,
+  onDelete,
   periodOBMap,
   isPeriodClosed,
+  canEdit,
 }: {
   category: CategoryGroup;
   accountType: string;
   onEdit: (a: Account) => void;
   onToggleActive: (a: Account) => void;
+  onDelete: (a: Account) => void;
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
+  canEdit?: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
   const tree = buildTree(category.accounts).sort((a, b) => a.account_code.localeCompare(b.account_code));
@@ -272,8 +394,10 @@ function CategorySection({
           depth={2}
           onEdit={onEdit}
           onToggleActive={onToggleActive}
+          onDelete={onDelete}
           periodOBMap={periodOBMap}
           isPeriodClosed={isPeriodClosed}
+          canEdit={canEdit}
         />
       ))}
     </>
@@ -285,9 +409,11 @@ export default function ChartOfAccounts() {
   const { canEdit: canEditAccounts } = useMyPermissions();
   const [formOpen, setFormOpen] = useState(false);
   const [editAccount, setEditAccount] = useState<Account | null>(null);
+  const [deleteAccount, setDeleteAccount] = useState<Account | null>(null);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [showInactive, setShowInactive] = useState(false);
+  const [viewMode, setViewMode] = useState<"quickbooks" | "classic">("quickbooks");
 
   const { data: accounts, isLoading } = useAccounts();
   const { data: categories } = useAccountCategories();
@@ -315,7 +441,6 @@ export default function ChartOfAccounts() {
   const selectedPeriod = periods?.find((p: any) => p.id === selectedPeriodId) as any;
   const isPeriodClosed = selectedPeriod?.status === "closed";
 
-  // Build a map of period opening balances by account_id
   const periodOBMap = useMemo(() => {
     const map = new Map<string, { debit: number; credit: number }>();
     (periodBalances || []).forEach((ob: any) => {
@@ -366,6 +491,11 @@ export default function ChartOfAccounts() {
     return counts;
   }, [accounts, showInactive]);
 
+  // All account codes for uniqueness validation
+  const existingCodes = useMemo(() => {
+    return new Set((accounts as Account[] | undefined)?.map(a => a.account_code) || []);
+  }, [accounts]);
+
   const handleCreate = async (data: any) => {
     await createAccount.mutateAsync(data);
     setFormOpen(false);
@@ -403,6 +533,7 @@ export default function ChartOfAccounts() {
   };
 
   const activeCount = (accounts as Account[] | undefined)?.filter(a => a.is_active).length || 0;
+  const hasEditPermission = canEditAccounts("accounts");
 
   return (
     <div className="space-y-6">
@@ -410,11 +541,32 @@ export default function ChartOfAccounts() {
         <div>
           <h1 className="page-title">Chart of Accounts</h1>
           <p className="page-description">
-            Type → Category → Account hierarchy ({activeCount} active)
+            {viewMode === "quickbooks" ? "Type → Category → Account hierarchy" : "Flat account listing"} ({activeCount} active)
           </p>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
           <FiscalPeriodSelector value={selectedPeriodId} onChange={setSelectedPeriodId} />
+
+          {/* View toggle */}
+          <div className="flex border border-input rounded-lg overflow-hidden">
+            <button
+              onClick={() => setViewMode("quickbooks")}
+              className={`px-2.5 py-1.5 text-xs font-medium flex items-center gap-1 transition-colors ${viewMode === "quickbooks" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+              title="QuickBooks View"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              Grouped
+            </button>
+            <button
+              onClick={() => setViewMode("classic")}
+              className={`px-2.5 py-1.5 text-xs font-medium flex items-center gap-1 transition-colors ${viewMode === "classic" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+              title="Classic View"
+            >
+              <LayoutList className="w-3.5 h-3.5" />
+              Flat
+            </button>
+          </div>
+
           <Button
             variant="outline"
             size="sm"
@@ -428,7 +580,7 @@ export default function ChartOfAccounts() {
             <Download className="w-4 h-4 mr-1" /> Export
           </Button>
           <COAHealthCheck accounts={(accounts as any[]) || []} />
-          {canEditAccounts("accounts") && <Button onClick={() => setFormOpen(true)}>
+          {hasEditPermission && <Button onClick={() => setFormOpen(true)}>
             <Plus className="w-4 h-4" /> Add Account
           </Button>}
         </div>
@@ -491,7 +643,7 @@ export default function ChartOfAccounts() {
           <div className="flex items-center justify-center py-16">
             <span className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
           </div>
-        ) : typeGroups.length === 0 ? (
+        ) : filteredAccounts.length === 0 ? (
           <div className="text-center py-16">
             <BookOpen className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
             <p className="text-muted-foreground font-medium">
@@ -501,14 +653,14 @@ export default function ChartOfAccounts() {
               {search || filterType !== "all" ? "Try adjusting your filters." : "Click 'Seed Defaults' to create a standard chart of accounts, or add accounts manually."}
             </p>
           </div>
-        ) : (
+        ) : viewMode === "quickbooks" ? (
           <table className="data-table">
             <thead>
               <tr>
                 <th>Account</th>
                 <th className="w-24">Normal Bal.</th>
                 <th className="w-36 text-right">Opening Balance</th>
-                <th className="w-20 text-right">Actions</th>
+                <th className="w-24 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -518,10 +670,44 @@ export default function ChartOfAccounts() {
                   typeGroup={tg}
                   onEdit={(a) => setEditAccount(a)}
                   onToggleActive={handleToggleActive}
+                  onDelete={(a) => setDeleteAccount(a)}
                   periodOBMap={periodOBMap}
                   isPeriodClosed={isPeriodClosed}
+                  canEdit={hasEditPermission}
                 />
               ))}
+            </tbody>
+          </table>
+        ) : (
+          /* Classic flat view */
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th className="w-24">Code</th>
+                <th>Name</th>
+                <th className="w-24">Type</th>
+                <th className="w-36">Category</th>
+                <th className="w-36">Detail Type</th>
+                <th className="w-24">Normal Bal.</th>
+                <th className="w-32 text-right">Opening Balance</th>
+                <th className="w-24 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredAccounts
+                .sort((a, b) => a.account_code.localeCompare(b.account_code))
+                .map(account => (
+                  <FlatAccountRow
+                    key={account.id}
+                    account={account}
+                    onEdit={(a) => setEditAccount(a)}
+                    onToggleActive={handleToggleActive}
+                    onDelete={(a) => setDeleteAccount(a)}
+                    periodOBMap={periodOBMap}
+                    isPeriodClosed={isPeriodClosed}
+                    canEdit={hasEditPermission}
+                  />
+                ))}
             </tbody>
           </table>
         )}
@@ -535,6 +721,7 @@ export default function ChartOfAccounts() {
         accounts={(accounts as Account[]) || []}
         categories={categories || []}
         isPending={createAccount.isPending}
+        existingCodes={existingCodes}
         onCreateCategory={async (data) => {
           const result = await createCategory.mutateAsync(data);
           return result;
@@ -551,12 +738,21 @@ export default function ChartOfAccounts() {
           categories={categories || []}
           isPending={updateAccount.isPending}
           editAccount={editAccount}
+          existingCodes={existingCodes}
           onCreateCategory={async (data) => {
             const result = await createCategory.mutateAsync(data);
             return result;
           }}
         />
       )}
+
+      {/* Delete dialog */}
+      <DeleteAccountDialog
+        open={!!deleteAccount}
+        onOpenChange={(open) => { if (!open) setDeleteAccount(null); }}
+        account={deleteAccount}
+        allAccounts={(accounts as Account[]) || []}
+      />
     </div>
   );
 }
