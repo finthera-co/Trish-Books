@@ -9,6 +9,7 @@ import DashboardCharts from "@/components/dashboard/DashboardCharts";
 import KPICards from "@/components/dashboard/KPICards";
 import SystemHealthCheck from "@/components/dashboard/SystemHealthCheck";
 import RecentTransactions from "@/components/dashboard/RecentTransactions";
+import InsightsPanel from "@/components/dashboard/InsightsPanel";
 import { Loader2, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -70,6 +71,9 @@ export default function Home() {
           <KPICards metrics={metrics} />
         </>
       )}
+
+      {/* Insights Panel */}
+      <InsightsPanel />
 
       {/* System Health & Recent Transactions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
