@@ -49,17 +49,17 @@ function useRecentTransactions() {
       // Recent petty cash vouchers
       const { data: pcvs } = await supabase
         .from("petty_cash_vouchers")
-        .select("id, voucher_date, description, amount, voucher_number, accounts(account_name)")
-        .order("voucher_date", { ascending: false })
+        .select("id, date, paid_to, total_amount, voucher_number")
+        .order("date", { ascending: false })
         .limit(5);
 
       for (const pcv of pcvs || []) {
         items.push({
           id: `pcv-${pcv.id}`,
-          date: pcv.voucher_date,
-          description: `PCV ${pcv.voucher_number} — ${pcv.description || ""}`,
-          account: (pcv.accounts as any)?.account_name || "Petty Cash",
-          amount: Number(pcv.amount),
+          date: pcv.date,
+          description: `PCV ${pcv.voucher_number} — ${pcv.paid_to || ""}`,
+          account: "Petty Cash",
+          amount: Number(pcv.total_amount),
           type: "debit",
           source: "pcv",
         });
