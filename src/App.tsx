@@ -117,6 +117,7 @@ const App = () => (
                   <Route path="/reports/financial" element={<Reports />} />
                   <Route path="/reports/budgets" element={<Budgets />} />
                   <Route path="/reports/exports" element={<DataExports />} />
+                  <Route path="/reports/anomalies" element={<AnomalyDashboard />} />
                 </Route>
 
                 {/* Fixed Assets module */}
