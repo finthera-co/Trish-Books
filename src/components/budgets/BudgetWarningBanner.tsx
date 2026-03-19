@@ -37,6 +37,18 @@ export default function BudgetWarningBanner({
         const res = await checkBudgetForTransaction(accountId, amount, transactionDate);
         setResult(res);
         onBudgetCheck?.({ exceeded: res.exceeded, warning: res.warning });
+
+        // Fire notification once per threshold crossing
+        const notifKey = `${accountId}-${res.exceeded ? "exceeded" : res.warning ? "warning" : "ok"}`;
+        if ((res.exceeded || res.warning) && notifiedRef.current !== notifKey) {
+          notifiedRef.current = notifKey;
+          const pct = res.usage
+            ? (res.usage.allocated_amount > 0
+                ? ((res.usage.actual_amount + amount) / res.usage.allocated_amount) * 100
+                : 0)
+            : 0;
+          createBudgetNotification(accountId, accountName || "Account", pct, res.exceeded);
+        }
       } catch {
         setResult(null);
       } finally {
