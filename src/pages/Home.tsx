@@ -9,6 +9,7 @@ import DashboardCharts from "@/components/dashboard/DashboardCharts";
 import KPICards from "@/components/dashboard/KPICards";
 import SystemHealthCheck from "@/components/dashboard/SystemHealthCheck";
 import RecentTransactions from "@/components/dashboard/RecentTransactions";
+import InsightsPanel from "@/components/dashboard/InsightsPanel";
 import { Loader2, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
