@@ -149,6 +149,51 @@ export type Database = {
           },
         ]
       }
+      anomalies: {
+        Row: {
+          created_at: string
+          id: string
+          reason: string
+          score: number
+          status: string
+          tenant_id: string
+          transaction_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          reason: string
+          score?: number
+          status?: string
+          tenant_id: string
+          transaction_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          reason?: string
+          score?: number
+          status?: string
+          tenant_id?: string
+          transaction_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "anomalies_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "anomalies_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       asset_depreciation: {
         Row: {
           accumulated_depreciation: number

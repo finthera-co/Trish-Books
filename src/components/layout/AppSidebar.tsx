@@ -91,6 +91,7 @@ const navGroups: NavGroup[] = [
     label: "Planning",
     items: [
       { label: "Budgeting", path: "/budgets", icon: TrendingUp },
+      { label: "Anomaly Detection", path: "/reports/anomalies", icon: Shield },
       { label: "Payroll", path: "/payroll", icon: DollarSign },
       { label: "Reports", path: "/reports", icon: BarChart3 },
     ],

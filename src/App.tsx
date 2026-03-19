@@ -47,6 +47,7 @@ import Tenants from "./pages/Tenants";
 import Subscriptions from "./pages/Subscriptions";
 import AuditLogs from "./pages/AuditLogs";
 import NotFound from "./pages/NotFound";
+import AnomalyDashboard from "./pages/AnomalyDashboard";
 
 const queryClient = new QueryClient();
 
@@ -116,6 +117,7 @@ const App = () => (
                   <Route path="/reports/financial" element={<Reports />} />
                   <Route path="/reports/budgets" element={<Budgets />} />
                   <Route path="/reports/exports" element={<DataExports />} />
+                  <Route path="/reports/anomalies" element={<AnomalyDashboard />} />
                 </Route>
 
                 {/* Fixed Assets module */}
