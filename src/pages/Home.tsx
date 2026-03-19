@@ -73,6 +73,9 @@ export default function Home() {
         </>
       )}
 
+      {/* Cash Flow Forecast */}
+      <CashFlowChart />
+
       {/* Insights Panel */}
       <InsightsPanel />
 
