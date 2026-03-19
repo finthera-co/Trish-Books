@@ -9,7 +9,7 @@ import DashboardCharts from "@/components/dashboard/DashboardCharts";
 import KPICards from "@/components/dashboard/KPICards";
 import SystemHealthCheck from "@/components/dashboard/SystemHealthCheck";
 import RecentTransactions from "@/components/dashboard/RecentTransactions";
-import { Loader2, Filter, Share2 } from "lucide-react";
+import { Loader2, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function Home() {
@@ -28,7 +28,7 @@ export default function Home() {
   return (
     <div className="w-full px-4 sm:px-5 py-5 space-y-5 overflow-y-auto flex-1">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 animate-fade-in">
+      <div className="animate-fade-in">
         <div>
           <p className="text-xs font-medium text-primary mb-1">Dashboard → Overview</p>
           <h1 className="text-2xl font-bold text-foreground tracking-tight">
@@ -38,15 +38,6 @@ export default function Home() {
             Welcome back, {appUser?.first_name || "User"}. {format(new Date(), "EEEE, MMMM d, yyyy")}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <PeriodFilter from={fromDate} to={toDate} onFromChange={setFromDate} onToChange={setToDate} />
-          <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5">
-            <Filter className="w-3.5 h-3.5" /> Filter
-          </Button>
-          <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5">
-            <Share2 className="w-3.5 h-3.5" /> Share
-          </Button>
-        </div>
       </div>
 
       {/* OBE Warning Banner */}
@@ -54,6 +45,14 @@ export default function Home() {
 
       {/* Module Navigation */}
       <ModuleCards />
+
+      {/* Period Filter */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <PeriodFilter from={fromDate} to={toDate} onFromChange={setFromDate} onToChange={setToDate} />
+        <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5">
+          <Filter className="w-3.5 h-3.5" /> Filter
+        </Button>
+      </div>
 
       {isLoading ? (
         <div className="flex items-center justify-center py-20">
