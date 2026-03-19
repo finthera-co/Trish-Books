@@ -5,6 +5,7 @@ import { useAccounts } from "@/hooks/useData";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, CheckCircle2, XCircle, AlertTriangle, Info, FileText } from "lucide-react";
+import BudgetWarningBanner from "@/components/budgets/BudgetWarningBanner";
 import { toast } from "sonner";
 import { useState, useMemo, useCallback, useEffect } from "react";
 import {
