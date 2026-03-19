@@ -102,6 +102,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "Financial Reports", path: "/reports/financial", icon: BarChart3 },
       { label: "Budgets", path: "/reports/budgets", icon: TrendingUp },
       { label: "Data Exports", path: "/reports/exports", icon: FileArchive },
+      { label: "Intelligence Hub", path: "/reports/intelligence", icon: TrendingUp },
     ],
   },
   assets: {
