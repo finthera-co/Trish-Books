@@ -490,19 +490,25 @@ export type Database = {
           account_id: string
           allocated_amount: number
           budget_id: string
+          department_id: string | null
           id: string
+          warning_threshold: number
         }
         Insert: {
           account_id: string
           allocated_amount?: number
           budget_id: string
+          department_id?: string | null
           id?: string
+          warning_threshold?: number
         }
         Update: {
           account_id?: string
           allocated_amount?: number
           budget_id?: string
+          department_id?: string | null
           id?: string
+          warning_threshold?: number
         }
         Relationships: [
           {
@@ -517,6 +523,61 @@ export type Database = {
             columns: ["budget_id"]
             isOneToOne: false
             referencedRelation: "budgets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_items_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      budget_transactions: {
+        Row: {
+          amount: number
+          budget_line_id: string
+          created_at: string
+          id: string
+          reference_id: string
+          reference_type: string
+          tenant_id: string
+          transaction_date: string
+        }
+        Insert: {
+          amount?: number
+          budget_line_id: string
+          created_at?: string
+          id?: string
+          reference_id: string
+          reference_type: string
+          tenant_id: string
+          transaction_date?: string
+        }
+        Update: {
+          amount?: number
+          budget_line_id?: string
+          created_at?: string
+          id?: string
+          reference_id?: string
+          reference_type?: string
+          tenant_id?: string
+          transaction_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_transactions_budget_line_id_fkey"
+            columns: ["budget_line_id"]
+            isOneToOne: false
+            referencedRelation: "budget_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_transactions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
         ]
@@ -558,28 +619,40 @@ export type Database = {
           created_at: string
           department: string
           id: string
+          name: string | null
           period_end: string
           period_start: string
+          period_type: string
+          status: string
           tenant_id: string
           total_budget: number
+          version: number
         }
         Insert: {
           created_at?: string
           department: string
           id?: string
+          name?: string | null
           period_end: string
           period_start: string
+          period_type?: string
+          status?: string
           tenant_id: string
           total_budget?: number
+          version?: number
         }
         Update: {
           created_at?: string
           department?: string
           id?: string
+          name?: string | null
           period_end?: string
           period_start?: string
+          period_type?: string
+          status?: string
           tenant_id?: string
           total_budget?: number
+          version?: number
         }
         Relationships: [
           {
@@ -730,6 +803,38 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: true
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      departments: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          tenant_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          tenant_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "departments_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
         ]
@@ -3198,6 +3303,22 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      calculate_budget_usage: {
+        Args: {
+          p_account_id: string
+          p_department_id?: string
+          p_end_date: string
+          p_start_date: string
+        }
+        Returns: {
+          actual_amount: number
+          allocated_amount: number
+          budget_line_id: string
+          remaining_amount: number
+          utilization_percentage: number
+          warning_threshold: number
+        }[]
+      }
       generate_pcr_number: { Args: { p_tenant_id: string }; Returns: string }
       generate_pcv_number: { Args: { p_tenant_id: string }; Returns: string }
       generate_voucher_number: {
