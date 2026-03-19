@@ -51,7 +51,7 @@ export default function ModuleLayout({ config }: ModuleLayoutProps) {
               className="sidebar-item sidebar-item-inactive"
               activeClassName="sidebar-item sidebar-item-active"
             >
-              <item.icon className="w-4 h-4 shrink-0" />
+              <item.icon className="w-[18px] h-[18px] shrink-0" />
               <span>{item.label}</span>
             </NavLink>
           ))}
