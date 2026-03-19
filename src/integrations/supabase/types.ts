@@ -709,6 +709,38 @@ export type Database = {
           },
         ]
       }
+      cashflow_forecast: {
+        Row: {
+          created_at: string
+          date: string
+          id: string
+          predicted_balance: number
+          tenant_id: string
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          id?: string
+          predicted_balance?: number
+          tenant_id: string
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          id?: string
+          predicted_balance?: number
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cashflow_forecast_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cost_centers: {
         Row: {
           created_at: string

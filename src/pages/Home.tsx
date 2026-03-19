@@ -10,6 +10,7 @@ import KPICards from "@/components/dashboard/KPICards";
 import SystemHealthCheck from "@/components/dashboard/SystemHealthCheck";
 import RecentTransactions from "@/components/dashboard/RecentTransactions";
 import InsightsPanel from "@/components/dashboard/InsightsPanel";
+import CashFlowChart from "@/components/dashboard/CashFlowChart";
 import { Loader2, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -71,6 +72,9 @@ export default function Home() {
           <KPICards metrics={metrics} />
         </>
       )}
+
+      {/* Cash Flow Forecast */}
+      <CashFlowChart />
 
       {/* Insights Panel */}
       <InsightsPanel />
