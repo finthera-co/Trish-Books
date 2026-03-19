@@ -154,7 +154,7 @@ export default function AppSidebar() {
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <div className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-sidebar-foreground/40 cursor-not-allowed">
-                                <item.icon className="w-4 h-4 shrink-0" />
+                                <item.icon className="w-[18px] h-[18px] shrink-0" />
                                 {!collapsed && (
                                   <>
                                     <span className="truncate flex-1">{item.label}</span>
