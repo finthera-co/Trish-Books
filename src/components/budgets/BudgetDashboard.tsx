@@ -8,6 +8,8 @@ import { useEnhancedBudgets, useBudgetLineUsages, useUpdateBudgetStatus, useCrea
 import { formatCurrency } from "@/lib/currency";
 import BudgetCreateDialog from "./BudgetCreateDialog";
 import BudgetLineDialog from "./BudgetLineDialog";
+import BudgetTrendChart from "./BudgetTrendChart";
+import BudgetHierarchy from "./BudgetHierarchy";
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
@@ -213,7 +215,15 @@ export default function BudgetDashboard() {
                       )}
                     </div>
                   </div>
-                  {isExpanded && <BudgetDetail budgetId={b.id} />}
+                  {isExpanded && (
+                    <>
+                      <BudgetDetail budgetId={b.id} />
+                      <div className="px-4 pb-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <BudgetTrendChart budgetId={b.id} startDate={b.period_start} endDate={b.period_end} />
+                        <BudgetHierarchy budgetId={b.id} />
+                      </div>
+                    </>
+                  )}
                 </div>
               );
             })}

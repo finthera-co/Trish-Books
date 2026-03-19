@@ -5,6 +5,7 @@ import { useAccounts } from "@/hooks/useData";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, CheckCircle2, XCircle, AlertTriangle, Info, FileText } from "lucide-react";
+import BudgetWarningBanner from "@/components/budgets/BudgetWarningBanner";
 import { toast } from "sonner";
 import { useState, useMemo, useCallback, useEffect } from "react";
 import {
@@ -436,6 +437,20 @@ export default function JournalEntryEdit() {
               </div>
             </div>
           </div>
+
+          {/* Budget Warnings for expense debit lines */}
+          {lines.filter(l => l.account_id && l.debit > 0).map((line, idx) => {
+            const acc = accountsMap.get(line.account_id);
+            if (!acc || (acc.account_type !== "Expense" && acc.account_type !== "Cost of Goods Sold")) return null;
+            return (
+              <BudgetWarningBanner
+                key={`je-edit-budget-${idx}-${line.account_id}`}
+                accountId={line.account_id}
+                amount={line.debit}
+                transactionDate={entryDate}
+              />
+            );
+          })}
 
           {/* Validation Panel */}
           {(validation.errors.length > 0 || validation.warnings.length > 0) && (

@@ -291,7 +291,6 @@ export async function checkBudgetForTransaction(
   const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1).toISOString().split("T")[0];
   const endOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).toISOString().split("T")[0];
 
-  // Try monthly first, then use broader date range
   const { data, error } = await supabase.rpc("calculate_budget_usage", {
     p_account_id: accountId,
     p_start_date: startOfMonth,
@@ -333,6 +332,36 @@ export async function checkBudgetForTransaction(
     message: `Budget OK: ${(newUtilization * 100).toFixed(0)}% utilized after this transaction`,
     usage,
   };
+}
+
+// ─── Budget Threshold Notifications ───
+export async function createBudgetNotification(
+  accountId: string,
+  accountName: string,
+  utilizationPct: number,
+  exceeded: boolean
+) {
+  try {
+    const tenantId = await supabase.rpc("get_user_tenant_id");
+    if (!tenantId.data) return;
+
+    const title = exceeded
+      ? `🔴 Budget Exceeded: ${accountName}`
+      : `🟡 Budget Warning: ${accountName}`;
+    const message = exceeded
+      ? `The budget for "${accountName}" has been exceeded at ${utilizationPct.toFixed(0)}% utilization. Review spending immediately.`
+      : `The budget for "${accountName}" has reached ${utilizationPct.toFixed(0)}% utilization. Approaching limit.`;
+
+    await supabase.from("notifications").insert({
+      tenant_id: tenantId.data,
+      title,
+      message,
+      type: exceeded ? "alert" : "warning",
+      link: "/reports/budgets",
+    });
+  } catch {
+    // Silently fail notification creation
+  }
 }
 
 // ─── Budget Transactions Log ───

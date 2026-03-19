@@ -1,4 +1,5 @@
 import { Plus, Search, RotateCcw, Ban, ChevronDown, ChevronRight, Filter, AlertTriangle, CheckCircle2, XCircle, Info, FileText, Copy } from "lucide-react";
+import BudgetWarningBanner from "@/components/budgets/BudgetWarningBanner";
 import { Button } from "@/components/ui/button";
 import { useState, Fragment, useMemo, useCallback, useEffect, useRef } from "react";
 import { useJournalEntries, useAccounts } from "@/hooks/useData";
@@ -461,6 +462,20 @@ export default function JournalEntries() {
                   </div>
                 </div>
               </div>
+
+              {/* Budget Warnings for expense lines */}
+              {lines.filter(l => l.account_id && l.debit > 0).map((line, idx) => {
+                const acc = accountsMap.get(line.account_id);
+                if (!acc || (acc.account_type !== "Expense" && acc.account_type !== "Cost of Goods Sold")) return null;
+                return (
+                  <BudgetWarningBanner
+                    key={`je-budget-${idx}-${line.account_id}`}
+                    accountId={line.account_id}
+                    amount={line.debit}
+                    transactionDate={entryDate}
+                  />
+                );
+              })}
 
               {/* Validation Panel */}
               {formTouched && (validation.errors.length > 0 || validation.warnings.length > 0) && (
