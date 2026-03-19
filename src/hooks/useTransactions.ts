@@ -96,7 +96,7 @@ export function useMonthlyFinancials() {
         .select("*")
         .order("month", { ascending: false });
       if (error) throw error;
-      return data as Array<{
+      return (data as unknown) as Array<{
         tenant_id: string;
         month: string;
         total_income: number;
