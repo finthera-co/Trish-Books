@@ -212,7 +212,7 @@
   }
 
   .sidebar-item-active {
-    @apply bg-sidebar-primary text-sidebar-primary-foreground shadow-sm;
+    @apply bg-sidebar-primary/20 text-sidebar-primary-foreground font-medium shadow-sm;
   }
 
   .sidebar-item-inactive {
