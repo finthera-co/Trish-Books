@@ -253,6 +253,16 @@ export default function PaymentVoucherForm({ editId, onClose }: Props) {
         </Table>
       </div>
 
+      {/* Budget Warnings */}
+      {lines.filter(l => l.account_id && l.amount > 0).map((line, idx) => (
+        <BudgetWarningBanner
+          key={`budget-pv-${idx}-${line.account_id}`}
+          accountId={line.account_id}
+          amount={line.amount}
+          transactionDate={format(paymentDate, "yyyy-MM-dd")}
+        />
+      ))}
+
       {/* Approval fields */}
       <div>
         <Label className="text-base font-semibold mb-2 block">Approval Details</Label>
