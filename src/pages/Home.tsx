@@ -28,7 +28,7 @@ export default function Home() {
   return (
     <div className="w-full px-4 sm:px-5 py-5 space-y-5 overflow-y-auto flex-1">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 animate-fade-in">
+      <div className="animate-fade-in">
         <div>
           <p className="text-xs font-medium text-primary mb-1">Dashboard → Overview</p>
           <h1 className="text-2xl font-bold text-foreground tracking-tight">
@@ -37,15 +37,6 @@ export default function Home() {
           <p className="text-sm text-muted-foreground mt-1">
             Welcome back, {appUser?.first_name || "User"}. {format(new Date(), "EEEE, MMMM d, yyyy")}
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <PeriodFilter from={fromDate} to={toDate} onFromChange={setFromDate} onToChange={setToDate} />
-          <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5">
-            <Filter className="w-3.5 h-3.5" /> Filter
-          </Button>
-          <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5">
-            <Share2 className="w-3.5 h-3.5" /> Share
-          </Button>
         </div>
       </div>
 
