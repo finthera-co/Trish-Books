@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { CalendarIcon, Plus, Trash2 } from "lucide-react";
+import BudgetWarningBanner from "@/components/budgets/BudgetWarningBanner";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { useAccounts, useCustomers } from "@/hooks/useData";
