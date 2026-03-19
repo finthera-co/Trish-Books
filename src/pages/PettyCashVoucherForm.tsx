@@ -216,6 +216,16 @@ export default function PettyCashVoucherForm() {
             </div>
           </div>
 
+          {/* Budget Warnings */}
+          {lines.filter(l => l.account_id && l.amount > 0).map((line, idx) => (
+            <BudgetWarningBanner
+              key={`budget-${idx}-${line.account_id}`}
+              accountId={line.account_id}
+              amount={line.amount}
+              transactionDate={date}
+            />
+          ))}
+
           {/* Receipt attachments */}
           <div>
             <div className="flex items-center justify-between mb-2">
