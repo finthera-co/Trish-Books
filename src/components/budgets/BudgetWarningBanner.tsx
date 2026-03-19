@@ -12,6 +12,7 @@ interface BudgetWarningBannerProps {
 
 export default function BudgetWarningBanner({
   accountId,
+  accountName,
   amount,
   transactionDate,
   onBudgetCheck,
