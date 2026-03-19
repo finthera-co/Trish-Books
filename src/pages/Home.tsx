@@ -72,6 +72,9 @@ export default function Home() {
         </>
       )}
 
+      {/* Insights Panel */}
+      <InsightsPanel />
+
       {/* System Health & Recent Transactions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <SystemHealthCheck />
