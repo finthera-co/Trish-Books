@@ -37,6 +37,7 @@ interface AccountFormProps {
   categories: AccountCategory[];
   isPending: boolean;
   editAccount?: Account | null;
+  existingCodes?: Set<string>;
   onCreateCategory?: (data: { name: string; account_type: string }) => Promise<AccountCategory | undefined>;
 }
 
@@ -48,6 +49,7 @@ export default function AccountForm({
   categories,
   isPending,
   editAccount,
+  existingCodes,
   onCreateCategory,
 }: AccountFormProps) {
   const [accountName, setAccountName] = useState("");
@@ -84,6 +86,11 @@ export default function AccountForm({
   const subtypes = ACCOUNT_SUBTYPES[accountType] || [];
   const numberRange = ACCOUNT_NUMBER_RANGES[accountType];
 
+  // Account code uniqueness check
+  const isCodeDuplicate = existingCodes
+    ? existingCodes.has(accountCode) && (!editAccount || editAccount.account_code !== accountCode)
+    : false;
+
   const handleAddCategory = async () => {
     if (!newCategoryName.trim() || !onCreateCategory) return;
     setCreatingCategory(true);
@@ -100,6 +107,7 @@ export default function AccountForm({
   };
 
   const handleSubmit = async () => {
+    if (isCodeDuplicate) return;
     await onSubmit({
       account_name: accountName,
       account_code: accountCode,
@@ -226,19 +234,23 @@ export default function AccountForm({
           <div className="grid grid-cols-2 gap-4">
             {/* Account Code */}
             <div>
-              <label className="text-sm font-medium">Account Number</label>
+              <label className="text-sm font-medium">Account Number <span className="text-destructive">*</span></label>
               <input
                 type="text"
                 value={accountCode}
                 onChange={(e) => setAccountCode(e.target.value)}
-                className={inputClass}
+                className={`${inputClass} ${isCodeDuplicate ? "!border-destructive !ring-destructive/20" : ""}`}
                 placeholder={numberRange ? `${numberRange.min}–${numberRange.max}` : ""}
               />
-              {numberRange && (
+              {isCodeDuplicate ? (
+                <p className="text-[10px] text-destructive mt-1 font-medium">
+                  This account number already exists
+                </p>
+              ) : numberRange ? (
                 <p className="text-[10px] text-muted-foreground mt-1">
                   Recommended: {numberRange.min}–{numberRange.max}
                 </p>
-              )}
+              ) : null}
             </div>
             {/* Account Name */}
             <div>
@@ -292,7 +304,7 @@ export default function AccountForm({
 
           <Button
             onClick={handleSubmit}
-            disabled={!accountName || !accountCode || isPending}
+            disabled={!accountName || !accountCode || isCodeDuplicate || isPending}
             className="w-full"
           >
             {isPending ? "Saving..." : editAccount ? "Update Account" : "Create Account"}
