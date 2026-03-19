@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Plus, Trash2, Save, Upload, X } from "lucide-react";
+import BudgetWarningBanner from "@/components/budgets/BudgetWarningBanner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -214,6 +215,16 @@ export default function PettyCashVoucherForm() {
               </table>
             </div>
           </div>
+
+          {/* Budget Warnings */}
+          {lines.filter(l => l.account_id && l.amount > 0).map((line, idx) => (
+            <BudgetWarningBanner
+              key={`budget-${idx}-${line.account_id}`}
+              accountId={line.account_id}
+              amount={line.amount}
+              transactionDate={date}
+            />
+          ))}
 
           {/* Receipt attachments */}
           <div>

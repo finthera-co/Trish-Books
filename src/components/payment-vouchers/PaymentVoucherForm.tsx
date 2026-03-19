@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { CalendarIcon, Plus, Trash2 } from "lucide-react";
+import BudgetWarningBanner from "@/components/budgets/BudgetWarningBanner";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { useAccounts, useCustomers } from "@/hooks/useData";
@@ -251,6 +252,16 @@ export default function PaymentVoucherForm({ editId, onClose }: Props) {
           </TableBody>
         </Table>
       </div>
+
+      {/* Budget Warnings */}
+      {lines.filter(l => l.account_id && l.amount > 0).map((line, idx) => (
+        <BudgetWarningBanner
+          key={`budget-pv-${idx}-${line.account_id}`}
+          accountId={line.account_id}
+          amount={line.amount}
+          transactionDate={format(paymentDate, "yyyy-MM-dd")}
+        />
+      ))}
 
       {/* Approval fields */}
       <div>
