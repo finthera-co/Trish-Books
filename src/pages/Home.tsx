@@ -46,6 +46,14 @@ export default function Home() {
       {/* Module Navigation */}
       <ModuleCards />
 
+      {/* Period Filter */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <PeriodFilter from={fromDate} to={toDate} onFromChange={setFromDate} onToChange={setToDate} />
+        <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5">
+          <Filter className="w-3.5 h-3.5" /> Filter
+        </Button>
+      </div>
+
       {isLoading ? (
         <div className="flex items-center justify-center py-20">
           <div className="flex flex-col items-center gap-3">
