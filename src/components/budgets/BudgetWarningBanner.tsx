@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
-import { checkBudgetForTransaction } from "@/hooks/useBudgets";
+import { checkBudgetForTransaction, createBudgetNotification } from "@/hooks/useBudgets";
 
 interface BudgetWarningBannerProps {
   accountId: string | undefined;
+  accountName?: string;
   amount: number;
   transactionDate: string;
   onBudgetCheck?: (result: { exceeded: boolean; warning: boolean }) => void;
