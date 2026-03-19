@@ -47,6 +47,7 @@ import Tenants from "./pages/Tenants";
 import Subscriptions from "./pages/Subscriptions";
 import AuditLogs from "./pages/AuditLogs";
 import NotFound from "./pages/NotFound";
+import AnomalyDashboard from "./pages/AnomalyDashboard";
 
 const queryClient = new QueryClient();
 
