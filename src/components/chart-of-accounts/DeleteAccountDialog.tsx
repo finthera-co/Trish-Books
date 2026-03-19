@@ -40,7 +40,7 @@ export default function DeleteAccountDialog({ open, onOpenChange, account, allAc
   if (!account) return null;
 
   const eligibleAccounts = allAccounts.filter(a =>
-    a.id !== account.id && a.account_type === account.type && a.is_active
+    a.id !== account.id && a.account_type === account.account_type && a.is_active
   );
 
   const hasDeps = deps && deps.total > 0;
