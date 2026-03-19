@@ -7,6 +7,8 @@ import OBEBanner from "@/components/dashboard/OBEBanner";
 import PeriodFilter from "@/components/dashboard/PeriodFilter";
 import DashboardCharts from "@/components/dashboard/DashboardCharts";
 import KPICards from "@/components/dashboard/KPICards";
+import SystemHealthCheck from "@/components/dashboard/SystemHealthCheck";
+import RecentTransactions from "@/components/dashboard/RecentTransactions";
 import { Loader2, Filter, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -69,6 +71,12 @@ export default function Home() {
           <KPICards metrics={metrics} />
         </>
       )}
+
+      {/* System Health & Recent Transactions */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <SystemHealthCheck />
+        <RecentTransactions />
+      </div>
     </div>
   );
 }
