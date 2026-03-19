@@ -86,7 +86,7 @@ function useRecentTransactions() {
 
       // Sort by date desc, take top 15
       items.sort((a, b) => b.date.localeCompare(a.date));
-      return items.slice(0, 15);
+      return items.slice(0, 6);
     },
     staleTime: 30_000,
   });
