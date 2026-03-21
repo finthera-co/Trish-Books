@@ -1,10 +1,18 @@
-import { Plus, Search, Download, BookOpen, ChevronRight, Edit2, Power, Sprout, Trash2, LayoutList, LayoutGrid } from "lucide-react";
+import { Plus, Search, Download, BookOpen, ChevronRight, Edit2, Power, Sprout, Trash2, LayoutList, LayoutGrid, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useMemo, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAccounts, useCreateAccount, useUpdateAccount } from "@/hooks/useData";
 import { useAccountCategories, useCreateAccountCategory, useSeedDefaultAccounts } from "@/hooks/useAccountCategories";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMyPermissions } from "@/hooks/usePermissions";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+  ContextMenuSeparator,
+} from "@/components/ui/context-menu";
 
 import AccountForm from "@/components/chart-of-accounts/AccountForm";
 import COAHealthCheck from "@/components/chart-of-accounts/COAHealthCheck";
