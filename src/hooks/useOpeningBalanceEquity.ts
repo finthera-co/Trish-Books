@@ -156,6 +156,19 @@ export function useSaveOpeningBalances() {
       const { error: linesErr } = await supabase.from("journal_lines").insert(lines);
       if (linesErr) throw linesErr;
 
+      // Sync opening_balance fields on each user account so COA reflects amounts
+      for (const l of userLines) {
+        const amount = l.debit > 0 ? l.debit : l.credit;
+        const balType = l.debit > 0 ? "debit" : "credit";
+        await supabase
+          .from("accounts")
+          .update({
+            opening_balance: amount,
+            opening_balance_type: balType,
+          })
+          .eq("id", l.account_id);
+      }
+
       // Audit log
       await supabase.from("audit_logs").insert({
         action: "Opening Balance Entry Created",
