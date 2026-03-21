@@ -168,11 +168,20 @@ export default function OpeningBalances() {
 
     // Also save as journal entry (existing OBE flow)
     const useDate = obDate || entryDate;
-    saveMutation.mutate({
-      lines: validLines.map((l) => ({ account_id: l.account_id, debit: l.debit, credit: l.credit })),
-      entry_date: useDate,
-      description,
-    });
+    saveMutation.mutate(
+      {
+        lines: validLines.map((l) => ({ account_id: l.account_id, debit: l.debit, credit: l.credit })),
+        entry_date: useDate,
+        description,
+      },
+      {
+        onSuccess: () => {
+          // Reset form to fresh state
+          setLines([newLine(), newLine()]);
+          setDescription("Opening Balance Entry");
+        },
+      }
+    );
   };
 
   // Read-only view for closed/finalized states
