@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { AccountCategory } from "@/hooks/useAccountCategories";
-import { Plus } from "lucide-react";
+import { Plus, Lock } from "lucide-react";
 import {
   ACCOUNT_TYPES,
   ACCOUNT_SUBTYPES,
@@ -10,6 +10,7 @@ import {
   getNormalBalance,
   getStatementPlacement,
 } from "@/lib/accountTypes";
+import { generateAccountCode } from "@/lib/accountCodeGenerator";
 
 interface Account {
   id: string;
