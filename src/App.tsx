@@ -72,6 +72,7 @@ const App = () => (
                 <Route element={<ModuleLayout config={MODULE_CONFIGS.accounting} />}>
                   <Route path="/accounting" element={<ModuleDashboard config={MODULE_CONFIGS.accounting} />} />
                   <Route path="/accounting/accounts" element={<ChartOfAccounts />} />
+                  <Route path="/accounting/accounts/:id/report" element={<AccountReport />} />
                   <Route path="/accounting/journals" element={<JournalEntries />} />
                   <Route path="/accounting/journals/:id" element={<JournalEntryView />} />
                   <Route path="/accounting/journals/:id/edit" element={<JournalEntryEdit />} />
