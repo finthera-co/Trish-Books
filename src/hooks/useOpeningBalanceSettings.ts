@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import { isDebitNormal } from "@/lib/accountTypes";
 
 // Get a system setting
 export function useSystemSetting(key: string) {
@@ -57,15 +58,13 @@ export function useOpeningBalanceStatus() {
   return useSystemSetting("opening_balance_status");
 }
 
-// Finalize opening balances - locks entries and syncs to accounts table
+// Finalize opening balances
 export function useFinalizeOpeningBalances() {
   const { appUser } = useAuth();
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async () => {
       if (!appUser?.tenant_id) throw new Error("No tenant");
-      
-      // Set status to finalized
       await supabase.from("system_settings").upsert(
         {
           tenant_id: appUser.tenant_id,
@@ -75,8 +74,6 @@ export function useFinalizeOpeningBalances() {
         },
         { onConflict: "tenant_id,setting_key" }
       );
-
-      // Audit
       await supabase.from("audit_logs").insert({
         action: "Opening Balances Finalized",
         table_name: "system_settings",
@@ -123,8 +120,37 @@ export function useRevertToDraft() {
   });
 }
 
-// Update account opening balance (per-account inline entry)
+// Helper: ensure OBE account exists, return its ID
+async function ensureOBEAccount(tenantId: string): Promise<string> {
+  const { data: existing } = await supabase
+    .from("accounts")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("account_name", "Opening Balance Equity")
+    .eq("is_system", true)
+    .maybeSingle();
+  if (existing) return existing.id;
+
+  const { data, error } = await supabase.from("accounts").insert({
+    tenant_id: tenantId,
+    account_name: "Opening Balance Equity",
+    account_code: "3900",
+    account_type: "Equity",
+    account_subtype: "Opening Balance Equity",
+    is_system: true,
+    is_active: true,
+  }).select("id").single();
+  if (error) throw error;
+  return data.id;
+}
+
+// Update account opening balance with proper journal entry + OBE offset
+// This is the QuickBooks-style single-source posting:
+// - Updates account metadata
+// - Voids any previous OB journal for this specific account
+// - Creates a new balanced journal entry (account + OBE offset)
 export function useSaveAccountOpeningBalance() {
+  const { appUser } = useAuth();
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
@@ -136,19 +162,115 @@ export function useSaveAccountOpeningBalance() {
       openingBalance: number;
       openingBalanceType: "debit" | "credit";
     }) => {
+      if (!appUser?.tenant_id) throw new Error("No tenant");
+
+      // 1. Update account metadata
       const { error } = await supabase
         .from("accounts")
         .update({
           opening_balance: openingBalance,
           opening_balance_type: openingBalanceType,
         })
-        .eq("id", accountId);
+        .eq("id", accountId)
+        .eq("tenant_id", appUser.tenant_id);
       if (error) throw error;
+
+      // 2. If balance is zero, just void any existing inline OB entry
+      // Find existing inline OB journal entries for this account
+      const { data: existingEntries } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("tenant_id", appUser.tenant_id)
+        .eq("entry_type", "opening_balance")
+        .eq("status", "posted")
+        .like("reference", `OB-INLINE-${accountId.substring(0, 8)}%`);
+
+      // Void existing inline entries for this account
+      for (const entry of existingEntries || []) {
+        await supabase
+          .from("journal_entries")
+          .update({
+            status: "voided",
+            void_reason: "Opening balance updated via inline edit",
+            voided_by: appUser.id,
+            voided_at: new Date().toISOString(),
+          })
+          .eq("id", entry.id)
+          .eq("tenant_id", appUser.tenant_id);
+      }
+
+      if (openingBalance <= 0) return; // No journal needed for zero balance
+
+      // 3. Ensure OBE account exists
+      const obeAccountId = await ensureOBEAccount(appUser.tenant_id);
+
+      // 4. Get the OB date (use system setting or today)
+      const { data: dateSetting } = await supabase
+        .from("system_settings")
+        .select("setting_value")
+        .eq("tenant_id", appUser.tenant_id)
+        .eq("setting_key", "opening_balance_date")
+        .maybeSingle();
+      const entryDate = dateSetting?.setting_value || new Date().toISOString().slice(0, 10);
+
+      // 5. Create balanced journal entry
+      const ref = `OB-INLINE-${accountId.substring(0, 8)}`;
+      const { data: entry, error: entryErr } = await supabase
+        .from("journal_entries")
+        .insert({
+          tenant_id: appUser.tenant_id,
+          description: "Opening Balance — Inline Entry",
+          entry_date: entryDate,
+          reference: ref,
+          status: "posted",
+          entry_type: "opening_balance",
+          is_system_generated: true,
+          created_by: appUser.id,
+        })
+        .select()
+        .single();
+      if (entryErr) throw entryErr;
+
+      // 6. Create journal lines:
+      // Account line: debit or credit per user input
+      // OBE line: opposite side to balance
+      const lines = [
+        {
+          journal_entry_id: entry.id,
+          account_id: accountId,
+          debit: openingBalanceType === "debit" ? openingBalance : 0,
+          credit: openingBalanceType === "credit" ? openingBalance : 0,
+        },
+        {
+          journal_entry_id: entry.id,
+          account_id: obeAccountId,
+          debit: openingBalanceType === "credit" ? openingBalance : 0,
+          credit: openingBalanceType === "debit" ? openingBalance : 0,
+        },
+      ];
+      const { error: linesErr } = await supabase.from("journal_lines").insert(lines);
+      if (linesErr) throw linesErr;
+
+      // 7. Audit log
+      await supabase.from("audit_logs").insert({
+        action: "Opening Balance Inline Edit",
+        table_name: "accounts",
+        record_id: accountId,
+        user_id: appUser.id,
+        tenant_id: appUser.tenant_id,
+        details: {
+          opening_balance: openingBalance,
+          opening_balance_type: openingBalanceType,
+          journal_entry_id: entry.id,
+        },
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["accounts_active"] });
-      toast.success("Opening balance saved");
+      queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["obe_balance"] });
+      toast.success("Opening balance saved with journal entry");
     },
     onError: (e: Error) => toast.error(e.message),
   });

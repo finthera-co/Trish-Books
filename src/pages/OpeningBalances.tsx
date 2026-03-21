@@ -109,7 +109,8 @@ export default function OpeningBalances() {
     setCreateLedgerLineId(null);
   }, [createLedgerLineId]);
 
-  // When period balances load, populate lines
+  // When period balances load, populate lines; fallback to account opening balances
+  const [hasPopulated, setHasPopulated] = useState(false);
   useEffect(() => {
     if (periodBalances && periodBalances.length > 0) {
       const loaded: BalanceLine[] = periodBalances.map((ob: any) => ({
@@ -118,11 +119,27 @@ export default function OpeningBalances() {
         debit: Number(ob.debit) || 0,
         credit: Number(ob.credit) || 0,
       }));
-      // Add an empty line at end for new entries
       loaded.push(newLine());
       setLines(loaded);
+      setHasPopulated(true);
+    } else if (!hasPopulated && accounts && accounts.length > 0 && !periodBalances) {
+      // Fallback: populate from accounts that have opening_balance > 0
+      const withBalances = (accounts as any[]).filter(
+        (a) => !a.is_system && a.opening_balance > 0 && isOpeningBalanceEligible(a.account_type)
+      );
+      if (withBalances.length > 0) {
+        const loaded: BalanceLine[] = withBalances.map((a: any) => ({
+          id: crypto.randomUUID(),
+          account_id: a.id,
+          debit: a.opening_balance_type === "debit" ? a.opening_balance : 0,
+          credit: a.opening_balance_type === "credit" ? a.opening_balance : 0,
+        }));
+        loaded.push(newLine());
+        setLines(loaded);
+        setHasPopulated(true);
+      }
     }
-  }, [periodBalances]);
+  }, [periodBalances, accounts, hasPopulated]);
 
   const isClosed = obeClosed === "true";
   const isFinalized = obStatus === "finalized";
