@@ -10,6 +10,7 @@ interface Account {
   account_name: string;
   account_type: string;
   is_active: boolean;
+  is_system?: boolean;
 }
 
 interface DeleteAccountDialogProps {
