@@ -166,7 +166,8 @@ export function useSaveOpeningBalances() {
             opening_balance: amount,
             opening_balance_type: balType,
           })
-          .eq("id", l.account_id);
+          .eq("id", l.account_id)
+          .eq("tenant_id", appUser.tenant_id);
       }
 
       // Audit log
