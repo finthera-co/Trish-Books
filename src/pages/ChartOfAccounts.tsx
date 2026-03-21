@@ -390,6 +390,7 @@ function CategorySection({
   onEdit,
   onToggleActive,
   onDelete,
+  onGenerateReport,
   periodOBMap,
   isPeriodClosed,
   canEdit,
@@ -399,6 +400,7 @@ function CategorySection({
   onEdit: (a: Account) => void;
   onToggleActive: (a: Account) => void;
   onDelete: (a: Account) => void;
+  onGenerateReport: (a: Account) => void;
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
   canEdit?: boolean;
