@@ -36,7 +36,7 @@ export default function Login() {
             <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow-sm">
               <BookOpen className="w-4.5 h-4.5 text-primary-foreground" />
             </div>
-            <span className="text-lg font-bold text-foreground tracking-tight">AccuBooks</span>
+            <span className="text-lg font-bold text-foreground tracking-tight">Finthera</span>
           </div>
         </div>
 
@@ -112,7 +112,7 @@ export default function Login() {
 
         {/* Footer */}
         <div className="px-8 pb-8">
-          <p className="text-xs text-muted-foreground">AccuBooks {new Date().getFullYear()}</p>
+          <p className="text-xs text-muted-foreground">Finthera {new Date().getFullYear()}</p>
         </div>
       </div>
 
@@ -144,7 +144,7 @@ export default function Login() {
               <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center shadow-sm">
                 <BookOpen className="w-3.5 h-3.5 text-primary-foreground" />
               </div>
-              <span className="text-sm font-bold text-foreground">AccuBooks</span>
+              <span className="text-sm font-bold text-foreground">Finthera</span>
             </div>
           </div>
 
