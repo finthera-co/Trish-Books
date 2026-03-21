@@ -1,10 +1,18 @@
-import { Plus, Search, Download, BookOpen, ChevronRight, Edit2, Power, Sprout, Trash2, LayoutList, LayoutGrid } from "lucide-react";
+import { Plus, Search, Download, BookOpen, ChevronRight, Edit2, Power, Sprout, Trash2, LayoutList, LayoutGrid, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useMemo, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAccounts, useCreateAccount, useUpdateAccount } from "@/hooks/useData";
 import { useAccountCategories, useCreateAccountCategory, useSeedDefaultAccounts } from "@/hooks/useAccountCategories";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMyPermissions } from "@/hooks/usePermissions";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+  ContextMenuSeparator,
+} from "@/components/ui/context-menu";
 
 import AccountForm from "@/components/chart-of-accounts/AccountForm";
 import COAHealthCheck from "@/components/chart-of-accounts/COAHealthCheck";
@@ -69,6 +77,7 @@ function AccountRow({
   onEdit,
   onToggleActive,
   onDelete,
+  onGenerateReport,
   periodOBMap,
   isPeriodClosed,
   canEdit,
@@ -78,6 +87,7 @@ function AccountRow({
   onEdit: (a: Account) => void;
   onToggleActive: (a: Account) => void;
   onDelete: (a: Account) => void;
+  onGenerateReport: (a: Account) => void;
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
   canEdit?: boolean;
@@ -95,74 +105,92 @@ function AccountRow({
 
   return (
     <>
-      <tr className={`hover:bg-muted/20 transition-colors ${!account.is_active ? "opacity-50" : ""}`}>
-        <td style={{ paddingLeft: `${depth * 20 + 16}px` }}>
-          <div className="flex items-center gap-2">
-            {hasChildren ? (
-              <button onClick={() => setExpanded(!expanded)} className="p-0.5 rounded hover:bg-muted">
-                <ChevronRight className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`} />
-              </button>
-            ) : <span className="w-4" />}
-            <span className="font-mono text-xs text-muted-foreground">{account.account_code}</span>
-            <span className="font-medium text-sm text-foreground/80">
-              {account.account_name}
-            </span>
-            {account.account_subtype && (
-              <span className="text-[10px] bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded">
-                {account.account_subtype}
-              </span>
-            )}
-            {!account.is_active && (
-              <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">Inactive</span>
-            )}
-          </div>
-        </td>
-        <td className="text-xs text-muted-foreground">
-          {getNormalBalance(account.account_type)}
-        </td>
-        <td className="text-right">
-          <InlineOpeningBalance
-            accountId={account.id}
-            accountType={account.account_type}
-            accountSubtype={account.account_subtype}
-            currentBalance={displayBalance}
-            currentType={displayType}
-            normalBalance={getNormalBalance(account.account_type)}
-            isLocked={(account as any).is_locked || isPeriodClosed || false}
-          />
-        </td>
-        <td className="text-right">
-          <div className="flex items-center justify-end gap-1">
-            {canEdit && (
-              <>
-                <button
-                  onClick={() => onEdit(account)}
-                  className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-                  title="Edit"
-                >
-                  <Edit2 className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => onToggleActive(account)}
-                  className={`p-1 rounded hover:bg-muted ${account.is_active ? "text-muted-foreground hover:text-destructive" : "text-success hover:text-success"}`}
-                  title={account.is_active ? "Deactivate" : "Activate"}
-                >
-                  <Power className="w-3.5 h-3.5" />
-                </button>
-                {!(account as any).is_system && (
-                  <button
-                    onClick={() => onDelete(account)}
-                    className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-destructive"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <tr className={`hover:bg-muted/20 transition-colors ${!account.is_active ? "opacity-50" : ""}`}>
+            <td style={{ paddingLeft: `${depth * 20 + 16}px` }}>
+              <div className="flex items-center gap-2">
+                {hasChildren ? (
+                  <button onClick={() => setExpanded(!expanded)} className="p-0.5 rounded hover:bg-muted">
+                    <ChevronRight className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`} />
                   </button>
+                ) : <span className="w-4" />}
+                <span className="font-mono text-xs text-muted-foreground">{account.account_code}</span>
+                <span className="font-medium text-sm text-foreground/80">
+                  {account.account_name}
+                </span>
+                {account.account_subtype && (
+                  <span className="text-[10px] bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded">
+                    {account.account_subtype}
+                  </span>
                 )}
-              </>
-            )}
-          </div>
-        </td>
-      </tr>
+                {!account.is_active && (
+                  <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">Inactive</span>
+                )}
+              </div>
+            </td>
+            <td className="text-xs text-muted-foreground">
+              {getNormalBalance(account.account_type)}
+            </td>
+            <td className="text-right">
+              <InlineOpeningBalance
+                accountId={account.id}
+                accountType={account.account_type}
+                accountSubtype={account.account_subtype}
+                currentBalance={displayBalance}
+                currentType={displayType}
+                normalBalance={getNormalBalance(account.account_type)}
+                isLocked={(account as any).is_locked || isPeriodClosed || false}
+              />
+            </td>
+            <td className="text-right">
+              <div className="flex items-center justify-end gap-1">
+                {canEdit && (
+                  <>
+                    <button
+                      onClick={() => onEdit(account)}
+                      className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                      title="Edit"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => onToggleActive(account)}
+                      className={`p-1 rounded hover:bg-muted ${account.is_active ? "text-muted-foreground hover:text-destructive" : "text-success hover:text-success"}`}
+                      title={account.is_active ? "Deactivate" : "Activate"}
+                    >
+                      <Power className="w-3.5 h-3.5" />
+                    </button>
+                    {!(account as any).is_system && (
+                      <button
+                        onClick={() => onDelete(account)}
+                        className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-destructive"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </td>
+          </tr>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="w-48">
+          <ContextMenuItem onClick={() => onGenerateReport(account)}>
+            <FileText className="w-4 h-4 mr-2" /> Generate Report
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={() => onEdit(account)}>
+            <Edit2 className="w-4 h-4 mr-2" /> Edit Account
+          </ContextMenuItem>
+          {!(account as any).is_system && (
+            <ContextMenuItem onClick={() => onDelete(account)} className="text-destructive focus:text-destructive">
+              <Trash2 className="w-4 h-4 mr-2" /> Delete Account
+            </ContextMenuItem>
+          )}
+        </ContextMenuContent>
+      </ContextMenu>
       {expanded && account.children?.sort((a, b) => a.account_code.localeCompare(b.account_code)).map((child) => (
         <AccountRow
           key={child.id}
@@ -171,6 +199,7 @@ function AccountRow({
           onEdit={onEdit}
           onToggleActive={onToggleActive}
           onDelete={onDelete}
+          onGenerateReport={onGenerateReport}
           periodOBMap={periodOBMap}
           isPeriodClosed={isPeriodClosed}
           canEdit={canEdit}
@@ -186,6 +215,7 @@ function FlatAccountRow({
   onEdit,
   onToggleActive,
   onDelete,
+  onGenerateReport,
   periodOBMap,
   isPeriodClosed,
   canEdit,
@@ -194,6 +224,7 @@ function FlatAccountRow({
   onEdit: (a: Account) => void;
   onToggleActive: (a: Account) => void;
   onDelete: (a: Account) => void;
+  onGenerateReport: (a: Account) => void;
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
   canEdit?: boolean;
@@ -207,67 +238,85 @@ function FlatAccountRow({
     : (account as any).opening_balance_type ?? "debit";
 
   return (
-    <tr className={`hover:bg-muted/20 transition-colors ${!account.is_active ? "opacity-50" : ""}`}>
-      <td className="pl-4">
-        <span className="font-mono text-xs text-muted-foreground">{account.account_code}</span>
-      </td>
-      <td>
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-sm text-foreground/80">{account.account_name}</span>
-          {!account.is_active && (
-            <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">Inactive</span>
-          )}
-        </div>
-      </td>
-      <td>
-        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${typeColors[account.account_type] || "bg-muted text-muted-foreground"}`}>
-          {getTypeLabel(account.account_type)}
-        </span>
-      </td>
-      <td className="text-xs text-muted-foreground">
-        {account.account_categories?.name || "—"}
-      </td>
-      <td className="text-xs text-muted-foreground">
-        {account.account_subtype || "—"}
-      </td>
-      <td className="text-xs text-muted-foreground">
-        {getNormalBalance(account.account_type)}
-      </td>
-      <td className="text-right">
-        <InlineOpeningBalance
-          accountId={account.id}
-          accountType={account.account_type}
-          accountSubtype={account.account_subtype}
-          currentBalance={displayBalance}
-          currentType={displayType}
-          normalBalance={getNormalBalance(account.account_type)}
-          isLocked={(account as any).is_locked || isPeriodClosed || false}
-        />
-      </td>
-      <td className="text-right">
-        <div className="flex items-center justify-end gap-1">
-          {canEdit && (
-            <>
-              <button onClick={() => onEdit(account)} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title="Edit">
-                <Edit2 className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => onToggleActive(account)}
-                className={`p-1 rounded hover:bg-muted ${account.is_active ? "text-muted-foreground hover:text-destructive" : "text-success hover:text-success"}`}
-                title={account.is_active ? "Deactivate" : "Activate"}
-              >
-                <Power className="w-3.5 h-3.5" />
-              </button>
-              {!(account as any).is_system && (
-                <button onClick={() => onDelete(account)} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-destructive" title="Delete">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <tr className={`hover:bg-muted/20 transition-colors ${!account.is_active ? "opacity-50" : ""}`}>
+          <td className="pl-4">
+            <span className="font-mono text-xs text-muted-foreground">{account.account_code}</span>
+          </td>
+          <td>
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-sm text-foreground/80">{account.account_name}</span>
+              {!account.is_active && (
+                <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">Inactive</span>
               )}
-            </>
-          )}
-        </div>
-      </td>
-    </tr>
+            </div>
+          </td>
+          <td>
+            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${typeColors[account.account_type] || "bg-muted text-muted-foreground"}`}>
+              {getTypeLabel(account.account_type)}
+            </span>
+          </td>
+          <td className="text-xs text-muted-foreground">
+            {account.account_categories?.name || "—"}
+          </td>
+          <td className="text-xs text-muted-foreground">
+            {account.account_subtype || "—"}
+          </td>
+          <td className="text-xs text-muted-foreground">
+            {getNormalBalance(account.account_type)}
+          </td>
+          <td className="text-right">
+            <InlineOpeningBalance
+              accountId={account.id}
+              accountType={account.account_type}
+              accountSubtype={account.account_subtype}
+              currentBalance={displayBalance}
+              currentType={displayType}
+              normalBalance={getNormalBalance(account.account_type)}
+              isLocked={(account as any).is_locked || isPeriodClosed || false}
+            />
+          </td>
+          <td className="text-right">
+            <div className="flex items-center justify-end gap-1">
+              {canEdit && (
+                <>
+                  <button onClick={() => onEdit(account)} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title="Edit">
+                    <Edit2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => onToggleActive(account)}
+                    className={`p-1 rounded hover:bg-muted ${account.is_active ? "text-muted-foreground hover:text-destructive" : "text-success hover:text-success"}`}
+                    title={account.is_active ? "Deactivate" : "Activate"}
+                  >
+                    <Power className="w-3.5 h-3.5" />
+                  </button>
+                  {!(account as any).is_system && (
+                    <button onClick={() => onDelete(account)} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-destructive" title="Delete">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </td>
+        </tr>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="w-48">
+        <ContextMenuItem onClick={() => onGenerateReport(account)}>
+          <FileText className="w-4 h-4 mr-2" /> Generate Report
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={() => onEdit(account)}>
+          <Edit2 className="w-4 h-4 mr-2" /> Edit Account
+        </ContextMenuItem>
+        {!(account as any).is_system && (
+          <ContextMenuItem onClick={() => onDelete(account)} className="text-destructive focus:text-destructive">
+            <Trash2 className="w-4 h-4 mr-2" /> Delete Account
+          </ContextMenuItem>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -276,6 +325,7 @@ function TypeSection({
   onEdit,
   onToggleActive,
   onDelete,
+  onGenerateReport,
   periodOBMap,
   isPeriodClosed,
   canEdit,
@@ -284,6 +334,7 @@ function TypeSection({
   onEdit: (a: Account) => void;
   onToggleActive: (a: Account) => void;
   onDelete: (a: Account) => void;
+  onGenerateReport: (a: Account) => void;
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
   canEdit?: boolean;
@@ -320,6 +371,7 @@ function TypeSection({
           onEdit={onEdit}
           onToggleActive={onToggleActive}
           onDelete={onDelete}
+          onGenerateReport={onGenerateReport}
           periodOBMap={periodOBMap}
           isPeriodClosed={isPeriodClosed}
           canEdit={canEdit}
@@ -340,6 +392,7 @@ function TypeSection({
               onEdit={onEdit}
               onToggleActive={onToggleActive}
               onDelete={onDelete}
+              onGenerateReport={onGenerateReport}
               periodOBMap={periodOBMap}
               isPeriodClosed={isPeriodClosed}
               canEdit={canEdit}
@@ -357,6 +410,7 @@ function CategorySection({
   onEdit,
   onToggleActive,
   onDelete,
+  onGenerateReport,
   periodOBMap,
   isPeriodClosed,
   canEdit,
@@ -366,6 +420,7 @@ function CategorySection({
   onEdit: (a: Account) => void;
   onToggleActive: (a: Account) => void;
   onDelete: (a: Account) => void;
+  onGenerateReport: (a: Account) => void;
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
   canEdit?: boolean;
@@ -395,6 +450,7 @@ function CategorySection({
           onEdit={onEdit}
           onToggleActive={onToggleActive}
           onDelete={onDelete}
+          onGenerateReport={onGenerateReport}
           periodOBMap={periodOBMap}
           isPeriodClosed={isPeriodClosed}
           canEdit={canEdit}
@@ -405,6 +461,7 @@ function CategorySection({
 }
 
 export default function ChartOfAccounts() {
+  const navigate = useNavigate();
   const { appUser } = useAuth();
   const { canEdit: canEditAccounts } = useMyPermissions();
   const [formOpen, setFormOpen] = useState(false);
@@ -671,6 +728,7 @@ export default function ChartOfAccounts() {
                   onEdit={(a) => setEditAccount(a)}
                   onToggleActive={handleToggleActive}
                   onDelete={(a) => setDeleteAccount(a)}
+                  onGenerateReport={(a) => navigate(`/accounting/accounts/${a.id}/report`)}
                   periodOBMap={periodOBMap}
                   isPeriodClosed={isPeriodClosed}
                   canEdit={hasEditPermission}
@@ -703,6 +761,7 @@ export default function ChartOfAccounts() {
                     onEdit={(a) => setEditAccount(a)}
                     onToggleActive={handleToggleActive}
                     onDelete={(a) => setDeleteAccount(a)}
+                    onGenerateReport={(a) => navigate(`/accounting/accounts/${a.id}/report`)}
                     periodOBMap={periodOBMap}
                     isPeriodClosed={isPeriodClosed}
                     canEdit={hasEditPermission}
