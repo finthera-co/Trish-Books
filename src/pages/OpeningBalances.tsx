@@ -1,6 +1,7 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Plus, Trash2, Save, AlertTriangle, CheckCircle2, Lock, Calendar, Shield, FileCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import CreateLedgerModal from "@/components/opening-balances/CreateLedgerModal";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useActiveAccounts } from "@/hooks/useData";
@@ -78,6 +79,35 @@ export default function OpeningBalances() {
   const [lines, setLines] = useState<BalanceLine[]>([newLine(), newLine()]);
   const [entryDate, setEntryDate] = useState(() => obDate || new Date().toISOString().slice(0, 10));
   const [description, setDescription] = useState("Opening Balance Entry");
+  const [showCreateLedger, setShowCreateLedger] = useState(false);
+  const [createLedgerLineId, setCreateLedgerLineId] = useState<string | null>(null);
+
+  const handleLedgerCreated = useCallback((accountId: string, openingBalance?: number, balanceType?: "debit" | "credit") => {
+    if (createLedgerLineId) {
+      // Update the line that triggered the create
+      setLines((prev) => prev.map((l) => {
+        if (l.id !== createLedgerLineId) return l;
+        return {
+          ...l,
+          account_id: accountId,
+          debit: balanceType === "debit" && openingBalance ? openingBalance : 0,
+          credit: balanceType === "credit" && openingBalance ? openingBalance : 0,
+        };
+      }));
+    } else {
+      // Add a new line with the created account
+      setLines((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          account_id: accountId,
+          debit: balanceType === "debit" && openingBalance ? openingBalance : 0,
+          credit: balanceType === "credit" && openingBalance ? openingBalance : 0,
+        },
+      ]);
+    }
+    setCreateLedgerLineId(null);
+  }, [createLedgerLineId]);
 
   // When period balances load, populate lines
   useEffect(() => {
@@ -400,16 +430,26 @@ export default function OpeningBalances() {
                         {isPeriodClosed ? (
                           <span className="text-foreground">{acct ? `${acct.account_code} — ${acct.account_name}` : "—"}</span>
                         ) : (
-                          <select
-                            value={line.account_id}
-                            onChange={(e) => updateLine(line.id, "account_id", e.target.value)}
-                            className="w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
-                          >
-                            <option value="">Select account…</option>
-                            {selectableAccounts.map((a: any) => (
-                              <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>
-                            ))}
-                          </select>
+                          <div className="flex gap-1">
+                            <select
+                              value={line.account_id}
+                              onChange={(e) => {
+                                if (e.target.value === "__create_new__") {
+                                  setCreateLedgerLineId(line.id);
+                                  setShowCreateLedger(true);
+                                } else {
+                                  updateLine(line.id, "account_id", e.target.value);
+                                }
+                              }}
+                              className="w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
+                            >
+                              <option value="">Select account…</option>
+                              <option value="__create_new__" className="font-medium text-primary">＋ Create New Ledger</option>
+                              {selectableAccounts.map((a: any) => (
+                                <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>
+                              ))}
+                            </select>
+                          </div>
                         )}
                         {isWrongSide && (
                           <p className="text-[10px] text-warning mt-0.5">⚠ Opposite to normal {normal} balance</p>
@@ -494,6 +534,12 @@ export default function OpeningBalances() {
           </div>
         </CardContent>
       </Card>
+
+      <CreateLedgerModal
+        open={showCreateLedger}
+        onOpenChange={(v) => { setShowCreateLedger(v); if (!v) setCreateLedgerLineId(null); }}
+        onCreated={handleLedgerCreated}
+      />
     </div>
   );
 }
