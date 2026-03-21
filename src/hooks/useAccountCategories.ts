@@ -115,7 +115,7 @@ const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   { account_code: "3010", account_name: "Owner Capital", account_type: "Equity", account_subtype: "Owner's Equity", category_name: "Owner's Equity" },
   { account_code: "3020", account_name: "Retained Earnings", account_type: "Equity", account_subtype: "Retained Earnings", category_name: "Retained Earnings" },
   { account_code: "3030", account_name: "Dividends Paid", account_type: "Equity", account_subtype: "Dividends", category_name: "Owner's Equity" },
-  { account_code: "3050", account_name: "Opening Balance Equity", account_type: "Equity", account_subtype: "Opening Balance Equity", category_name: "Owner's Equity" },
+  { account_code: "3900", account_name: "Opening Balance Equity", account_type: "Equity", account_subtype: "Opening Balance Equity", category_name: "Owner's Equity" },
   // ─── Income ────────────────────────────────────────────────
   { account_code: "4010", account_name: "Sales Revenue", account_type: "Income", account_subtype: "Sales Revenue", category_name: "Sales Revenue" },
   { account_code: "4020", account_name: "Service Revenue", account_type: "Income", account_subtype: "Service Revenue", category_name: "Service Revenue" },
