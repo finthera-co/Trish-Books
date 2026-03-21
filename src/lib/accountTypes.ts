@@ -73,6 +73,23 @@ export function getTypeLabel(accountType: string): string {
   return typeShortLabels[accountType] || accountType;
 }
 
+export interface AccountIdentity {
+  account_code?: string | null;
+  account_name?: string | null;
+  account_subtype?: string | null;
+  is_system?: boolean | null;
+}
+
+export function isOpeningBalanceEquityAccount(account?: AccountIdentity | null): boolean {
+  if (!account) return false;
+
+  const code = account.account_code?.trim();
+  const name = account.account_name?.trim().toLowerCase();
+  const subtype = account.account_subtype?.trim().toLowerCase();
+
+  return code === "3900" || name === "opening balance equity" || subtype === "opening balance equity";
+}
+
 // QuickBooks-style detail types (subtypes) per account type
 export const ACCOUNT_SUBTYPES: Record<string, string[]> = {
   Asset: [

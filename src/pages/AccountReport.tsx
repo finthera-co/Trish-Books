@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { formatCurrency } from "@/lib/currency";
-import { isDebitNormal, getNormalBalance, getTypeLabel, getStatementPlacement, typeColors } from "@/lib/accountTypes";
+import { isDebitNormal, getNormalBalance, getTypeLabel, getStatementPlacement, isOpeningBalanceEquityAccount, typeColors } from "@/lib/accountTypes";
 import EditTransactionModal from "@/components/account-report/EditTransactionModal";
 
 interface TransactionRow {
@@ -67,6 +67,7 @@ export default function AccountReport() {
     () => (accounts || []).find((a: any) => a.id === accountId) as any,
     [accounts, accountId]
   );
+  const isOBEAccount = useMemo(() => isOpeningBalanceEquityAccount(account), [account]);
 
   // Find matching fiscal period for opening balance
   const matchingPeriod = useMemo(() => {
@@ -96,17 +97,32 @@ export default function AccountReport() {
     if (!account || !journalEntries) return { rows: [], openingBalance: 0, totalDebit: 0, totalCredit: 0, closingBalance: 0 };
 
     const debitNormal = isDebitNormal(account.account_type);
+    const postedEntries = (journalEntries as any[]).filter(
+      (entry: any) => entry.status === "posted" && !entry.voided_at
+    );
 
     // Opening balance from fiscal period or account
     const ob = matchingPeriod && openingBalances
       ? openingBalances.find((o: any) => o.account_id === account.id && o.fiscal_period_id === matchingPeriod.id)
       : null;
-    const opening = ob ? Number((ob as any).balance) : Number(account.opening_balance) || 0;
+    const historicalOpening = postedEntries
+      .filter((entry: any) => entry.entry_date < dateFrom)
+      .flatMap((entry: any) => ((entry.journal_lines as any[]) || []).filter((line: any) => line.account_id === account.id))
+      .reduce((sum: number, line: any) => {
+        const debit = Number(line.debit) || 0;
+        const credit = Number(line.credit) || 0;
+        return sum + (debitNormal ? debit - credit : credit - debit);
+      }, 0);
 
-    const txRows: TransactionRow[] = journalEntries
+    const opening = isOBEAccount
+      ? historicalOpening
+      : ob
+        ? Number((ob as any).balance)
+        : Number(account.opening_balance) || 0;
+
+    const txRows: TransactionRow[] = postedEntries
       .filter((entry: any) => {
-        if (entry.status !== "posted" || entry.voided_at) return false;
-        if (entry.entry_type === "opening_balance") return false; // already represented by the opening balance header row
+        if (!isOBEAccount && entry.entry_type === "opening_balance") return false; // already represented by the opening balance header row for regular accounts
         if (entry.entry_date < dateFrom || entry.entry_date > dateTo) return false;
         return true;
       })
@@ -171,7 +187,7 @@ export default function AccountReport() {
       totalCredit: tCredit,
       closingBalance: bal,
     };
-  }, [account, journalEntries, dateFrom, dateTo, search, typeFilter, matchingPeriod, openingBalances, accounts]);
+  }, [account, journalEntries, dateFrom, dateTo, search, typeFilter, matchingPeriod, openingBalances, accounts, isOBEAccount]);
 
   const entryTypes = useMemo(() => {
     if (!journalEntries) return [];
