@@ -432,6 +432,7 @@ function CategorySection({
           onEdit={onEdit}
           onToggleActive={onToggleActive}
           onDelete={onDelete}
+          onGenerateReport={onGenerateReport}
           periodOBMap={periodOBMap}
           isPeriodClosed={isPeriodClosed}
           canEdit={canEdit}
