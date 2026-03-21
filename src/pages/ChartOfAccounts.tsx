@@ -71,33 +71,19 @@ interface TypeGroup {
   uncategorized: Account[];
 }
 
-// Recursively aggregate opening balances for a parent from its children
-function getAggregatedBalance(
+function getAccountDisplayBalance(
   account: Account,
   periodOBMap?: Map<string, { debit: number; credit: number }>
 ): { balance: number; type: string } {
-  const ownOB = periodOBMap?.get(account.id);
-  const ownBalance = ownOB
-    ? (ownOB.debit > ownOB.credit ? ownOB.debit - ownOB.credit : ownOB.credit - ownOB.debit)
-    : (account as any).opening_balance ?? 0;
-  const ownType = ownOB
-    ? (ownOB.debit >= ownOB.credit ? "debit" : "credit")
-    : (account as any).opening_balance_type ?? "debit";
-
-  if (!account.children || account.children.length === 0) {
-    return { balance: ownBalance, type: ownType };
-  }
-
-  // Sum own + all descendants using signed amounts (debit positive, credit negative)
-  let totalSigned = ownType === "debit" ? ownBalance : -ownBalance;
-  for (const child of account.children) {
-    const childAgg = getAggregatedBalance(child, periodOBMap);
-    totalSigned += childAgg.type === "debit" ? childAgg.balance : -childAgg.balance;
-  }
+  const periodOB = periodOBMap?.get(account.id);
 
   return {
-    balance: Math.abs(totalSigned),
-    type: totalSigned >= 0 ? "debit" : "credit",
+    balance: periodOB
+      ? (periodOB.debit > periodOB.credit ? periodOB.debit - periodOB.credit : periodOB.credit - periodOB.debit)
+      : (account as any).opening_balance ?? 0,
+    type: periodOB
+      ? (periodOB.debit >= periodOB.credit ? "debit" : "credit")
+      : (account as any).opening_balance_type ?? "debit",
   };
 }
 
@@ -124,21 +110,7 @@ function AccountRow({
 }) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = account.children && account.children.length > 0;
-
-  // For parent accounts, aggregate children balances; for leaf accounts, show own balance
-  const { balance: displayBalance, type: displayType } = hasChildren
-    ? getAggregatedBalance(account, periodOBMap)
-    : (() => {
-        const periodOB = periodOBMap?.get(account.id);
-        return {
-          balance: periodOB
-            ? (periodOB.debit > periodOB.credit ? periodOB.debit - periodOB.credit : periodOB.credit - periodOB.debit)
-            : (account as any).opening_balance ?? 0,
-          type: periodOB
-            ? (periodOB.debit >= periodOB.credit ? "debit" : "credit")
-            : (account as any).opening_balance_type ?? "debit",
-        };
-      })();
+  const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap);
 
   return (
     <>
