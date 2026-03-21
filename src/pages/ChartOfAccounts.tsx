@@ -710,6 +710,7 @@ export default function ChartOfAccounts() {
                   onEdit={(a) => setEditAccount(a)}
                   onToggleActive={handleToggleActive}
                   onDelete={(a) => setDeleteAccount(a)}
+                  onGenerateReport={(a) => navigate(`/accounting/accounts/${a.id}/report`)}
                   periodOBMap={periodOBMap}
                   isPeriodClosed={isPeriodClosed}
                   canEdit={hasEditPermission}
