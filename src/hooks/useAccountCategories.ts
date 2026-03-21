@@ -190,6 +190,7 @@ export function useSeedDefaultAccounts() {
         account_subtype: a.account_subtype,
         category_id: catMap.get(a.category_name) || null,
         tenant_id: tenantId,
+        is_system: a.account_name === "Opening Balance Equity",
       }));
 
       const { error: accErr } = await supabase.from("accounts").insert(accountRows);
