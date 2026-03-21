@@ -534,6 +534,12 @@ export default function OpeningBalances() {
           </div>
         </CardContent>
       </Card>
+
+      <CreateLedgerModal
+        open={showCreateLedger}
+        onOpenChange={(v) => { setShowCreateLedger(v); if (!v) setCreateLedgerLineId(null); }}
+        onCreated={handleLedgerCreated}
+      />
     </div>
   );
 }
