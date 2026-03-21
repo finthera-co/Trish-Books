@@ -106,6 +106,7 @@ export default function AccountReport() {
     const txRows: TransactionRow[] = journalEntries
       .filter((entry: any) => {
         if (entry.status !== "posted" || entry.voided_at) return false;
+        if (entry.entry_type === "opening_balance") return false; // already represented by the opening balance header row
         if (entry.entry_date < dateFrom || entry.entry_date > dateTo) return false;
         return true;
       })
