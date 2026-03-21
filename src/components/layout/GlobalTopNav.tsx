@@ -26,9 +26,9 @@ export default function GlobalTopNav() {
       <div className="flex items-center gap-5">
         <button onClick={() => navigate("/")} className="flex items-center gap-2.5 shrink-0 group">
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shadow-sm transition-transform duration-200 group-hover:scale-105">
-            <span className="text-xs font-bold text-primary-foreground">AB</span>
+            <span className="text-xs font-bold text-primary-foreground">FT</span>
           </div>
-          <span className="text-sm font-bold text-foreground hidden sm:inline tracking-tight">AccuBooks</span>
+          <span className="text-sm font-bold text-foreground hidden sm:inline tracking-tight">Finthera</span>
         </button>
 
         <div className="hidden sm:flex items-center gap-2 bg-muted/60 border border-border rounded-lg px-3.5 py-2 w-72 transition-all duration-200 focus-within:border-primary/40 focus-within:shadow-sm focus-within:bg-card">
