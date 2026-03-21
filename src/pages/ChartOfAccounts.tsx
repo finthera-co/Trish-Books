@@ -495,6 +495,15 @@ export default function ChartOfAccounts() {
     }
   }, [periods, selectedPeriodId]);
 
+  // Auto-seed default COA if tenant has no accounts
+  const [autoSeeded, setAutoSeeded] = useState(false);
+  useEffect(() => {
+    if (!isLoading && accounts && (accounts as Account[]).length === 0 && !autoSeeded && !seedDefaults.isPending) {
+      setAutoSeeded(true);
+      seedDefaults.mutate();
+    }
+  }, [isLoading, accounts, autoSeeded, seedDefaults]);
+
   const selectedPeriod = periods?.find((p: any) => p.id === selectedPeriodId) as any;
   const isPeriodClosed = selectedPeriod?.status === "closed";
 

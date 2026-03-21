@@ -10,6 +10,7 @@ interface Account {
   account_name: string;
   account_type: string;
   is_active: boolean;
+  is_system?: boolean;
 }
 
 interface DeleteAccountDialogProps {
@@ -38,6 +39,25 @@ export default function DeleteAccountDialog({ open, onOpenChange, account, allAc
   }, [open, account]);
 
   if (!account) return null;
+
+  // Block deletion of system accounts (e.g. Opening Balance Equity)
+  if (account.is_system) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cannot Delete System Account</DialogTitle>
+            <DialogDescription>
+              <strong>{account.account_name}</strong> is a system account required for core accounting functionality and cannot be deleted.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   const eligibleAccounts = allAccounts.filter(a =>
     a.id !== account.id && a.account_type === account.account_type && a.is_active
