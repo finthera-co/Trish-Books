@@ -443,6 +443,7 @@ function CategorySection({
 }
 
 export default function ChartOfAccounts() {
+  const navigate = useNavigate();
   const { appUser } = useAuth();
   const { canEdit: canEditAccounts } = useMyPermissions();
   const [formOpen, setFormOpen] = useState(false);
