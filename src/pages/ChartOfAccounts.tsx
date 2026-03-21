@@ -238,67 +238,85 @@ function FlatAccountRow({
     : (account as any).opening_balance_type ?? "debit";
 
   return (
-    <tr className={`hover:bg-muted/20 transition-colors ${!account.is_active ? "opacity-50" : ""}`}>
-      <td className="pl-4">
-        <span className="font-mono text-xs text-muted-foreground">{account.account_code}</span>
-      </td>
-      <td>
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-sm text-foreground/80">{account.account_name}</span>
-          {!account.is_active && (
-            <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">Inactive</span>
-          )}
-        </div>
-      </td>
-      <td>
-        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${typeColors[account.account_type] || "bg-muted text-muted-foreground"}`}>
-          {getTypeLabel(account.account_type)}
-        </span>
-      </td>
-      <td className="text-xs text-muted-foreground">
-        {account.account_categories?.name || "—"}
-      </td>
-      <td className="text-xs text-muted-foreground">
-        {account.account_subtype || "—"}
-      </td>
-      <td className="text-xs text-muted-foreground">
-        {getNormalBalance(account.account_type)}
-      </td>
-      <td className="text-right">
-        <InlineOpeningBalance
-          accountId={account.id}
-          accountType={account.account_type}
-          accountSubtype={account.account_subtype}
-          currentBalance={displayBalance}
-          currentType={displayType}
-          normalBalance={getNormalBalance(account.account_type)}
-          isLocked={(account as any).is_locked || isPeriodClosed || false}
-        />
-      </td>
-      <td className="text-right">
-        <div className="flex items-center justify-end gap-1">
-          {canEdit && (
-            <>
-              <button onClick={() => onEdit(account)} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title="Edit">
-                <Edit2 className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => onToggleActive(account)}
-                className={`p-1 rounded hover:bg-muted ${account.is_active ? "text-muted-foreground hover:text-destructive" : "text-success hover:text-success"}`}
-                title={account.is_active ? "Deactivate" : "Activate"}
-              >
-                <Power className="w-3.5 h-3.5" />
-              </button>
-              {!(account as any).is_system && (
-                <button onClick={() => onDelete(account)} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-destructive" title="Delete">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <tr className={`hover:bg-muted/20 transition-colors ${!account.is_active ? "opacity-50" : ""}`}>
+          <td className="pl-4">
+            <span className="font-mono text-xs text-muted-foreground">{account.account_code}</span>
+          </td>
+          <td>
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-sm text-foreground/80">{account.account_name}</span>
+              {!account.is_active && (
+                <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">Inactive</span>
               )}
-            </>
-          )}
-        </div>
-      </td>
-    </tr>
+            </div>
+          </td>
+          <td>
+            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${typeColors[account.account_type] || "bg-muted text-muted-foreground"}`}>
+              {getTypeLabel(account.account_type)}
+            </span>
+          </td>
+          <td className="text-xs text-muted-foreground">
+            {account.account_categories?.name || "—"}
+          </td>
+          <td className="text-xs text-muted-foreground">
+            {account.account_subtype || "—"}
+          </td>
+          <td className="text-xs text-muted-foreground">
+            {getNormalBalance(account.account_type)}
+          </td>
+          <td className="text-right">
+            <InlineOpeningBalance
+              accountId={account.id}
+              accountType={account.account_type}
+              accountSubtype={account.account_subtype}
+              currentBalance={displayBalance}
+              currentType={displayType}
+              normalBalance={getNormalBalance(account.account_type)}
+              isLocked={(account as any).is_locked || isPeriodClosed || false}
+            />
+          </td>
+          <td className="text-right">
+            <div className="flex items-center justify-end gap-1">
+              {canEdit && (
+                <>
+                  <button onClick={() => onEdit(account)} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title="Edit">
+                    <Edit2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => onToggleActive(account)}
+                    className={`p-1 rounded hover:bg-muted ${account.is_active ? "text-muted-foreground hover:text-destructive" : "text-success hover:text-success"}`}
+                    title={account.is_active ? "Deactivate" : "Activate"}
+                  >
+                    <Power className="w-3.5 h-3.5" />
+                  </button>
+                  {!(account as any).is_system && (
+                    <button onClick={() => onDelete(account)} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-destructive" title="Delete">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </td>
+        </tr>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="w-48">
+        <ContextMenuItem onClick={() => onGenerateReport(account)}>
+          <FileText className="w-4 h-4 mr-2" /> Generate Report
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={() => onEdit(account)}>
+          <Edit2 className="w-4 h-4 mr-2" /> Edit Account
+        </ContextMenuItem>
+        {!(account as any).is_system && (
+          <ContextMenuItem onClick={() => onDelete(account)} className="text-destructive focus:text-destructive">
+            <Trash2 className="w-4 h-4 mr-2" /> Delete Account
+          </ContextMenuItem>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
