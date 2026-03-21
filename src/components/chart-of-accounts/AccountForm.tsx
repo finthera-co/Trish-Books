@@ -83,6 +83,14 @@ export default function AccountForm({
     setNewCategoryName("");
   }, [editAccount, open]);
 
+  // Auto-generate account code when type or parent changes (only for new accounts)
+  useEffect(() => {
+    if (editAccount) return; // Don't auto-generate for edits
+    if (!open) return;
+    const code = generateAccountCode(accountType, parentId || null, accounts);
+    setAccountCode(code);
+  }, [accountType, parentId, accounts, editAccount, open]);
+
   const filteredCategories = categories.filter(c => c.account_type === accountType);
   const subtypes = ACCOUNT_SUBTYPES[accountType] || [];
   const numberRange = ACCOUNT_NUMBER_RANGES[accountType];
