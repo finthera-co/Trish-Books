@@ -513,9 +513,14 @@ export default function OpeningBalances() {
                 <tr className="border-t-2 border-foreground/20">
                   <td className="px-4 py-3">
                     {!isPeriodClosed && (
-                      <Button variant="ghost" size="sm" onClick={() => setLines((p) => [...p, newLine()])}>
-                        <Plus className="w-4 h-4 mr-1" /> Add Line
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => setLines((p) => [...p, newLine()])}>
+                          <Plus className="w-4 h-4 mr-1" /> Add Line
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => { setCreateLedgerLineId(null); setShowCreateLedger(true); }}>
+                          <Plus className="w-4 h-4 mr-1" /> Create New Ledger
+                        </Button>
+                      </div>
                     )}
                   </td>
                   <td className="px-4 py-3 text-right font-semibold text-sm">{formatCurrency(totalDebits)}</td>
