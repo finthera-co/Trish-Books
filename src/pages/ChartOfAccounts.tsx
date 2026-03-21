@@ -6,6 +6,7 @@ import { useAccounts, useCreateAccount, useUpdateAccount } from "@/hooks/useData
 import { useAccountCategories, useCreateAccountCategory, useSeedDefaultAccounts } from "@/hooks/useAccountCategories";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMyPermissions } from "@/hooks/usePermissions";
+import { useOBEBalance } from "@/hooks/useOpeningBalanceEquity";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -29,6 +30,7 @@ import {
   getTypeLabel,
   getNormalBalance,
   getStatementPlacement,
+  isOpeningBalanceEquityAccount,
 } from "@/lib/accountTypes";
 
 interface Account {
@@ -40,6 +42,8 @@ interface Account {
   parent_account_id: string | null;
   category_id: string | null;
   is_active: boolean;
+  opening_balance?: number;
+  opening_balance_type?: string;
   account_categories?: { name: string } | null;
   children?: Account[];
 }
@@ -482,6 +486,7 @@ export default function ChartOfAccounts() {
   const [viewMode, setViewMode] = useState<"quickbooks" | "classic">("quickbooks");
 
   const { data: accounts, isLoading } = useAccounts();
+  const { data: obeBalanceData } = useOBEBalance();
   const { data: categories } = useAccountCategories();
   const createAccount = useCreateAccount();
   const updateAccount = useUpdateAccount();
@@ -515,6 +520,13 @@ export default function ChartOfAccounts() {
 
   const selectedPeriod = periods?.find((p: any) => p.id === selectedPeriodId) as any;
   const isPeriodClosed = selectedPeriod?.status === "closed";
+  const obeDisplay = useMemo(
+    () => ({
+      balance: Number(obeBalanceData?.balance) || 0,
+      type: obeBalanceData?.type === "debit" ? "debit" : "credit",
+    }),
+    [obeBalanceData]
+  );
 
   const periodOBMap = useMemo(() => {
     const map = new Map<string, { debit: number; credit: number }>();
@@ -524,9 +536,20 @@ export default function ChartOfAccounts() {
     return map;
   }, [periodBalances]);
 
+  const displayAccounts = useMemo(() => {
+    return ((accounts as Account[] | undefined) || []).map((account) =>
+      isOpeningBalanceEquityAccount(account)
+        ? {
+            ...account,
+            opening_balance: obeDisplay.balance,
+            opening_balance_type: obeDisplay.type,
+          }
+        : account
+    );
+  }, [accounts, obeDisplay]);
+
   const filteredAccounts = useMemo(() => {
-    if (!accounts) return [];
-    return (accounts as Account[]).filter(a => {
+    return displayAccounts.filter(a => {
       if (!showInactive && !a.is_active) return false;
       if (filterType !== "all" && a.account_type !== filterType) return false;
       if (search) {
@@ -537,7 +560,7 @@ export default function ChartOfAccounts() {
       }
       return true;
     });
-  }, [accounts, search, filterType, showInactive]);
+  }, [displayAccounts, search, filterType, showInactive]);
 
   // Build Type → Category → Account hierarchy
   const typeGroups = useMemo((): TypeGroup[] => {
@@ -560,11 +583,11 @@ export default function ChartOfAccounts() {
 
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    (accounts as Account[] | undefined)?.forEach(a => {
+    displayAccounts.forEach(a => {
       if (a.is_active || showInactive) counts[a.account_type] = (counts[a.account_type] || 0) + 1;
     });
     return counts;
-  }, [accounts, showInactive]);
+  }, [displayAccounts, showInactive]);
 
   // All account codes for uniqueness validation
   const existingCodes = useMemo(() => {
