@@ -112,7 +112,7 @@ export default function Login() {
 
         {/* Footer */}
         <div className="px-8 pb-8">
-          <p className="text-xs text-muted-foreground">AccuBooks {new Date().getFullYear()}</p>
+          <p className="text-xs text-muted-foreground">Finthera {new Date().getFullYear()}</p>
         </div>
       </div>
 
