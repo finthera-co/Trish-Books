@@ -36,7 +36,7 @@ export default function Login() {
             <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow-sm">
               <BookOpen className="w-4.5 h-4.5 text-primary-foreground" />
             </div>
-            <span className="text-lg font-bold text-foreground tracking-tight">AccuBooks</span>
+            <span className="text-lg font-bold text-foreground tracking-tight">Finthera</span>
           </div>
         </div>
 
