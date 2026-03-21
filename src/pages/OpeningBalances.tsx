@@ -79,6 +79,35 @@ export default function OpeningBalances() {
   const [lines, setLines] = useState<BalanceLine[]>([newLine(), newLine()]);
   const [entryDate, setEntryDate] = useState(() => obDate || new Date().toISOString().slice(0, 10));
   const [description, setDescription] = useState("Opening Balance Entry");
+  const [showCreateLedger, setShowCreateLedger] = useState(false);
+  const [createLedgerLineId, setCreateLedgerLineId] = useState<string | null>(null);
+
+  const handleLedgerCreated = useCallback((accountId: string, openingBalance?: number, balanceType?: "debit" | "credit") => {
+    if (createLedgerLineId) {
+      // Update the line that triggered the create
+      setLines((prev) => prev.map((l) => {
+        if (l.id !== createLedgerLineId) return l;
+        return {
+          ...l,
+          account_id: accountId,
+          debit: balanceType === "debit" && openingBalance ? openingBalance : 0,
+          credit: balanceType === "credit" && openingBalance ? openingBalance : 0,
+        };
+      }));
+    } else {
+      // Add a new line with the created account
+      setLines((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          account_id: accountId,
+          debit: balanceType === "debit" && openingBalance ? openingBalance : 0,
+          credit: balanceType === "credit" && openingBalance ? openingBalance : 0,
+        },
+      ]);
+    }
+    setCreateLedgerLineId(null);
+  }, [createLedgerLineId]);
 
   // When period balances load, populate lines
   useEffect(() => {
