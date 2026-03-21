@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { AccountCategory } from "@/hooks/useAccountCategories";
-import { Plus } from "lucide-react";
+import { Plus, Lock } from "lucide-react";
 import {
   ACCOUNT_TYPES,
   ACCOUNT_SUBTYPES,
@@ -10,6 +10,7 @@ import {
   getNormalBalance,
   getStatementPlacement,
 } from "@/lib/accountTypes";
+import { generateAccountCode } from "@/lib/accountCodeGenerator";
 
 interface Account {
   id: string;
@@ -81,6 +82,14 @@ export default function AccountForm({
     setShowNewCategory(false);
     setNewCategoryName("");
   }, [editAccount, open]);
+
+  // Auto-generate account code when type or parent changes (only for new accounts)
+  useEffect(() => {
+    if (editAccount) return; // Don't auto-generate for edits
+    if (!open) return;
+    const code = generateAccountCode(accountType, parentId || null, accounts);
+    setAccountCode(code);
+  }, [accountType, parentId, accounts, editAccount, open]);
 
   const filteredCategories = categories.filter(c => c.account_type === accountType);
   const subtypes = ACCOUNT_SUBTYPES[accountType] || [];
@@ -234,23 +243,26 @@ export default function AccountForm({
           <div className="grid grid-cols-2 gap-4">
             {/* Account Code */}
             <div>
-              <label className="text-sm font-medium">Account Number <span className="text-destructive">*</span></label>
+              <label className="text-sm font-medium flex items-center gap-1">
+                Account Number <span className="text-destructive">*</span>
+                <Lock className="w-3 h-3 text-muted-foreground" />
+              </label>
               <input
                 type="text"
                 value={accountCode}
-                onChange={(e) => setAccountCode(e.target.value)}
-                className={`${inputClass} ${isCodeDuplicate ? "!border-destructive !ring-destructive/20" : ""}`}
+                readOnly
+                className={`${inputClass} bg-muted/50 cursor-not-allowed ${isCodeDuplicate ? "!border-destructive !ring-destructive/20" : ""}`}
                 placeholder={numberRange ? `${numberRange.min}–${numberRange.max}` : ""}
               />
               {isCodeDuplicate ? (
                 <p className="text-[10px] text-destructive mt-1 font-medium">
                   This account number already exists
                 </p>
-              ) : numberRange ? (
+              ) : (
                 <p className="text-[10px] text-muted-foreground mt-1">
-                  Recommended: {numberRange.min}–{numberRange.max}
+                  Auto-generated
                 </p>
-              ) : null}
+              )}
             </div>
             {/* Account Name */}
             <div>
