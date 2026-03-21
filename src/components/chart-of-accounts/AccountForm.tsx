@@ -243,23 +243,26 @@ export default function AccountForm({
           <div className="grid grid-cols-2 gap-4">
             {/* Account Code */}
             <div>
-              <label className="text-sm font-medium">Account Number <span className="text-destructive">*</span></label>
+              <label className="text-sm font-medium flex items-center gap-1">
+                Account Number <span className="text-destructive">*</span>
+                <Lock className="w-3 h-3 text-muted-foreground" />
+              </label>
               <input
                 type="text"
                 value={accountCode}
-                onChange={(e) => setAccountCode(e.target.value)}
-                className={`${inputClass} ${isCodeDuplicate ? "!border-destructive !ring-destructive/20" : ""}`}
+                readOnly
+                className={`${inputClass} bg-muted/50 cursor-not-allowed ${isCodeDuplicate ? "!border-destructive !ring-destructive/20" : ""}`}
                 placeholder={numberRange ? `${numberRange.min}–${numberRange.max}` : ""}
               />
               {isCodeDuplicate ? (
                 <p className="text-[10px] text-destructive mt-1 font-medium">
                   This account number already exists
                 </p>
-              ) : numberRange ? (
+              ) : (
                 <p className="text-[10px] text-muted-foreground mt-1">
-                  Recommended: {numberRange.min}–{numberRange.max}
+                  Auto-generated
                 </p>
-              ) : null}
+              )}
             </div>
             {/* Account Name */}
             <div>
