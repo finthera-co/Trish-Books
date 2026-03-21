@@ -9,7 +9,6 @@ export function useEnsureOBEAccount() {
   return useMutation({
     mutationFn: async () => {
       if (!appUser?.tenant_id) throw new Error("No tenant");
-      // Check if OBE already exists
       const { data: existing } = await supabase
         .from("accounts")
         .select("id")
@@ -19,7 +18,6 @@ export function useEnsureOBEAccount() {
         .maybeSingle();
       if (existing) return existing.id;
 
-      // Create it
       const { data, error } = await supabase.from("accounts").insert({
         tenant_id: appUser.tenant_id,
         account_name: "Opening Balance Equity",
@@ -86,6 +84,7 @@ export function useOBEBalance() {
 export { useSystemSetting } from "@/hooks/useOpeningBalanceSettings";
 
 // Save opening balance journal entry with auto OBE balancing
+// QuickBooks-style: voids previous batch OB entries, creates fresh ones
 export function useSaveOpeningBalances() {
   const { appUser } = useAuth();
   const queryClient = useQueryClient();
@@ -106,6 +105,58 @@ export function useSaveOpeningBalances() {
         (l) => l.account_id && l.account_id !== obeAccountId && (l.debit > 0 || l.credit > 0)
       );
       if (userLines.length === 0) throw new Error("At least one account line is required");
+
+      // Void all previous batch OB entries (entry_type = 'opening_balance', reference starts with 'OB-')
+      // but NOT inline entries (which start with 'OB-INLINE-')
+      const { data: prevEntries } = await supabase
+        .from("journal_entries")
+        .select("id, reference")
+        .eq("tenant_id", appUser.tenant_id)
+        .eq("entry_type", "opening_balance")
+        .eq("status", "posted");
+
+      const batchEntries = (prevEntries || []).filter(
+        (e) => e.reference && e.reference.startsWith("OB-") && !e.reference.startsWith("OB-INLINE-")
+      );
+
+      for (const entry of batchEntries) {
+        await supabase
+          .from("journal_entries")
+          .update({
+            status: "voided",
+            void_reason: "Replaced by updated opening balance entry",
+            voided_by: appUser.id,
+            voided_at: new Date().toISOString(),
+          })
+          .eq("id", entry.id)
+          .eq("tenant_id", appUser.tenant_id);
+      }
+
+      // Also void any inline entries for accounts in this batch
+      // (batch entry supersedes inline entries for the same accounts)
+      const accountIds = userLines.map((l) => l.account_id);
+      for (const accountId of accountIds) {
+        const { data: inlineEntries } = await supabase
+          .from("journal_entries")
+          .select("id")
+          .eq("tenant_id", appUser.tenant_id)
+          .eq("entry_type", "opening_balance")
+          .eq("status", "posted")
+          .like("reference", `OB-INLINE-${accountId.substring(0, 8)}%`);
+
+        for (const entry of inlineEntries || []) {
+          await supabase
+            .from("journal_entries")
+            .update({
+              status: "voided",
+              void_reason: "Superseded by batch opening balance entry",
+              voided_by: appUser.id,
+              voided_at: new Date().toISOString(),
+            })
+            .eq("id", entry.id)
+            .eq("tenant_id", appUser.tenant_id);
+        }
+      }
 
       const totalDebits = userLines.reduce((s, l) => s + l.debit, 0);
       const totalCredits = userLines.reduce((s, l) => s + l.credit, 0);
@@ -186,6 +237,7 @@ export function useSaveOpeningBalances() {
       queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
       queryClient.invalidateQueries({ queryKey: ["obe_balance"] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["accounts_active"] });
       toast.success("Opening balances saved successfully");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -207,7 +259,6 @@ export function useCloseOBE() {
     }) => {
       if (!appUser?.tenant_id) throw new Error("No tenant");
 
-      // Check if already closed
       const { data: existing } = await supabase
         .from("system_settings")
         .select("setting_value")
@@ -218,7 +269,6 @@ export function useCloseOBE() {
         throw new Error("Opening Balance Equity has already been closed");
       }
 
-      // Create closing journal entry
       const { data: entry, error: entryErr } = await supabase
         .from("journal_entries")
         .insert({
@@ -235,8 +285,6 @@ export function useCloseOBE() {
         .single();
       if (entryErr) throw entryErr;
 
-      // If OBE has credit balance: Debit OBE, Credit target
-      // If OBE has debit balance: Debit target, Credit OBE
       const lines = params.balanceType === "credit"
         ? [
             { journal_entry_id: entry.id, account_id: params.obeAccountId, debit: params.balance, credit: 0 },
@@ -250,7 +298,6 @@ export function useCloseOBE() {
       const { error: linesErr } = await supabase.from("journal_lines").insert(lines);
       if (linesErr) throw linesErr;
 
-      // Set obe_closed flag
       await supabase.from("system_settings").upsert({
         tenant_id: appUser.tenant_id,
         setting_key: "obe_closed",
@@ -258,7 +305,6 @@ export function useCloseOBE() {
         updated_by: appUser.id,
       }, { onConflict: "tenant_id,setting_key" });
 
-      // Audit
       await supabase.from("audit_logs").insert({
         action: "OBE Closed",
         table_name: "journal_entries",
