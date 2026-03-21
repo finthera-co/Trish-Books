@@ -430,16 +430,26 @@ export default function OpeningBalances() {
                         {isPeriodClosed ? (
                           <span className="text-foreground">{acct ? `${acct.account_code} — ${acct.account_name}` : "—"}</span>
                         ) : (
-                          <select
-                            value={line.account_id}
-                            onChange={(e) => updateLine(line.id, "account_id", e.target.value)}
-                            className="w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
-                          >
-                            <option value="">Select account…</option>
-                            {selectableAccounts.map((a: any) => (
-                              <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>
-                            ))}
-                          </select>
+                          <div className="flex gap-1">
+                            <select
+                              value={line.account_id}
+                              onChange={(e) => {
+                                if (e.target.value === "__create_new__") {
+                                  setCreateLedgerLineId(line.id);
+                                  setShowCreateLedger(true);
+                                } else {
+                                  updateLine(line.id, "account_id", e.target.value);
+                                }
+                              }}
+                              className="w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
+                            >
+                              <option value="">Select account…</option>
+                              <option value="__create_new__" className="font-medium text-primary">＋ Create New Ledger</option>
+                              {selectableAccounts.map((a: any) => (
+                                <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>
+                              ))}
+                            </select>
+                          </div>
                         )}
                         {isWrongSide && (
                           <p className="text-[10px] text-warning mt-0.5">⚠ Opposite to normal {normal} balance</p>
