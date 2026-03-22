@@ -83,8 +83,50 @@ export function useOBEBalance() {
 // Re-export useSystemSetting from settings module for backward compatibility
 export { useSystemSetting } from "@/hooks/useOpeningBalanceSettings";
 
+// Generate next OBE batch ID
+async function getNextBatchId(tenantId: string): Promise<string> {
+  const { count } = await supabase
+    .from("journal_entries")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", tenantId)
+    .eq("entry_type", "opening_balance")
+    .not("obe_batch_id", "is", null);
+  
+  // Find the highest existing batch number
+  const { data: existing } = await supabase
+    .from("journal_entries")
+    .select("obe_batch_id")
+    .eq("tenant_id", tenantId)
+    .eq("entry_type", "opening_balance")
+    .not("obe_batch_id", "is", null)
+    .order("obe_batch_id", { ascending: false })
+    .limit(1);
+  
+  let nextNum = 1;
+  if (existing && existing.length > 0 && existing[0].obe_batch_id) {
+    const match = existing[0].obe_batch_id.match(/OBE-(\d+)/);
+    if (match) nextNum = parseInt(match[1], 10) + 1;
+  }
+  
+  return `OBE-${String(nextNum).padStart(4, "0")}`;
+}
+
+// Find the current active (posted) OBE batch entry
+async function findActiveBatchEntry(tenantId: string) {
+  const { data } = await supabase
+    .from("journal_entries")
+    .select("id, reference, obe_batch_id")
+    .eq("tenant_id", tenantId)
+    .eq("entry_type", "opening_balance")
+    .eq("status", "posted")
+    .not("obe_batch_id", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  return data && data.length > 0 ? data[0] : null;
+}
+
 // Save opening balance journal entry with auto OBE balancing
-// QuickBooks-style: voids previous batch OB entries, creates fresh ones
+// QuickBooks-style: EDIT-IN-PLACE if existing batch exists, otherwise create new
 export function useSaveOpeningBalances() {
   const { appUser } = useAuth();
   const queryClient = useQueryClient();
@@ -106,34 +148,7 @@ export function useSaveOpeningBalances() {
       );
       if (userLines.length === 0) throw new Error("At least one account line is required");
 
-      // Void all previous batch OB entries (entry_type = 'opening_balance', reference starts with 'OB-')
-      // but NOT inline entries (which start with 'OB-INLINE-')
-      const { data: prevEntries } = await supabase
-        .from("journal_entries")
-        .select("id, reference")
-        .eq("tenant_id", appUser.tenant_id)
-        .eq("entry_type", "opening_balance")
-        .eq("status", "posted");
-
-      const batchEntries = (prevEntries || []).filter(
-        (e) => e.reference && e.reference.startsWith("OB-") && !e.reference.startsWith("OB-INLINE-")
-      );
-
-      for (const entry of batchEntries) {
-        await supabase
-          .from("journal_entries")
-          .update({
-            status: "voided",
-            void_reason: "Replaced by updated opening balance entry",
-            voided_by: appUser.id,
-            voided_at: new Date().toISOString(),
-          })
-          .eq("id", entry.id)
-          .eq("tenant_id", appUser.tenant_id);
-      }
-
-      // Also void any inline entries for accounts in this batch
-      // (batch entry supersedes inline entries for the same accounts)
+      // Void any inline entries for accounts in this batch
       const accountIds = userLines.map((l) => l.account_id);
       for (const accountId of accountIds) {
         const { data: inlineEntries } = await supabase
@@ -172,40 +187,108 @@ export function useSaveOpeningBalances() {
         });
       }
 
-      // Generate reference
-      const { count } = await supabase
-        .from("journal_entries")
-        .select("id", { count: "exact", head: true })
-        .eq("tenant_id", appUser.tenant_id)
-        .eq("entry_type", "opening_balance");
-      const ref = `OB-${String((count || 0) + 1).padStart(4, "0")}`;
+      // EDIT-IN-PLACE: Check if there's an existing active batch entry
+      const existingBatch = await findActiveBatchEntry(appUser.tenant_id);
 
-      // Create journal entry
-      const { data: entry, error: entryErr } = await supabase
-        .from("journal_entries")
-        .insert({
+      let entryId: string;
+      let batchId: string;
+      let ref: string;
+
+      if (existingBatch) {
+        // UPDATE existing journal entry (edit-in-place)
+        entryId = existingBatch.id;
+        batchId = existingBatch.obe_batch_id!;
+        ref = existingBatch.reference!;
+
+        // Update header
+        await supabase
+          .from("journal_entries")
+          .update({
+            description: params.description || "Opening Balance Entry",
+            entry_date: params.entry_date,
+          })
+          .eq("id", entryId)
+          .eq("tenant_id", appUser.tenant_id);
+
+        // Delete existing lines and re-insert
+        await supabase
+          .from("journal_lines")
+          .delete()
+          .eq("journal_entry_id", entryId);
+
+        const lines = allLines.map((l) => ({
+          journal_entry_id: entryId,
+          account_id: l.account_id,
+          debit: l.debit,
+          credit: l.credit,
+        }));
+        const { error: linesErr } = await supabase.from("journal_lines").insert(lines);
+        if (linesErr) throw linesErr;
+
+        // Audit log for edit
+        await supabase.from("audit_logs").insert({
+          action: "Opening Balance Entry Updated (Edit-in-Place)",
+          table_name: "journal_entries",
+          record_id: entryId,
+          user_id: appUser.id,
           tenant_id: appUser.tenant_id,
-          description: params.description || "Opening Balance Entry",
-          entry_date: params.entry_date,
-          reference: ref,
-          status: "posted",
-          entry_type: "opening_balance",
-          is_system_generated: true,
-          created_by: appUser.id,
-        })
-        .select()
-        .single();
-      if (entryErr) throw entryErr;
+          details: { 
+            batch_id: batchId, 
+            reference: ref, 
+            total_debits: totalDebits, 
+            total_credits: totalCredits, 
+            obe_adjustment: difference 
+          },
+        });
+      } else {
+        // CREATE new batch entry
+        batchId = await getNextBatchId(appUser.tenant_id);
+        ref = `OB-${batchId.replace("OBE-", "")}`;
 
-      // Create journal lines
-      const lines = allLines.map((l) => ({
-        journal_entry_id: entry.id,
-        account_id: l.account_id,
-        debit: l.debit,
-        credit: l.credit,
-      }));
-      const { error: linesErr } = await supabase.from("journal_lines").insert(lines);
-      if (linesErr) throw linesErr;
+        const { data: entry, error: entryErr } = await supabase
+          .from("journal_entries")
+          .insert({
+            tenant_id: appUser.tenant_id,
+            description: params.description || "Opening Balance Entry",
+            entry_date: params.entry_date,
+            reference: ref,
+            status: "posted",
+            entry_type: "opening_balance",
+            is_system_generated: true,
+            created_by: appUser.id,
+            obe_batch_id: batchId,
+          })
+          .select()
+          .single();
+        if (entryErr) throw entryErr;
+        entryId = entry.id;
+
+        // Create journal lines
+        const lines = allLines.map((l) => ({
+          journal_entry_id: entryId,
+          account_id: l.account_id,
+          debit: l.debit,
+          credit: l.credit,
+        }));
+        const { error: linesErr } = await supabase.from("journal_lines").insert(lines);
+        if (linesErr) throw linesErr;
+
+        // Audit log for creation
+        await supabase.from("audit_logs").insert({
+          action: "Opening Balance Entry Created",
+          table_name: "journal_entries",
+          record_id: entryId,
+          user_id: appUser.id,
+          tenant_id: appUser.tenant_id,
+          details: { 
+            batch_id: batchId, 
+            reference: ref, 
+            total_debits: totalDebits, 
+            total_credits: totalCredits, 
+            obe_adjustment: difference 
+          },
+        });
+      }
 
       // Sync opening_balance fields on each user account so COA reflects amounts
       for (const l of userLines) {
@@ -221,17 +304,7 @@ export function useSaveOpeningBalances() {
           .eq("tenant_id", appUser.tenant_id);
       }
 
-      // Audit log
-      await supabase.from("audit_logs").insert({
-        action: "Opening Balance Entry Created",
-        table_name: "journal_entries",
-        record_id: entry.id,
-        user_id: appUser.id,
-        tenant_id: appUser.tenant_id,
-        details: { reference: ref, total_debits: totalDebits, total_credits: totalCredits, obe_adjustment: difference },
-      });
-
-      return entry;
+      return { id: entryId, batchId, reference: ref };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
@@ -239,6 +312,147 @@ export function useSaveOpeningBalances() {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["accounts_active"] });
       toast.success("Opening balances saved successfully");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// Cascade void an OBE journal entry — resets account balances and deletes orphan accounts
+export function useVoidOBEJournalEntry() {
+  const { appUser } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (journalEntryId: string) => {
+      if (!appUser?.tenant_id) throw new Error("No tenant");
+
+      // 1. Get the journal entry and its lines
+      const { data: entry, error: entryErr } = await supabase
+        .from("journal_entries")
+        .select("*, journal_lines(account_id, debit, credit)")
+        .eq("id", journalEntryId)
+        .eq("tenant_id", appUser.tenant_id)
+        .single();
+      if (entryErr) throw entryErr;
+      if (entry.status === "voided") throw new Error("Entry is already voided");
+      if (entry.entry_type !== "opening_balance") throw new Error("Only OBE entries can be cascade-voided");
+
+      const lines = (entry.journal_lines as any[]) || [];
+
+      // 2. Void the journal entry
+      const { error: voidErr } = await supabase
+        .from("journal_entries")
+        .update({
+          status: "voided",
+          void_reason: "OBE cascade void — all linked balances reset",
+          voided_by: appUser.id,
+          voided_at: new Date().toISOString(),
+        })
+        .eq("id", journalEntryId)
+        .eq("tenant_id", appUser.tenant_id);
+      if (voidErr) throw voidErr;
+
+      // 3. Get OBE account ID to skip it
+      const { data: obeAccount } = await supabase
+        .from("accounts")
+        .select("id")
+        .eq("tenant_id", appUser.tenant_id)
+        .eq("is_system", true)
+        .eq("account_name", "Opening Balance Equity")
+        .maybeSingle();
+      const obeAccountId = obeAccount?.id;
+
+      // 4. For each account line (excluding OBE), reset opening balance
+      const accountIds = lines
+        .map((l: any) => l.account_id)
+        .filter((id: string) => id !== obeAccountId);
+
+      for (const accountId of accountIds) {
+        // Reset opening balance on the account
+        await supabase
+          .from("accounts")
+          .update({
+            opening_balance: 0,
+            opening_balance_type: "debit",
+          })
+          .eq("id", accountId)
+          .eq("tenant_id", appUser.tenant_id);
+
+        // Delete opening_balances table entries for this account
+        await supabase
+          .from("opening_balances")
+          .delete()
+          .eq("account_id", accountId)
+          .eq("tenant_id", appUser.tenant_id);
+
+        // Delete opening_balance_details for this account
+        await supabase
+          .from("opening_balance_details")
+          .delete()
+          .eq("account_id", accountId)
+          .eq("tenant_id", appUser.tenant_id);
+      }
+
+      // 5. Delete orphan accounts/sub-accounts created from OBE (if no other dependencies)
+      for (const accountId of accountIds) {
+        const { data: account } = await supabase
+          .from("accounts")
+          .select("id, created_from")
+          .eq("id", accountId)
+          .eq("tenant_id", appUser.tenant_id)
+          .maybeSingle();
+        
+        if (account?.created_from === "OBE") {
+          // Check if account has any other transactions (non-OBE journal lines)
+          const { count: otherJournalLines } = await supabase
+            .from("journal_lines")
+            .select("id", { count: "exact", head: true })
+            .eq("account_id", accountId)
+            .not("journal_entry_id", "eq", journalEntryId);
+          
+          const { count: transactions } = await supabase
+            .from("transactions")
+            .select("id", { count: "exact", head: true })
+            .eq("account_id", accountId);
+
+          const { count: children } = await supabase
+            .from("accounts")
+            .select("id", { count: "exact", head: true })
+            .eq("parent_account_id", accountId);
+
+          const hasOtherDeps = (otherJournalLines || 0) > 0 || (transactions || 0) > 0 || (children || 0) > 0;
+
+          if (!hasOtherDeps) {
+            // Safe to delete — orphan account created from OBE with no other use
+            await supabase
+              .from("accounts")
+              .delete()
+              .eq("id", accountId)
+              .eq("tenant_id", appUser.tenant_id);
+          }
+        }
+      }
+
+      // 6. Audit log
+      await supabase.from("audit_logs").insert({
+        action: "OBE Journal Entry Cascade Voided",
+        table_name: "journal_entries",
+        record_id: journalEntryId,
+        user_id: appUser.id,
+        tenant_id: appUser.tenant_id,
+        details: {
+          batch_id: entry.obe_batch_id,
+          accounts_reset: accountIds,
+        },
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["obe_balance"] });
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["accounts_active"] });
+      queryClient.invalidateQueries({ queryKey: ["opening_balances"] });
+      toast.success("OBE entry voided — all linked balances reset");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -328,4 +542,9 @@ export function useCloseOBE() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+}
+
+// Helper: check if a journal entry is a system-generated OBE entry (locked from manual edit)
+export function isOBEJournalEntry(entry: { entry_type?: string | null; is_system_generated?: boolean }): boolean {
+  return entry.entry_type === "opening_balance" && entry.is_system_generated === true;
 }
