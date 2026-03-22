@@ -72,7 +72,8 @@ export default function JournalEntryView() {
   })();
 
   const isVoided = entry?.status === "voided";
-  const isLocked = isInClosedPeriod || isReconciled || isVoided;
+  const isOBEEntry = entry?.entry_type === "opening_balance" && entry?.is_system_generated === true;
+  const isLocked = isInClosedPeriod || isReconciled || isVoided || isOBEEntry;
 
   const entryLines = (entry?.journal_lines as any[]) || [];
   const totalDebit = entryLines.reduce((sum, l) => sum + Number(l.debit), 0);
