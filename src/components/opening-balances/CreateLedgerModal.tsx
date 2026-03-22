@@ -116,6 +116,7 @@ export default function CreateLedgerModal({ open, onOpenChange, onCreated }: Cre
         account_subtype: accountSubtype || undefined,
         parent_account_id: parentId || undefined,
         category_id: categoryId || undefined,
+        created_from: "OBE",
       });
 
       onCreated(

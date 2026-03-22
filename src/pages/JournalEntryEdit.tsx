@@ -280,6 +280,27 @@ export default function JournalEntryEdit() {
     );
   }
 
+  // Block manual editing of system-generated OBE entries
+  if (entry.entry_type === "opening_balance" && entry.is_system_generated) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 space-y-4">
+        <AlertTriangle className="w-12 h-12 text-warning" />
+        <h2 className="text-lg font-semibold text-foreground">Cannot manually edit OBE entry</h2>
+        <p className="text-sm text-muted-foreground text-center max-w-md">
+          This is a system-generated Opening Balance entry. To modify opening balances, use the Opening Balances screen.
+        </p>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => navigate(`/accounting/journals/${id}`)}>
+            <ArrowLeft className="w-4 h-4 mr-2" /> Back to View
+          </Button>
+          <Button onClick={() => navigate("/accounting/opening-balances")}>
+            Go to Opening Balances
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
       {/* Back nav */}

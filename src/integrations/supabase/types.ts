@@ -72,6 +72,7 @@ export type Database = {
           account_type: string
           category_id: string | null
           created_at: string
+          created_from: string | null
           id: string
           is_active: boolean
           is_locked: boolean
@@ -92,6 +93,7 @@ export type Database = {
           account_type: string
           category_id?: string | null
           created_at?: string
+          created_from?: string | null
           id?: string
           is_active?: boolean
           is_locked?: boolean
@@ -112,6 +114,7 @@ export type Database = {
           account_type?: string
           category_id?: string | null
           created_at?: string
+          created_from?: string | null
           id?: string
           is_active?: boolean
           is_locked?: boolean
@@ -1562,6 +1565,7 @@ export type Database = {
           entry_type: string | null
           id: string
           is_system_generated: boolean
+          obe_batch_id: string | null
           reference: string | null
           reversal_of: string | null
           status: string
@@ -1579,6 +1583,7 @@ export type Database = {
           entry_type?: string | null
           id?: string
           is_system_generated?: boolean
+          obe_batch_id?: string | null
           reference?: string | null
           reversal_of?: string | null
           status?: string
@@ -1596,6 +1601,7 @@ export type Database = {
           entry_type?: string | null
           id?: string
           is_system_generated?: boolean
+          obe_batch_id?: string | null
           reference?: string | null
           reversal_of?: string | null
           status?: string

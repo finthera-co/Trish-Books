@@ -152,7 +152,7 @@ export function useCreateAccount() {
   const queryClient = useQueryClient();
   const { appUser } = useAuth();
   return useMutation({
-    mutationFn: async (account: { account_name: string; account_code: string; account_type: string; account_subtype?: string; parent_account_id?: string; category_id?: string }) => {
+    mutationFn: async (account: { account_name: string; account_code: string; account_type: string; account_subtype?: string; parent_account_id?: string; category_id?: string; created_from?: string }) => {
       const { data, error } = await supabase.from("accounts").insert({
         ...account,
         tenant_id: appUser?.tenant_id,
