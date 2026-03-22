@@ -102,6 +102,8 @@ export default function JournalEntryView() {
 
   const lockMessage = isVoided
     ? "This transaction has been voided and cannot be edited."
+    : isOBEEntry
+    ? "This is a system-generated Opening Balance entry. Edit opening balances from the Opening Balances screen."
     : isInClosedPeriod
     ? "This transaction is in a closed accounting period. Editing will affect reconciled balances."
     : isReconciled

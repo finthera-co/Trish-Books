@@ -77,6 +77,7 @@ export default function DeleteAccountDialog({ open, onOpenChange, account, allAc
     deps.openingBalances > 0 && `${deps.openingBalances} opening balance(s)`,
     deps.openingBalanceDetails > 0 && `${deps.openingBalanceDetails} sub-ledger detail(s)`,
     deps.childAccounts > 0 && `${deps.childAccounts} child account(s)`,
+    deps.obeJournalEntries > 0 && `${deps.obeJournalEntries} opening balance journal entry(ies)`,
   ].filter(Boolean) : [];
 
   const handleDelete = async () => {

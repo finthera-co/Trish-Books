@@ -13,6 +13,7 @@ export interface AccountDependencies {
   openingBalances: number;
   openingBalanceDetails: number;
   childAccounts: number;
+  obeJournalEntries: number;
   total: number;
 }
 
@@ -28,6 +29,7 @@ export async function checkAccountDependencies(accountId: string): Promise<Accou
     openingBalances,
     openingBalanceDetails,
     childAccounts,
+    obeJournalEntries,
   ] = await Promise.all([
     supabase.from("journal_lines").select("id", { count: "exact", head: true }).eq("account_id", accountId),
     supabase.from("budget_items").select("id", { count: "exact", head: true }).eq("account_id", accountId),
@@ -39,6 +41,11 @@ export async function checkAccountDependencies(accountId: string): Promise<Accou
     supabase.from("opening_balances").select("id", { count: "exact", head: true }).eq("account_id", accountId),
     supabase.from("opening_balance_details").select("id", { count: "exact", head: true }).eq("account_id", accountId),
     supabase.from("accounts").select("id", { count: "exact", head: true }).eq("parent_account_id", accountId),
+    // Count OBE-specific journal entries that reference this account
+    supabase.from("journal_lines").select("id, journal_entries!inner(entry_type, status)", { count: "exact", head: true })
+      .eq("account_id", accountId)
+      .eq("journal_entries.entry_type", "opening_balance")
+      .eq("journal_entries.status", "posted"),
   ]);
 
   const deps: AccountDependencies = {
@@ -52,6 +59,7 @@ export async function checkAccountDependencies(accountId: string): Promise<Accou
     openingBalances: openingBalances.count || 0,
     openingBalanceDetails: openingBalanceDetails.count || 0,
     childAccounts: childAccounts.count || 0,
+    obeJournalEntries: obeJournalEntries.count || 0,
     total: 0,
   };
   deps.total = deps.journalLines + deps.budgetItems + deps.bankFeedTransactions +
