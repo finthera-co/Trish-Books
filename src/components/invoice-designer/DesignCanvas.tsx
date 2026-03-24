@@ -1,5 +1,5 @@
 import { useCallback, useRef } from "react";
-import GridLayout from "react-grid-layout";
+import GridLayout, { type Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import type { DesignerComponent, TableSettings, InvoiceData } from "./types";
@@ -11,12 +11,12 @@ interface Props {
   selectedId: string | null;
   sampleData: InvoiceData;
   onSelect: (id: string | null) => void;
-  onLayoutChange: (layout: GridLayout.Layout[]) => void;
+  onLayoutChange: (layout: Layout[]) => void;
 }
 
 const COLS = 12;
 const ROW_HEIGHT = 28;
-const CANVAS_WIDTH = 595; // A4 approx at 72dpi
+const CANVAS_WIDTH = 595;
 
 export default function DesignCanvas({ components, tableSettings, selectedId, sampleData, onSelect, onLayoutChange }: Props) {
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -34,7 +34,7 @@ export default function DesignCanvas({ components, tableSettings, selectedId, sa
     return String(val);
   }, [sampleData]);
 
-  const layout: GridLayout.Layout[] = components.map(c => ({
+  const layout: Layout[] = components.map(c => ({
     i: c.id,
     x: c.x,
     y: c.y,
@@ -101,7 +101,6 @@ export default function DesignCanvas({ components, tableSettings, selectedId, sa
       );
     }
 
-    // Text / Image component
     const s = comp.style;
     const textStyle: React.CSSProperties = {
       fontSize: (s.fontSize || 12) * 0.75,
