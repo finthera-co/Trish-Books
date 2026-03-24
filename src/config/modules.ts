@@ -27,6 +27,7 @@ import {
   Warehouse,
   Calculator,
   ClipboardList,
+  Layout,
 } from "lucide-react";
 import type { ModuleConfig } from "@/components/layout/ModuleLayout";
 
