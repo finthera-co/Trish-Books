@@ -30,6 +30,8 @@ import PettyCashVoucherForm from "./pages/PettyCashVoucherForm";
 import PettyCashVoucherDetail from "./pages/PettyCashVoucherDetail";
 import PettyCashReplenishments from "./pages/PettyCashReplenishments";
 import Invoices from "./pages/Invoices";
+import InvoiceTemplates from "./pages/InvoiceTemplates";
+import InvoiceTemplateDesigner from "./pages/InvoiceTemplateDesigner";
 import ProductsTaxes from "./pages/ProductsTaxes";
 import Expenses from "./pages/Expenses";
 import Payroll from "./pages/Payroll";
@@ -98,6 +100,8 @@ const App = () => (
                 <Route element={<ModuleLayout config={MODULE_CONFIGS.sales} />}>
                   <Route path="/sales" element={<ModuleDashboard config={MODULE_CONFIGS.sales} />} />
                   <Route path="/sales/invoices" element={<Invoices />} />
+                  <Route path="/sales/invoices/templates" element={<InvoiceTemplates />} />
+                  <Route path="/sales/invoices/designer" element={<InvoiceTemplateDesigner />} />
                   <Route path="/sales/products-taxes" element={<ProductsTaxes />} />
                 </Route>
 
