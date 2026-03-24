@@ -11,7 +11,7 @@ interface Props {
   selectedId: string | null;
   sampleData: InvoiceData;
   onSelect: (id: string | null) => void;
-  onLayoutChange: (layout: Layout[]) => void;
+  onLayoutChange: (layout: readonly LayoutItem[]) => void;
 }
 
 const COLS = 12;
@@ -34,7 +34,7 @@ export default function DesignCanvas({ components, tableSettings, selectedId, sa
     return String(val);
   }, [sampleData]);
 
-  const layout: Layout[] = components.map(c => ({
+  const layout: LayoutItem[] = components.map(c => ({
     i: c.id,
     x: c.x,
     y: c.y,
@@ -140,15 +140,10 @@ export default function DesignCanvas({ components, tableSettings, selectedId, sa
           <GridLayout
             className="layout"
             layout={layout}
-            cols={COLS}
-            rowHeight={ROW_HEIGHT}
             width={CANVAS_WIDTH - 48}
             onLayoutChange={onLayoutChange}
-            isDraggable
-            isResizable
-            compactType={null}
-            preventCollision={false}
-            margin={[4, 4]}
+            gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: [4, 4] as readonly [number, number] }}
+            autoSize
           >
             {components.map(renderComponent)}
           </GridLayout>
