@@ -52,6 +52,7 @@ import NotFound from "./pages/NotFound";
 import AnomalyDashboard from "./pages/AnomalyDashboard";
 import TransactionsLedger from "./pages/TransactionsLedger";
 import AccountReport from "./pages/AccountReport";
+import GLVerification from "./pages/GLVerification";
 
 const queryClient = new QueryClient();
 
