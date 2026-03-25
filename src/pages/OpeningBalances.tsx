@@ -1,13 +1,12 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
-import { Plus, Trash2, Save, AlertTriangle, CheckCircle2, Lock, Calendar, Shield, FileCheck } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { Plus, Trash2, Save, AlertTriangle, Edit2, Ban, Calendar, Shield, FileCheck, Lock, CheckCircle2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import CreateLedgerModal from "@/components/opening-balances/CreateLedgerModal";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useActiveAccounts } from "@/hooks/useData";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatCurrency } from "@/lib/currency";
-import { useSaveOpeningBalances, useOBEBalance } from "@/hooks/useOpeningBalanceEquity";
+import { useOBEBalance } from "@/hooks/useOpeningBalanceEquity";
 import {
   useSystemSetting,
   useSaveSystemSetting,
@@ -17,9 +16,13 @@ import {
 } from "@/hooks/useOpeningBalanceSettings";
 import {
   useFiscalPeriods,
-  usePeriodOpeningBalances,
-  useSavePeriodOpeningBalances,
 } from "@/hooks/useFiscalPeriodBalances";
+import {
+  useOpeningBalanceEntries,
+  useSaveQuickBooksOB,
+  useDeleteOBEntry,
+  useVoidOBEntry,
+} from "@/hooks/useQuickBooksOBE";
 import FiscalPeriodSelector from "@/components/FiscalPeriodSelector";
 import { toast } from "sonner";
 import {
@@ -33,18 +36,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { getNormalBalance, isOpeningBalanceEligible, requiresSubledger } from "@/lib/accountTypes";
-
-interface BalanceLine {
-  id: string;
-  account_id: string;
-  debit: number;
-  credit: number;
-}
-
-function newLine(): BalanceLine {
-  return { id: crypto.randomUUID(), account_id: "", debit: 0, credit: 0 };
-}
+import {
+  getNormalBalance,
+  isOpeningBalanceEligible,
+  requiresSubledger,
+  isControlSubtype,
+  isOpeningBalanceEquityAccount,
+} from "@/lib/accountTypes";
+import CreateLedgerModal from "@/components/opening-balances/CreateLedgerModal";
 
 export default function OpeningBalances() {
   const { appUser } = useAuth();
@@ -53,18 +52,13 @@ export default function OpeningBalances() {
   const { data: obeClosed } = useSystemSetting("obe_closed");
   const { data: obStatus } = useOpeningBalanceStatus();
   const { data: obDate } = useSystemSetting("opening_balance_date");
-  const saveMutation = useSaveOpeningBalances();
   const saveSettingMutation = useSaveSystemSetting();
   const finalizeMutation = useFinalizeOpeningBalances();
   const revertMutation = useRevertToDraft();
 
-  // Fiscal period integration
   const { data: periods } = useFiscalPeriods();
   const [selectedPeriodId, setSelectedPeriodId] = useState("");
-  const { data: periodBalances } = usePeriodOpeningBalances(selectedPeriodId || null);
-  const savePeriodOB = useSavePeriodOpeningBalances();
 
-  // Auto-select first open period
   useEffect(() => {
     if (periods?.length && !selectedPeriodId) {
       const openPeriod = periods.find((p: any) => p.status === "open");
@@ -75,170 +69,136 @@ export default function OpeningBalances() {
 
   const selectedPeriod = periods?.find((p: any) => p.id === selectedPeriodId) as any;
   const isPeriodClosed = selectedPeriod?.status === "closed";
-
-  const [lines, setLines] = useState<BalanceLine[]>([newLine(), newLine()]);
-  const [entryDate, setEntryDate] = useState(() => obDate || new Date().toISOString().slice(0, 10));
-  const [description, setDescription] = useState("Opening Balance Entry");
-  const [showCreateLedger, setShowCreateLedger] = useState(false);
-  const [createLedgerLineId, setCreateLedgerLineId] = useState<string | null>(null);
-
-  const handleLedgerCreated = useCallback((accountId: string, openingBalance?: number, balanceType?: "debit" | "credit") => {
-    if (createLedgerLineId) {
-      // Update the line that triggered the create
-      setLines((prev) => prev.map((l) => {
-        if (l.id !== createLedgerLineId) return l;
-        return {
-          ...l,
-          account_id: accountId,
-          debit: balanceType === "debit" && openingBalance ? openingBalance : 0,
-          credit: balanceType === "credit" && openingBalance ? openingBalance : 0,
-        };
-      }));
-    } else {
-      // Add a new line with the created account
-      setLines((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          account_id: accountId,
-          debit: balanceType === "debit" && openingBalance ? openingBalance : 0,
-          credit: balanceType === "credit" && openingBalance ? openingBalance : 0,
-        },
-      ]);
-    }
-    setCreateLedgerLineId(null);
-  }, [createLedgerLineId]);
-
-  // When period balances load, populate lines; fallback to account opening balances
-  const [hasPopulated, setHasPopulated] = useState(false);
-  useEffect(() => {
-    if (periodBalances && periodBalances.length > 0) {
-      const loaded: BalanceLine[] = periodBalances.map((ob: any) => ({
-        id: crypto.randomUUID(),
-        account_id: ob.account_id,
-        debit: Number(ob.debit) || 0,
-        credit: Number(ob.credit) || 0,
-      }));
-      loaded.push(newLine());
-      setLines(loaded);
-      setHasPopulated(true);
-    } else if (!hasPopulated && accounts && accounts.length > 0 && !periodBalances) {
-      // Fallback: populate from accounts that have opening_balance > 0
-      const withBalances = (accounts as any[]).filter(
-        (a) => !a.is_system && a.opening_balance > 0 && isOpeningBalanceEligible(a.account_type)
-      );
-      if (withBalances.length > 0) {
-        const loaded: BalanceLine[] = withBalances.map((a: any) => ({
-          id: crypto.randomUUID(),
-          account_id: a.id,
-          debit: a.opening_balance_type === "debit" ? a.opening_balance : 0,
-          credit: a.opening_balance_type === "credit" ? a.opening_balance : 0,
-        }));
-        loaded.push(newLine());
-        setLines(loaded);
-        setHasPopulated(true);
-      }
-    }
-  }, [periodBalances, accounts, hasPopulated]);
-
   const isClosed = obeClosed === "true";
   const isFinalized = obStatus === "finalized";
   const isDraft = !obStatus || obStatus === "draft";
   const isEditable = isDraft && !isClosed && !isPeriodClosed;
 
+  // Existing OB entries
+  const { data: obEntries, isLoading: loadingEntries } = useOpeningBalanceEntries();
+  const saveMutation = useSaveQuickBooksOB();
+  const deleteMutation = useDeleteOBEntry();
+  const voidMutation = useVoidOBEntry();
+
+  // New entry form
+  const [formAccountId, setFormAccountId] = useState("");
+  const [formAmount, setFormAmount] = useState("");
+  const [formDate, setFormDate] = useState(() => obDate || new Date().toISOString().slice(0, 10));
+  const [formDescription, setFormDescription] = useState("");
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [showCreateLedger, setShowCreateLedger] = useState(false);
+
+  // Update date from system setting
+  useEffect(() => {
+    if (obDate && formDate !== obDate) setFormDate(obDate);
+  }, [obDate]);
+
+  // Filter accounts for dropdown
   const selectableAccounts = useMemo(() => {
-    return (accounts || []).filter((a: any) => !a.is_system && isOpeningBalanceEligible(a.account_type));
-  }, [accounts]);
-
-  const totalDebits = useMemo(() => lines.reduce((s, l) => s + l.debit, 0), [lines]);
-  const totalCredits = useMemo(() => lines.reduce((s, l) => s + l.credit, 0), [lines]);
-  const difference = totalDebits - totalCredits;
-
-  const validationWarnings = useMemo(() => {
-    const warnings: string[] = [];
-    lines.forEach((l) => {
-      if (!l.account_id) return;
-      const acct = (accounts || []).find((a: any) => a.id === l.account_id) as any;
-      if (!acct) return;
-      if (!isOpeningBalanceEligible(acct.account_type)) {
-        warnings.push(`❌ ${acct.account_name} (${acct.account_type}) cannot have an opening balance`);
-        return;
+    if (!accounts) return [];
+    const existingAccountIds = new Set(
+      (obEntries || [])
+        .filter((e: any) => e.status === "posted")
+        .map((e: any) => e.account_id)
+    );
+    return (accounts as any[]).filter((a) => {
+      if (a.is_system && isOpeningBalanceEquityAccount(a)) return false;
+      if (!isOpeningBalanceEligible(a.account_type)) return false;
+      if (isControlSubtype(a.account_subtype)) return false;
+      // If editing, allow the current account
+      if (editingEntryId) {
+        const editEntry = (obEntries || []).find((e: any) => e.id === editingEntryId);
+        if (editEntry && editEntry.account_id === a.id) return true;
       }
-      if (requiresSubledger(acct.account_subtype) && (l.debit > 0 || l.credit > 0)) {
-        warnings.push(`📋 ${acct.account_name} requires sub-ledger breakdown`);
-      }
-      const normal = getNormalBalance(acct.account_type);
-      if (normal === "Debit" && l.credit > 0 && l.debit === 0) {
-        warnings.push(`⚠ ${acct.account_name} normally has a Debit balance but has a Credit entry`);
-      }
-      if (normal === "Credit" && l.debit > 0 && l.credit === 0) {
-        warnings.push(`⚠ ${acct.account_name} normally has a Credit balance but has a Debit entry`);
-      }
+      if (existingAccountIds.has(a.id)) return false;
+      return true;
     });
-    return warnings;
-  }, [lines, accounts]);
+  }, [accounts, obEntries, editingEntryId]);
 
-  const updateLine = (id: string, field: keyof BalanceLine, value: any) => {
-    setLines((prev) => prev.map((l) => (l.id === id ? { ...l, [field]: value } : l)));
+  // Summary calculations
+  const postedEntries = useMemo(() => {
+    return (obEntries || []).filter((e: any) => e.status === "posted");
+  }, [obEntries]);
+
+  const totalDebits = useMemo(() => {
+    return postedEntries.reduce((s: number, e: any) => {
+      const acct = (accounts || []).find((a: any) => a.id === e.account_id) as any;
+      if (!acct) return s;
+      const normal = getNormalBalance(acct.account_type);
+      const amt = Math.abs(Number(e.amount_signed));
+      const isPositive = Number(e.amount_signed) >= 0;
+      if ((normal === "Debit" && isPositive) || (normal === "Credit" && !isPositive)) return s + amt;
+      return s;
+    }, 0);
+  }, [postedEntries, accounts]);
+
+  const totalCredits = useMemo(() => {
+    return postedEntries.reduce((s: number, e: any) => {
+      const acct = (accounts || []).find((a: any) => a.id === e.account_id) as any;
+      if (!acct) return s;
+      const normal = getNormalBalance(acct.account_type);
+      const amt = Math.abs(Number(e.amount_signed));
+      const isPositive = Number(e.amount_signed) >= 0;
+      if ((normal === "Credit" && isPositive) || (normal === "Debit" && !isPositive)) return s + amt;
+      return s;
+    }, 0);
+  }, [postedEntries, accounts]);
+
+  const resetForm = () => {
+    setFormAccountId("");
+    setFormAmount("");
+    setFormDescription("");
+    setEditingEntryId(null);
   };
 
-  const removeLine = (id: string) => {
-    if (lines.length <= 1) return;
-    setLines((prev) => prev.filter((l) => l.id !== id));
+  const handleSave = () => {
+    if (!formAccountId) { toast.error("Select an account"); return; }
+    const amt = parseFloat(formAmount);
+    if (isNaN(amt) || amt === 0) { toast.error("Enter a non-zero amount"); return; }
+
+    saveMutation.mutate(
+      {
+        accountId: formAccountId,
+        amountSigned: amt,
+        asOfDate: formDate,
+        description: formDescription || undefined,
+        editEntryId: editingEntryId || undefined,
+      },
+      { onSuccess: () => resetForm() }
+    );
+  };
+
+  const handleEdit = (entry: any) => {
+    setFormAccountId(entry.account_id);
+    setFormAmount(String(entry.amount_signed));
+    setFormDate(entry.as_of_date || formDate);
+    setFormDescription(entry.description || "");
+    setEditingEntryId(entry.id);
   };
 
   const handleSaveDate = () => {
-    if (!entryDate) { toast.error("Please select a date"); return; }
+    if (!formDate) { toast.error("Select a date"); return; }
     saveSettingMutation.mutate(
-      { key: "opening_balance_date", value: entryDate },
+      { key: "opening_balance_date", value: formDate },
       { onSuccess: () => toast.success("Opening balance date saved") }
     );
   };
 
-  const handleSave = () => {
-    const validLines = lines.filter((l) => l.account_id && (l.debit > 0 || l.credit > 0));
-    if (validLines.length === 0) { toast.error("Enter at least one account with an amount"); return; }
-    if (lines.some((l) => l.debit < 0 || l.credit < 0)) { toast.error("Negative values not allowed"); return; }
-    if (validLines.some((l) => l.debit > 0 && l.credit > 0)) { toast.error("A line cannot have both debit and credit"); return; }
-
-    // Save to opening_balances table per period
-    if (selectedPeriodId) {
-      savePeriodOB.mutate({
-        fiscalPeriodId: selectedPeriodId,
-        balances: validLines.map((l) => ({
-          account_id: l.account_id,
-          debit: l.debit,
-          credit: l.credit,
-        })),
-      });
+  const handleLedgerCreated = (accountId: string, openingBalance?: number) => {
+    setFormAccountId(accountId);
+    if (openingBalance && openingBalance > 0) {
+      setFormAmount(String(openingBalance));
     }
-
-    // Also save as journal entry (existing OBE flow)
-    const useDate = obDate || entryDate;
-    saveMutation.mutate(
-      {
-        lines: validLines.map((l) => ({ account_id: l.account_id, debit: l.debit, credit: l.credit })),
-        entry_date: useDate,
-        description,
-      },
-      {
-        onSuccess: () => {
-          // Reset form to fresh state
-          setLines([newLine(), newLine()]);
-          setDescription("Opening Balance Entry");
-        },
-      }
-    );
   };
 
-  // Read-only view for closed/finalized states
+  // Read-only view for closed/finalized
   if (isClosed || (isFinalized && !isPeriodClosed)) {
     return (
       <div className="space-y-6">
         <div className="page-header">
           <div>
             <h1 className="page-title">Opening Balances</h1>
-            <p className="page-description">Opening balances per fiscal period</p>
+            <p className="page-description">QuickBooks-style opening balance entries</p>
           </div>
           <div className="flex gap-2 items-center">
             <FiscalPeriodSelector value={selectedPeriodId} onChange={setSelectedPeriodId} />
@@ -261,7 +221,6 @@ export default function OpeningBalances() {
             )}
           </div>
         </div>
-
         <Card>
           <CardContent className="py-8 text-center space-y-3">
             {isClosed ? (
@@ -279,37 +238,8 @@ export default function OpeningBalances() {
             )}
           </CardContent>
         </Card>
-
-        {/* Show read-only balances for selected period */}
-        {periodBalances && periodBalances.length > 0 && (
-          <Card>
-            <CardContent className="pt-6 p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b bg-muted/30">
-                      <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Account</th>
-                      <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Debit</th>
-                      <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Credit</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {periodBalances.map((ob: any) => {
-                      const acct = (accounts || []).find((a: any) => a.id === ob.account_id) as any;
-                      return (
-                        <tr key={ob.id} className="border-b">
-                          <td className="px-4 py-2 text-foreground">{acct ? `${acct.account_code} — ${acct.account_name}` : ob.account_id}</td>
-                          <td className="px-4 py-2 text-right">{Number(ob.debit) > 0 ? formatCurrency(Number(ob.debit)) : "—"}</td>
-                          <td className="px-4 py-2 text-right">{Number(ob.credit) > 0 ? formatCurrency(Number(ob.credit)) : "—"}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        <OBTable entries={postedEntries} accounts={accounts} isEditable={false} />
+        <OBSummary totalDebits={totalDebits} totalCredits={totalCredits} obeBalance={obeBalance} />
       </div>
     );
   }
@@ -320,7 +250,7 @@ export default function OpeningBalances() {
         <div>
           <h1 className="page-title">Opening Balances</h1>
           <p className="page-description">
-            Enter opening balances per fiscal period. The system auto-balances using Opening Balance Equity.
+            Enter opening balances per account. The system automatically posts using normal balance rules.
           </p>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
@@ -329,36 +259,23 @@ export default function OpeningBalances() {
             {isPeriodClosed ? "🔒 Closed" : isDraft ? "Draft" : "Finalized"}
           </Badge>
           {!isPeriodClosed && (
-            <>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <FileCheck className="w-4 h-4 mr-1" /> Finalize
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Finalize Opening Balances?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This will lock opening balance entries.
-                      {Math.abs(difference) > 0.005 && (
-                        <span className="block mt-2 text-warning font-medium">
-                          ⚠️ Difference of {formatCurrency(Math.abs(difference))} will be auto-balanced with OBE.
-                        </span>
-                      )}
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => finalizeMutation.mutate()}>Finalize</AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-              <Button onClick={handleSave} disabled={saveMutation.isPending || savePeriodOB.isPending}>
-                <Save className="w-4 h-4 mr-1" />
-                {saveMutation.isPending ? "Saving…" : "Save Entry"}
-              </Button>
-            </>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <FileCheck className="w-4 h-4 mr-1" /> Finalize
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Finalize Opening Balances?</AlertDialogTitle>
+                  <AlertDialogDescription>This will lock opening balance entries.</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => finalizeMutation.mutate()}>Finalize</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           )}
         </div>
       </div>
@@ -366,202 +283,349 @@ export default function OpeningBalances() {
       {isPeriodClosed && (
         <div className="bg-warning/10 text-warning border border-warning/20 rounded-lg px-4 py-3 text-sm flex items-center gap-2">
           <Lock className="w-4 h-4" />
-          This period is closed. Opening balances are read-only. These were auto-carried from the previous period.
+          This period is closed. Opening balances are read-only.
         </div>
       )}
 
-      {/* OBE Balance Warning */}
-      {obeBalance && obeBalance.type !== "zero" && !isPeriodClosed && (
-        <div className="flex items-center gap-3 bg-warning/10 text-warning border border-warning/20 rounded-lg px-4 py-3">
+      {/* OBE Balance */}
+      {obeBalance && obeBalance.type !== "zero" && (
+        <div className="flex items-center gap-3 bg-info/10 text-info border border-info/20 rounded-lg px-4 py-3">
           <AlertTriangle className="w-5 h-5 flex-shrink-0" />
           <div className="text-sm">
             <span className="font-semibold">Opening Balance Equity: {formatCurrency(obeBalance.balance)}</span>
-            <span className="text-warning/80 ml-1">({obeBalance.type === "debit" ? "Debit" : "Credit"})</span>
+            <span className="text-info/80 ml-1">({obeBalance.type === "debit" ? "Debit" : "Credit"})</span>
+            <span className="text-info/60 ml-2">— This balance will resolve when all accounts are properly classified.</span>
           </div>
         </div>
       )}
 
-      {/* Validation Warnings */}
-      {validationWarnings.length > 0 && !isPeriodClosed && (
-        <div className="bg-warning/5 border border-warning/20 rounded-lg px-4 py-3 space-y-1">
-          <p className="text-xs font-medium text-warning">Validation Warnings:</p>
-          {validationWarnings.map((w, i) => (
-            <p key={i} className="text-xs text-warning/80">• {w}</p>
-          ))}
-        </div>
-      )}
-
-      {/* Date & Description */}
-      {!isPeriodClosed && (
+      {/* Entry Form */}
+      {isEditable && (
         <Card>
           <CardContent className="pt-6">
-            <div className="flex gap-4 flex-wrap items-end">
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5" /> Opening Balance Date
-                </label>
-                <div className="flex gap-2">
-                  <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)}
-                    className="block h-9 rounded-md border border-input bg-background px-3 text-sm" />
-                  {(!obDate || obDate !== entryDate) && (
-                    <Button variant="outline" size="sm" onClick={handleSaveDate} disabled={saveSettingMutation.isPending}>
-                      Set as Global Date
-                    </Button>
-                  )}
+            <h3 className="text-sm font-semibold text-foreground mb-4">
+              {editingEntryId ? "Edit Opening Balance" : "Add Opening Balance"}
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+              {/* Account */}
+              <div className="md:col-span-4 space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Account</label>
+                <div className="flex gap-1">
+                  <select
+                    value={formAccountId}
+                    onChange={(e) => {
+                      if (e.target.value === "__create__") {
+                        setShowCreateLedger(true);
+                      } else {
+                        setFormAccountId(e.target.value);
+                      }
+                    }}
+                    className="flex-1 h-9 rounded-md border border-input bg-background px-2 text-sm"
+                  >
+                    <option value="">Select account…</option>
+                    <option value="__create__" className="font-medium">＋ Create New Ledger</option>
+                    {selectableAccounts.map((a: any) => (
+                      <option key={a.id} value={a.id}>
+                        {a.account_code} — {a.account_name} ({a.account_type})
+                      </option>
+                    ))}
+                  </select>
                 </div>
+                {formAccountId && (() => {
+                  const acct = (accounts || []).find((a: any) => a.id === formAccountId) as any;
+                  if (!acct) return null;
+                  const normal = getNormalBalance(acct.account_type);
+                  return (
+                    <p className="text-[10px] text-muted-foreground">
+                      Normal balance: <strong>{normal}</strong> • 
+                      Positive amount → {normal === "Debit" ? "DR" : "CR"} this account
+                    </p>
+                  );
+                })()}
               </div>
-              <div className="space-y-1 flex-1 min-w-[200px]">
+
+              {/* Amount */}
+              <div className="md:col-span-2 space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Opening Balance</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={formAmount}
+                  onChange={(e) => setFormAmount(e.target.value)}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm text-right"
+                  placeholder="0.00"
+                />
+                <p className="text-[10px] text-muted-foreground">Negative values reverse the entry</p>
+              </div>
+
+              {/* Date */}
+              <div className="md:col-span-2 space-y-1">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                  <Calendar className="w-3 h-3" /> As Of Date
+                </label>
+                <input
+                  type="date"
+                  value={formDate}
+                  onChange={(e) => setFormDate(e.target.value)}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                />
+              </div>
+
+              {/* Description */}
+              <div className="md:col-span-2 space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">Description</label>
-                <input type="text" value={description} onChange={(e) => setDescription(e.target.value)}
-                  className="block h-9 w-full rounded-md border border-input bg-background px-3 text-sm" />
+                <input
+                  type="text"
+                  value={formDescription}
+                  onChange={(e) => setFormDescription(e.target.value)}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  placeholder="Optional"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="md:col-span-2 flex gap-2">
+                <Button onClick={handleSave} disabled={saveMutation.isPending} className="flex-1">
+                  <Save className="w-4 h-4 mr-1" />
+                  {saveMutation.isPending ? "Saving…" : editingEntryId ? "Update" : "Save"}
+                </Button>
+                {editingEntryId && (
+                  <Button variant="ghost" size="icon" onClick={resetForm}>
+                    <RefreshCw className="w-4 h-4" />
+                  </Button>
+                )}
               </div>
             </div>
+
+            {/* Auto-posting preview */}
+            {formAccountId && formAmount && parseFloat(formAmount) !== 0 && (
+              <div className="mt-4 bg-muted/30 rounded-lg px-4 py-3 text-xs space-y-1">
+                <p className="font-medium text-muted-foreground mb-1">Journal Preview:</p>
+                {(() => {
+                  const acct = (accounts || []).find((a: any) => a.id === formAccountId) as any;
+                  if (!acct) return null;
+                  const normal = getNormalBalance(acct.account_type);
+                  const amt = Math.abs(parseFloat(formAmount));
+                  const isPositive = parseFloat(formAmount) >= 0;
+                  const accountDR = (normal === "Debit" && isPositive) || (normal === "Credit" && !isPositive);
+                  return (
+                    <>
+                      <div className="flex justify-between">
+                        <span>{accountDR ? "DR" : "CR"} {acct.account_code} — {acct.account_name}</span>
+                        <span className="font-medium">{formatCurrency(amt)}</span>
+                      </div>
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>{accountDR ? "CR" : "DR"} 3900 — Opening Balance Equity</span>
+                        <span>{formatCurrency(amt)}</span>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
+            {(!obDate || obDate !== formDate) && (
+              <div className="mt-3">
+                <Button variant="outline" size="sm" onClick={handleSaveDate} disabled={saveSettingMutation.isPending}>
+                  Set as Global Opening Balance Date
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
 
-      {/* Lines table */}
-      <Card>
-        <CardContent className="pt-6 p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/30">
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground w-[45%]">Account</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground w-[20%]">Debit</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground w-[20%]">Credit</th>
-                  {!isPeriodClosed && <th className="text-center px-4 py-2.5 font-medium text-muted-foreground w-[15%]">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {lines.map((line) => {
-                  const acct = selectableAccounts.find((a: any) => a.id === line.account_id) as any;
-                  const normal = acct ? getNormalBalance(acct.account_type) : null;
-                  const isWrongSide = normal && (
-                    (normal === "Debit" && line.credit > 0 && line.debit === 0) ||
-                    (normal === "Credit" && line.debit > 0 && line.credit === 0)
-                  );
-                  return (
-                    <tr key={line.id} className={`border-b hover:bg-muted/10 transition-colors ${isWrongSide ? "bg-warning/5" : ""}`}>
-                      <td className="px-4 py-2">
-                        {isPeriodClosed ? (
-                          <span className="text-foreground">{acct ? `${acct.account_code} — ${acct.account_name}` : "—"}</span>
-                        ) : (
-                          <div className="flex gap-1">
-                            <select
-                              value={line.account_id}
-                              onChange={(e) => {
-                                if (e.target.value === "__create_new__") {
-                                  setCreateLedgerLineId(line.id);
-                                  setShowCreateLedger(true);
-                                } else {
-                                  updateLine(line.id, "account_id", e.target.value);
-                                }
-                              }}
-                              className="w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
-                            >
-                              <option value="">Select account…</option>
-                              <option value="__create_new__" className="font-medium text-primary">＋ Create New Ledger</option>
-                              {selectableAccounts.map((a: any) => (
-                                <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                        {isWrongSide && (
-                          <p className="text-[10px] text-warning mt-0.5">⚠ Opposite to normal {normal} balance</p>
-                        )}
-                      </td>
-                      <td className="px-4 py-2">
-                        {isPeriodClosed ? (
-                          <span className="block text-right">{line.debit > 0 ? formatCurrency(line.debit) : "—"}</span>
-                        ) : (
-                          <input type="number" min="0" step="0.01" value={line.debit || ""}
-                            onChange={(e) => { const v = parseFloat(e.target.value) || 0; updateLine(line.id, "debit", v); if (v > 0) updateLine(line.id, "credit", 0); }}
-                            className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm text-right" placeholder="0.00" />
-                        )}
-                      </td>
-                      <td className="px-4 py-2">
-                        {isPeriodClosed ? (
-                          <span className="block text-right">{line.credit > 0 ? formatCurrency(line.credit) : "—"}</span>
-                        ) : (
-                          <input type="number" min="0" step="0.01" value={line.credit || ""}
-                            onChange={(e) => { const v = parseFloat(e.target.value) || 0; updateLine(line.id, "credit", v); if (v > 0) updateLine(line.id, "debit", 0); }}
-                            className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm text-right" placeholder="0.00" />
-                        )}
-                      </td>
-                      {!isPeriodClosed && (
-                        <td className="px-4 py-2 text-center">
-                          <button onClick={() => removeLine(line.id)}
-                            className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-                            disabled={lines.length <= 1}>
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
+      {/* Existing Opening Balances Table */}
+      <OBTable
+        entries={postedEntries}
+        accounts={accounts}
+        isEditable={isEditable}
+        onEdit={handleEdit}
+        onDelete={(id) => deleteMutation.mutate(id)}
+        onVoid={(id) => voidMutation.mutate(id)}
+        editingId={editingEntryId}
+      />
 
-                {/* OBE auto-balance row */}
-                {Math.abs(difference) > 0.005 && !isPeriodClosed && (
-                  <tr className="bg-muted/20 border-b">
-                    <td className="px-4 py-2">
-                      <div className="flex items-center gap-2">
-                        <Lock className="w-3.5 h-3.5 text-muted-foreground" />
-                        <span className="text-sm text-muted-foreground italic">Opening Balance Equity — System Adjustment</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-2 text-right text-sm text-muted-foreground italic">
-                      {difference < 0 ? formatCurrency(Math.abs(difference)) : "—"}
-                    </td>
-                    <td className="px-4 py-2 text-right text-sm text-muted-foreground italic">
-                      {difference > 0 ? formatCurrency(difference) : "—"}
-                    </td>
-                    {!isPeriodClosed && (
-                      <td className="px-4 py-2 text-center">
-                        <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded">Auto</span>
-                      </td>
-                    )}
-                  </tr>
-                )}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-foreground/20">
-                  <td className="px-4 py-3">
-                    {!isPeriodClosed && (
-                      <div className="flex gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => setLines((p) => [...p, newLine()])}>
-                          <Plus className="w-4 h-4 mr-1" /> Add Line
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => { setCreateLedgerLineId(null); setShowCreateLedger(true); }}>
-                          <Plus className="w-4 h-4 mr-1" /> Create New Ledger
-                        </Button>
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right font-semibold text-sm">{formatCurrency(totalDebits)}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-sm">{formatCurrency(totalCredits)}</td>
-                  {!isPeriodClosed && <td />}
-                </tr>
-                <tr>
-                  <td className="px-4 py-2 text-right text-xs text-muted-foreground font-medium" colSpan={2}>Difference:</td>
-                  <td className={`px-4 py-2 text-right text-sm font-bold ${Math.abs(difference) > 0.005 ? "text-warning" : "text-success"}`}>
-                    {formatCurrency(Math.abs(difference))}
-                  </td>
-                  {!isPeriodClosed && <td />}
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Summary Panel */}
+      <OBSummary totalDebits={totalDebits} totalCredits={totalCredits} obeBalance={obeBalance} />
 
       <CreateLedgerModal
         open={showCreateLedger}
-        onOpenChange={(v) => { setShowCreateLedger(v); if (!v) setCreateLedgerLineId(null); }}
+        onOpenChange={setShowCreateLedger}
         onCreated={handleLedgerCreated}
       />
+    </div>
+  );
+}
+
+// --- Sub-components ---
+
+function OBTable({
+  entries,
+  accounts,
+  isEditable,
+  onEdit,
+  onDelete,
+  onVoid,
+  editingId,
+}: {
+  entries: any[];
+  accounts: any;
+  isEditable: boolean;
+  onEdit?: (entry: any) => void;
+  onDelete?: (id: string) => void;
+  onVoid?: (id: string) => void;
+  editingId?: string | null;
+}) {
+  if (!entries || entries.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center">
+          <p className="text-sm text-muted-foreground">No opening balances entered yet.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardContent className="pt-6 p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/30">
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Account</th>
+                <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Opening Balance</th>
+                <th className="text-center px-4 py-2.5 font-medium text-muted-foreground">Posting</th>
+                <th className="text-center px-4 py-2.5 font-medium text-muted-foreground">Date</th>
+                <th className="text-center px-4 py-2.5 font-medium text-muted-foreground">Status</th>
+                {isEditable && <th className="text-center px-4 py-2.5 font-medium text-muted-foreground">Actions</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((entry: any) => {
+                const acct = (accounts || []).find((a: any) => a.id === entry.account_id) as any;
+                const normal = acct ? getNormalBalance(acct.account_type) : "Debit";
+                const amt = Math.abs(Number(entry.amount_signed));
+                const isPositive = Number(entry.amount_signed) >= 0;
+                const accountDR = (normal === "Debit" && isPositive) || (normal === "Credit" && !isPositive);
+                const isBeingEdited = editingId === entry.id;
+
+                return (
+                  <tr key={entry.id} className={`border-b hover:bg-muted/10 transition-colors ${isBeingEdited ? "bg-primary/5" : ""}`}>
+                    <td className="px-4 py-2.5">
+                      <span className="text-foreground font-medium">
+                        {acct ? `${acct.account_code} — ${acct.account_name}` : "Unknown"}
+                      </span>
+                      {acct && <span className="text-xs text-muted-foreground ml-2">{acct.account_type}</span>}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-medium">
+                      {Number(entry.amount_signed) < 0 && <span className="text-destructive">-</span>}
+                      {formatCurrency(amt)}
+                    </td>
+                    <td className="px-4 py-2.5 text-center">
+                      <span className="text-xs">
+                        <span className={accountDR ? "text-info font-medium" : "text-muted-foreground"}>DR</span>
+                        {" / "}
+                        <span className={!accountDR ? "text-warning font-medium" : "text-muted-foreground"}>CR</span>
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-center text-xs text-muted-foreground">
+                      {entry.as_of_date || "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-center">
+                      <Badge variant={entry.status === "posted" ? "default" : entry.status === "voided" ? "destructive" : "secondary"} className="text-[10px]">
+                        {entry.status}
+                      </Badge>
+                    </td>
+                    {isEditable && (
+                      <td className="px-4 py-2.5 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => onEdit?.(entry)}
+                            className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                            title="Edit"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <button className="p-1.5 rounded hover:bg-warning/10 text-muted-foreground hover:text-warning transition-colors" title="Void">
+                                <Ban className="w-3.5 h-3.5" />
+                              </button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Void Opening Balance?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will create a reversing journal entry and mark this entry as voided. The audit trail is preserved.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => onVoid?.(entry.id)}>Void</AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <button className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors" title="Delete">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete Opening Balance?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will reverse the journal entry and permanently remove this opening balance record.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => onDelete?.(entry.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function OBSummary({ totalDebits, totalCredits, obeBalance }: { totalDebits: number; totalCredits: number; obeBalance: any }) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <Card>
+        <CardContent className="pt-6 text-center">
+          <p className="text-xs text-muted-foreground mb-1">Total Debits</p>
+          <p className="text-lg font-bold text-info">{formatCurrency(totalDebits)}</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="pt-6 text-center">
+          <p className="text-xs text-muted-foreground mb-1">Total Credits</p>
+          <p className="text-lg font-bold text-warning">{formatCurrency(totalCredits)}</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="pt-6 text-center">
+          <p className="text-xs text-muted-foreground mb-1">Opening Balance Equity</p>
+          <p className={`text-lg font-bold ${obeBalance?.type === "zero" ? "text-success" : "text-foreground"}`}>
+            {obeBalance ? formatCurrency(obeBalance.balance) : formatCurrency(0)}
+          </p>
+          {obeBalance?.type !== "zero" && obeBalance?.type && (
+            <p className="text-[10px] text-muted-foreground capitalize">{obeBalance.type}</p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
