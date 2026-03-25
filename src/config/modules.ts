@@ -46,6 +46,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "Opening Balances", path: "/accounting/opening-balances", icon: Wallet },
       { label: "Close OBE", path: "/accounting/close-obe", icon: Lock },
       { label: "Fiscal Periods", path: "/accounting/fiscal-periods", icon: Calendar },
+      { label: "GL Verification", path: "/accounting/gl-verify", icon: Shield },
     ],
   },
   banking: {
