@@ -52,6 +52,7 @@ import NotFound from "./pages/NotFound";
 import AnomalyDashboard from "./pages/AnomalyDashboard";
 import TransactionsLedger from "./pages/TransactionsLedger";
 import AccountReport from "./pages/AccountReport";
+import GLVerification from "./pages/GLVerification";
 
 const queryClient = new QueryClient();
 
@@ -83,6 +84,7 @@ const App = () => (
                   <Route path="/accounting/fiscal-periods" element={<FiscalPeriods />} />
                   <Route path="/accounting/opening-balances" element={<OpeningBalances />} />
                   <Route path="/accounting/close-obe" element={<CloseOBE />} />
+                  <Route path="/accounting/gl-verify" element={<GLVerification />} />
                 </Route>
 
                 {/* Banking module */}
