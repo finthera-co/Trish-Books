@@ -85,21 +85,35 @@ export function useOpeningBalanceEntries() {
       const obeId = obeAcct?.id;
 
       // Transform into per-account entries
+      // Also fetch all accounts to determine normal balance for sign
+      const { data: allAccounts } = await supabase
+        .from("accounts")
+        .select("id, normal_balance, account_type")
+        .eq("tenant_id", appUser!.tenant_id);
+      const acctMap = new Map((allAccounts || []).map((a: any) => [a.id, a]));
+
       return (data || []).map((je: any) => {
         const lines = (je.journal_lines || []) as any[];
-        // Find the non-OBE line (the actual account)
         const accountLine = lines.find((l: any) => l.account_id !== obeId) || lines[0];
         const accountId = accountLine?.account_id;
         const debit = Number(accountLine?.debit || 0);
         const credit = Number(accountLine?.credit || 0);
-        // Determine signed amount: positive if normal-side, negative if reversed
-        const amount = debit > 0 ? debit : -credit; // simplified: we store it differently below
+        
+        // Determine signed amount using normal balance logic
+        const acct = acctMap.get(accountId);
+        const normalIsDebit = acct ? isDebitNormal(acct.account_type) : true;
+        // If posted on normal side → positive, opposite side → negative
+        let amountSigned: number;
+        if (normalIsDebit) {
+          amountSigned = debit > 0 ? debit : -credit;
+        } else {
+          amountSigned = credit > 0 ? credit : -debit;
+        }
         
         return {
           id: je.id,
           account_id: accountId,
-          amount_signed: debit > 0 ? debit : (credit > 0 ? credit : 0),
-          // We need to determine sign based on whether it was posted on normal side
+          amount_signed: amountSigned,
           debit,
           credit,
           as_of_date: je.entry_date,
