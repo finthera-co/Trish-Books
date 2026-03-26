@@ -72,7 +72,6 @@ export default function TrialBalance() {
         account_type: a.account_type,
         total_debit: 0,
         total_credit: 0,
-        opening_balance: 0,
       })
     );
 
