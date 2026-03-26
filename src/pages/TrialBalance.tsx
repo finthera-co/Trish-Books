@@ -238,7 +238,6 @@ export default function TrialBalance() {
                 <th className="w-28">Code</th>
                 <th>Account Name</th>
                 <th className="w-28">Type</th>
-                <th className="text-right w-32">Opening Bal.</th>
                 <th className="text-right w-36">Debit</th>
                 <th className="text-right w-36">Credit</th>
                 <th className="text-right w-36">Net Balance</th>
@@ -248,7 +247,7 @@ export default function TrialBalance() {
               {grouped.map(group => (
                 <Fragment key={group.type}>
                   <tr>
-                    <td colSpan={7} className="font-semibold text-foreground bg-muted/40 py-2 text-xs uppercase tracking-wide">
+                    <td colSpan={6} className="font-semibold text-foreground bg-muted/40 py-2 text-xs uppercase tracking-wide">
                       {group.type}
                     </td>
                   </tr>
@@ -264,9 +263,6 @@ export default function TrialBalance() {
                             {a.account_type}
                           </span>
                         </td>
-                        <td className="text-right font-mono tabular-nums text-muted-foreground">
-                          {a.opening_balance !== 0 ? `LKR ${fmt(a.opening_balance)}` : "—"}
-                        </td>
                         <td className="text-right font-mono tabular-nums">{eff.debit > 0 ? `LKR ${fmt(eff.debit)}` : "—"}</td>
                         <td className="text-right font-mono tabular-nums">{eff.credit > 0 ? `LKR ${fmt(eff.credit)}` : "—"}</td>
                         <td className={`text-right font-mono tabular-nums font-medium ${net >= 0 ? "text-foreground" : "text-destructive"}`}>
@@ -280,7 +276,7 @@ export default function TrialBalance() {
             </tbody>
             <tfoot>
               <tr className="font-bold border-t-2 border-foreground/20">
-                <td colSpan={4} className="text-foreground">Totals</td>
+                <td colSpan={3} className="text-foreground">Totals</td>
                 <td className="text-right font-mono tabular-nums text-foreground">LKR {fmt(totalDebit)}</td>
                 <td className="text-right font-mono tabular-nums text-foreground">LKR {fmt(totalCredit)}</td>
                 <td className={`text-right font-mono tabular-nums ${isBalanced ? "text-primary" : "text-destructive"}`}>
