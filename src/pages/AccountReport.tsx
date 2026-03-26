@@ -101,10 +101,8 @@ export default function AccountReport() {
       (entry: any) => entry.status === "posted" && !entry.voided_at
     );
 
-    // Opening balance from fiscal period or account
-    const ob = matchingPeriod && openingBalances
-      ? openingBalances.find((o: any) => o.account_id === account.id && o.fiscal_period_id === matchingPeriod.id)
-      : null;
+    // Opening balance: sum of all journal lines for this account BEFORE dateFrom
+    // This includes opening_balance type entries, so we use journal lines as single source of truth.
     const historicalOpening = postedEntries
       .filter((entry: any) => entry.entry_date < dateFrom)
       .flatMap((entry: any) => ((entry.journal_lines as any[]) || []).filter((line: any) => line.account_id === account.id))
@@ -114,15 +112,10 @@ export default function AccountReport() {
         return sum + (debitNormal ? debit - credit : credit - debit);
       }, 0);
 
-    const opening = isOBEAccount
-      ? historicalOpening
-      : ob
-        ? Number((ob as any).balance)
-        : Number(account.opening_balance) || 0;
+    const opening = historicalOpening;
 
     const txRows: TransactionRow[] = postedEntries
       .filter((entry: any) => {
-        if (!isOBEAccount && entry.entry_type === "opening_balance") return false; // already represented by the opening balance header row for regular accounts
         if (entry.entry_date < dateFrom || entry.entry_date > dateTo) return false;
         return true;
       })

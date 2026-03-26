@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { FileText, Printer, Download, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
-import { isDebitNormal, ACCOUNT_TYPES, getTypeLabel } from "@/lib/accountTypes";
+import { ACCOUNT_TYPES, getTypeLabel } from "@/lib/accountTypes";
 
 interface AccountBalance {
   id: string;
@@ -14,7 +14,6 @@ interface AccountBalance {
   account_type: string;
   total_debit: number;
   total_credit: number;
-  opening_balance: number;
 }
 
 export default function TrialBalance() {
@@ -38,7 +37,7 @@ export default function TrialBalance() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("journal_lines")
-        .select("account_id, debit, credit, journal_entries!inner(entry_date, status)");
+        .select("account_id, debit, credit, journal_entries!inner(entry_date, status, entry_type)");
       if (error) throw error;
       return data as any[];
     },
@@ -56,28 +55,10 @@ export default function TrialBalance() {
     },
   });
 
-  const { data: openingBalancesData } = useQuery({
-    queryKey: ["tb_opening_balances"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("opening_balances").select("*");
-      if (error) throw error;
-      return data;
-    },
-  });
-
   const matchingPeriod = useMemo(() => {
     if (!fiscalPeriods) return null;
     return fiscalPeriods.find(p => p.period_start <= asOfDate && p.period_end >= asOfDate) || null;
   }, [fiscalPeriods, asOfDate]);
-
-  const obMap = useMemo(() => {
-    const m = new Map<string, number>();
-    if (!matchingPeriod || !openingBalancesData) return m;
-    openingBalancesData
-      .filter(ob => ob.fiscal_period_id === matchingPeriod.id)
-      .forEach(ob => m.set(ob.account_id, Number(ob.balance)));
-    return m;
-  }, [matchingPeriod, openingBalancesData]);
 
   const balances: AccountBalance[] = useMemo(() => {
     if (!accounts || !journalLines) return [];
@@ -91,10 +72,11 @@ export default function TrialBalance() {
         account_type: a.account_type,
         total_debit: 0,
         total_credit: 0,
-        opening_balance: obMap.get(a.id) || 0,
       })
     );
 
+    // Journal lines are the single source of truth — opening_balance type
+    // journal entries are already included, so do NOT add opening_balances table on top.
     journalLines.forEach(line => {
       const entryDate = line.journal_entries?.entry_date;
       const status = line.journal_entries?.status;
@@ -109,21 +91,13 @@ export default function TrialBalance() {
       }
     });
 
-    return Array.from(map.values()).filter(a => a.total_debit > 0 || a.total_credit > 0 || a.opening_balance !== 0);
-  }, [accounts, journalLines, asOfDate, obMap, matchingPeriod]);
+    return Array.from(map.values()).filter(a => a.total_debit > 0 || a.total_credit > 0);
+  }, [accounts, journalLines, asOfDate, matchingPeriod]);
 
-  // Calculate totals including opening balances converted to debit/credit columns
+  // Calculate totals — journal lines are the single source, no separate opening balance addition
   const { totalDebit, totalCredit } = useMemo(() => {
     let dr = 0, cr = 0;
     balances.forEach(a => {
-      const debitNormal = isDebitNormal(a.account_type);
-      if (a.opening_balance > 0) {
-        if (debitNormal) dr += a.opening_balance;
-        else cr += a.opening_balance;
-      } else if (a.opening_balance < 0) {
-        if (debitNormal) cr += Math.abs(a.opening_balance);
-        else dr += Math.abs(a.opening_balance);
-      }
       dr += a.total_debit;
       cr += a.total_credit;
     });
@@ -148,34 +122,23 @@ export default function TrialBalance() {
 
   const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // Get effective debit/credit for display (including opening balance)
+  // Get effective debit/credit for display — journal lines are single source of truth
   const getEffectiveAmounts = (a: AccountBalance) => {
-    const debitNormal = isDebitNormal(a.account_type);
-    let dr = a.total_debit;
-    let cr = a.total_credit;
-    if (a.opening_balance > 0) {
-      if (debitNormal) dr += a.opening_balance;
-      else cr += a.opening_balance;
-    } else if (a.opening_balance < 0) {
-      if (debitNormal) cr += Math.abs(a.opening_balance);
-      else dr += Math.abs(a.opening_balance);
-    }
-    return { debit: dr, credit: cr };
+    return { debit: a.total_debit, credit: a.total_credit };
   };
 
   const handleExportCSV = () => {
     const rows = [
-      ["Account Code", "Account Name", "Type", "Opening Balance", "Debit", "Credit", "Net Balance"],
+      ["Account Code", "Account Name", "Type", "Debit", "Credit", "Net Balance"],
       ...balances.map(a => {
         const eff = getEffectiveAmounts(a);
         return [
           a.account_code, a.account_name, a.account_type,
-          a.opening_balance.toFixed(2),
           eff.debit.toFixed(2), eff.credit.toFixed(2),
           (eff.debit - eff.credit).toFixed(2),
         ];
       }),
-      ["", "", "TOTALS", "", totalDebit.toFixed(2), totalCredit.toFixed(2), (totalDebit - totalCredit).toFixed(2)],
+      ["", "", "TOTALS", totalDebit.toFixed(2), totalCredit.toFixed(2), (totalDebit - totalCredit).toFixed(2)],
     ];
     const csv = rows.map(r => r.map(c => `"${c}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -275,7 +238,6 @@ export default function TrialBalance() {
                 <th className="w-28">Code</th>
                 <th>Account Name</th>
                 <th className="w-28">Type</th>
-                <th className="text-right w-32">Opening Bal.</th>
                 <th className="text-right w-36">Debit</th>
                 <th className="text-right w-36">Credit</th>
                 <th className="text-right w-36">Net Balance</th>
@@ -285,7 +247,7 @@ export default function TrialBalance() {
               {grouped.map(group => (
                 <Fragment key={group.type}>
                   <tr>
-                    <td colSpan={7} className="font-semibold text-foreground bg-muted/40 py-2 text-xs uppercase tracking-wide">
+                    <td colSpan={6} className="font-semibold text-foreground bg-muted/40 py-2 text-xs uppercase tracking-wide">
                       {group.type}
                     </td>
                   </tr>
@@ -301,9 +263,6 @@ export default function TrialBalance() {
                             {a.account_type}
                           </span>
                         </td>
-                        <td className="text-right font-mono tabular-nums text-muted-foreground">
-                          {a.opening_balance !== 0 ? `LKR ${fmt(a.opening_balance)}` : "—"}
-                        </td>
                         <td className="text-right font-mono tabular-nums">{eff.debit > 0 ? `LKR ${fmt(eff.debit)}` : "—"}</td>
                         <td className="text-right font-mono tabular-nums">{eff.credit > 0 ? `LKR ${fmt(eff.credit)}` : "—"}</td>
                         <td className={`text-right font-mono tabular-nums font-medium ${net >= 0 ? "text-foreground" : "text-destructive"}`}>
@@ -317,7 +276,7 @@ export default function TrialBalance() {
             </tbody>
             <tfoot>
               <tr className="font-bold border-t-2 border-foreground/20">
-                <td colSpan={4} className="text-foreground">Totals</td>
+                <td colSpan={3} className="text-foreground">Totals</td>
                 <td className="text-right font-mono tabular-nums text-foreground">LKR {fmt(totalDebit)}</td>
                 <td className="text-right font-mono tabular-nums text-foreground">LKR {fmt(totalCredit)}</td>
                 <td className={`text-right font-mono tabular-nums ${isBalanced ? "text-primary" : "text-destructive"}`}>
