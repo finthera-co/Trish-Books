@@ -91,10 +91,12 @@ export default function TrialBalance() {
         account_type: a.account_type,
         total_debit: 0,
         total_credit: 0,
-        opening_balance: obMap.get(a.id) || 0,
+        opening_balance: 0,
       })
     );
 
+    // Journal lines are the single source of truth — opening_balance type
+    // journal entries are already included, so do NOT add opening_balances table on top.
     journalLines.forEach(line => {
       const entryDate = line.journal_entries?.entry_date;
       const status = line.journal_entries?.status;
@@ -109,21 +111,13 @@ export default function TrialBalance() {
       }
     });
 
-    return Array.from(map.values()).filter(a => a.total_debit > 0 || a.total_credit > 0 || a.opening_balance !== 0);
-  }, [accounts, journalLines, asOfDate, obMap, matchingPeriod]);
+    return Array.from(map.values()).filter(a => a.total_debit > 0 || a.total_credit > 0);
+  }, [accounts, journalLines, asOfDate, matchingPeriod]);
 
-  // Calculate totals including opening balances converted to debit/credit columns
+  // Calculate totals — journal lines are the single source, no separate opening balance addition
   const { totalDebit, totalCredit } = useMemo(() => {
     let dr = 0, cr = 0;
     balances.forEach(a => {
-      const debitNormal = isDebitNormal(a.account_type);
-      if (a.opening_balance > 0) {
-        if (debitNormal) dr += a.opening_balance;
-        else cr += a.opening_balance;
-      } else if (a.opening_balance < 0) {
-        if (debitNormal) cr += Math.abs(a.opening_balance);
-        else dr += Math.abs(a.opening_balance);
-      }
       dr += a.total_debit;
       cr += a.total_credit;
     });
