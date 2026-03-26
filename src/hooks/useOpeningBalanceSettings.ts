@@ -175,28 +175,29 @@ export function useSaveAccountOpeningBalance() {
         .eq("tenant_id", appUser.tenant_id);
       if (error) throw error;
 
-      // 2. If balance is zero, just void any existing inline OB entry
-      // Find existing inline OB journal entries for this account
+      // 2. Void ALL existing OB journal entries for this account (inline + OB-page)
       const { data: existingEntries } = await supabase
         .from("journal_entries")
-        .select("id")
+        .select("id, journal_lines(account_id)")
         .eq("tenant_id", appUser.tenant_id)
         .eq("entry_type", "opening_balance")
-        .eq("status", "posted")
-        .like("reference", `OB-INLINE-${accountId.substring(0, 8)}%`);
+        .eq("status", "posted");
 
-      // Void existing inline entries for this account
-      for (const entry of existingEntries || []) {
-        await supabase
-          .from("journal_entries")
-          .update({
-            status: "voided",
-            void_reason: "Opening balance updated via inline edit",
-            voided_by: appUser.id,
-            voided_at: new Date().toISOString(),
-          })
-          .eq("id", entry.id)
-          .eq("tenant_id", appUser.tenant_id);
+      for (const je of existingEntries || []) {
+        const lines = (je.journal_lines || []) as any[];
+        const hasAccount = lines.some((l: any) => l.account_id === accountId);
+        if (hasAccount) {
+          await supabase
+            .from("journal_entries")
+            .update({
+              status: "voided",
+              void_reason: "Opening balance updated via inline edit",
+              voided_by: appUser.id,
+              voided_at: new Date().toISOString(),
+            })
+            .eq("id", je.id)
+            .eq("tenant_id", appUser.tenant_id);
+        }
       }
 
       if (openingBalance <= 0) return; // No journal needed for zero balance
