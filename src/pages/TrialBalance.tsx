@@ -38,7 +38,7 @@ export default function TrialBalance() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("journal_lines")
-        .select("account_id, debit, credit, journal_entries!inner(entry_date, status)");
+        .select("account_id, debit, credit, journal_entries!inner(entry_date, status, entry_type)");
       if (error) throw error;
       return data as any[];
     },
