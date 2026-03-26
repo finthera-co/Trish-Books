@@ -14,7 +14,6 @@ interface AccountBalance {
   account_type: string;
   total_debit: number;
   total_credit: number;
-  opening_balance: number;
 }
 
 export default function TrialBalance() {
