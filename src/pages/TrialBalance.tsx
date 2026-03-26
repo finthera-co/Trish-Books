@@ -129,17 +129,16 @@ export default function TrialBalance() {
 
   const handleExportCSV = () => {
     const rows = [
-      ["Account Code", "Account Name", "Type", "Opening Balance", "Debit", "Credit", "Net Balance"],
+      ["Account Code", "Account Name", "Type", "Debit", "Credit", "Net Balance"],
       ...balances.map(a => {
         const eff = getEffectiveAmounts(a);
         return [
           a.account_code, a.account_name, a.account_type,
-          a.opening_balance.toFixed(2),
           eff.debit.toFixed(2), eff.credit.toFixed(2),
           (eff.debit - eff.credit).toFixed(2),
         ];
       }),
-      ["", "", "TOTALS", "", totalDebit.toFixed(2), totalCredit.toFixed(2), (totalDebit - totalCredit).toFixed(2)],
+      ["", "", "TOTALS", totalDebit.toFixed(2), totalCredit.toFixed(2), (totalDebit - totalCredit).toFixed(2)],
     ];
     const csv = rows.map(r => r.map(c => `"${c}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
