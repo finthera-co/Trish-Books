@@ -142,19 +142,9 @@ export default function TrialBalance() {
 
   const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // Get effective debit/credit for display (including opening balance)
+  // Get effective debit/credit for display — journal lines are single source of truth
   const getEffectiveAmounts = (a: AccountBalance) => {
-    const debitNormal = isDebitNormal(a.account_type);
-    let dr = a.total_debit;
-    let cr = a.total_credit;
-    if (a.opening_balance > 0) {
-      if (debitNormal) dr += a.opening_balance;
-      else cr += a.opening_balance;
-    } else if (a.opening_balance < 0) {
-      if (debitNormal) cr += Math.abs(a.opening_balance);
-      else dr += Math.abs(a.opening_balance);
-    }
-    return { debit: dr, credit: cr };
+    return { debit: a.total_debit, credit: a.total_credit };
   };
 
   const handleExportCSV = () => {
