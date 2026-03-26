@@ -56,28 +56,10 @@ export default function TrialBalance() {
     },
   });
 
-  const { data: openingBalancesData } = useQuery({
-    queryKey: ["tb_opening_balances"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("opening_balances").select("*");
-      if (error) throw error;
-      return data;
-    },
-  });
-
   const matchingPeriod = useMemo(() => {
     if (!fiscalPeriods) return null;
     return fiscalPeriods.find(p => p.period_start <= asOfDate && p.period_end >= asOfDate) || null;
   }, [fiscalPeriods, asOfDate]);
-
-  const obMap = useMemo(() => {
-    const m = new Map<string, number>();
-    if (!matchingPeriod || !openingBalancesData) return m;
-    openingBalancesData
-      .filter(ob => ob.fiscal_period_id === matchingPeriod.id)
-      .forEach(ob => m.set(ob.account_id, Number(ob.balance)));
-    return m;
-  }, [matchingPeriod, openingBalancesData]);
 
   const balances: AccountBalance[] = useMemo(() => {
     if (!accounts || !journalLines) return [];
