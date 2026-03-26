@@ -170,22 +170,31 @@ export function useSaveQuickBooksOB() {
           })
           .eq("id", params.editEntryId)
           .eq("tenant_id", appUser.tenant_id);
-      } else {
-        // Check for duplicate — only one OB per account
-        const { data: existingEntries } = await supabase
-          .from("journal_entries")
-          .select("id, journal_lines(account_id)")
-          .eq("tenant_id", appUser.tenant_id)
-          .eq("entry_type", "opening_balance")
-          .eq("status", "posted");
+      }
 
-        const hasExisting = (existingEntries || []).some((je: any) => {
-          const lines = (je.journal_lines || []) as any[];
-          return lines.some((l: any) => l.account_id === params.accountId);
-        });
+      // Void ANY existing opening balance entries for this account (both inline and OB-page)
+      const { data: existingEntries } = await supabase
+        .from("journal_entries")
+        .select("id, journal_lines(account_id)")
+        .eq("tenant_id", appUser.tenant_id)
+        .eq("entry_type", "opening_balance")
+        .eq("status", "posted");
 
-        if (hasExisting) {
-          throw new Error(`Opening balance already exists for ${account.account_name}. Use Edit to modify.`);
+      for (const je of existingEntries || []) {
+        if (je.id === params.editEntryId) continue; // already voided above
+        const lines = (je.journal_lines || []) as any[];
+        const hasAccount = lines.some((l: any) => l.account_id === params.accountId);
+        if (hasAccount) {
+          await supabase
+            .from("journal_entries")
+            .update({
+              status: "voided",
+              void_reason: "Superseded by new opening balance entry",
+              voided_by: appUser.id,
+              voided_at: new Date().toISOString(),
+            })
+            .eq("id", je.id)
+            .eq("tenant_id", appUser.tenant_id);
         }
       }
 
