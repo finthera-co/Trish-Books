@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { FileText, Printer, Download, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
-import { isDebitNormal, ACCOUNT_TYPES, getTypeLabel } from "@/lib/accountTypes";
+import { ACCOUNT_TYPES, getTypeLabel } from "@/lib/accountTypes";
 
 interface AccountBalance {
   id: string;
