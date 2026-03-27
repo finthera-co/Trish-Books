@@ -83,6 +83,7 @@ export type Database = {
           opening_balance_type: string
           parent_account_id: string | null
           requires_subledger: boolean
+          subledger_type: string | null
           tenant_id: string
           updated_at: string
         }
@@ -104,6 +105,7 @@ export type Database = {
           opening_balance_type?: string
           parent_account_id?: string | null
           requires_subledger?: boolean
+          subledger_type?: string | null
           tenant_id: string
           updated_at?: string
         }
@@ -125,6 +127,7 @@ export type Database = {
           opening_balance_type?: string
           parent_account_id?: string | null
           requires_subledger?: boolean
+          subledger_type?: string | null
           tenant_id?: string
           updated_at?: string
         }
@@ -193,6 +196,104 @@ export type Database = {
             columns: ["transaction_id"]
             isOneToOne: false
             referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ap_subledger: {
+        Row: {
+          amount: number
+          created_at: string
+          id: string
+          journal_line_id: string
+          tenant_id: string
+          vendor_id: string
+        }
+        Insert: {
+          amount?: number
+          created_at?: string
+          id?: string
+          journal_line_id: string
+          tenant_id: string
+          vendor_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          id?: string
+          journal_line_id?: string
+          tenant_id?: string
+          vendor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ap_subledger_journal_line_id_fkey"
+            columns: ["journal_line_id"]
+            isOneToOne: false
+            referencedRelation: "journal_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ap_subledger_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ap_subledger_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ar_subledger: {
+        Row: {
+          amount: number
+          created_at: string
+          customer_id: string
+          id: string
+          journal_line_id: string
+          tenant_id: string
+        }
+        Insert: {
+          amount?: number
+          created_at?: string
+          customer_id: string
+          id?: string
+          journal_line_id: string
+          tenant_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          customer_id?: string
+          id?: string
+          journal_line_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ar_subledger_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ar_subledger_journal_line_id_fkey"
+            columns: ["journal_line_id"]
+            isOneToOne: false
+            referencedRelation: "journal_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ar_subledger_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
         ]
@@ -303,6 +404,55 @@ export type Database = {
           },
           {
             foreignKeyName: "asset_disposals_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      asset_subledger: {
+        Row: {
+          amount: number
+          asset_id: string
+          created_at: string
+          id: string
+          journal_line_id: string
+          tenant_id: string
+        }
+        Insert: {
+          amount?: number
+          asset_id: string
+          created_at?: string
+          id?: string
+          journal_line_id: string
+          tenant_id: string
+        }
+        Update: {
+          amount?: number
+          asset_id?: string
+          created_at?: string
+          id?: string
+          journal_line_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_subledger_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "fixed_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_subledger_journal_line_id_fkey"
+            columns: ["journal_line_id"]
+            isOneToOne: false
+            referencedRelation: "journal_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_subledger_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -818,6 +968,7 @@ export type Database = {
           email: string | null
           id: string
           name: string
+          opening_balance: number
           phone: string | null
           tenant_id: string
           updated_at: string
@@ -828,6 +979,7 @@ export type Database = {
           email?: string | null
           id?: string
           name: string
+          opening_balance?: number
           phone?: string | null
           tenant_id: string
           updated_at?: string
@@ -838,6 +990,7 @@ export type Database = {
           email?: string | null
           id?: string
           name?: string
+          opening_balance?: number
           phone?: string | null
           tenant_id?: string
           updated_at?: string
@@ -1436,6 +1589,61 @@ export type Database = {
           },
           {
             foreignKeyName: "inventory_items_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      inventory_subledger: {
+        Row: {
+          amount: number
+          created_at: string
+          id: string
+          item_id: string
+          journal_line_id: string
+          qty: number
+          rate: number
+          tenant_id: string
+        }
+        Insert: {
+          amount?: number
+          created_at?: string
+          id?: string
+          item_id: string
+          journal_line_id: string
+          qty?: number
+          rate?: number
+          tenant_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          id?: string
+          item_id?: string
+          journal_line_id?: string
+          qty?: number
+          rate?: number
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_subledger_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_subledger_journal_line_id_fkey"
+            columns: ["journal_line_id"]
+            isOneToOne: false
+            referencedRelation: "journal_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_subledger_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -3528,6 +3736,7 @@ export type Database = {
           email: string | null
           id: string
           name: string
+          opening_balance: number
           phone: string | null
           tenant_id: string
           updated_at: string
@@ -3538,6 +3747,7 @@ export type Database = {
           email?: string | null
           id?: string
           name: string
+          opening_balance?: number
           phone?: string | null
           tenant_id: string
           updated_at?: string
@@ -3548,6 +3758,7 @@ export type Database = {
           email?: string | null
           id?: string
           name?: string
+          opening_balance?: number
           phone?: string | null
           tenant_id?: string
           updated_at?: string
