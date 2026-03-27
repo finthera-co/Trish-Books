@@ -53,6 +53,10 @@ import AnomalyDashboard from "./pages/AnomalyDashboard";
 import TransactionsLedger from "./pages/TransactionsLedger";
 import AccountReport from "./pages/AccountReport";
 import GLVerification from "./pages/GLVerification";
+import CustomersPage from "./pages/CustomersPage";
+import VendorsPage from "./pages/VendorsPage";
+import InventoryPage from "./pages/InventoryPage";
+import BankAccountsPage from "./pages/BankAccountsPage";
 
 const queryClient = new QueryClient();
 
@@ -85,6 +89,10 @@ const App = () => (
                   <Route path="/accounting/opening-balances" element={<OpeningBalances />} />
                   <Route path="/accounting/close-obe" element={<CloseOBE />} />
                   <Route path="/accounting/gl-verify" element={<GLVerification />} />
+                  <Route path="/accounting/customers" element={<CustomersPage />} />
+                  <Route path="/accounting/vendors" element={<VendorsPage />} />
+                  <Route path="/accounting/inventory" element={<InventoryPage />} />
+                  <Route path="/accounting/bank-accounts" element={<BankAccountsPage />} />
                 </Route>
 
                 {/* Banking module */}
