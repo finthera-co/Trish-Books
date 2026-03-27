@@ -53,6 +53,10 @@ import AnomalyDashboard from "./pages/AnomalyDashboard";
 import TransactionsLedger from "./pages/TransactionsLedger";
 import AccountReport from "./pages/AccountReport";
 import GLVerification from "./pages/GLVerification";
+import CustomersPage from "./pages/CustomersPage";
+import VendorsPage from "./pages/VendorsPage";
+import InventoryPage from "./pages/InventoryPage";
+import BankAccountsPage from "./pages/BankAccountsPage";
 
 const queryClient = new QueryClient();
 
