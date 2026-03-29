@@ -67,9 +67,10 @@ export function useCreateInventoryItem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (item: { item_name: string; sku?: string; description?: string; unit_cost?: number; quantity_on_hand?: number; account_id?: string }) => {
+      const { total_value, ...safeItem } = item as any;
       const { data, error } = await supabase
         .from("inventory_items")
-        .insert({ ...item, tenant_id: appUser!.tenant_id })
+        .insert({ ...safeItem, tenant_id: appUser!.tenant_id })
         .select()
         .single();
       if (error) throw error;
