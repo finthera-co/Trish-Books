@@ -44,6 +44,7 @@ import {
   isOpeningBalanceEquityAccount,
 } from "@/lib/accountTypes";
 import CreateLedgerModal from "@/components/opening-balances/CreateLedgerModal";
+import OBSubledgerBreakdown from "@/components/opening-balances/OBSubledgerBreakdown";
 
 export default function OpeningBalances() {
   const { appUser } = useAuth();
@@ -87,6 +88,7 @@ export default function OpeningBalances() {
   const [formDescription, setFormDescription] = useState("");
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [showCreateLedger, setShowCreateLedger] = useState(false);
+  const [subledgerValid, setSubledgerValid] = useState(true);
 
   // Update date from system setting
   useEffect(() => {
@@ -104,7 +106,7 @@ export default function OpeningBalances() {
     return (accounts as any[]).filter((a) => {
       if (a.is_system && isOpeningBalanceEquityAccount(a)) return false;
       if (!isOpeningBalanceEligible(a.account_type)) return false;
-      if (isControlSubtype(a.account_subtype)) return false;
+      // Allow control accounts — they will require subledger breakdown
       // If editing, allow the current account
       if (editingEntryId) {
         const editEntry = (obEntries || []).find((e: any) => e.id === editingEntryId);
@@ -149,12 +151,30 @@ export default function OpeningBalances() {
     setFormAmount("");
     setFormDescription("");
     setEditingEntryId(null);
+    setSubledgerValid(true);
   };
+
+  // Check if selected account requires subledger
+  const selectedAccount = useMemo(() => {
+    if (!formAccountId || !accounts) return null;
+    return (accounts as any[]).find((a: any) => a.id === formAccountId) || null;
+  }, [formAccountId, accounts]);
+
+  const needsSubledger = useMemo(() => {
+    if (!selectedAccount) return false;
+    return requiresSubledger(selectedAccount.account_subtype) || isControlSubtype(selectedAccount.account_subtype);
+  }, [selectedAccount]);
 
   const handleSave = () => {
     if (!formAccountId) { toast.error("Select an account"); return; }
     const amt = parseFloat(formAmount);
     if (isNaN(amt) || amt === 0) { toast.error("Enter a non-zero amount"); return; }
+
+    // Block save if subledger breakdown required but not balanced
+    if (needsSubledger && !subledgerValid) {
+      toast.error("Sub-ledger breakdown must match the opening balance amount before saving.");
+      return;
+    }
 
     saveMutation.mutate(
       {
@@ -422,6 +442,16 @@ export default function OpeningBalances() {
                   );
                 })()}
               </div>
+            )}
+
+            {/* Subledger breakdown for control accounts */}
+            {needsSubledger && formAccountId && formAmount && parseFloat(formAmount) !== 0 && (
+              <OBSubledgerBreakdown
+                accountId={formAccountId}
+                accountSubtype={selectedAccount?.account_subtype}
+                controlTotal={parseFloat(formAmount)}
+                onValidChange={setSubledgerValid}
+              />
             )}
 
             {(!obDate || obDate !== formDate) && (
