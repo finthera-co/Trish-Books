@@ -44,6 +44,7 @@ import {
   isOpeningBalanceEquityAccount,
 } from "@/lib/accountTypes";
 import CreateLedgerModal from "@/components/opening-balances/CreateLedgerModal";
+import OBSubledgerBreakdown from "@/components/opening-balances/OBSubledgerBreakdown";
 
 export default function OpeningBalances() {
   const { appUser } = useAuth();
