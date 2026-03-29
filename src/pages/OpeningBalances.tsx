@@ -444,7 +444,17 @@ export default function OpeningBalances() {
               </div>
             )}
 
-            {(!obDate || obDate !== formDate) && (
+            {/* Subledger breakdown for control accounts */}
+            {needsSubledger && formAccountId && formAmount && parseFloat(formAmount) !== 0 && (
+              <OBSubledgerBreakdown
+                accountId={formAccountId}
+                accountSubtype={selectedAccount?.account_subtype}
+                controlTotal={parseFloat(formAmount)}
+                onValidChange={setSubledgerValid}
+              />
+            )}
+
+
               <div className="mt-3">
                 <Button variant="outline" size="sm" onClick={handleSaveDate} disabled={saveSettingMutation.isPending}>
                   Set as Global Opening Balance Date
