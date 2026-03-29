@@ -454,7 +454,7 @@ export default function OpeningBalances() {
               />
             )}
 
-
+            {(!obDate || obDate !== formDate) && (
               <div className="mt-3">
                 <Button variant="outline" size="sm" onClick={handleSaveDate} disabled={saveSettingMutation.isPending}>
                   Set as Global Opening Balance Date
