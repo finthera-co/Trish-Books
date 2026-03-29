@@ -88,6 +88,7 @@ export default function OpeningBalances() {
   const [formDescription, setFormDescription] = useState("");
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [showCreateLedger, setShowCreateLedger] = useState(false);
+  const [subledgerValid, setSubledgerValid] = useState(true);
 
   // Update date from system setting
   useEffect(() => {
