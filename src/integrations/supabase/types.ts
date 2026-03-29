@@ -203,7 +203,9 @@ export type Database = {
       ap_subledger: {
         Row: {
           amount: number
+          bill_no: string | null
           created_at: string
+          due_date: string | null
           id: string
           journal_line_id: string
           tenant_id: string
@@ -211,7 +213,9 @@ export type Database = {
         }
         Insert: {
           amount?: number
+          bill_no?: string | null
           created_at?: string
+          due_date?: string | null
           id?: string
           journal_line_id: string
           tenant_id: string
@@ -219,7 +223,9 @@ export type Database = {
         }
         Update: {
           amount?: number
+          bill_no?: string | null
           created_at?: string
+          due_date?: string | null
           id?: string
           journal_line_id?: string
           tenant_id?: string
@@ -254,7 +260,9 @@ export type Database = {
           amount: number
           created_at: string
           customer_id: string
+          due_date: string | null
           id: string
+          invoice_no: string | null
           journal_line_id: string
           tenant_id: string
         }
@@ -262,7 +270,9 @@ export type Database = {
           amount?: number
           created_at?: string
           customer_id: string
+          due_date?: string | null
           id?: string
+          invoice_no?: string | null
           journal_line_id: string
           tenant_id: string
         }
@@ -270,7 +280,9 @@ export type Database = {
           amount?: number
           created_at?: string
           customer_id?: string
+          due_date?: string | null
           id?: string
+          invoice_no?: string | null
           journal_line_id?: string
           tenant_id?: string
         }
@@ -415,25 +427,34 @@ export type Database = {
         Row: {
           amount: number
           asset_id: string
+          cost: number
           created_at: string
           id: string
           journal_line_id: string
+          life_years: number | null
+          salvage: number
           tenant_id: string
         }
         Insert: {
           amount?: number
           asset_id: string
+          cost?: number
           created_at?: string
           id?: string
           journal_line_id: string
+          life_years?: number | null
+          salvage?: number
           tenant_id: string
         }
         Update: {
           amount?: number
           asset_id?: string
+          cost?: number
           created_at?: string
           id?: string
           journal_line_id?: string
+          life_years?: number | null
+          salvage?: number
           tenant_id?: string
         }
         Relationships: [
