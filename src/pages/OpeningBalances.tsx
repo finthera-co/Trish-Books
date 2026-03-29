@@ -170,6 +170,12 @@ export default function OpeningBalances() {
     const amt = parseFloat(formAmount);
     if (isNaN(amt) || amt === 0) { toast.error("Enter a non-zero amount"); return; }
 
+    // Block save if subledger breakdown required but not balanced
+    if (needsSubledger && !subledgerValid) {
+      toast.error("Sub-ledger breakdown must match the opening balance amount before saving.");
+      return;
+    }
+
     saveMutation.mutate(
       {
         accountId: formAccountId,
