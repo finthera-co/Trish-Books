@@ -151,7 +151,19 @@ export default function OpeningBalances() {
     setFormAmount("");
     setFormDescription("");
     setEditingEntryId(null);
+    setSubledgerValid(true);
   };
+
+  // Check if selected account requires subledger
+  const selectedAccount = useMemo(() => {
+    if (!formAccountId || !accounts) return null;
+    return (accounts as any[]).find((a: any) => a.id === formAccountId) || null;
+  }, [formAccountId, accounts]);
+
+  const needsSubledger = useMemo(() => {
+    if (!selectedAccount) return false;
+    return requiresSubledger(selectedAccount.account_subtype) || isControlSubtype(selectedAccount.account_subtype);
+  }, [selectedAccount]);
 
   const handleSave = () => {
     if (!formAccountId) { toast.error("Select an account"); return; }
