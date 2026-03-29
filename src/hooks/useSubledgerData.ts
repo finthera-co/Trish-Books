@@ -213,7 +213,6 @@ export function useCreateInventoryItemEnhanced() {
           description: item.description || null,
           unit_cost: cost,
           quantity_on_hand: qty,
-          total_value: qty * cost,
           account_id: item.account_id || null,
           tenant_id: appUser!.tenant_id,
         })
