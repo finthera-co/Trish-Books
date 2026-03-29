@@ -106,7 +106,7 @@ export default function OpeningBalances() {
     return (accounts as any[]).filter((a) => {
       if (a.is_system && isOpeningBalanceEquityAccount(a)) return false;
       if (!isOpeningBalanceEligible(a.account_type)) return false;
-      if (isControlSubtype(a.account_subtype)) return false;
+      // Allow control accounts — they will require subledger breakdown
       // If editing, allow the current account
       if (editingEntryId) {
         const editEntry = (obEntries || []).find((e: any) => e.id === editingEntryId);
