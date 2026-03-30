@@ -38,28 +38,8 @@ export default function GeneralLedgerReport() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
-  const { data: fiscalPeriods } = useQuery({
-    queryKey: ["fiscal_periods"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("fiscal_periods").select("*").order("period_start", { ascending: true });
-      if (error) throw error;
-      return data;
-    },
-  });
 
-  const { data: openingBalances } = useQuery({
-    queryKey: ["opening_balances"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("opening_balances").select("*");
-      if (error) throw error;
-      return data;
-    },
-  });
 
-  const matchingPeriod = useMemo(() => {
-    if (!fiscalPeriods) return null;
-    return fiscalPeriods.find(p => p.period_start <= dateFrom && p.period_end >= dateFrom) || null;
-  }, [fiscalPeriods, dateFrom]);
 
   const accountLedgers: AccountLedger[] = useMemo(() => {
     if (!accounts || !journalEntries) return [];
