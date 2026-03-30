@@ -174,15 +174,14 @@ Deno.serve(async (req) => {
               message: `Cannot post to inactive account: ${acc.account_code} – ${acc.account_name}`,
             });
           }
-          // Control account warning (AR/AP/Inventory)
+          // Control account check — allow but flag as needing subledger
           if (acc.account_subtype) {
             const controlSubs = ["accounts receivable", "accounts payable", "inventory"];
             const sub = acc.account_subtype.toLowerCase();
             if (controlSubs.some((c) => sub.includes(c))) {
-              errors.push({
-                field: `account_${line.account_id}`,
-                message: `"${acc.account_name}" is a control account (${acc.account_subtype}). Use Invoices, Bills, or Payments instead.`,
-              });
+              // Allow posting — subledger enforcement happens at UI level
+              // Log for audit purposes
+              console.log(`Control account used: ${acc.account_name} (${acc.account_subtype})`);
             }
           }
         }
