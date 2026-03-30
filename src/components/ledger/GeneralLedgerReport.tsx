@@ -106,7 +106,7 @@ export default function GeneralLedgerReport() {
         closingBalance: bal,
       };
     }).filter(al => al.rows.length > 0 || al.openingBalance !== 0);
-  }, [accounts, journalEntries, dateFrom, dateTo, typeFilter, matchingPeriod, openingBalances]);
+  }, [accounts, journalEntries, dateFrom, dateTo, typeFilter]);
 
   const toggleCollapse = (id: string) => {
     setCollapsed(prev => {
