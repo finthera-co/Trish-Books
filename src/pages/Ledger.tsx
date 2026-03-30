@@ -138,20 +138,11 @@ export default function Ledger() {
   const [page, setPage] = useState(0);
   const [drillDownEntry, setDrillDownEntry] = useState<RegisterRow | null>(null);
 
-  // Fetch fiscal periods & opening balances
+  // Fetch fiscal periods (still needed for period filter UI)
   const { data: fiscalPeriods } = useQuery({
     queryKey: ["fiscal_periods"],
     queryFn: async () => {
       const { data, error } = await supabase.from("fiscal_periods").select("*").order("period_start", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
-  });
-
-  const { data: openingBalances } = useQuery({
-    queryKey: ["opening_balances"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("opening_balances").select("*");
       if (error) throw error;
       return data;
     },
