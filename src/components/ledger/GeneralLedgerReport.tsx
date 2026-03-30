@@ -70,15 +70,25 @@ export default function GeneralLedgerReport() {
 
     const sorted = [...filteredAccounts].sort((a, b) => a.account_code.localeCompare(b.account_code));
 
+    const postedEntries = (journalEntries as any[]).filter(
+      (entry: any) => entry.status === "posted" && !(entry as any).voided_at
+    );
+
     return sorted.map(account => {
       const isDebitNormal = checkDebitNormal(account.account_type);
 
-      const ob = matchingPeriod && openingBalances
-        ? openingBalances.find((o: any) => o.account_id === account.id && o.fiscal_period_id === matchingPeriod.id)
-        : null;
-      const openingBalance = ob ? Number((ob as any).balance) : 0;
+      // Opening balance = sum of all journal lines for this account BEFORE dateFrom
+      // This is the single source of truth — no separate opening_balances table lookup
+      const openingBalance = postedEntries
+        .filter((entry: any) => entry.entry_date < dateFrom)
+        .flatMap((entry: any) => ((entry.journal_lines as any[]) || []).filter((line: any) => line.account_id === account.id))
+        .reduce((sum: number, line: any) => {
+          const debit = Number(line.debit) || 0;
+          const credit = Number(line.credit) || 0;
+          return sum + (isDebitNormal ? debit - credit : credit - debit);
+        }, 0);
 
-      const rows = journalEntries
+      const rows = postedEntries
         .filter(entry => {
           if (entry.status !== "posted" || (entry as any).voided_at) return false;
           if (entry.entry_date < dateFrom || entry.entry_date > dateTo) return false;
