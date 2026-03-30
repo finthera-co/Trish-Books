@@ -153,8 +153,11 @@ export function useCreateAccount() {
   const { appUser } = useAuth();
   return useMutation({
     mutationFn: async (account: { account_name: string; account_code: string; account_type: string; account_subtype?: string; parent_account_id?: string; category_id?: string; created_from?: string }) => {
+      const { deriveSubledgerFields } = await import("@/lib/accountTypes");
+      const subledgerFields = deriveSubledgerFields(account.account_subtype);
       const { data, error } = await supabase.from("accounts").insert({
         ...account,
+        ...subledgerFields,
         tenant_id: appUser?.tenant_id,
       }).select().single();
       if (error) throw error;

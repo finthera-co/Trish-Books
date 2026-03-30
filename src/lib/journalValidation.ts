@@ -326,13 +326,18 @@ export function isSubledgerAccount(account: AccountInfo): "AR" | "AP" | null {
   return null;
 }
 
-/** Filter out control accounts for manual journal entries */
+/** Get all active accounts for manual journal entries (including control accounts) */
 export function getManualEntryAccounts(accounts: AccountInfo[]): AccountInfo[] {
-  return accounts.filter((a) => {
-    if (!a.is_active) return false;
-    if (!a.account_subtype) return true;
-    return !CONTROL_ACCOUNTS.some((c) =>
-      a.account_subtype!.toLowerCase().includes(c.toLowerCase())
-    );
-  });
+  return accounts.filter((a) => a.is_active);
+}
+
+/** Check if an account requires subledger breakdown */
+export function requiresSubledgerBreakdown(account: AccountInfo): string | null {
+  if (!account.account_subtype) return null;
+  const sub = account.account_subtype.toLowerCase();
+  if (sub.includes("accounts receivable") || sub.includes("receivable")) return "customer";
+  if (sub.includes("accounts payable") || sub.includes("payable")) return "vendor";
+  if (sub.includes("inventory")) return "inventory";
+  if (sub.includes("fixed asset") || sub.includes("accumulated depreciation")) return "fixed_asset";
+  return null;
 }
