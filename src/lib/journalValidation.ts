@@ -157,7 +157,7 @@ export function validateAccountStatus(
     .filter(Boolean) as ValidationError[];
 }
 
-/** Validate control accounts (AR/AP/Inventory) are not posted to manually */
+/** Validate control accounts — warn that subledger breakdown is required */
 export function validateControlAccounts(
   lines: JournalLine[],
   accountsMap: Map<string, AccountInfo>,
@@ -175,7 +175,7 @@ export function validateControlAccounts(
       if (isControl) {
         return {
           field: `account_${l.account_id}`,
-          message: `"${acc.account_name}" is a control account (${acc.account_subtype}). It can only be affected by system-generated transactions like Invoices or Bills.`,
+          message: `"${acc.account_name}" is a control account (${acc.account_subtype}). Sub-ledger breakdown is required.`,
           severity: "warning" as const,
         };
       }
@@ -326,13 +326,18 @@ export function isSubledgerAccount(account: AccountInfo): "AR" | "AP" | null {
   return null;
 }
 
-/** Filter out control accounts for manual journal entries */
+/** Get all active accounts for manual journal entries (including control accounts) */
 export function getManualEntryAccounts(accounts: AccountInfo[]): AccountInfo[] {
-  return accounts.filter((a) => {
-    if (!a.is_active) return false;
-    if (!a.account_subtype) return true;
-    return !CONTROL_ACCOUNTS.some((c) =>
-      a.account_subtype!.toLowerCase().includes(c.toLowerCase())
-    );
-  });
+  return accounts.filter((a) => a.is_active);
+}
+
+/** Check if an account requires subledger breakdown */
+export function requiresSubledgerBreakdown(account: AccountInfo): string | null {
+  if (!account.account_subtype) return null;
+  const sub = account.account_subtype.toLowerCase();
+  if (sub.includes("accounts receivable") || sub.includes("receivable")) return "customer";
+  if (sub.includes("accounts payable") || sub.includes("payable")) return "vendor";
+  if (sub.includes("inventory")) return "inventory";
+  if (sub.includes("fixed asset") || sub.includes("accumulated depreciation")) return "fixed_asset";
+  return null;
 }

@@ -206,3 +206,25 @@ export function requiresSubledger(subtype: string | null | undefined): boolean {
   if (!subtype) return false;
   return SUBLEDGER_SUBTYPES.some(s => subtype.toLowerCase().includes(s.toLowerCase()));
 }
+
+/** Derive requires_subledger and subledger_type from account_subtype */
+export function deriveSubledgerFields(accountSubtype: string | null | undefined): {
+  requires_subledger: boolean;
+  subledger_type: string;
+} {
+  if (!accountSubtype) return { requires_subledger: false, subledger_type: "none" };
+  const lower = accountSubtype.toLowerCase();
+  if (lower.includes("accounts receivable") || lower === "receivable") {
+    return { requires_subledger: true, subledger_type: "customer" };
+  }
+  if (lower.includes("accounts payable") || lower === "payable") {
+    return { requires_subledger: true, subledger_type: "vendor" };
+  }
+  if (lower.includes("inventory")) {
+    return { requires_subledger: true, subledger_type: "inventory" };
+  }
+  if (lower.includes("fixed asset") || lower.includes("accumulated depreciation")) {
+    return { requires_subledger: true, subledger_type: "fixed_asset" };
+  }
+  return { requires_subledger: false, subledger_type: "none" };
+}
