@@ -15,6 +15,7 @@ import {
   validateJournalEntry,
   getManualEntryAccounts,
   isSubledgerAccount,
+  requiresSubledgerBreakdown,
   type AccountInfo,
   type ValidationError,
   type ValidationResult,
