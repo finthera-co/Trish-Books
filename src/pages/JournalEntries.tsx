@@ -176,9 +176,11 @@ export default function JournalEntries() {
       const acc = accountsMap.get(accountId);
       if (!acc) return null;
       if (!acc.is_active) return `This account is inactive`;
-      const subType = isSubledgerAccount(acc);
-      if (subType === "AR") return "AR control account — use Invoices instead";
-      if (subType === "AP") return "AP control account — use Bills instead";
+      const subledgerType = requiresSubledgerBreakdown(acc);
+      if (subledgerType === "customer") return "Control account — sub-ledger breakdown required (Customers)";
+      if (subledgerType === "vendor") return "Control account — sub-ledger breakdown required (Vendors)";
+      if (subledgerType === "inventory") return "Control account — sub-ledger breakdown required (Items)";
+      if (subledgerType === "fixed_asset") return "Control account — sub-ledger breakdown required (Assets)";
       return null;
     },
     [accountsMap]
