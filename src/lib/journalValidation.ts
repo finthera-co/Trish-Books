@@ -157,7 +157,7 @@ export function validateAccountStatus(
     .filter(Boolean) as ValidationError[];
 }
 
-/** Validate control accounts (AR/AP/Inventory) are not posted to manually */
+/** Validate control accounts — warn that subledger breakdown is required */
 export function validateControlAccounts(
   lines: JournalLine[],
   accountsMap: Map<string, AccountInfo>,
@@ -175,7 +175,7 @@ export function validateControlAccounts(
       if (isControl) {
         return {
           field: `account_${l.account_id}`,
-          message: `"${acc.account_name}" is a control account (${acc.account_subtype}). It can only be affected by system-generated transactions like Invoices or Bills.`,
+          message: `"${acc.account_name}" is a control account (${acc.account_subtype}). Sub-ledger breakdown is required.`,
           severity: "warning" as const,
         };
       }
