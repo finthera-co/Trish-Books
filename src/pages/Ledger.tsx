@@ -138,20 +138,11 @@ export default function Ledger() {
   const [page, setPage] = useState(0);
   const [drillDownEntry, setDrillDownEntry] = useState<RegisterRow | null>(null);
 
-  // Fetch fiscal periods & opening balances
+  // Fetch fiscal periods (still needed for period filter UI)
   const { data: fiscalPeriods } = useQuery({
     queryKey: ["fiscal_periods"],
     queryFn: async () => {
       const { data, error } = await supabase.from("fiscal_periods").select("*").order("period_start", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
-  });
-
-  const { data: openingBalances } = useQuery({
-    queryKey: ["opening_balances"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("opening_balances").select("*");
       if (error) throw error;
       return data;
     },
@@ -164,25 +155,23 @@ export default function Ledger() {
   const effectiveDateFrom = selectedPeriod ? selectedPeriod.period_start : dateFrom;
   const effectiveDateTo = selectedPeriod ? selectedPeriod.period_end : dateTo;
 
-  // Opening balance
+  // Opening balance: computed from journal lines BEFORE the date range (single source of truth)
+  // This prevents double-counting with OBE journal entries that appear as transactions
   const openingBalance = useMemo(() => {
-    if (!selectedAccount) return 0;
+    if (!selectedAccount || !journalEntries) return 0;
 
     const targetDate = effectiveDateFrom || new Date().toISOString().slice(0, 10);
-    const applicablePeriod = selectedPeriod
-      || fiscalPeriods?.find((p) => p.period_start <= targetDate && p.period_end >= targetDate)
-      || fiscalPeriods?.filter((p) => p.period_start <= targetDate).sort((a, b) => b.period_start.localeCompare(a.period_start))[0]
-      || null;
+    const debitNormal = checkDebitNormal(selectedAccount.account_type);
 
-    if (applicablePeriod && openingBalances) {
-      const ob = openingBalances.find(
-        (o: any) => o.account_id === selectedAccount.id && o.fiscal_period_id === applicablePeriod.id
-      );
-      if (ob) return Number((ob as any).balance);
-    }
-
-    return Number(selectedAccount.opening_balance) || 0;
-  }, [selectedAccount, selectedPeriod, fiscalPeriods, openingBalances, effectiveDateFrom]);
+    return (journalEntries as any[])
+      .filter((entry: any) => entry.status === "posted" && !(entry as any).voided_at && entry.entry_date < targetDate)
+      .flatMap((entry: any) => ((entry.journal_lines as any[]) || []).filter((line: any) => line.account_id === selectedAccount.id))
+      .reduce((sum: number, line: any) => {
+        const debit = Number(line.debit) || 0;
+        const credit = Number(line.credit) || 0;
+        return sum + (debitNormal ? debit - credit : credit - debit);
+      }, 0);
+  }, [selectedAccount, journalEntries, effectiveDateFrom]);
 
   // Group accounts by type for selector
   const accountsByType = useMemo(() => {
