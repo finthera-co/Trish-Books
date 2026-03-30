@@ -1,6 +1,4 @@
 import { useState, useMemo, Fragment } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { useAccounts, useJournalEntries } from "@/hooks/useData";
 import { Button } from "@/components/ui/button";
 import { Download, Printer, BookOpen, Filter } from "lucide-react";
