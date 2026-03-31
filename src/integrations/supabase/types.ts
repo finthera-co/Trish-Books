@@ -255,6 +255,100 @@ export type Database = {
           },
         ]
       }
+      ar_credit_notes: {
+        Row: {
+          amount: number
+          ar_account_id: string | null
+          created_at: string
+          credit_date: string
+          credit_note_number: string
+          customer_id: string
+          id: string
+          invoice_id: string | null
+          journal_entry_id: string | null
+          reason: string | null
+          revenue_account_id: string | null
+          status: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount?: number
+          ar_account_id?: string | null
+          created_at?: string
+          credit_date?: string
+          credit_note_number: string
+          customer_id: string
+          id?: string
+          invoice_id?: string | null
+          journal_entry_id?: string | null
+          reason?: string | null
+          revenue_account_id?: string | null
+          status?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          ar_account_id?: string | null
+          created_at?: string
+          credit_date?: string
+          credit_note_number?: string
+          customer_id?: string
+          id?: string
+          invoice_id?: string | null
+          journal_entry_id?: string | null
+          reason?: string | null
+          revenue_account_id?: string | null
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ar_credit_notes_ar_account_id_fkey"
+            columns: ["ar_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ar_credit_notes_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ar_credit_notes_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ar_credit_notes_journal_entry_id_fkey"
+            columns: ["journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ar_credit_notes_revenue_account_id_fkey"
+            columns: ["revenue_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ar_credit_notes_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ar_subledger: {
         Row: {
           amount: number
@@ -986,10 +1080,12 @@ export type Database = {
         Row: {
           address: string | null
           created_at: string
+          credit_limit: number
           email: string | null
           id: string
           name: string
           opening_balance: number
+          payment_terms: string
           phone: string | null
           tenant_id: string
           updated_at: string
@@ -997,10 +1093,12 @@ export type Database = {
         Insert: {
           address?: string | null
           created_at?: string
+          credit_limit?: number
           email?: string | null
           id?: string
           name: string
           opening_balance?: number
+          payment_terms?: string
           phone?: string | null
           tenant_id: string
           updated_at?: string
@@ -1008,10 +1106,12 @@ export type Database = {
         Update: {
           address?: string | null
           created_at?: string
+          credit_limit?: number
           email?: string | null
           id?: string
           name?: string
           opening_balance?: number
+          payment_terms?: string
           phone?: string | null
           tenant_id?: string
           updated_at?: string
@@ -1786,6 +1886,7 @@ export type Database = {
       }
       invoices: {
         Row: {
+          ar_account_id: string | null
           created_at: string
           currency: string
           customer_id: string | null
@@ -1793,12 +1894,15 @@ export type Database = {
           id: string
           invoice_number: string
           issue_date: string
+          journal_entry_id: string | null
+          revenue_account_id: string | null
           status: string
           tenant_id: string
           total_amount: number
           updated_at: string
         }
         Insert: {
+          ar_account_id?: string | null
           created_at?: string
           currency?: string
           customer_id?: string | null
@@ -1806,12 +1910,15 @@ export type Database = {
           id?: string
           invoice_number: string
           issue_date?: string
+          journal_entry_id?: string | null
+          revenue_account_id?: string | null
           status?: string
           tenant_id: string
           total_amount?: number
           updated_at?: string
         }
         Update: {
+          ar_account_id?: string | null
           created_at?: string
           currency?: string
           customer_id?: string | null
@@ -1819,6 +1926,8 @@ export type Database = {
           id?: string
           invoice_number?: string
           issue_date?: string
+          journal_entry_id?: string | null
+          revenue_account_id?: string | null
           status?: string
           tenant_id?: string
           total_amount?: number
@@ -1826,10 +1935,31 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "invoices_ar_account_id_fkey"
+            columns: ["ar_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "invoices_customer_id_fkey"
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_journal_entry_id_fkey"
+            columns: ["journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_revenue_account_id_fkey"
+            columns: ["revenue_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
             referencedColumns: ["id"]
           },
           {
@@ -2396,34 +2526,64 @@ export type Database = {
       payments_received: {
         Row: {
           amount: number
+          ar_account_id: string | null
+          bank_account_id: string | null
           id: string
           invoice_id: string
+          journal_entry_id: string | null
           payment_date: string
           payment_method: string | null
           reference: string | null
         }
         Insert: {
           amount: number
+          ar_account_id?: string | null
+          bank_account_id?: string | null
           id?: string
           invoice_id: string
+          journal_entry_id?: string | null
           payment_date?: string
           payment_method?: string | null
           reference?: string | null
         }
         Update: {
           amount?: number
+          ar_account_id?: string | null
+          bank_account_id?: string | null
           id?: string
           invoice_id?: string
+          journal_entry_id?: string | null
           payment_date?: string
           payment_method?: string | null
           reference?: string | null
         }
         Relationships: [
           {
+            foreignKeyName: "payments_received_ar_account_id_fkey"
+            columns: ["ar_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_received_bank_account_id_fkey"
+            columns: ["bank_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "payments_received_invoice_id_fkey"
             columns: ["invoice_id"]
             isOneToOne: false
             referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_received_journal_entry_id_fkey"
+            columns: ["journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
             referencedColumns: ["id"]
           },
         ]

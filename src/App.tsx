@@ -54,6 +54,10 @@ import TransactionsLedger from "./pages/TransactionsLedger";
 import AccountReport from "./pages/AccountReport";
 import GLVerification from "./pages/GLVerification";
 import CustomersPage from "./pages/CustomersPage";
+import CustomerDetail from "./pages/CustomerDetail";
+import ReceivePayment from "./pages/ReceivePayment";
+import CreditNotePage from "./pages/CreditNotePage";
+import ARAgingReport from "./pages/ARAgingReport";
 import VendorsPage from "./pages/VendorsPage";
 import InventoryPage from "./pages/InventoryPage";
 import BankAccountsPage from "./pages/BankAccountsPage";
@@ -90,6 +94,10 @@ const App = () => (
                   <Route path="/accounting/close-obe" element={<CloseOBE />} />
                   <Route path="/accounting/gl-verify" element={<GLVerification />} />
                   <Route path="/accounting/customers" element={<CustomersPage />} />
+                  <Route path="/accounting/customers/:id" element={<CustomerDetail />} />
+                  <Route path="/accounting/receive-payment" element={<ReceivePayment />} />
+                  <Route path="/accounting/credit-notes" element={<CreditNotePage />} />
+                  <Route path="/accounting/ar-aging" element={<ARAgingReport />} />
                   <Route path="/accounting/vendors" element={<VendorsPage />} />
                   <Route path="/accounting/inventory" element={<InventoryPage />} />
                   <Route path="/accounting/bank-accounts" element={<BankAccountsPage />} />
