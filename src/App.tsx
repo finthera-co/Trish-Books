@@ -94,6 +94,10 @@ const App = () => (
                   <Route path="/accounting/close-obe" element={<CloseOBE />} />
                   <Route path="/accounting/gl-verify" element={<GLVerification />} />
                   <Route path="/accounting/customers" element={<CustomersPage />} />
+                  <Route path="/accounting/customers/:id" element={<CustomerDetail />} />
+                  <Route path="/accounting/receive-payment" element={<ReceivePayment />} />
+                  <Route path="/accounting/credit-notes" element={<CreditNotePage />} />
+                  <Route path="/accounting/ar-aging" element={<ARAgingReport />} />
                   <Route path="/accounting/vendors" element={<VendorsPage />} />
                   <Route path="/accounting/inventory" element={<InventoryPage />} />
                   <Route path="/accounting/bank-accounts" element={<BankAccountsPage />} />
