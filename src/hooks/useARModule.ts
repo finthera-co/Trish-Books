@@ -342,7 +342,7 @@ export function useCustomerDetail(customerId: string | undefined) {
       const [customerRes, invoicesRes, paymentsRes, creditNotesRes, arRes] = await Promise.all([
         supabase.from("customers").select("*").eq("id", customerId!).single(),
         supabase.from("invoices").select("*, payments_received(amount)").eq("customer_id", customerId!).eq("tenant_id", tid).order("issue_date", { ascending: false }),
-        supabase.from("payments_received").select("*").eq("tenant_id", tid).order("payment_date", { ascending: false }),
+        supabase.from("payments_received").select("*").order("payment_date", { ascending: false }),
         supabase.from("ar_credit_notes").select("*").eq("customer_id", customerId!).eq("tenant_id", tid).order("credit_date", { ascending: false }),
         supabase.from("ar_subledger").select("*, journal_lines(journal_entry_id, debit, credit, journal_entries:journal_entry_id(entry_date, description, reference, status))").eq("customer_id", customerId!).eq("tenant_id", tid),
       ]);
