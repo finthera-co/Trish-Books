@@ -2,51 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-
-// ─── Helper: Auto-post journal entry ─────────────────────
-async function postJournalEntry(
-  tenantId: string,
-  date: string,
-  description: string,
-  lines: { account_id: string; debit: number; credit: number }[],
-  entryType: string = "auto",
-  reference?: string
-) {
-  // Create journal entry header
-  const { data: je, error: jeErr } = await supabase
-    .from("journal_entries")
-    .insert({
-      tenant_id: tenantId,
-      entry_date: date,
-      description,
-      status: "draft",
-      entry_type: entryType,
-      reference: reference || null,
-      is_system_generated: true,
-    })
-    .select()
-    .single();
-  if (jeErr) throw jeErr;
-
-  // Insert lines
-  const lineInserts = lines.map((l) => ({
-    journal_entry_id: je.id,
-    account_id: l.account_id,
-    debit: l.debit,
-    credit: l.credit,
-  }));
-  const { error: lineErr } = await supabase.from("journal_lines").insert(lineInserts);
-  if (lineErr) throw lineErr;
-
-  // Post immediately
-  const { error: postErr } = await supabase
-    .from("journal_entries")
-    .update({ status: "posted" })
-    .eq("id", je.id);
-  if (postErr) throw postErr;
-
-  return je;
-}
+import { postInvoice, postPaymentReceived, postCreditNote } from "@/lib/postingEngine";
 
 // ─── Find AR / Revenue accounts ──────────────────────────
 export function useARAccounts() {
