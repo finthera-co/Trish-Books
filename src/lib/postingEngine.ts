@@ -4,6 +4,10 @@
  * Sits between transaction forms and GL posting.
  * Handles: document → subledger → journal entry → journal lines
  * All operations are atomic within a single Supabase transaction context.
+ * 
+ * PART 3: Auto-posting for invoices, payments, credit notes
+ * PART 4: Subledger enforcement for control accounts
+ * PART 5: Opening balance subledger creation
  */
 
 import { supabase } from "@/integrations/supabase/client";
@@ -31,12 +35,11 @@ export interface PostingLine {
 
 export interface SubledgerEntry {
   type: SubledgerType;
-  entity_id: string;        // customer_id, vendor_id, item_id, or asset_id
+  entity_id: string;
   document_type: DocumentType;
   document_id: string;
   debit: number;
   credit: number;
-  // Optional metadata
   invoice_no?: string;
   bill_no?: string;
   due_date?: string;
@@ -57,6 +60,7 @@ export interface PostingRequest {
   lines: PostingLine[];
   subledger_entries?: SubledgerEntry[];
   entry_type?: string;
+  obe_batch_id?: string;
 }
 
 export interface PostingResult {
@@ -93,7 +97,61 @@ function validateLines(lines: PostingLine[]): void {
   }
 }
 
-// ─── Posting Engine ───────────────────────────────────────
+// ─── PART 4: Subledger Enforcement ───────────────────────
+
+/**
+ * Validate that control account lines have the required entity IDs.
+ * Fetches account subtypes and enforces subledger rules.
+ */
+export async function validateSubledgerRequirements(
+  lines: PostingLine[],
+  tenantId: string
+): Promise<void> {
+  const accountIds = [...new Set(lines.map((l) => l.account_id))];
+  
+  const { data: accounts, error } = await supabase
+    .from("accounts")
+    .select("id, account_subtype, requires_subledger, subledger_type")
+    .in("id", accountIds)
+    .eq("tenant_id", tenantId);
+
+  if (error) throw new Error(`Failed to fetch accounts for validation: ${error.message}`);
+
+  const accountMap = new Map((accounts || []).map((a) => [a.id, a]));
+
+  for (const line of lines) {
+    const account = accountMap.get(line.account_id);
+    if (!account) continue;
+
+    const slType = getSubledgerTypeFromAccount(account.account_subtype);
+    if (!slType) continue; // Not a control account, no subledger needed
+
+    switch (slType) {
+      case "ar":
+        if (!line.customer_id) {
+          throw new Error("Subledger required for control account: Accounts Receivable requires a customer_id");
+        }
+        break;
+      case "ap":
+        if (!line.vendor_id) {
+          throw new Error("Subledger required for control account: Accounts Payable requires a vendor_id");
+        }
+        break;
+      case "inventory":
+        if (!line.item_id) {
+          throw new Error("Subledger required for control account: Inventory requires an item_id");
+        }
+        break;
+      case "asset":
+        if (!line.asset_id) {
+          throw new Error("Subledger required for control account: Fixed Asset requires an asset_id");
+        }
+        break;
+    }
+  }
+}
+
+// ─── Core Posting Engine ──────────────────────────────────
 
 export async function post(request: PostingRequest): Promise<PostingResult> {
   const {
@@ -106,36 +164,42 @@ export async function post(request: PostingRequest): Promise<PostingResult> {
     lines,
     subledger_entries,
     entry_type,
+    obe_batch_id,
   } = request;
 
-  // 1. Validate
+  // 1. Validate double-entry and line structure
   validateLines(lines);
   validateDoubleEntry(lines);
 
-  // 2. Create journal entry header with source linking
+  // 2. Validate subledger requirements for control accounts
+  await validateSubledgerRequirements(lines, tenant_id);
+
+  // 3. Create journal entry header with source linking
   const now = new Date().toISOString();
+  const insertData: any = {
+    tenant_id,
+    entry_date,
+    description,
+    status: "posted",
+    entry_type: entry_type || source_type,
+    reference: reference || null,
+    is_system_generated: true,
+    source_type,
+    source_id,
+    posted_at: now,
+  };
+  if (obe_batch_id) insertData.obe_batch_id = obe_batch_id;
+
   const { data: je, error: jeErr } = await supabase
     .from("journal_entries")
-    .insert({
-      tenant_id,
-      entry_date,
-      description,
-      status: "posted",
-      entry_type: entry_type || source_type,
-      reference: reference || null,
-      is_system_generated: true,
-      source_type,
-      source_id,
-      posted_at: now,
-    })
+    .insert(insertData)
     .select("id")
     .single();
 
   if (jeErr) throw new Error(`Failed to create journal entry: ${jeErr.message}`);
-
   const journalEntryId = je.id;
 
-  // 3. Insert journal lines with entity linking
+  // 4. Insert journal lines with entity linking
   const lineInserts = lines.map((l) => ({
     journal_entry_id: journalEntryId,
     account_id: l.account_id,
@@ -153,30 +217,18 @@ export async function post(request: PostingRequest): Promise<PostingResult> {
     .select("id");
 
   if (lineErr) throw new Error(`Failed to create journal lines: ${lineErr.message}`);
-
   const journalLineIds = (insertedLines || []).map((l: any) => l.id);
 
-  // 4. Create subledger entries with full document→subledger→GL chain
+  // 5. Create subledger entries with full document→subledger→GL chain
   const subledgerIds: string[] = [];
-
   if (subledger_entries && subledger_entries.length > 0) {
     for (const entry of subledger_entries) {
-      const subledgerId = await createSubledgerEntry(
-        entry,
-        tenant_id,
-        journalEntryId,
-        journalLineIds,
-        lines
-      );
-      if (subledgerId) subledgerIds.push(subledgerId);
+      const id = await createSubledgerEntry(entry, tenant_id, journalEntryId, journalLineIds, lines);
+      if (id) subledgerIds.push(id);
     }
   }
 
-  return {
-    journal_entry_id: journalEntryId,
-    journal_line_ids: journalLineIds,
-    subledger_ids: subledgerIds,
-  };
+  return { journal_entry_id: journalEntryId, journal_line_ids: journalLineIds, subledger_ids: subledgerIds };
 }
 
 // ─── Subledger Entry Creation ─────────────────────────────
@@ -188,10 +240,8 @@ async function createSubledgerEntry(
   journalLineIds: string[],
   lines: PostingLine[]
 ): Promise<string | null> {
-  // Find the matching journal line for this subledger entry
   const matchingLineIndex = findMatchingLineIndex(entry, lines);
   const journalLineId = journalLineIds[matchingLineIndex] || journalLineIds[0];
-
   const balance = (entry.debit || 0) - (entry.credit || 0);
 
   switch (entry.type) {
@@ -208,7 +258,7 @@ async function createSubledgerEntry(
           debit: entry.debit || 0,
           credit: entry.credit || 0,
           balance,
-          amount: balance, // backward compat
+          amount: balance,
           invoice_no: entry.invoice_no || null,
           due_date: entry.due_date || null,
         })
@@ -217,7 +267,6 @@ async function createSubledgerEntry(
       if (error) throw new Error(`AR subledger error: ${error.message}`);
       return data?.id || null;
     }
-
     case "ap": {
       const { data, error } = await supabase
         .from("ap_subledger")
@@ -231,7 +280,7 @@ async function createSubledgerEntry(
           debit: entry.debit || 0,
           credit: entry.credit || 0,
           balance,
-          amount: balance, // backward compat
+          amount: balance,
           bill_no: entry.bill_no || null,
           due_date: entry.due_date || null,
         })
@@ -240,7 +289,6 @@ async function createSubledgerEntry(
       if (error) throw new Error(`AP subledger error: ${error.message}`);
       return data?.id || null;
     }
-
     case "inventory": {
       const { data, error } = await supabase
         .from("inventory_subledger")
@@ -254,7 +302,7 @@ async function createSubledgerEntry(
           debit: entry.debit || 0,
           credit: entry.credit || 0,
           balance,
-          amount: balance, // backward compat
+          amount: balance,
           qty: entry.qty || 0,
           rate: entry.rate || 0,
         })
@@ -263,7 +311,6 @@ async function createSubledgerEntry(
       if (error) throw new Error(`Inventory subledger error: ${error.message}`);
       return data?.id || null;
     }
-
     case "asset": {
       const { data, error } = await supabase
         .from("asset_subledger")
@@ -277,7 +324,7 @@ async function createSubledgerEntry(
           debit: entry.debit || 0,
           credit: entry.credit || 0,
           balance,
-          amount: balance, // backward compat
+          amount: balance,
           cost: entry.cost || 0,
           salvage: entry.salvage || 0,
           life_years: entry.life_years || null,
@@ -287,34 +334,19 @@ async function createSubledgerEntry(
       if (error) throw new Error(`Asset subledger error: ${error.message}`);
       return data?.id || null;
     }
-
     default:
       return null;
   }
 }
 
-/**
- * Find the journal line that matches the subledger entry's entity
- */
 function findMatchingLineIndex(entry: SubledgerEntry, lines: PostingLine[]): number {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    switch (entry.type) {
-      case "ar":
-        if (line.customer_id === entry.entity_id) return i;
-        break;
-      case "ap":
-        if (line.vendor_id === entry.entity_id) return i;
-        break;
-      case "inventory":
-        if (line.item_id === entry.entity_id) return i;
-        break;
-      case "asset":
-        if (line.asset_id === entry.entity_id) return i;
-        break;
-    }
+    if (entry.type === "ar" && line.customer_id === entry.entity_id) return i;
+    if (entry.type === "ap" && line.vendor_id === entry.entity_id) return i;
+    if (entry.type === "inventory" && line.item_id === entry.entity_id) return i;
+    if (entry.type === "asset" && line.asset_id === entry.entity_id) return i;
   }
-  // Fallback: match by debit/credit direction
   const isDebit = (entry.debit || 0) > 0;
   for (let i = 0; i < lines.length; i++) {
     if (isDebit && (lines[i].debit || 0) > 0) return i;
@@ -323,9 +355,407 @@ function findMatchingLineIndex(entry: SubledgerEntry, lines: PostingLine[]): num
   return 0;
 }
 
+// ═══════════════════════════════════════════════════════════
+// PART 3: Auto-Posting Helpers (QuickBooks Style)
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Post an invoice: Dr AR / Cr Revenue + AR subledger
+ */
+export async function postInvoice(params: {
+  tenant_id: string;
+  invoice_id: string;
+  customer_id: string;
+  invoice_number: string;
+  issue_date: string;
+  due_date: string;
+  total_amount: number;
+  ar_account_id: string;
+  revenue_account_id: string;
+}): Promise<PostingResult> {
+  return post({
+    tenant_id: params.tenant_id,
+    entry_date: params.issue_date,
+    description: `Invoice ${params.invoice_number}`,
+    source_type: "invoice",
+    source_id: params.invoice_id,
+    reference: params.invoice_number,
+    lines: [
+      { account_id: params.ar_account_id, debit: params.total_amount, credit: 0, customer_id: params.customer_id },
+      { account_id: params.revenue_account_id, debit: 0, credit: params.total_amount },
+    ],
+    subledger_entries: [
+      {
+        type: "ar",
+        entity_id: params.customer_id,
+        document_type: "invoice",
+        document_id: params.invoice_id,
+        debit: params.total_amount,
+        credit: 0,
+        invoice_no: params.invoice_number,
+        due_date: params.due_date,
+      },
+    ],
+  });
+}
+
+/**
+ * Post a payment received: Dr Bank / Cr AR + AR subledger (credit)
+ */
+export async function postPaymentReceived(params: {
+  tenant_id: string;
+  payment_id: string;
+  customer_id: string;
+  amount: number;
+  payment_date: string;
+  bank_account_id: string;
+  ar_account_id: string;
+  reference?: string;
+  invoice_id?: string;
+}): Promise<PostingResult> {
+  return post({
+    tenant_id: params.tenant_id,
+    entry_date: params.payment_date,
+    description: `Payment received${params.reference ? ` - ${params.reference}` : ""}`,
+    source_type: "payment_received",
+    source_id: params.payment_id,
+    reference: params.reference,
+    lines: [
+      { account_id: params.bank_account_id, debit: params.amount, credit: 0 },
+      { account_id: params.ar_account_id, debit: 0, credit: params.amount, customer_id: params.customer_id },
+    ],
+    subledger_entries: [
+      {
+        type: "ar",
+        entity_id: params.customer_id,
+        document_type: "payment_received",
+        document_id: params.payment_id,
+        debit: 0,
+        credit: params.amount,
+      },
+    ],
+  });
+}
+
+/**
+ * Post a credit note: Dr Revenue / Cr AR + AR subledger (credit)
+ */
+export async function postCreditNote(params: {
+  tenant_id: string;
+  credit_note_id: string;
+  customer_id: string;
+  credit_note_number: string;
+  credit_date: string;
+  amount: number;
+  ar_account_id: string;
+  revenue_account_id: string;
+}): Promise<PostingResult> {
+  return post({
+    tenant_id: params.tenant_id,
+    entry_date: params.credit_date,
+    description: `Credit Note ${params.credit_note_number}`,
+    source_type: "credit_note",
+    source_id: params.credit_note_id,
+    reference: params.credit_note_number,
+    lines: [
+      { account_id: params.revenue_account_id, debit: params.amount, credit: 0 },
+      { account_id: params.ar_account_id, debit: 0, credit: params.amount, customer_id: params.customer_id },
+    ],
+    subledger_entries: [
+      {
+        type: "ar",
+        entity_id: params.customer_id,
+        document_type: "credit_note",
+        document_id: params.credit_note_id,
+        debit: 0,
+        credit: params.amount,
+      },
+    ],
+  });
+}
+
+/**
+ * Post a bill: Dr Expense/Inventory / Cr AP + AP subledger
+ */
+export async function postBill(params: {
+  tenant_id: string;
+  bill_id: string;
+  vendor_id: string;
+  bill_number: string;
+  bill_date: string;
+  due_date: string;
+  total_amount: number;
+  expense_account_id: string;
+  ap_account_id: string;
+}): Promise<PostingResult> {
+  return post({
+    tenant_id: params.tenant_id,
+    entry_date: params.bill_date,
+    description: `Bill ${params.bill_number}`,
+    source_type: "bill",
+    source_id: params.bill_id,
+    reference: params.bill_number,
+    lines: [
+      { account_id: params.expense_account_id, debit: params.total_amount, credit: 0 },
+      { account_id: params.ap_account_id, debit: 0, credit: params.total_amount, vendor_id: params.vendor_id },
+    ],
+    subledger_entries: [
+      {
+        type: "ap",
+        entity_id: params.vendor_id,
+        document_type: "bill",
+        document_id: params.bill_id,
+        debit: 0,
+        credit: params.total_amount,
+        bill_no: params.bill_number,
+        due_date: params.due_date,
+      },
+    ],
+  });
+}
+
+/**
+ * Post a bill payment: Dr AP / Cr Bank + AP subledger (debit)
+ */
+export async function postBillPayment(params: {
+  tenant_id: string;
+  payment_id: string;
+  vendor_id: string;
+  amount: number;
+  payment_date: string;
+  bank_account_id: string;
+  ap_account_id: string;
+  reference?: string;
+}): Promise<PostingResult> {
+  return post({
+    tenant_id: params.tenant_id,
+    entry_date: params.payment_date,
+    description: `Bill payment${params.reference ? ` - ${params.reference}` : ""}`,
+    source_type: "bill_payment",
+    source_id: params.payment_id,
+    reference: params.reference,
+    lines: [
+      { account_id: params.ap_account_id, debit: params.amount, credit: 0, vendor_id: params.vendor_id },
+      { account_id: params.bank_account_id, debit: 0, credit: params.amount },
+    ],
+    subledger_entries: [
+      {
+        type: "ap",
+        entity_id: params.vendor_id,
+        document_type: "bill_payment",
+        document_id: params.payment_id,
+        debit: params.amount,
+        credit: 0,
+      },
+    ],
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// PART 5: Opening Balance Subledger Posting
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Find or create the Opening Balance Equity account for a tenant
+ */
+async function getOBEAccountId(tenantId: string): Promise<string> {
+  const { data: existing } = await supabase
+    .from("accounts")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("account_name", "Opening Balance Equity")
+    .eq("is_system", true)
+    .maybeSingle();
+
+  if (existing) return existing.id;
+
+  const { data: created, error } = await supabase
+    .from("accounts")
+    .insert({
+      tenant_id: tenantId,
+      account_name: "Opening Balance Equity",
+      account_code: "3900",
+      account_type: "Equity",
+      account_subtype: "Opening Balance Equity",
+      normal_balance: "credit",
+      is_system: true,
+      is_locked: true,
+    })
+    .select("id")
+    .single();
+
+  if (error) throw new Error(`Failed to create OBE account: ${error.message}`);
+  return created.id;
+}
+
+/**
+ * Post a customer opening balance:
+ * Dr Accounts Receivable / Cr Opening Balance Equity + AR subledger
+ */
+export async function postCustomerOpeningBalance(params: {
+  tenant_id: string;
+  customer_id: string;
+  customer_name: string;
+  amount: number;
+  ar_account_id: string;
+  date: string;
+}): Promise<PostingResult> {
+  const obeAccountId = await getOBEAccountId(params.tenant_id);
+
+  return post({
+    tenant_id: params.tenant_id,
+    entry_date: params.date,
+    description: `Opening Balance - ${params.customer_name}`,
+    source_type: "opening_balance",
+    source_id: params.customer_id,
+    reference: `OB-CUST-${params.customer_name}`,
+    entry_type: "opening_balance",
+    lines: [
+      { account_id: params.ar_account_id, debit: params.amount, credit: 0, customer_id: params.customer_id },
+      { account_id: obeAccountId, debit: 0, credit: params.amount },
+    ],
+    subledger_entries: [
+      {
+        type: "ar",
+        entity_id: params.customer_id,
+        document_type: "opening_balance",
+        document_id: params.customer_id,
+        debit: params.amount,
+        credit: 0,
+      },
+    ],
+  });
+}
+
+/**
+ * Post a vendor opening balance:
+ * Dr Opening Balance Equity / Cr Accounts Payable + AP subledger
+ */
+export async function postVendorOpeningBalance(params: {
+  tenant_id: string;
+  vendor_id: string;
+  vendor_name: string;
+  amount: number;
+  ap_account_id: string;
+  date: string;
+}): Promise<PostingResult> {
+  const obeAccountId = await getOBEAccountId(params.tenant_id);
+
+  return post({
+    tenant_id: params.tenant_id,
+    entry_date: params.date,
+    description: `Opening Balance - ${params.vendor_name}`,
+    source_type: "opening_balance",
+    source_id: params.vendor_id,
+    reference: `OB-VEND-${params.vendor_name}`,
+    entry_type: "opening_balance",
+    lines: [
+      { account_id: obeAccountId, debit: params.amount, credit: 0 },
+      { account_id: params.ap_account_id, debit: 0, credit: params.amount, vendor_id: params.vendor_id },
+    ],
+    subledger_entries: [
+      {
+        type: "ap",
+        entity_id: params.vendor_id,
+        document_type: "opening_balance",
+        document_id: params.vendor_id,
+        debit: 0,
+        credit: params.amount,
+      },
+    ],
+  });
+}
+
+/**
+ * Post an inventory item opening balance:
+ * Dr Inventory / Cr Opening Balance Equity + Inventory subledger
+ */
+export async function postInventoryOpeningBalance(params: {
+  tenant_id: string;
+  item_id: string;
+  item_name: string;
+  amount: number;
+  qty: number;
+  rate: number;
+  inventory_account_id: string;
+  date: string;
+}): Promise<PostingResult> {
+  const obeAccountId = await getOBEAccountId(params.tenant_id);
+
+  return post({
+    tenant_id: params.tenant_id,
+    entry_date: params.date,
+    description: `Opening Balance - ${params.item_name}`,
+    source_type: "opening_balance",
+    source_id: params.item_id,
+    reference: `OB-INV-${params.item_name}`,
+    entry_type: "opening_balance",
+    lines: [
+      { account_id: params.inventory_account_id, debit: params.amount, credit: 0, item_id: params.item_id },
+      { account_id: obeAccountId, debit: 0, credit: params.amount },
+    ],
+    subledger_entries: [
+      {
+        type: "inventory",
+        entity_id: params.item_id,
+        document_type: "opening_balance",
+        document_id: params.item_id,
+        debit: params.amount,
+        credit: 0,
+        qty: params.qty,
+        rate: params.rate,
+      },
+    ],
+  });
+}
+
+/**
+ * Post a fixed asset opening balance:
+ * Dr Fixed Asset / Cr Opening Balance Equity + Asset subledger
+ */
+export async function postAssetOpeningBalance(params: {
+  tenant_id: string;
+  asset_id: string;
+  asset_name: string;
+  amount: number;
+  cost: number;
+  salvage?: number;
+  life_years?: number;
+  asset_account_id: string;
+  date: string;
+}): Promise<PostingResult> {
+  const obeAccountId = await getOBEAccountId(params.tenant_id);
+
+  return post({
+    tenant_id: params.tenant_id,
+    entry_date: params.date,
+    description: `Opening Balance - ${params.asset_name}`,
+    source_type: "opening_balance",
+    source_id: params.asset_id,
+    reference: `OB-ASSET-${params.asset_name}`,
+    entry_type: "opening_balance",
+    lines: [
+      { account_id: params.asset_account_id, debit: params.amount, credit: 0, asset_id: params.asset_id },
+      { account_id: obeAccountId, debit: 0, credit: params.amount },
+    ],
+    subledger_entries: [
+      {
+        type: "asset",
+        entity_id: params.asset_id,
+        document_type: "opening_balance",
+        document_id: params.asset_id,
+        debit: params.amount,
+        credit: 0,
+        cost: params.cost,
+        salvage: params.salvage || 0,
+        life_years: params.life_years,
+      },
+    ],
+  });
+}
+
 // ─── Convenience Helpers ──────────────────────────────────
 
-/** Determine subledger type from account subtype */
 export function getSubledgerTypeFromAccount(accountSubtype: string | null | undefined): SubledgerType {
   if (!accountSubtype) return null;
   const lower = accountSubtype.toLowerCase();
@@ -336,7 +766,6 @@ export function getSubledgerTypeFromAccount(accountSubtype: string | null | unde
   return null;
 }
 
-/** Void a posted journal entry (never delete) */
 export async function voidJournalEntry(
   journalEntryId: string,
   reason: string,
@@ -355,14 +784,12 @@ export async function voidJournalEntry(
   if (error) throw new Error(`Failed to void journal entry: ${error.message}`);
 }
 
-/** Reverse a posted journal entry by creating a new reversing entry */
 export async function reverseJournalEntry(
   journalEntryId: string,
   tenantId: string,
   reversalDate: string,
   reason: string
 ): Promise<PostingResult> {
-  // Fetch original lines
   const { data: originalLines, error: fetchErr } = await supabase
     .from("journal_lines")
     .select("account_id, debit, credit, customer_id, vendor_id, item_id, asset_id")
@@ -371,7 +798,6 @@ export async function reverseJournalEntry(
   if (fetchErr) throw new Error(`Failed to fetch original lines: ${fetchErr.message}`);
   if (!originalLines?.length) throw new Error("No lines found for journal entry");
 
-  // Swap debits and credits
   const reversedLines: PostingLine[] = originalLines.map((l: any) => ({
     account_id: l.account_id,
     debit: l.credit || 0,
