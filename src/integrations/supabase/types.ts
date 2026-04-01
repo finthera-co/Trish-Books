@@ -203,30 +203,48 @@ export type Database = {
       ap_subledger: {
         Row: {
           amount: number
+          balance: number
           bill_no: string | null
           created_at: string
+          credit: number
+          debit: number
+          document_id: string | null
+          document_type: string | null
           due_date: string | null
           id: string
+          journal_id: string | null
           journal_line_id: string
           tenant_id: string
           vendor_id: string
         }
         Insert: {
           amount?: number
+          balance?: number
           bill_no?: string | null
           created_at?: string
+          credit?: number
+          debit?: number
+          document_id?: string | null
+          document_type?: string | null
           due_date?: string | null
           id?: string
+          journal_id?: string | null
           journal_line_id: string
           tenant_id: string
           vendor_id: string
         }
         Update: {
           amount?: number
+          balance?: number
           bill_no?: string | null
           created_at?: string
+          credit?: number
+          debit?: number
+          document_id?: string | null
+          document_type?: string | null
           due_date?: string | null
           id?: string
+          journal_id?: string | null
           journal_line_id?: string
           tenant_id?: string
           vendor_id?: string
@@ -352,31 +370,49 @@ export type Database = {
       ar_subledger: {
         Row: {
           amount: number
+          balance: number
           created_at: string
+          credit: number
           customer_id: string
+          debit: number
+          document_id: string | null
+          document_type: string | null
           due_date: string | null
           id: string
           invoice_no: string | null
+          journal_id: string | null
           journal_line_id: string
           tenant_id: string
         }
         Insert: {
           amount?: number
+          balance?: number
           created_at?: string
+          credit?: number
           customer_id: string
+          debit?: number
+          document_id?: string | null
+          document_type?: string | null
           due_date?: string | null
           id?: string
           invoice_no?: string | null
+          journal_id?: string | null
           journal_line_id: string
           tenant_id: string
         }
         Update: {
           amount?: number
+          balance?: number
           created_at?: string
+          credit?: number
           customer_id?: string
+          debit?: number
+          document_id?: string | null
+          document_type?: string | null
           due_date?: string | null
           id?: string
           invoice_no?: string | null
+          journal_id?: string | null
           journal_line_id?: string
           tenant_id?: string
         }
@@ -521,9 +557,15 @@ export type Database = {
         Row: {
           amount: number
           asset_id: string
+          balance: number
           cost: number
           created_at: string
+          credit: number
+          debit: number
+          document_id: string | null
+          document_type: string | null
           id: string
+          journal_id: string | null
           journal_line_id: string
           life_years: number | null
           salvage: number
@@ -532,9 +574,15 @@ export type Database = {
         Insert: {
           amount?: number
           asset_id: string
+          balance?: number
           cost?: number
           created_at?: string
+          credit?: number
+          debit?: number
+          document_id?: string | null
+          document_type?: string | null
           id?: string
+          journal_id?: string | null
           journal_line_id: string
           life_years?: number | null
           salvage?: number
@@ -543,9 +591,15 @@ export type Database = {
         Update: {
           amount?: number
           asset_id?: string
+          balance?: number
           cost?: number
           created_at?: string
+          credit?: number
+          debit?: number
+          document_id?: string | null
+          document_type?: string | null
           id?: string
+          journal_id?: string | null
           journal_line_id?: string
           life_years?: number | null
           salvage?: number
@@ -1720,9 +1774,15 @@ export type Database = {
       inventory_subledger: {
         Row: {
           amount: number
+          balance: number
           created_at: string
+          credit: number
+          debit: number
+          document_id: string | null
+          document_type: string | null
           id: string
           item_id: string
+          journal_id: string | null
           journal_line_id: string
           qty: number
           rate: number
@@ -1730,9 +1790,15 @@ export type Database = {
         }
         Insert: {
           amount?: number
+          balance?: number
           created_at?: string
+          credit?: number
+          debit?: number
+          document_id?: string | null
+          document_type?: string | null
           id?: string
           item_id: string
+          journal_id?: string | null
           journal_line_id: string
           qty?: number
           rate?: number
@@ -1740,9 +1806,15 @@ export type Database = {
         }
         Update: {
           amount?: number
+          balance?: number
           created_at?: string
+          credit?: number
+          debit?: number
+          document_id?: string | null
+          document_type?: string | null
           id?: string
           item_id?: string
+          journal_id?: string | null
           journal_line_id?: string
           qty?: number
           rate?: number
@@ -1982,8 +2054,11 @@ export type Database = {
           id: string
           is_system_generated: boolean
           obe_batch_id: string | null
+          posted_at: string | null
           reference: string | null
           reversal_of: string | null
+          source_id: string | null
+          source_type: string | null
           status: string
           tenant_id: string
           void_reason: string | null
@@ -2000,8 +2075,11 @@ export type Database = {
           id?: string
           is_system_generated?: boolean
           obe_batch_id?: string | null
+          posted_at?: string | null
           reference?: string | null
           reversal_of?: string | null
+          source_id?: string | null
+          source_type?: string | null
           status?: string
           tenant_id: string
           void_reason?: string | null
@@ -2018,8 +2096,11 @@ export type Database = {
           id?: string
           is_system_generated?: boolean
           obe_batch_id?: string | null
+          posted_at?: string | null
           reference?: string | null
           reversal_of?: string | null
+          source_id?: string | null
+          source_type?: string | null
           status?: string
           tenant_id?: string
           void_reason?: string | null
@@ -2060,27 +2141,39 @@ export type Database = {
       journal_lines: {
         Row: {
           account_id: string
+          asset_id: string | null
           cost_center_id: string | null
           credit: number
+          customer_id: string | null
           debit: number
           id: string
+          item_id: string | null
           journal_entry_id: string
+          vendor_id: string | null
         }
         Insert: {
           account_id: string
+          asset_id?: string | null
           cost_center_id?: string | null
           credit?: number
+          customer_id?: string | null
           debit?: number
           id?: string
+          item_id?: string | null
           journal_entry_id: string
+          vendor_id?: string | null
         }
         Update: {
           account_id?: string
+          asset_id?: string | null
           cost_center_id?: string | null
           credit?: number
+          customer_id?: string | null
           debit?: number
           id?: string
+          item_id?: string | null
           journal_entry_id?: string
+          vendor_id?: string | null
         }
         Relationships: [
           {
