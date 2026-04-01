@@ -2,51 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-
-// ─── Helper: Auto-post journal entry ─────────────────────
-async function postJournalEntry(
-  tenantId: string,
-  date: string,
-  description: string,
-  lines: { account_id: string; debit: number; credit: number }[],
-  entryType: string = "auto",
-  reference?: string
-) {
-  // Create journal entry header
-  const { data: je, error: jeErr } = await supabase
-    .from("journal_entries")
-    .insert({
-      tenant_id: tenantId,
-      entry_date: date,
-      description,
-      status: "draft",
-      entry_type: entryType,
-      reference: reference || null,
-      is_system_generated: true,
-    })
-    .select()
-    .single();
-  if (jeErr) throw jeErr;
-
-  // Insert lines
-  const lineInserts = lines.map((l) => ({
-    journal_entry_id: je.id,
-    account_id: l.account_id,
-    debit: l.debit,
-    credit: l.credit,
-  }));
-  const { error: lineErr } = await supabase.from("journal_lines").insert(lineInserts);
-  if (lineErr) throw lineErr;
-
-  // Post immediately
-  const { error: postErr } = await supabase
-    .from("journal_entries")
-    .update({ status: "posted" })
-    .eq("id", je.id);
-  if (postErr) throw postErr;
-
-  return je;
-}
+import { postInvoice, postPaymentReceived, postCreditNote } from "@/lib/postingEngine";
 
 // ─── Find AR / Revenue accounts ──────────────────────────
 export function useARAccounts() {
@@ -95,20 +51,7 @@ export function useCreateInvoiceWithGL() {
     }) => {
       const tenantId = appUser!.tenant_id;
 
-      // 1. Post journal: Dr AR / Cr Revenue
-      const je = await postJournalEntry(
-        tenantId,
-        params.issue_date,
-        `Invoice ${params.invoice_number}`,
-        [
-          { account_id: params.ar_account_id, debit: params.total_amount, credit: 0 },
-          { account_id: params.revenue_account_id, debit: 0, credit: params.total_amount },
-        ],
-        "invoice",
-        params.invoice_number
-      );
-
-      // 2. Create invoice record
+      // 1. Create invoice record first to get ID
       const { data: inv, error } = await supabase
         .from("invoices")
         .insert({
@@ -119,7 +62,6 @@ export function useCreateInvoiceWithGL() {
           due_date: params.due_date,
           total_amount: params.total_amount,
           status: "sent",
-          journal_entry_id: je.id,
           ar_account_id: params.ar_account_id,
           revenue_account_id: params.revenue_account_id,
         })
@@ -127,7 +69,26 @@ export function useCreateInvoiceWithGL() {
         .single();
       if (error) throw error;
 
-      // 3. Insert invoice items
+      // 2. Post via posting engine: Dr AR / Cr Revenue + AR subledger
+      const result = await postInvoice({
+        tenant_id: tenantId,
+        invoice_id: inv.id,
+        customer_id: params.customer_id,
+        invoice_number: params.invoice_number,
+        issue_date: params.issue_date,
+        due_date: params.due_date,
+        total_amount: params.total_amount,
+        ar_account_id: params.ar_account_id,
+        revenue_account_id: params.revenue_account_id,
+      });
+
+      // 3. Link journal entry to invoice
+      await supabase
+        .from("invoices")
+        .update({ journal_entry_id: result.journal_entry_id })
+        .eq("id", inv.id);
+
+      // 4. Insert invoice items
       if (params.items?.length) {
         const { error: itemErr } = await supabase.from("invoice_items").insert(
           params.items.map((item) => ({
@@ -139,26 +100,6 @@ export function useCreateInvoiceWithGL() {
           }))
         );
         if (itemErr) throw itemErr;
-      }
-
-      // 4. Create AR subledger entry
-      // Get the AR journal line
-      const { data: jeLines } = await supabase
-        .from("journal_lines")
-        .select("id")
-        .eq("journal_entry_id", je.id)
-        .eq("account_id", params.ar_account_id)
-        .single();
-
-      if (jeLines) {
-        await supabase.from("ar_subledger").insert({
-          journal_line_id: jeLines.id,
-          customer_id: params.customer_id,
-          amount: params.total_amount,
-          tenant_id: tenantId,
-          invoice_no: params.invoice_number,
-          due_date: params.due_date,
-        });
       }
 
       return inv;
@@ -191,20 +132,7 @@ export function useReceivePaymentWithGL() {
     }) => {
       const tenantId = appUser!.tenant_id;
 
-      // 1. Post journal: Dr Bank / Cr AR
-      const je = await postJournalEntry(
-        tenantId,
-        params.payment_date,
-        `Payment received - ${params.reference || ""}`,
-        [
-          { account_id: params.bank_account_id, debit: params.amount, credit: 0 },
-          { account_id: params.ar_account_id, debit: 0, credit: params.amount },
-        ],
-        "payment",
-        params.reference
-      );
-
-      // 2. Record payment
+      // 1. Record payment first to get ID
       const { data: pmt, error } = await supabase
         .from("payments_received")
         .insert({
@@ -213,7 +141,6 @@ export function useReceivePaymentWithGL() {
           payment_date: params.payment_date,
           payment_method: params.payment_method || "bank_transfer",
           reference: params.reference || null,
-          journal_entry_id: je.id,
           bank_account_id: params.bank_account_id,
           ar_account_id: params.ar_account_id,
         })
@@ -221,22 +148,24 @@ export function useReceivePaymentWithGL() {
         .single();
       if (error) throw error;
 
-      // 3. AR subledger entry (credit side)
-      const { data: jeLines } = await supabase
-        .from("journal_lines")
-        .select("id")
-        .eq("journal_entry_id", je.id)
-        .eq("account_id", params.ar_account_id)
-        .single();
+      // 2. Post via posting engine: Dr Bank / Cr AR + AR subledger
+      const result = await postPaymentReceived({
+        tenant_id: tenantId,
+        payment_id: pmt.id,
+        customer_id: params.customer_id,
+        amount: params.amount,
+        payment_date: params.payment_date,
+        bank_account_id: params.bank_account_id,
+        ar_account_id: params.ar_account_id,
+        reference: params.reference,
+        invoice_id: params.invoice_id,
+      });
 
-      if (jeLines) {
-        await supabase.from("ar_subledger").insert({
-          journal_line_id: jeLines.id,
-          customer_id: params.customer_id,
-          amount: -params.amount, // negative = credit to AR
-          tenant_id: tenantId,
-        });
-      }
+      // 3. Link journal entry to payment
+      await supabase
+        .from("payments_received")
+        .update({ journal_entry_id: result.journal_entry_id })
+        .eq("id", pmt.id);
 
       return pmt;
     },
@@ -269,19 +198,7 @@ export function useCreateCreditNoteWithGL() {
     }) => {
       const tenantId = appUser!.tenant_id;
 
-      // Post journal: Dr Revenue / Cr AR (reversal)
-      const je = await postJournalEntry(
-        tenantId,
-        params.credit_date,
-        `Credit Note ${params.credit_note_number}`,
-        [
-          { account_id: params.revenue_account_id, debit: params.amount, credit: 0 },
-          { account_id: params.ar_account_id, debit: 0, credit: params.amount },
-        ],
-        "credit_note",
-        params.credit_note_number
-      );
-
+      // 1. Create credit note record first
       const { data, error } = await supabase
         .from("ar_credit_notes")
         .insert({
@@ -292,7 +209,6 @@ export function useCreateCreditNoteWithGL() {
           amount: params.amount,
           reason: params.reason || null,
           status: "applied",
-          journal_entry_id: je.id,
           ar_account_id: params.ar_account_id,
           revenue_account_id: params.revenue_account_id,
           invoice_id: params.invoice_id || null,
@@ -301,22 +217,23 @@ export function useCreateCreditNoteWithGL() {
         .single();
       if (error) throw error;
 
-      // AR subledger entry
-      const { data: jeLines } = await supabase
-        .from("journal_lines")
-        .select("id")
-        .eq("journal_entry_id", je.id)
-        .eq("account_id", params.ar_account_id)
-        .single();
+      // 2. Post via posting engine: Dr Revenue / Cr AR + AR subledger
+      const result = await postCreditNote({
+        tenant_id: tenantId,
+        credit_note_id: data.id,
+        customer_id: params.customer_id,
+        credit_note_number: params.credit_note_number,
+        credit_date: params.credit_date,
+        amount: params.amount,
+        ar_account_id: params.ar_account_id,
+        revenue_account_id: params.revenue_account_id,
+      });
 
-      if (jeLines) {
-        await supabase.from("ar_subledger").insert({
-          journal_line_id: jeLines.id,
-          customer_id: params.customer_id,
-          amount: -params.amount,
-          tenant_id: tenantId,
-        });
-      }
+      // 3. Link journal entry
+      await supabase
+        .from("ar_credit_notes")
+        .update({ journal_entry_id: result.journal_entry_id })
+        .eq("id", data.id);
 
       return data;
     },
