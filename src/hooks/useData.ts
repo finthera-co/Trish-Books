@@ -180,9 +180,9 @@ export function useUpdateAccount() {
     mutationFn: async ({ id, ...updates }: { id: string; account_name?: string; account_code?: string; account_type?: string; account_subtype?: string | null; parent_account_id?: string | null; category_id?: string | null; is_active?: boolean }) => {
       // Auto-derive subledger fields if subtype is being updated
       if ('account_subtype' in updates) {
-        const { deriveSubledgerFields } = await import("@/lib/accountTypes");
+        const { deriveSubledgerFields, isControlAccount } = await import("@/lib/accountTypes");
         const subledgerFields = deriveSubledgerFields(updates.account_subtype);
-        Object.assign(updates, subledgerFields);
+        Object.assign(updates, subledgerFields, { is_control_account: isControlAccount(updates.account_subtype) });
       }
       const { error } = await supabase.from("accounts").update(updates).eq("id", id);
       if (error) throw error;
