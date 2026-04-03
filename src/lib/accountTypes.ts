@@ -182,15 +182,48 @@ export const ACCOUNT_NUMBER_RANGES: Record<string, { min: number; max: number }>
 };
 
 // Control accounts that cannot be posted to directly
-export const CONTROL_ACCOUNTS = [
+export const CONTROL_ACCOUNT_SUBTYPES = [
   "Accounts Receivable",
   "Accounts Payable",
   "Inventory",
+  "Fixed Assets",
+  "Furniture & Equipment",
+  "Vehicles",
+  "Buildings",
 ];
 
 export function isControlSubtype(subtype: string | null | undefined): boolean {
   if (!subtype) return false;
-  return CONTROL_ACCOUNTS.some(c => subtype.toLowerCase().includes(c.toLowerCase()));
+  return CONTROL_ACCOUNT_SUBTYPES.some(c => subtype.toLowerCase().includes(c.toLowerCase()));
+}
+
+/** Check if an account is a control account based on its subtype */
+export function isControlAccount(accountSubtype: string | null | undefined): boolean {
+  return isControlSubtype(accountSubtype);
+}
+
+/** Get the subledger module label for a control account */
+export function getControlAccountModule(subledgerType: string | null | undefined): string | null {
+  if (!subledgerType) return null;
+  switch (subledgerType) {
+    case "customer": return "Customers";
+    case "vendor": return "Vendors";
+    case "inventory": return "Inventory Items";
+    case "fixed_asset": return "Fixed Assets";
+    default: return null;
+  }
+}
+
+/** Get the route for a control account's subledger module */
+export function getControlAccountRoute(subledgerType: string | null | undefined): string | null {
+  if (!subledgerType) return null;
+  switch (subledgerType) {
+    case "customer": return "/accounting/customers";
+    case "vendor": return "/accounting/vendors";
+    case "inventory": return "/accounting/inventory";
+    case "fixed_asset": return "/accounting/assets";
+    default: return null;
+  }
 }
 
 // Subtypes that require sub-ledger breakdown for opening balances

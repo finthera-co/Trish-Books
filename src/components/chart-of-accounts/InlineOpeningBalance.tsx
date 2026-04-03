@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Check, X, Info } from "lucide-react";
+import { Check, X, Info, ExternalLink } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { formatCurrency } from "@/lib/currency";
 import { useSaveAccountOpeningBalance } from "@/hooks/useOpeningBalanceSettings";
-import { isOpeningBalanceEligible, OPENING_BALANCE_INELIGIBLE_REASON, requiresSubledger } from "@/lib/accountTypes";
+import { isOpeningBalanceEligible, OPENING_BALANCE_INELIGIBLE_REASON, requiresSubledger, isControlAccount, getControlAccountModule, getControlAccountRoute, deriveSubledgerFields } from "@/lib/accountTypes";
 import {
   Tooltip,
   TooltipContent,
@@ -34,8 +35,13 @@ export default function InlineOpeningBalance({
   const [value, setValue] = useState("");
   const [balType, setBalType] = useState<"debit" | "credit">("debit");
   const saveMutation = useSaveAccountOpeningBalance();
+  const navigate = useNavigate();
 
   const needsSubledger = requiresSubledger(accountSubtype);
+  const controlAccount = isControlAccount(accountSubtype);
+  const { subledger_type } = deriveSubledgerFields(accountSubtype);
+  const moduleName = getControlAccountModule(subledger_type);
+  const moduleRoute = getControlAccountRoute(subledger_type);
 
   // Ineligible account types cannot have opening balances
   if (!isOpeningBalanceEligible(accountType)) {
@@ -50,6 +56,42 @@ export default function InlineOpeningBalance({
           </TooltipTrigger>
           <TooltipContent side="left" className="max-w-[260px] text-xs">
             {OPENING_BALANCE_INELIGIBLE_REASON}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  // Control accounts: show derived balance with subledger link
+  if (controlAccount) {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="text-right">
+              {currentBalance ? (
+                <button
+                  onClick={() => moduleRoute && navigate(moduleRoute)}
+                  className="text-sm text-foreground/80 hover:underline cursor-pointer inline-flex items-center gap-1"
+                >
+                  {formatCurrency(currentBalance)}{" "}
+                  <span className="text-[10px] text-muted-foreground uppercase">{currentType}</span>
+                  <ExternalLink className="w-3 h-3 text-muted-foreground" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => moduleRoute && navigate(moduleRoute)}
+                  className="text-xs text-muted-foreground hover:underline cursor-pointer inline-flex items-center gap-1"
+                >
+                  Managed by {moduleName || "subledger"}
+                  <ExternalLink className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="left" className="max-w-[280px] text-xs">
+            <p className="font-medium mb-1">Control Account</p>
+            <p>This balance is derived from {moduleName || "subledger"} transactions. Opening balances must be entered through the {moduleName || "subledger"} module.</p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
