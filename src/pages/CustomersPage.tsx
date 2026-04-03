@@ -54,14 +54,15 @@ export default function CustomersPage() {
       email: c.email || "",
       phone: c.phone || "",
       address: c.address || "",
-      opening_balance: String(c.opening_balance || ""),
+      opening_balance: "", // Don't allow editing OB - managed by subledger
       credit_limit: String(c.credit_limit || ""),
       payment_terms: c.payment_terms || "net_30",
     });
     setOpen(true);
   };
 
-  const totalOB = (customers || []).reduce((s: number, c: any) => s + Number(c.opening_balance || 0), 0);
+  // Use ar_balance from subledger, not opening_balance
+  const totalARBalance = (customers || []).reduce((s: number, c: any) => s + Number(c.ar_balance || 0), 0);
 
   const PAYMENT_TERMS = [
     { value: "due_on_receipt", label: "Due on Receipt" },
@@ -95,9 +96,14 @@ export default function CustomersPage() {
               </div>
               <div><Label>Address</Label><Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></div>
               <div className="grid grid-cols-2 gap-4">
-                <div><Label>Opening Balance</Label><Input type="number" step="0.01" value={form.opening_balance} onChange={(e) => setForm({ ...form, opening_balance: e.target.value })} placeholder="0.00" /></div>
+                {!editId && (
+                  <div><Label>Opening Balance</Label><Input type="number" step="0.01" value={form.opening_balance} onChange={(e) => setForm({ ...form, opening_balance: e.target.value })} placeholder="0.00" /></div>
+                )}
                 <div><Label>Credit Limit</Label><Input type="number" step="0.01" value={form.credit_limit} onChange={(e) => setForm({ ...form, credit_limit: e.target.value })} placeholder="0.00" /></div>
               </div>
+              {editId && (
+                <p className="text-xs text-muted-foreground">Opening balance is managed by AR subledger transactions and cannot be edited directly.</p>
+              )}
               <div>
                 <Label>Payment Terms</Label>
                 <Select value={form.payment_terms} onValueChange={(v) => setForm({ ...form, payment_terms: v })}>
@@ -119,7 +125,7 @@ export default function CustomersPage() {
 
       <div className="grid grid-cols-3 gap-4">
         <Card><CardContent className="pt-4"><p className="text-sm text-muted-foreground">Total Customers</p><p className="text-2xl font-bold text-foreground">{(customers || []).length}</p></CardContent></Card>
-        <Card><CardContent className="pt-4"><p className="text-sm text-muted-foreground">Total AR Opening Balance</p><p className="text-2xl font-bold text-primary">{formatCurrency(totalOB)}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-sm text-muted-foreground">Total AR Balance</p><p className="text-2xl font-bold text-primary">{formatCurrency(totalARBalance)}</p></CardContent></Card>
         <Card><CardContent className="pt-4"><p className="text-sm text-muted-foreground">Total Credit Limit</p><p className="text-2xl font-bold text-foreground">{formatCurrency((customers || []).reduce((s: number, c: any) => s + Number(c.credit_limit || 0), 0))}</p></CardContent></Card>
       </div>
 
@@ -139,7 +145,7 @@ export default function CustomersPage() {
                   <TableHead>Phone</TableHead>
                   <TableHead>Terms</TableHead>
                   <TableHead className="text-right">Credit Limit</TableHead>
-                  <TableHead className="text-right">Opening Balance</TableHead>
+                  <TableHead className="text-right">AR Balance</TableHead>
                   <TableHead className="w-32">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -151,7 +157,9 @@ export default function CustomersPage() {
                     <TableCell className="text-muted-foreground">{c.phone || "—"}</TableCell>
                     <TableCell><Badge variant="outline">{(c.payment_terms || "net_30").replace("_", " ")}</Badge></TableCell>
                     <TableCell className="text-right font-mono">{formatCurrency(c.credit_limit || 0)}</TableCell>
-                    <TableCell className="text-right font-mono">{formatCurrency(c.opening_balance || 0)}</TableCell>
+                    <TableCell className={`text-right font-mono font-semibold ${Number(c.ar_balance) > 0 ? "text-destructive" : "text-primary"}`}>
+                      {formatCurrency(c.ar_balance || 0)}
+                    </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <div className="flex gap-1">
                         <Button variant="ghost" size="icon" onClick={() => navigate(`/accounting/customers/${c.id}`)}><Eye className="w-4 h-4" /></Button>

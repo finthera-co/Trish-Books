@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Clock, Printer, Download } from "lucide-react";
+import { ArrowLeft, Clock, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -33,7 +33,7 @@ export default function ARAgingReport() {
             <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
               <Clock className="w-6 h-6 text-destructive" /> AR Aging Report
             </h1>
-            <p className="text-sm text-muted-foreground">Accounts receivable aging summary by customer</p>
+            <p className="text-sm text-muted-foreground">Accounts receivable aging from AR subledger</p>
           </div>
         </div>
         <div className="flex gap-2">
@@ -43,44 +43,13 @@ export default function ARAgingReport() {
         </div>
       </div>
 
-      {/* Summary Cards */}
       <div className="grid grid-cols-6 gap-3">
-        <Card>
-          <CardContent className="pt-3 pb-3">
-            <p className="text-xs text-muted-foreground">Current</p>
-            <p className="text-lg font-bold text-primary tabular-nums">{formatCurrency(totals.current)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-3 pb-3">
-            <p className="text-xs text-muted-foreground">1-30 Days</p>
-            <p className="text-lg font-bold text-warning tabular-nums">{formatCurrency(totals.days_1_30)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-3 pb-3">
-            <p className="text-xs text-muted-foreground">31-60 Days</p>
-            <p className="text-lg font-bold text-warning tabular-nums">{formatCurrency(totals.days_31_60)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-3 pb-3">
-            <p className="text-xs text-muted-foreground">61-90 Days</p>
-            <p className="text-lg font-bold text-destructive tabular-nums">{formatCurrency(totals.days_61_90)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-3 pb-3">
-            <p className="text-xs text-muted-foreground">Over 90</p>
-            <p className="text-lg font-bold text-destructive tabular-nums">{formatCurrency(totals.over_90)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-3 pb-3">
-            <p className="text-xs text-muted-foreground">Total AR</p>
-            <p className="text-lg font-bold text-foreground tabular-nums">{formatCurrency(totals.total)}</p>
-          </CardContent>
-        </Card>
+        <Card><CardContent className="pt-3 pb-3"><p className="text-xs text-muted-foreground">Current</p><p className="text-lg font-bold text-primary tabular-nums">{formatCurrency(totals.current)}</p></CardContent></Card>
+        <Card><CardContent className="pt-3 pb-3"><p className="text-xs text-muted-foreground">1-30 Days</p><p className="text-lg font-bold text-warning tabular-nums">{formatCurrency(totals.days_1_30)}</p></CardContent></Card>
+        <Card><CardContent className="pt-3 pb-3"><p className="text-xs text-muted-foreground">31-60 Days</p><p className="text-lg font-bold text-warning tabular-nums">{formatCurrency(totals.days_31_60)}</p></CardContent></Card>
+        <Card><CardContent className="pt-3 pb-3"><p className="text-xs text-muted-foreground">61-90 Days</p><p className="text-lg font-bold text-destructive tabular-nums">{formatCurrency(totals.days_61_90)}</p></CardContent></Card>
+        <Card><CardContent className="pt-3 pb-3"><p className="text-xs text-muted-foreground">Over 90</p><p className="text-lg font-bold text-destructive tabular-nums">{formatCurrency(totals.over_90)}</p></CardContent></Card>
+        <Card><CardContent className="pt-3 pb-3"><p className="text-xs text-muted-foreground">Total AR</p><p className="text-lg font-bold text-foreground tabular-nums">{formatCurrency(totals.total)}</p></CardContent></Card>
       </div>
 
       <Card>
@@ -119,7 +88,6 @@ export default function ARAgingReport() {
                     <TableCell className="text-right tabular-nums font-bold">{formatCurrency(row.total)}</TableCell>
                   </TableRow>
                 ))}
-                {/* Totals row */}
                 <TableRow className="bg-muted/30 font-bold border-t-2 border-border">
                   <TableCell>TOTAL</TableCell>
                   <TableCell className="text-right tabular-nums">{formatCurrency(totals.current)}</TableCell>
