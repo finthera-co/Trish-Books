@@ -1,7 +1,7 @@
 // Journal Entry Validation Engine
 // Production-grade validation matching QuickBooks behavior
 
-import { CONTROL_ACCOUNTS } from "./accountTypes";
+import { CONTROL_ACCOUNT_SUBTYPES } from "./accountTypes";
 
 export const EPSILON = 0.005;
 
