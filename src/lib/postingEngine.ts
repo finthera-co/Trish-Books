@@ -111,7 +111,7 @@ export async function validateSubledgerRequirements(
   
   const { data: accounts, error } = await supabase
     .from("accounts")
-    .select("id, account_subtype, requires_subledger, subledger_type")
+    .select("id, account_subtype, requires_subledger, subledger_type, is_control_account")
     .in("id", accountIds)
     .eq("tenant_id", tenantId);
 
@@ -123,15 +123,21 @@ export async function validateSubledgerRequirements(
     const account = accountMap.get(line.account_id);
     if (!account) continue;
 
-    const slType = getSubledgerTypeFromAccount(account.account_subtype);
-    if (!slType) continue; // Not a control account, no subledger needed
+    // Use the is_control_account flag first, fall back to subtype detection
+    const isControl = account.is_control_account || account.requires_subledger;
+    if (!isControl) continue;
+
+    const slType = account.subledger_type || getSubledgerTypeFromAccount(account.account_subtype);
+    if (!slType || slType === "none") continue;
 
     switch (slType) {
+      case "customer":
       case "ar":
         if (!line.customer_id) {
           throw new Error("Subledger required for control account: Accounts Receivable requires a customer_id");
         }
         break;
+      case "vendor":
       case "ap":
         if (!line.vendor_id) {
           throw new Error("Subledger required for control account: Accounts Payable requires a vendor_id");
@@ -142,6 +148,7 @@ export async function validateSubledgerRequirements(
           throw new Error("Subledger required for control account: Inventory requires an item_id");
         }
         break;
+      case "fixed_asset":
       case "asset":
         if (!line.asset_id) {
           throw new Error("Subledger required for control account: Fixed Asset requires an asset_id");

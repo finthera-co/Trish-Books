@@ -1,7 +1,7 @@
 // Journal Entry Validation Engine
 // Production-grade validation matching QuickBooks behavior
 
-import { CONTROL_ACCOUNTS } from "./accountTypes";
+import { CONTROL_ACCOUNT_SUBTYPES } from "./accountTypes";
 
 export const EPSILON = 0.005;
 
@@ -169,7 +169,7 @@ export function validateControlAccounts(
       if (!l.account_id) return null;
       const acc = accountsMap.get(l.account_id);
       if (!acc || !acc.account_subtype) return null;
-      const isControl = CONTROL_ACCOUNTS.some((c) =>
+      const isControl = CONTROL_ACCOUNT_SUBTYPES.some((c) =>
         acc.account_subtype!.toLowerCase().includes(c.toLowerCase())
       );
       if (isControl) {
