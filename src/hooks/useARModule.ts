@@ -261,7 +261,7 @@ export function useCustomerDetail(customerId: string | undefined) {
         supabase.from("invoices").select("*, payments_received(amount)").eq("customer_id", customerId!).eq("tenant_id", tid).order("issue_date", { ascending: false }),
         supabase.from("payments_received").select("*").order("payment_date", { ascending: false }),
         supabase.from("ar_credit_notes").select("*").eq("customer_id", customerId!).eq("tenant_id", tid).order("credit_date", { ascending: false }),
-        supabase.from("ar_subledger").select("*, journal_lines(journal_entry_id, debit, credit, journal_entries:journal_entry_id(entry_date, description, reference, status))").eq("customer_id", customerId!).eq("tenant_id", tid),
+        supabase.from("ar_subledger").select("*").eq("customer_id", customerId!).eq("tenant_id", tid).order("created_at"),
       ]);
 
       if (customerRes.error) throw customerRes.error;
@@ -270,16 +270,11 @@ export function useCustomerDetail(customerId: string | undefined) {
       const customerInvoiceIds = new Set((invoicesRes.data || []).map((i: any) => i.id));
       const customerPayments = (paymentsRes.data || []).filter((p: any) => customerInvoiceIds.has(p.invoice_id));
 
-      // Calculate totals
+      // Calculate totals from invoices for the invoices tab
       const invoices = (invoicesRes.data || []).map((inv: any) => {
         const paid = ((inv.payments_received as any[]) || []).reduce((s: number, p: any) => s + Number(p.amount), 0);
         return { ...inv, amount_paid: paid, balance_due: Number(inv.total_amount) - paid };
       });
-
-      const totalInvoiced = invoices.reduce((s: number, i: any) => s + Number(i.total_amount), 0);
-      const totalPaid = customerPayments.reduce((s: number, p: any) => s + Number(p.amount), 0);
-      const totalCredits = (creditNotesRes.data || []).reduce((s: number, c: any) => s + Number(c.amount), 0);
-      const balance = totalInvoiced - totalPaid - totalCredits;
 
       return {
         customer: customerRes.data,
@@ -287,7 +282,6 @@ export function useCustomerDetail(customerId: string | undefined) {
         payments: customerPayments,
         creditNotes: creditNotesRes.data || [],
         arEntries: arRes.data || [],
-        summary: { totalInvoiced, totalPaid, totalCredits, balance },
       };
     },
     enabled: !!customerId && !!appUser?.tenant_id,
