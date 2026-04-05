@@ -198,10 +198,17 @@ function AccountRow({
             </td>
           </tr>
         </ContextMenuTrigger>
-        <ContextMenuContent className="w-48">
+        <ContextMenuContent className="w-52">
           <ContextMenuItem onClick={() => onGenerateReport(account)}>
             <FileText className="w-4 h-4 mr-2" /> Generate Report
           </ContextMenuItem>
+          {controlAcct && subledgerRoute && (
+            <>
+              <ContextMenuItem onClick={() => navigate(subledgerRoute)}>
+                <ExternalLink className="w-4 h-4 mr-2" /> View {subledgerModule} Subledger
+              </ContextMenuItem>
+            </>
+          )}
           <ContextMenuSeparator />
           <ContextMenuItem onClick={() => onEdit(account)}>
             <Edit2 className="w-4 h-4 mr-2" /> Edit Account
