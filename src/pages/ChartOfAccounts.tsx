@@ -117,7 +117,12 @@ function AccountRow({
   canEdit?: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
+  const navigate = useNavigate();
   const hasChildren = account.children && account.children.length > 0;
+  const controlAcct = isControlAccount(account.account_subtype);
+  const { subledger_type } = deriveSubledgerFields(account.account_subtype);
+  const subledgerRoute = getControlAccountRoute(subledger_type);
+  const subledgerModule = getControlAccountModule(subledger_type);
   const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap);
 
   return (
