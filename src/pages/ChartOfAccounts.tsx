@@ -1,4 +1,4 @@
-import { Plus, Search, Download, BookOpen, ChevronRight, Edit2, Power, Sprout, Trash2, LayoutList, LayoutGrid, FileText } from "lucide-react";
+import { Plus, Search, Download, BookOpen, ChevronRight, Edit2, Power, Sprout, Trash2, LayoutList, LayoutGrid, FileText, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
@@ -31,6 +31,10 @@ import {
   getNormalBalance,
   getStatementPlacement,
   isOpeningBalanceEquityAccount,
+  isControlAccount,
+  deriveSubledgerFields,
+  getControlAccountRoute,
+  getControlAccountModule,
 } from "@/lib/accountTypes";
 
 interface Account {
@@ -113,7 +117,12 @@ function AccountRow({
   canEdit?: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
+  const navigate = useNavigate();
   const hasChildren = account.children && account.children.length > 0;
+  const controlAcct = isControlAccount(account.account_subtype);
+  const { subledger_type } = deriveSubledgerFields(account.account_subtype);
+  const subledgerRoute = getControlAccountRoute(subledger_type);
+  const subledgerModule = getControlAccountModule(subledger_type);
   const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap);
 
   return (
@@ -189,10 +198,17 @@ function AccountRow({
             </td>
           </tr>
         </ContextMenuTrigger>
-        <ContextMenuContent className="w-48">
+        <ContextMenuContent className="w-52">
           <ContextMenuItem onClick={() => onGenerateReport(account)}>
             <FileText className="w-4 h-4 mr-2" /> Generate Report
           </ContextMenuItem>
+          {controlAcct && subledgerRoute && (
+            <>
+              <ContextMenuItem onClick={() => navigate(subledgerRoute)}>
+                <ExternalLink className="w-4 h-4 mr-2" /> View {subledgerModule} Subledger
+              </ContextMenuItem>
+            </>
+          )}
           <ContextMenuSeparator />
           <ContextMenuItem onClick={() => onEdit(account)}>
             <Edit2 className="w-4 h-4 mr-2" /> Edit Account
