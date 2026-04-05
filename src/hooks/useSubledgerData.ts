@@ -29,6 +29,33 @@ async function findAPAccountId(tenantId: string): Promise<string | null> {
   return data?.id || null;
 }
 
+async function findInventoryControlAccountId(tenantId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("accounts")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("is_control_account", true)
+    .ilike("account_subtype", "%inventory%")
+    .limit(1)
+    .maybeSingle();
+  return data?.id || null;
+}
+
+async function findFixedAssetControlAccountId(tenantId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("accounts")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("is_control_account", true)
+    .ilike("account_subtype", "%fixed asset%")
+    .limit(1)
+    .maybeSingle();
+  return data?.id || null;
+}
+
+// Common query keys to invalidate for COA/subledger consistency
+const COA_QUERY_KEYS = ["accounts", "chart_of_accounts", "trial_balance", "balance_sheet"];
+
 // ─── Customers with AR Subledger Balance ──────────────────
 export function useCustomersWithBalance() {
   const { appUser } = useAuth();
