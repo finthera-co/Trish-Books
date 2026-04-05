@@ -359,8 +359,16 @@ export function useCreateInventoryItemEnhanced() {
       quantity_on_hand?: number;
       account_id?: string;
     }) => {
+      const tenantId = appUser!.tenant_id;
       const qty = item.quantity_on_hand || 0;
       const cost = item.unit_cost || 0;
+
+      // Auto-link to inventory control account if not specified
+      let accountId = item.account_id || null;
+      if (!accountId) {
+        accountId = await findInventoryControlAccountId(tenantId);
+      }
+
       const { data, error } = await supabase
         .from("inventory_items")
         .insert({
@@ -369,8 +377,8 @@ export function useCreateInventoryItemEnhanced() {
           description: item.description || null,
           unit_cost: cost,
           quantity_on_hand: qty,
-          account_id: item.account_id || null,
-          tenant_id: appUser!.tenant_id,
+          account_id: accountId,
+          tenant_id: tenantId,
         })
         .select()
         .single();
@@ -380,6 +388,8 @@ export function useCreateInventoryItemEnhanced() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["inventory_items_enhanced"] });
       qc.invalidateQueries({ queryKey: ["inventory_items"] });
+      qc.invalidateQueries({ queryKey: ["inventory_subledger"] });
+      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Inventory item created");
     },
     onError: (e: Error) => toast.error(e.message),
