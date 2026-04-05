@@ -4,6 +4,20 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { runDepreciationForAsset, isPeriodEligible, type Asset } from "@/lib/depreciation";
 
+const COA_QUERY_KEYS = ["accounts", "chart_of_accounts", "trial_balance", "balance_sheet"];
+
+async function findFixedAssetControlAccountId(tenantId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("accounts")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("is_control_account", true)
+    .ilike("account_subtype", "%fixed asset%")
+    .limit(1)
+    .maybeSingle();
+  return data?.id || null;
+}
+
 export function useFixedAssets() {
   const { appUser } = useAuth();
   return useQuery({
