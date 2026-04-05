@@ -169,6 +169,7 @@ export function useUpdateAsset() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["fixed_assets"] });
       qc.invalidateQueries({ queryKey: ["fixed_asset"] });
+      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Asset updated");
     },
     onError: (e: any) => toast.error(e.message),
