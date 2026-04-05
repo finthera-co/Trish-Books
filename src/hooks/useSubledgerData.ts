@@ -300,6 +300,7 @@ export function useUpdateVendor() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["vendors_with_balance"] });
       qc.invalidateQueries({ queryKey: ["vendors"] });
+      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Vendor updated");
     },
     onError: (e: Error) => toast.error(e.message),
