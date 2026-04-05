@@ -280,6 +280,7 @@ export function useCreateVendorWithOB() {
       qc.invalidateQueries({ queryKey: ["vendors_with_balance"] });
       qc.invalidateQueries({ queryKey: ["vendors"] });
       qc.invalidateQueries({ queryKey: ["ap_subledger"] });
+      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Vendor created");
     },
     onError: (e: Error) => toast.error(e.message),
