@@ -4,6 +4,20 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { runDepreciationForAsset, isPeriodEligible, type Asset } from "@/lib/depreciation";
 
+const COA_QUERY_KEYS = ["accounts", "chart_of_accounts", "trial_balance", "balance_sheet"];
+
+async function findFixedAssetControlAccountId(tenantId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("accounts")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("is_control_account", true)
+    .ilike("account_subtype", "%fixed asset%")
+    .limit(1)
+    .maybeSingle();
+  return data?.id || null;
+}
+
 export function useFixedAssets() {
   const { appUser } = useAuth();
   return useQuery({
@@ -109,11 +123,20 @@ export function useCreateAsset() {
       depreciation_account_id?: string;
       depr_expense_account_id?: string;
     }) => {
+      const tenantId = appUser!.tenant_id;
+
+      // Auto-link to fixed asset control account if not specified
+      let assetAccountId = asset.asset_account_id || null;
+      if (!assetAccountId) {
+        assetAccountId = await findFixedAssetControlAccountId(tenantId);
+      }
+
       const { data, error } = await supabase
         .from("fixed_assets")
         .insert({
           ...asset,
-          tenant_id: appUser!.tenant_id,
+          asset_account_id: assetAccountId,
+          tenant_id: tenantId,
           status: "active",
           accumulated_depreciation: 0,
           net_book_value: asset.cost,
@@ -125,6 +148,8 @@ export function useCreateAsset() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["fixed_assets"] });
+      qc.invalidateQueries({ queryKey: ["asset_subledger"] });
+      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Asset created successfully");
     },
     onError: (e: any) => toast.error(e.message),
@@ -144,6 +169,7 @@ export function useUpdateAsset() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["fixed_assets"] });
       qc.invalidateQueries({ queryKey: ["fixed_asset"] });
+      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Asset updated");
     },
     onError: (e: any) => toast.error(e.message),

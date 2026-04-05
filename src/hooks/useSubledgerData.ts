@@ -29,6 +29,33 @@ async function findAPAccountId(tenantId: string): Promise<string | null> {
   return data?.id || null;
 }
 
+async function findInventoryControlAccountId(tenantId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("accounts")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("is_control_account", true)
+    .ilike("account_subtype", "%inventory%")
+    .limit(1)
+    .maybeSingle();
+  return data?.id || null;
+}
+
+async function findFixedAssetControlAccountId(tenantId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("accounts")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("is_control_account", true)
+    .ilike("account_subtype", "%fixed asset%")
+    .limit(1)
+    .maybeSingle();
+  return data?.id || null;
+}
+
+// Common query keys to invalidate for COA/subledger consistency
+const COA_QUERY_KEYS = ["accounts", "chart_of_accounts", "trial_balance", "balance_sheet"];
+
 // ─── Customers with AR Subledger Balance ──────────────────
 export function useCustomersWithBalance() {
   const { appUser } = useAuth();
@@ -120,6 +147,7 @@ export function useCreateCustomerWithOB() {
       qc.invalidateQueries({ queryKey: ["customers_with_balance"] });
       qc.invalidateQueries({ queryKey: ["customers"] });
       qc.invalidateQueries({ queryKey: ["ar_subledger"] });
+      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Customer created");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -138,6 +166,7 @@ export function useUpdateCustomer() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["customers_with_balance"] });
       qc.invalidateQueries({ queryKey: ["customers"] });
+      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Customer updated");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -164,6 +193,7 @@ export function useDeleteCustomer() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["customers_with_balance"] });
       qc.invalidateQueries({ queryKey: ["customers"] });
+      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Customer deleted");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -252,6 +282,7 @@ export function useCreateVendorWithOB() {
       qc.invalidateQueries({ queryKey: ["vendors_with_balance"] });
       qc.invalidateQueries({ queryKey: ["vendors"] });
       qc.invalidateQueries({ queryKey: ["ap_subledger"] });
+      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Vendor created");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -269,6 +300,7 @@ export function useUpdateVendor() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["vendors_with_balance"] });
       qc.invalidateQueries({ queryKey: ["vendors"] });
+      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Vendor updated");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -294,6 +326,7 @@ export function useDeleteVendor() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["vendors_with_balance"] });
       qc.invalidateQueries({ queryKey: ["vendors"] });
+      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Vendor deleted");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -330,8 +363,16 @@ export function useCreateInventoryItemEnhanced() {
       quantity_on_hand?: number;
       account_id?: string;
     }) => {
+      const tenantId = appUser!.tenant_id;
       const qty = item.quantity_on_hand || 0;
       const cost = item.unit_cost || 0;
+
+      // Auto-link to inventory control account if not specified
+      let accountId = item.account_id || null;
+      if (!accountId) {
+        accountId = await findInventoryControlAccountId(tenantId);
+      }
+
       const { data, error } = await supabase
         .from("inventory_items")
         .insert({
@@ -340,8 +381,8 @@ export function useCreateInventoryItemEnhanced() {
           description: item.description || null,
           unit_cost: cost,
           quantity_on_hand: qty,
-          account_id: item.account_id || null,
-          tenant_id: appUser!.tenant_id,
+          account_id: accountId,
+          tenant_id: tenantId,
         })
         .select()
         .single();
@@ -351,6 +392,8 @@ export function useCreateInventoryItemEnhanced() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["inventory_items_enhanced"] });
       qc.invalidateQueries({ queryKey: ["inventory_items"] });
+      qc.invalidateQueries({ queryKey: ["inventory_subledger"] });
+      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Inventory item created");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -367,6 +410,7 @@ export function useUpdateInventoryItem() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["inventory_items_enhanced"] });
       qc.invalidateQueries({ queryKey: ["inventory_items"] });
+      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Inventory item updated");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -392,6 +436,7 @@ export function useDeleteInventoryItem() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["inventory_items_enhanced"] });
       qc.invalidateQueries({ queryKey: ["inventory_items"] });
+      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Inventory item deleted");
     },
     onError: (e: Error) => toast.error(e.message),
