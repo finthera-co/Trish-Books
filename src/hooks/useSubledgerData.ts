@@ -193,6 +193,7 @@ export function useDeleteCustomer() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["customers_with_balance"] });
       qc.invalidateQueries({ queryKey: ["customers"] });
+      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Customer deleted");
     },
     onError: (e: Error) => toast.error(e.message),
