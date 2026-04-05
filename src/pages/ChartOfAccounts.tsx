@@ -1,4 +1,4 @@
-import { Plus, Search, Download, BookOpen, ChevronRight, Edit2, Power, Sprout, Trash2, LayoutList, LayoutGrid, FileText } from "lucide-react";
+import { Plus, Search, Download, BookOpen, ChevronRight, Edit2, Power, Sprout, Trash2, LayoutList, LayoutGrid, FileText, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
