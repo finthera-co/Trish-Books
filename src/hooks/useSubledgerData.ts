@@ -406,6 +406,7 @@ export function useUpdateInventoryItem() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["inventory_items_enhanced"] });
       qc.invalidateQueries({ queryKey: ["inventory_items"] });
+      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Inventory item updated");
     },
     onError: (e: Error) => toast.error(e.message),
