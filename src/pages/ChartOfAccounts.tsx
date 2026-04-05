@@ -138,9 +138,19 @@ function AccountRow({
                   </button>
                 ) : <span className="w-4" />}
                 <span className="font-mono text-xs text-muted-foreground">{account.account_code}</span>
-                <span className="font-medium text-sm text-foreground/80">
-                  {account.account_name}
-                </span>
+                {controlAcct && subledgerRoute ? (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); navigate(subledgerRoute); }}
+                    className="font-medium text-sm text-primary hover:underline cursor-pointer text-left"
+                    title={`View ${subledgerModule} Subledger`}
+                  >
+                    {account.account_name}
+                  </button>
+                ) : (
+                  <span className="font-medium text-sm text-foreground/80">
+                    {account.account_name}
+                  </span>
+                )}
                 {account.account_subtype && (
                   <span className="text-[10px] bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded">
                     {account.account_subtype}
