@@ -326,6 +326,7 @@ export function useDeleteVendor() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["vendors_with_balance"] });
       qc.invalidateQueries({ queryKey: ["vendors"] });
+      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Vendor deleted");
     },
     onError: (e: Error) => toast.error(e.message),
