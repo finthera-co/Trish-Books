@@ -147,6 +147,7 @@ export function useCreateCustomerWithOB() {
       qc.invalidateQueries({ queryKey: ["customers_with_balance"] });
       qc.invalidateQueries({ queryKey: ["customers"] });
       qc.invalidateQueries({ queryKey: ["ar_subledger"] });
+      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Customer created");
     },
     onError: (e: Error) => toast.error(e.message),
