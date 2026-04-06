@@ -224,6 +224,7 @@ export function getControlAccountModule(subledgerType: string | null | undefined
     case "vendor": return "Vendors";
     case "inventory": return "Inventory Items";
     case "fixed_asset": return "Fixed Assets";
+    case "asset_depreciation": return "Depreciation Schedule";
     default: return null;
   }
 }
