@@ -1,8 +1,9 @@
-import { Plus, Search, Download, BookOpen, ChevronRight, Edit2, Power, Sprout, Trash2, LayoutList, LayoutGrid, FileText, ExternalLink } from "lucide-react";
+import { Plus, Search, Download, BookOpen, ChevronRight, Edit2, Power, Sprout, Trash2, LayoutList, LayoutGrid, FileText, ExternalLink, Lock, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAccounts, useCreateAccount, useUpdateAccount } from "@/hooks/useData";
+import { formatCurrency } from "@/lib/currency";
 import { useAccountCategories, useCreateAccountCategory, useSeedDefaultAccounts } from "@/hooks/useAccountCategories";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMyPermissions } from "@/hooks/usePermissions";
@@ -18,6 +19,12 @@ import {
 import AccountForm from "@/components/chart-of-accounts/AccountForm";
 import COAHealthCheck from "@/components/chart-of-accounts/COAHealthCheck";
 import DeleteAccountDialog from "@/components/chart-of-accounts/DeleteAccountDialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 import InlineOpeningBalance from "@/components/chart-of-accounts/InlineOpeningBalance";
 import { useSystemSetting } from "@/hooks/useOpeningBalanceSettings";
@@ -105,6 +112,7 @@ function AccountRow({
   periodOBMap,
   isPeriodClosed,
   canEdit,
+  parentIsControl,
 }: {
   account: Account;
   depth?: number;
@@ -115,6 +123,7 @@ function AccountRow({
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
   canEdit?: boolean;
+  parentIsControl?: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
   const navigate = useNavigate();
@@ -124,6 +133,9 @@ function AccountRow({
   const subledgerRoute = getControlAccountRoute(subledger_type);
   const subledgerModule = getControlAccountModule(subledger_type);
   const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap);
+
+  // Determine if this account inherits control status from parent
+  const isInheritedControl = !controlAcct && parentIsControl;
 
   return (
     <>
@@ -138,6 +150,18 @@ function AccountRow({
                   </button>
                 ) : <span className="w-4" />}
                 <span className="font-mono text-xs text-muted-foreground">{account.account_code}</span>
+                {controlAcct ? (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Lock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="text-xs">This account is managed by subledger transactions. Direct posting is not allowed.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                ) : null}
                 {controlAcct && subledgerRoute ? (
                   <button
                     onClick={(e) => { e.stopPropagation(); navigate(subledgerRoute); }}
@@ -156,6 +180,28 @@ function AccountRow({
                     {account.account_subtype}
                   </span>
                 )}
+                {/* Control account badge */}
+                {controlAcct && subledgerModule && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded inline-flex items-center gap-1 cursor-default">
+                          <ShieldCheck className="w-3 h-3" />
+                          Managed by {subledgerModule}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="text-xs max-w-[200px]">Balance is derived from {subledgerModule.toLowerCase()} subledger. Click the account name to view breakdown.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+                {/* Inherited control label for children of control accounts */}
+                {isInheritedControl && subledgerModule && (
+                  <span className="text-[10px] bg-muted/50 text-muted-foreground/70 px-1.5 py-0.5 rounded italic">
+                    Managed by {subledgerModule} (inherited)
+                  </span>
+                )}
                 {!account.is_active && (
                   <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">Inactive</span>
                 )}
@@ -165,15 +211,33 @@ function AccountRow({
               {getNormalBalance(account.account_type)}
             </td>
             <td className="text-right">
-              <InlineOpeningBalance
-                accountId={account.id}
-                accountType={account.account_type}
-                accountSubtype={account.account_subtype}
-                currentBalance={displayBalance}
-                currentType={displayType}
-                normalBalance={getNormalBalance(account.account_type)}
-                isLocked={(account as any).is_locked || isPeriodClosed || false}
-              />
+              {controlAcct && subledgerRoute ? (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => navigate(subledgerRoute)}
+                        className="text-sm font-mono text-primary hover:underline cursor-pointer"
+                      >
+                        {formatCurrency(displayBalance)}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">Click to view {subledgerModule?.toLowerCase()} breakdown</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ) : (
+                <InlineOpeningBalance
+                  accountId={account.id}
+                  accountType={account.account_type}
+                  accountSubtype={account.account_subtype}
+                  currentBalance={displayBalance}
+                  currentType={displayType}
+                  normalBalance={getNormalBalance(account.account_type)}
+                  isLocked={(account as any).is_locked || isPeriodClosed || false}
+                />
+              )}
             </td>
             <td className="text-right">
               <div className="flex items-center justify-end gap-1">
@@ -242,6 +306,7 @@ function AccountRow({
           periodOBMap={periodOBMap}
           isPeriodClosed={isPeriodClosed}
           canEdit={canEdit}
+          parentIsControl={controlAcct || parentIsControl}
         />
       ))}
     </>
@@ -268,6 +333,11 @@ function FlatAccountRow({
   isPeriodClosed?: boolean;
   canEdit?: boolean;
 }) {
+  const navigate = useNavigate();
+  const controlAcct = isControlAccount(account.account_subtype);
+  const { subledger_type } = deriveSubledgerFields(account.account_subtype);
+  const subledgerRoute = getControlAccountRoute(subledger_type);
+  const subledgerModule = getControlAccountModule(subledger_type);
   const periodOB = periodOBMap?.get(account.id);
   const displayBalance = periodOB
     ? (periodOB.debit > periodOB.credit ? periodOB.debit - periodOB.credit : periodOB.credit - periodOB.debit)
@@ -285,7 +355,34 @@ function FlatAccountRow({
           </td>
           <td>
             <div className="flex items-center gap-2">
-              <span className="font-medium text-sm text-foreground/80">{account.account_name}</span>
+              {controlAcct && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Lock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">Control account — managed by subledger</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              {controlAcct && subledgerRoute ? (
+                <button
+                  onClick={(e) => { e.stopPropagation(); navigate(subledgerRoute); }}
+                  className="font-medium text-sm text-primary hover:underline cursor-pointer text-left"
+                >
+                  {account.account_name}
+                </button>
+              ) : (
+                <span className="font-medium text-sm text-foreground/80">{account.account_name}</span>
+              )}
+              {controlAcct && subledgerModule && (
+                <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded inline-flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3" />
+                  Managed by {subledgerModule}
+                </span>
+              )}
               {!account.is_active && (
                 <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">Inactive</span>
               )}
@@ -306,15 +403,24 @@ function FlatAccountRow({
             {getNormalBalance(account.account_type)}
           </td>
           <td className="text-right">
-            <InlineOpeningBalance
-              accountId={account.id}
-              accountType={account.account_type}
-              accountSubtype={account.account_subtype}
-              currentBalance={displayBalance}
-              currentType={displayType}
-              normalBalance={getNormalBalance(account.account_type)}
-              isLocked={(account as any).is_locked || isPeriodClosed || false}
-            />
+            {controlAcct && subledgerRoute ? (
+              <button
+                onClick={() => navigate(subledgerRoute)}
+                className="text-sm font-mono text-primary hover:underline cursor-pointer"
+              >
+                {formatCurrency(displayBalance)}
+              </button>
+            ) : (
+              <InlineOpeningBalance
+                accountId={account.id}
+                accountType={account.account_type}
+                accountSubtype={account.account_subtype}
+                currentBalance={displayBalance}
+                currentType={displayType}
+                normalBalance={getNormalBalance(account.account_type)}
+                isLocked={(account as any).is_locked || isPeriodClosed || false}
+              />
+            )}
           </td>
           <td className="text-right">
             <div className="flex items-center justify-end gap-1">
@@ -345,6 +451,11 @@ function FlatAccountRow({
         <ContextMenuItem onClick={() => onGenerateReport(account)}>
           <FileText className="w-4 h-4 mr-2" /> Generate Report
         </ContextMenuItem>
+        {controlAcct && subledgerRoute && (
+          <ContextMenuItem onClick={() => navigate(subledgerRoute)}>
+            <ExternalLink className="w-4 h-4 mr-2" /> View {subledgerModule} Subledger
+          </ContextMenuItem>
+        )}
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => onEdit(account)}>
           <Edit2 className="w-4 h-4 mr-2" /> Edit Account
