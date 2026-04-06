@@ -190,7 +190,21 @@ export const CONTROL_ACCOUNT_SUBTYPES = [
   "Furniture & Equipment",
   "Vehicles",
   "Buildings",
+  "Accumulated Depreciation",
 ];
+
+// Control account subtypes that do NOT allow sub-accounts (must use subledger only)
+export const NO_SUB_ACCOUNTS_SUBTYPES = [
+  "Accounts Receivable",
+  "Accounts Payable",
+  "Inventory",
+];
+
+/** Check if an account subtype allows sub-accounts underneath it */
+export function allowsSubAccounts(subtype: string | null | undefined): boolean {
+  if (!subtype) return true;
+  return !NO_SUB_ACCOUNTS_SUBTYPES.some(s => subtype.toLowerCase().includes(s.toLowerCase()));
+}
 
 export function isControlSubtype(subtype: string | null | undefined): boolean {
   if (!subtype) return false;
@@ -210,6 +224,7 @@ export function getControlAccountModule(subledgerType: string | null | undefined
     case "vendor": return "Vendors";
     case "inventory": return "Inventory Items";
     case "fixed_asset": return "Fixed Assets";
+    case "asset_depreciation": return "Depreciation Schedule";
     default: return null;
   }
 }
@@ -222,6 +237,7 @@ export function getControlAccountRoute(subledgerType: string | null | undefined)
     case "vendor": return "/accounting/vendors";
     case "inventory": return "/accounting/inventory";
     case "fixed_asset": return "/accounting/assets";
+    case "asset_depreciation": return "/accounting/assets/depreciation";
     default: return null;
   }
 }
@@ -256,8 +272,11 @@ export function deriveSubledgerFields(accountSubtype: string | null | undefined)
   if (lower.includes("inventory")) {
     return { requires_subledger: true, subledger_type: "inventory" };
   }
-  if (lower.includes("fixed asset") || lower.includes("accumulated depreciation")) {
+  if (lower.includes("fixed asset") || lower.includes("furniture") || lower.includes("vehicle") || lower.includes("building")) {
     return { requires_subledger: true, subledger_type: "fixed_asset" };
+  }
+  if (lower.includes("accumulated depreciation")) {
+    return { requires_subledger: true, subledger_type: "asset_depreciation" };
   }
   return { requires_subledger: false, subledger_type: "none" };
 }

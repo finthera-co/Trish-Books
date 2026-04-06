@@ -9,6 +9,8 @@ import {
   ACCOUNT_NUMBER_RANGES,
   getNormalBalance,
   getStatementPlacement,
+  isControlSubtype,
+  allowsSubAccounts,
 } from "@/lib/accountTypes";
 import { generateAccountCode } from "@/lib/accountCodeGenerator";
 
@@ -287,13 +289,21 @@ export default function AccountForm({
             >
               <option value="">None (top-level)</option>
               {accounts
-                ?.filter(a => a.id !== editAccount?.id && a.account_type === accountType)
+                ?.filter(a => 
+                  a.id !== editAccount?.id && 
+                  a.account_type === accountType &&
+                  allowsSubAccounts(a.account_subtype)
+                )
                 .map(a => (
                   <option key={a.id} value={a.id}>
                     {a.account_code} — {a.account_name}
+                    {isControlSubtype(a.account_subtype) ? " (allows sub-categories)" : ""}
                   </option>
                 ))}
             </select>
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Control accounts (AR, AP, Inventory) cannot have sub-accounts — use their subledger modules instead.
+            </p>
           </div>
 
           {/* Info panel */}
