@@ -190,7 +190,21 @@ export const CONTROL_ACCOUNT_SUBTYPES = [
   "Furniture & Equipment",
   "Vehicles",
   "Buildings",
+  "Accumulated Depreciation",
 ];
+
+// Control account subtypes that do NOT allow sub-accounts (must use subledger only)
+export const NO_SUB_ACCOUNTS_SUBTYPES = [
+  "Accounts Receivable",
+  "Accounts Payable",
+  "Inventory",
+];
+
+/** Check if an account subtype allows sub-accounts underneath it */
+export function allowsSubAccounts(subtype: string | null | undefined): boolean {
+  if (!subtype) return true;
+  return !NO_SUB_ACCOUNTS_SUBTYPES.some(s => subtype.toLowerCase().includes(s.toLowerCase()));
+}
 
 export function isControlSubtype(subtype: string | null | undefined): boolean {
   if (!subtype) return false;
