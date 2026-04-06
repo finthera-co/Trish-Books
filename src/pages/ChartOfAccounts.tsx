@@ -18,6 +18,12 @@ import {
 import AccountForm from "@/components/chart-of-accounts/AccountForm";
 import COAHealthCheck from "@/components/chart-of-accounts/COAHealthCheck";
 import DeleteAccountDialog from "@/components/chart-of-accounts/DeleteAccountDialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 import InlineOpeningBalance from "@/components/chart-of-accounts/InlineOpeningBalance";
 import { useSystemSetting } from "@/hooks/useOpeningBalanceSettings";
