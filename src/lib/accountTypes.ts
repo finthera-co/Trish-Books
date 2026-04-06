@@ -272,8 +272,11 @@ export function deriveSubledgerFields(accountSubtype: string | null | undefined)
   if (lower.includes("inventory")) {
     return { requires_subledger: true, subledger_type: "inventory" };
   }
-  if (lower.includes("fixed asset") || lower.includes("accumulated depreciation")) {
+  if (lower.includes("fixed asset") || lower.includes("furniture") || lower.includes("vehicle") || lower.includes("building")) {
     return { requires_subledger: true, subledger_type: "fixed_asset" };
+  }
+  if (lower.includes("accumulated depreciation")) {
+    return { requires_subledger: true, subledger_type: "asset_depreciation" };
   }
   return { requires_subledger: false, subledger_type: "none" };
 }
