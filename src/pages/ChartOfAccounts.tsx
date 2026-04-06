@@ -333,6 +333,11 @@ function FlatAccountRow({
   isPeriodClosed?: boolean;
   canEdit?: boolean;
 }) {
+  const navigate = useNavigate();
+  const controlAcct = isControlAccount(account.account_subtype);
+  const { subledger_type } = deriveSubledgerFields(account.account_subtype);
+  const subledgerRoute = getControlAccountRoute(subledger_type);
+  const subledgerModule = getControlAccountModule(subledger_type);
   const periodOB = periodOBMap?.get(account.id);
   const displayBalance = periodOB
     ? (periodOB.debit > periodOB.credit ? periodOB.debit - periodOB.credit : periodOB.credit - periodOB.debit)
@@ -350,7 +355,34 @@ function FlatAccountRow({
           </td>
           <td>
             <div className="flex items-center gap-2">
-              <span className="font-medium text-sm text-foreground/80">{account.account_name}</span>
+              {controlAcct && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Lock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">Control account — managed by subledger</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              {controlAcct && subledgerRoute ? (
+                <button
+                  onClick={(e) => { e.stopPropagation(); navigate(subledgerRoute); }}
+                  className="font-medium text-sm text-primary hover:underline cursor-pointer text-left"
+                >
+                  {account.account_name}
+                </button>
+              ) : (
+                <span className="font-medium text-sm text-foreground/80">{account.account_name}</span>
+              )}
+              {controlAcct && subledgerModule && (
+                <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded inline-flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3" />
+                  Managed by {subledgerModule}
+                </span>
+              )}
               {!account.is_active && (
                 <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">Inactive</span>
               )}
@@ -371,15 +403,24 @@ function FlatAccountRow({
             {getNormalBalance(account.account_type)}
           </td>
           <td className="text-right">
-            <InlineOpeningBalance
-              accountId={account.id}
-              accountType={account.account_type}
-              accountSubtype={account.account_subtype}
-              currentBalance={displayBalance}
-              currentType={displayType}
-              normalBalance={getNormalBalance(account.account_type)}
-              isLocked={(account as any).is_locked || isPeriodClosed || false}
-            />
+            {controlAcct && subledgerRoute ? (
+              <button
+                onClick={() => navigate(subledgerRoute)}
+                className="text-sm font-mono text-primary hover:underline cursor-pointer"
+              >
+                {formatCurrency(displayBalance)}
+              </button>
+            ) : (
+              <InlineOpeningBalance
+                accountId={account.id}
+                accountType={account.account_type}
+                accountSubtype={account.account_subtype}
+                currentBalance={displayBalance}
+                currentType={displayType}
+                normalBalance={getNormalBalance(account.account_type)}
+                isLocked={(account as any).is_locked || isPeriodClosed || false}
+              />
+            )}
           </td>
           <td className="text-right">
             <div className="flex items-center justify-end gap-1">
@@ -410,6 +451,11 @@ function FlatAccountRow({
         <ContextMenuItem onClick={() => onGenerateReport(account)}>
           <FileText className="w-4 h-4 mr-2" /> Generate Report
         </ContextMenuItem>
+        {controlAcct && subledgerRoute && (
+          <ContextMenuItem onClick={() => navigate(subledgerRoute)}>
+            <ExternalLink className="w-4 h-4 mr-2" /> View {subledgerModule} Subledger
+          </ContextMenuItem>
+        )}
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => onEdit(account)}>
           <Edit2 className="w-4 h-4 mr-2" /> Edit Account
