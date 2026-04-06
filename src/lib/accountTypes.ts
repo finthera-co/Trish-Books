@@ -236,6 +236,7 @@ export function getControlAccountRoute(subledgerType: string | null | undefined)
     case "vendor": return "/accounting/vendors";
     case "inventory": return "/accounting/inventory";
     case "fixed_asset": return "/accounting/assets";
+    case "asset_depreciation": return "/accounting/assets/depreciation";
     default: return null;
   }
 }
