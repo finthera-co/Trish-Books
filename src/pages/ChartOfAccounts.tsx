@@ -38,11 +38,20 @@ import {
   getNormalBalance,
   getStatementPlacement,
   isOpeningBalanceEquityAccount,
-  isControlAccount,
-  deriveSubledgerFields,
-  getControlAccountRoute,
-  getControlAccountModule,
 } from "@/lib/accountTypes";
+import {
+  buildAccountsMap,
+  isDirectControl,
+  isAccountControlled,
+  resolveSubledgerType,
+  mapAccountRoute,
+  getModuleLabel,
+  canCreateChildUnder,
+  canSetOpeningBalance,
+  canEditAccountType,
+  canDeleteAccount,
+  type MappableAccount,
+} from "@/lib/accountMappingEngine";
 
 interface Account {
   id: string;
