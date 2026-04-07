@@ -178,6 +178,7 @@ export default function AccountForm({
                 setCategoryId("");
                 setShowNewCategory(false);
               }}
+              disabled={editTypeRestriction !== null && !editTypeRestriction.allowed}
               className={inputClass}
             >
               {ACCOUNT_TYPES.map(t => (
