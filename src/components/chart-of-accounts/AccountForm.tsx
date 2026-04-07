@@ -262,7 +262,7 @@ export default function AccountForm({
               ))}
             </select>
             {accountSubtype && deriveAccountFlags(accountSubtype).is_control_account && (
-              <p className="text-[10px] text-amber-600 mt-1 flex items-center gap-1">
+              <p className="text-[10px] text-warning mt-1 flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
                 This detail type creates a control account managed by subledger. Manual posting will be restricted.
               </p>
