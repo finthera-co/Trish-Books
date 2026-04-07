@@ -294,18 +294,28 @@ export default function AccountForm({
             >
               <option value="">None (top-level)</option>
               {accounts
-                ?.filter(a => 
-                  a.id !== editAccount?.id && 
-                  a.account_type === accountType &&
-                  allowsSubAccounts(a.account_subtype)
-                )
-                .map(a => (
-                  <option key={a.id} value={a.id}>
-                    {a.account_code} — {a.account_name}
-                    {isControlSubtype(a.account_subtype) ? " (allows sub-categories)" : ""}
-                  </option>
-                ))}
+                ?.filter(a => {
+                  if (a.id === editAccount?.id) return false;
+                  if (a.account_type !== accountType) return false;
+                  const acctMap = buildAccountsMap(accounts);
+                  const check = canCreateChildUnder(a, acctMap);
+                  return check.allowed;
+                })
+                .map(a => {
+                  const flags = deriveAccountFlags(a.account_subtype);
+                  return (
+                    <option key={a.id} value={a.id}>
+                      {a.account_code} — {a.account_name}
+                      {flags.is_control_account && flags.allow_sub_accounts ? " (allows sub-categories)" : ""}
+                    </option>
+                  );
+                })}
             </select>
+            {parentValidation && !parentValidation.allowed && (
+              <p className="text-[10px] text-destructive mt-1 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" /> {parentValidation.reason}
+              </p>
+            )}
             <p className="text-[10px] text-muted-foreground mt-1">
               Control accounts (AR, AP, Inventory) cannot have sub-accounts — use their subledger modules instead.
             </p>
