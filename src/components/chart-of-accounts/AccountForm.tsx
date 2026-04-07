@@ -101,6 +101,21 @@ export default function AccountForm({
   const filteredCategories = categories.filter(c => c.account_type === accountType);
   const subtypes = ACCOUNT_SUBTYPES[accountType] || [];
   const numberRange = ACCOUNT_NUMBER_RANGES[accountType];
+  const accountsMap = useMemo(() => buildAccountsMap(accounts), [accounts]);
+
+  // Validate parent selection
+  const parentValidation = useMemo(() => {
+    if (!parentId) return null;
+    const parent = accounts.find(a => a.id === parentId);
+    if (!parent) return null;
+    return canCreateChildUnder(parent, accountsMap);
+  }, [parentId, accounts, accountsMap]);
+
+  // Check if editing a control account (restrict type changes)
+  const editTypeRestriction = useMemo(() => {
+    if (!editAccount) return null;
+    return canEditAccountType(editAccount, accountsMap);
+  }, [editAccount, accountsMap]);
 
   // Account code uniqueness check
   const isCodeDuplicate = existingCodes
