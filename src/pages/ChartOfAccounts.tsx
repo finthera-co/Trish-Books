@@ -356,10 +356,10 @@ function FlatAccountRow({
   canEdit?: boolean;
 }) {
   const navigate = useNavigate();
-  const controlAcct = isControlAccount(account.account_subtype);
-  const { subledger_type } = deriveSubledgerFields(account.account_subtype);
-  const subledgerRoute = getControlAccountRoute(subledger_type);
-  const subledgerModule = getControlAccountModule(subledger_type);
+  const accountsMap = useMemo(() => buildAccountsMap([account]), [account]);
+  const controlAcct = isDirectControl(account);
+  const subledgerRoute = controlAcct ? mapAccountRoute(account, accountsMap) : null;
+  const subledgerModule = getModuleLabel(account, accountsMap);
   const periodOB = periodOBMap?.get(account.id);
   const displayBalance = periodOB
     ? (periodOB.debit > periodOB.credit ? periodOB.debit - periodOB.credit : periodOB.credit - periodOB.debit)
