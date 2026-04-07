@@ -38,11 +38,20 @@ import {
   getNormalBalance,
   getStatementPlacement,
   isOpeningBalanceEquityAccount,
-  isControlAccount,
-  deriveSubledgerFields,
-  getControlAccountRoute,
-  getControlAccountModule,
 } from "@/lib/accountTypes";
+import {
+  buildAccountsMap,
+  isDirectControl,
+  isAccountControlled,
+  resolveSubledgerType,
+  mapAccountRoute,
+  getModuleLabel,
+  canCreateChildUnder,
+  canSetOpeningBalance,
+  canEditAccountType,
+  canDeleteAccount,
+  type MappableAccount,
+} from "@/lib/accountMappingEngine";
 
 interface Account {
   id: string;
@@ -128,10 +137,23 @@ function AccountRow({
   const [expanded, setExpanded] = useState(true);
   const navigate = useNavigate();
   const hasChildren = account.children && account.children.length > 0;
-  const controlAcct = isControlAccount(account.account_subtype);
-  const { subledger_type } = deriveSubledgerFields(account.account_subtype);
-  const subledgerRoute = getControlAccountRoute(subledger_type);
-  const subledgerModule = getControlAccountModule(subledger_type);
+  
+  // Use mapping engine — never depends on account name
+  const allAccounts = useMemo(() => {
+    // Collect all accounts from tree for map building
+    const collect = (a: Account): MappableAccount[] => {
+      const result: MappableAccount[] = [a];
+      a.children?.forEach(c => result.push(...collect(c)));
+      return result;
+    };
+    return collect(account);
+  }, [account]);
+  const accountsMap = useMemo(() => buildAccountsMap(allAccounts), [allAccounts]);
+  
+  const controlAcct = isDirectControl(account);
+  const isControlled = isAccountControlled(account, accountsMap);
+  const subledgerRoute = isControlled ? mapAccountRoute(account, accountsMap) : null;
+  const subledgerModule = getModuleLabel(account, accountsMap);
   const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap);
 
   // Determine if this account inherits control status from parent
@@ -334,10 +356,10 @@ function FlatAccountRow({
   canEdit?: boolean;
 }) {
   const navigate = useNavigate();
-  const controlAcct = isControlAccount(account.account_subtype);
-  const { subledger_type } = deriveSubledgerFields(account.account_subtype);
-  const subledgerRoute = getControlAccountRoute(subledger_type);
-  const subledgerModule = getControlAccountModule(subledger_type);
+  const accountsMap = useMemo(() => buildAccountsMap([account]), [account]);
+  const controlAcct = isDirectControl(account);
+  const subledgerRoute = controlAcct ? mapAccountRoute(account, accountsMap) : null;
+  const subledgerModule = getModuleLabel(account, accountsMap);
   const periodOB = periodOBMap?.get(account.id);
   const displayBalance = periodOB
     ? (periodOB.debit > periodOB.credit ? periodOB.debit - periodOB.credit : periodOB.credit - periodOB.debit)
