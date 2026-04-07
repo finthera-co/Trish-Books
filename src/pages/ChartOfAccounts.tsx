@@ -137,10 +137,23 @@ function AccountRow({
   const [expanded, setExpanded] = useState(true);
   const navigate = useNavigate();
   const hasChildren = account.children && account.children.length > 0;
-  const controlAcct = isControlAccount(account.account_subtype);
-  const { subledger_type } = deriveSubledgerFields(account.account_subtype);
-  const subledgerRoute = getControlAccountRoute(subledger_type);
-  const subledgerModule = getControlAccountModule(subledger_type);
+  
+  // Use mapping engine — never depends on account name
+  const allAccounts = useMemo(() => {
+    // Collect all accounts from tree for map building
+    const collect = (a: Account): MappableAccount[] => {
+      const result: MappableAccount[] = [a];
+      a.children?.forEach(c => result.push(...collect(c)));
+      return result;
+    };
+    return collect(account);
+  }, [account]);
+  const accountsMap = useMemo(() => buildAccountsMap(allAccounts), [allAccounts]);
+  
+  const controlAcct = isDirectControl(account);
+  const isControlled = isAccountControlled(account, accountsMap);
+  const subledgerRoute = isControlled ? mapAccountRoute(account, accountsMap) : null;
+  const subledgerModule = getModuleLabel(account, accountsMap);
   const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap);
 
   // Determine if this account inherits control status from parent
