@@ -2,17 +2,22 @@ import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { AccountCategory } from "@/hooks/useAccountCategories";
-import { Plus, Lock } from "lucide-react";
+import { Plus, Lock, AlertTriangle } from "lucide-react";
 import {
   ACCOUNT_TYPES,
   ACCOUNT_SUBTYPES,
   ACCOUNT_NUMBER_RANGES,
   getNormalBalance,
   getStatementPlacement,
-  isControlSubtype,
-  allowsSubAccounts,
 } from "@/lib/accountTypes";
 import { generateAccountCode } from "@/lib/accountCodeGenerator";
+import {
+  buildAccountsMap,
+  canCreateChildUnder,
+  deriveAccountFlags,
+  isDirectControl,
+  canEditAccountType,
+} from "@/lib/accountMappingEngine";
 
 interface Account {
   id: string;
