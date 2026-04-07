@@ -207,9 +207,13 @@ export function useUpdateAccount() {
     mutationFn: async ({ id, ...updates }: { id: string; account_name?: string; account_code?: string; account_type?: string; account_subtype?: string | null; parent_account_id?: string | null; category_id?: string | null; is_active?: boolean }) => {
       // Auto-derive subledger fields if subtype is being updated
       if ('account_subtype' in updates) {
-        const { deriveSubledgerFields, isControlAccount } = await import("@/lib/accountTypes");
-        const subledgerFields = deriveSubledgerFields(updates.account_subtype);
-        Object.assign(updates, subledgerFields, { is_control_account: isControlAccount(updates.account_subtype) });
+        const { deriveAccountFlags } = await import("@/lib/accountMappingEngine");
+        const flags = deriveAccountFlags(updates.account_subtype);
+        Object.assign(updates, {
+          is_control_account: flags.is_control_account,
+          requires_subledger: flags.requires_subledger,
+          subledger_type: flags.subledger_type,
+        });
       }
       const { error } = await supabase.from("accounts").update(updates).eq("id", id);
       if (error) throw error;
@@ -217,6 +221,10 @@ export function useUpdateAccount() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["accounts_active"] });
+      queryClient.invalidateQueries({ queryKey: ["chart_of_accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["trial_balance"] });
+      queryClient.invalidateQueries({ queryKey: ["balance_sheet"] });
       toast.success("Account updated");
     },
     onError: (e: Error) => toast.error(e.message),

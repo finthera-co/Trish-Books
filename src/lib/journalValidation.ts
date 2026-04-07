@@ -320,10 +320,9 @@ export function getCreditSuggestedAccounts(accounts: AccountInfo[]): AccountInfo
 
 /** Check if an account is a subledger (AR/AP) account */
 export function isSubledgerAccount(account: AccountInfo): "AR" | "AP" | null {
-  if (!account.account_subtype) return null;
-  const sub = account.account_subtype.toLowerCase();
-  if (sub.includes("accounts receivable") || sub.includes("receivable")) return "AR";
-  if (sub.includes("accounts payable") || sub.includes("payable")) return "AP";
+  const stype = detectSubledgerType(account.account_subtype);
+  if (stype === "customer") return "AR";
+  if (stype === "vendor") return "AP";
   return null;
 }
 
@@ -332,13 +331,17 @@ export function getManualEntryAccounts(accounts: AccountInfo[]): AccountInfo[] {
   return accounts.filter((a) => a.is_active);
 }
 
-/** Check if an account requires subledger breakdown */
+/** Check if an account requires subledger breakdown — uses mapping engine */
 export function requiresSubledgerBreakdown(account: AccountInfo): string | null {
-  if (!account.account_subtype) return null;
-  const sub = account.account_subtype.toLowerCase();
-  if (sub.includes("accounts receivable") || sub.includes("receivable")) return "customer";
-  if (sub.includes("accounts payable") || sub.includes("payable")) return "vendor";
-  if (sub.includes("inventory")) return "inventory";
-  if (sub.includes("fixed asset") || sub.includes("accumulated depreciation")) return "fixed_asset";
-  return null;
+  const stype = detectSubledgerType(account.account_subtype);
+  if (stype === "none") return null;
+  // Map engine types to entity labels
+  const labelMap: Record<string, string> = {
+    customer: "customer",
+    vendor: "vendor",
+    inventory: "inventory",
+    fixed_asset: "fixed_asset",
+    asset_depreciation: "fixed_asset",
+  };
+  return labelMap[stype] || null;
 }
