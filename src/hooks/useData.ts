@@ -153,21 +153,48 @@ export function useCreateAccount() {
   const { appUser } = useAuth();
   return useMutation({
     mutationFn: async (account: { account_name: string; account_code: string; account_type: string; account_subtype?: string; parent_account_id?: string; category_id?: string; created_from?: string }) => {
-      const { deriveSubledgerFields, isControlAccount } = await import("@/lib/accountTypes");
-      const subledgerFields = deriveSubledgerFields(account.account_subtype);
+      const { deriveAccountFlags, inheritParentFlags, buildAccountsMap, getInvalidationKeys } = await import("@/lib/accountMappingEngine");
+      const flags = deriveAccountFlags(account.account_subtype);
+
+      // If parent specified, check inheritance
+      let inherited: Record<string, any> = {};
+      if (account.parent_account_id) {
+        const { data: allAccounts } = await supabase
+          .from("accounts")
+          .select("id, account_type, account_subtype, parent_account_id, is_control_account, subledger_type, requires_subledger")
+          .eq("tenant_id", appUser?.tenant_id);
+        if (allAccounts) {
+          const acctMap = buildAccountsMap(allAccounts);
+          const parent = acctMap.get(account.parent_account_id);
+          if (parent) {
+            inherited = inheritParentFlags(parent, acctMap);
+          }
+        }
+      }
+
       const { data, error } = await supabase.from("accounts").insert({
         ...account,
-        ...subledgerFields,
-        is_control_account: isControlAccount(account.account_subtype),
+        is_control_account: flags.is_control_account,
+        requires_subledger: flags.requires_subledger || !!inherited.requires_subledger,
+        subledger_type: flags.subledger_type !== "none" ? flags.subledger_type : (inherited.subledger_type || "none"),
         tenant_id: appUser?.tenant_id,
       }).select().single();
       if (error) throw error;
       writeAuditLog("Account Created", "accounts", data.id, { account_name: account.account_name, account_code: account.account_code });
+
+      // Invalidate subledger-specific caches
+      const stype = flags.subledger_type !== "none" ? flags.subledger_type : (inherited.subledger_type || "none");
+      if (stype !== "none") {
+        getInvalidationKeys(stype as any).forEach(k => queryClient.invalidateQueries({ queryKey: [k] }));
+      }
+
       return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["accounts_active"] });
+      queryClient.invalidateQueries({ queryKey: ["chart_of_accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["trial_balance"] });
       toast.success("Account created");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -180,9 +207,13 @@ export function useUpdateAccount() {
     mutationFn: async ({ id, ...updates }: { id: string; account_name?: string; account_code?: string; account_type?: string; account_subtype?: string | null; parent_account_id?: string | null; category_id?: string | null; is_active?: boolean }) => {
       // Auto-derive subledger fields if subtype is being updated
       if ('account_subtype' in updates) {
-        const { deriveSubledgerFields, isControlAccount } = await import("@/lib/accountTypes");
-        const subledgerFields = deriveSubledgerFields(updates.account_subtype);
-        Object.assign(updates, subledgerFields, { is_control_account: isControlAccount(updates.account_subtype) });
+        const { deriveAccountFlags } = await import("@/lib/accountMappingEngine");
+        const flags = deriveAccountFlags(updates.account_subtype);
+        Object.assign(updates, {
+          is_control_account: flags.is_control_account,
+          requires_subledger: flags.requires_subledger,
+          subledger_type: flags.subledger_type,
+        });
       }
       const { error } = await supabase.from("accounts").update(updates).eq("id", id);
       if (error) throw error;
@@ -190,6 +221,10 @@ export function useUpdateAccount() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["accounts_active"] });
+      queryClient.invalidateQueries({ queryKey: ["chart_of_accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["trial_balance"] });
+      queryClient.invalidateQueries({ queryKey: ["balance_sheet"] });
       toast.success("Account updated");
     },
     onError: (e: Error) => toast.error(e.message),
