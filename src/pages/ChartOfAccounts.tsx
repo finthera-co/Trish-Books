@@ -386,7 +386,7 @@ function FlatAccountRow({
                   </Tooltip>
                 </TooltipProvider>
               )}
-              {controlAcct && subledgerRoute ? (
+              {(controlAcct || isControlled) && subledgerRoute ? (
                 <button
                   onClick={(e) => { e.stopPropagation(); navigate(subledgerRoute); }}
                   className="font-medium text-sm text-primary hover:underline cursor-pointer text-left"
@@ -422,7 +422,7 @@ function FlatAccountRow({
             {getNormalBalance(account.account_type)}
           </td>
           <td className="text-right">
-            {controlAcct && subledgerRoute ? (
+            {(controlAcct || isControlled) && subledgerRoute ? (
               <button
                 onClick={() => navigate(subledgerRoute)}
                 className="text-sm font-mono text-primary hover:underline cursor-pointer"
@@ -470,7 +470,7 @@ function FlatAccountRow({
         <ContextMenuItem onClick={() => onGenerateReport(account)}>
           <FileText className="w-4 h-4 mr-2" /> Generate Report
         </ContextMenuItem>
-        {controlAcct && subledgerRoute && (
+        {(controlAcct || isControlled) && subledgerRoute && (
           <ContextMenuItem onClick={() => navigate(subledgerRoute)}>
             <ExternalLink className="w-4 h-4 mr-2" /> View {subledgerModule} Subledger
           </ContextMenuItem>
