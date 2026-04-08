@@ -699,7 +699,11 @@ export default function ChartOfAccounts() {
     return map;
   }, [periodBalances]);
 
-  const displayAccounts = useMemo(() => {
+  // Global accounts map for mapping engine — built once, shared by all rows
+  const globalAccountsMap = useMemo(() => {
+    return buildAccountsMap(((accounts as any[]) || []) as MappableAccount[]);
+  }, [accounts]);
+
     return ((accounts as Account[] | undefined) || []).map((account) =>
       isOpeningBalanceEquityAccount(account)
         ? {
