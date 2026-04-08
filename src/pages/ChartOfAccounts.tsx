@@ -704,6 +704,7 @@ export default function ChartOfAccounts() {
     return buildAccountsMap(((accounts as any[]) || []) as MappableAccount[]);
   }, [accounts]);
 
+  const displayAccounts = useMemo(() => {
     return ((accounts as Account[] | undefined) || []).map((account) =>
       isOpeningBalanceEquityAccount(account)
         ? {
