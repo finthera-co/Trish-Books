@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Play, CheckCircle, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,8 +15,14 @@ export default function DepreciationRun() {
   const runDep = useRunDepreciation();
   const { data: assets } = useFixedAssets();
   const [result, setResult] = useState<{ processed: number; skipped: number } | null>(null);
+  const [searchParams] = useSearchParams();
+  const accountId = searchParams.get("account_id");
 
-  const activeAssets = assets?.filter(a => a.status === "active") ?? [];
+  const allActive = assets?.filter(a => a.status === "active") ?? [];
+  const activeAssets = useMemo(() => {
+    if (!accountId) return allActive;
+    return allActive.filter((a: any) => a.depreciation_account_id === accountId);
+  }, [allActive, accountId]);
 
   const handleRun = async () => {
     const res = await runDep.mutateAsync(period);
