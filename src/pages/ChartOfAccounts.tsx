@@ -568,6 +568,7 @@ function TypeSection({
               periodOBMap={periodOBMap}
               isPeriodClosed={isPeriodClosed}
               canEdit={canEdit}
+              globalAccountsMap={globalAccountsMap}
             />
           ))}
         </>
@@ -586,6 +587,7 @@ function CategorySection({
   periodOBMap,
   isPeriodClosed,
   canEdit,
+  globalAccountsMap,
 }: {
   category: CategoryGroup;
   accountType: string;
@@ -596,6 +598,7 @@ function CategorySection({
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
   canEdit?: boolean;
+  globalAccountsMap?: Map<string, MappableAccount>;
 }) {
   const [expanded, setExpanded] = useState(true);
   const tree = buildTree(category.accounts).sort((a, b) => a.account_code.localeCompare(b.account_code));
