@@ -33,8 +33,8 @@ const SUBLEDGER_ROUTES: Record<string, string> = {
   customer: "/accounting/customers",
   vendor: "/accounting/vendors",
   inventory: "/accounting/inventory",
-  fixed_asset: "/accounting/assets",
-  asset_depreciation: "/accounting/assets/depreciation",
+  fixed_asset: "/assets/register",
+  asset_depreciation: "/assets/depreciation",
 };
 
 const SUBLEDGER_MODULE_LABELS: Record<string, string> = {

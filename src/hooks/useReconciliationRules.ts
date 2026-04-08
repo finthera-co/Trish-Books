@@ -52,7 +52,7 @@ export function useCreateRule() {
 export function useUpdateRule() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...updates }: { id: string; is_active?: boolean; [key: string]: any }) => {
+    mutationFn: async ({ id, ...updates }: { id: string; is_active?: boolean }) => {
       const { error } = await supabase
         .from("reconciliation_rules")
         .update(updates)
