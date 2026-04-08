@@ -941,6 +941,7 @@ export default function ChartOfAccounts() {
                   periodOBMap={periodOBMap}
                   isPeriodClosed={isPeriodClosed}
                   canEdit={hasEditPermission}
+                  globalAccountsMap={globalAccountsMap}
                 />
               ))}
             </tbody>
@@ -974,6 +975,7 @@ export default function ChartOfAccounts() {
                     periodOBMap={periodOBMap}
                     isPeriodClosed={isPeriodClosed}
                     canEdit={hasEditPermission}
+                    globalAccountsMap={globalAccountsMap}
                   />
                 ))}
             </tbody>
