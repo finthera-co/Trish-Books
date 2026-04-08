@@ -122,6 +122,7 @@ function AccountRow({
   isPeriodClosed,
   canEdit,
   parentIsControl,
+  globalAccountsMap,
 }: {
   account: Account;
   depth?: number;
@@ -133,22 +134,14 @@ function AccountRow({
   isPeriodClosed?: boolean;
   canEdit?: boolean;
   parentIsControl?: boolean;
+  globalAccountsMap?: Map<string, MappableAccount>;
 }) {
   const [expanded, setExpanded] = useState(true);
   const navigate = useNavigate();
   const hasChildren = account.children && account.children.length > 0;
   
-  // Use mapping engine — never depends on account name
-  const allAccounts = useMemo(() => {
-    // Collect all accounts from tree for map building
-    const collect = (a: Account): MappableAccount[] => {
-      const result: MappableAccount[] = [a];
-      a.children?.forEach(c => result.push(...collect(c)));
-      return result;
-    };
-    return collect(account);
-  }, [account]);
-  const accountsMap = useMemo(() => buildAccountsMap(allAccounts), [allAccounts]);
+  // Use global accounts map for full hierarchy resolution
+  const accountsMap = globalAccountsMap ?? useMemo(() => buildAccountsMap([account]), [account]);
   
   const controlAcct = isDirectControl(account);
   const isControlled = isAccountControlled(account, accountsMap);
