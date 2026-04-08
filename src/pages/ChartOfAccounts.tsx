@@ -184,7 +184,7 @@ function AccountRow({
                     </Tooltip>
                   </TooltipProvider>
                 ) : null}
-                {controlAcct && subledgerRoute ? (
+                {(controlAcct || isInheritedControl) && subledgerRoute ? (
                   <button
                     onClick={(e) => { e.stopPropagation(); navigate(subledgerRoute); }}
                     className="font-medium text-sm text-primary hover:underline cursor-pointer text-left"
@@ -233,7 +233,7 @@ function AccountRow({
               {getNormalBalance(account.account_type)}
             </td>
             <td className="text-right">
-              {controlAcct && subledgerRoute ? (
+              {(controlAcct || isInheritedControl) && subledgerRoute ? (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
