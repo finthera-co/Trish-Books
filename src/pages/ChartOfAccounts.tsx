@@ -298,7 +298,7 @@ function AccountRow({
           <ContextMenuItem onClick={() => onGenerateReport(account)}>
             <FileText className="w-4 h-4 mr-2" /> Generate Report
           </ContextMenuItem>
-          {controlAcct && subledgerRoute && (
+          {(controlAcct || isInheritedControl) && subledgerRoute && (
             <>
               <ContextMenuItem onClick={() => navigate(subledgerRoute)}>
                 <ExternalLink className="w-4 h-4 mr-2" /> View {subledgerModule} Subledger
