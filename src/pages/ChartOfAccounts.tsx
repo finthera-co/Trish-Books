@@ -122,6 +122,7 @@ function AccountRow({
   isPeriodClosed,
   canEdit,
   parentIsControl,
+  globalAccountsMap,
 }: {
   account: Account;
   depth?: number;
@@ -133,22 +134,14 @@ function AccountRow({
   isPeriodClosed?: boolean;
   canEdit?: boolean;
   parentIsControl?: boolean;
+  globalAccountsMap?: Map<string, MappableAccount>;
 }) {
   const [expanded, setExpanded] = useState(true);
   const navigate = useNavigate();
   const hasChildren = account.children && account.children.length > 0;
   
-  // Use mapping engine — never depends on account name
-  const allAccounts = useMemo(() => {
-    // Collect all accounts from tree for map building
-    const collect = (a: Account): MappableAccount[] => {
-      const result: MappableAccount[] = [a];
-      a.children?.forEach(c => result.push(...collect(c)));
-      return result;
-    };
-    return collect(account);
-  }, [account]);
-  const accountsMap = useMemo(() => buildAccountsMap(allAccounts), [allAccounts]);
+  // Use global accounts map for full hierarchy resolution
+  const accountsMap = globalAccountsMap ?? useMemo(() => buildAccountsMap([account]), [account]);
   
   const controlAcct = isDirectControl(account);
   const isControlled = isAccountControlled(account, accountsMap);
@@ -329,6 +322,7 @@ function AccountRow({
           isPeriodClosed={isPeriodClosed}
           canEdit={canEdit}
           parentIsControl={controlAcct || parentIsControl}
+          globalAccountsMap={accountsMap}
         />
       ))}
     </>
@@ -345,6 +339,7 @@ function FlatAccountRow({
   periodOBMap,
   isPeriodClosed,
   canEdit,
+  globalAccountsMap,
 }: {
   account: Account;
   onEdit: (a: Account) => void;
@@ -354,11 +349,13 @@ function FlatAccountRow({
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
   canEdit?: boolean;
+  globalAccountsMap?: Map<string, MappableAccount>;
 }) {
   const navigate = useNavigate();
-  const accountsMap = useMemo(() => buildAccountsMap([account]), [account]);
+  const accountsMap = globalAccountsMap ?? useMemo(() => buildAccountsMap([account]), [account]);
   const controlAcct = isDirectControl(account);
-  const subledgerRoute = controlAcct ? mapAccountRoute(account, accountsMap) : null;
+  const isControlled = isAccountControlled(account, accountsMap);
+  const subledgerRoute = isControlled ? mapAccountRoute(account, accountsMap) : null;
   const subledgerModule = getModuleLabel(account, accountsMap);
   const periodOB = periodOBMap?.get(account.id);
   const displayBalance = periodOB
@@ -389,7 +386,7 @@ function FlatAccountRow({
                   </Tooltip>
                 </TooltipProvider>
               )}
-              {controlAcct && subledgerRoute ? (
+              {(controlAcct || isControlled) && subledgerRoute ? (
                 <button
                   onClick={(e) => { e.stopPropagation(); navigate(subledgerRoute); }}
                   className="font-medium text-sm text-primary hover:underline cursor-pointer text-left"
@@ -425,7 +422,7 @@ function FlatAccountRow({
             {getNormalBalance(account.account_type)}
           </td>
           <td className="text-right">
-            {controlAcct && subledgerRoute ? (
+            {(controlAcct || isControlled) && subledgerRoute ? (
               <button
                 onClick={() => navigate(subledgerRoute)}
                 className="text-sm font-mono text-primary hover:underline cursor-pointer"
@@ -473,7 +470,7 @@ function FlatAccountRow({
         <ContextMenuItem onClick={() => onGenerateReport(account)}>
           <FileText className="w-4 h-4 mr-2" /> Generate Report
         </ContextMenuItem>
-        {controlAcct && subledgerRoute && (
+        {(controlAcct || isControlled) && subledgerRoute && (
           <ContextMenuItem onClick={() => navigate(subledgerRoute)}>
             <ExternalLink className="w-4 h-4 mr-2" /> View {subledgerModule} Subledger
           </ContextMenuItem>
@@ -501,6 +498,7 @@ function TypeSection({
   periodOBMap,
   isPeriodClosed,
   canEdit,
+  globalAccountsMap,
 }: {
   typeGroup: TypeGroup;
   onEdit: (a: Account) => void;
@@ -510,6 +508,7 @@ function TypeSection({
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
   canEdit?: boolean;
+  globalAccountsMap?: Map<string, MappableAccount>;
 }) {
   const [expanded, setExpanded] = useState(true);
   const totalAccounts = typeGroup.categories.reduce((s, c) => s + c.accounts.length, 0) + typeGroup.uncategorized.length;
@@ -547,6 +546,7 @@ function TypeSection({
           periodOBMap={periodOBMap}
           isPeriodClosed={isPeriodClosed}
           canEdit={canEdit}
+          globalAccountsMap={globalAccountsMap}
         />
       ))}
       {expanded && typeGroup.uncategorized.length > 0 && (
@@ -568,6 +568,7 @@ function TypeSection({
               periodOBMap={periodOBMap}
               isPeriodClosed={isPeriodClosed}
               canEdit={canEdit}
+              globalAccountsMap={globalAccountsMap}
             />
           ))}
         </>
@@ -586,6 +587,7 @@ function CategorySection({
   periodOBMap,
   isPeriodClosed,
   canEdit,
+  globalAccountsMap,
 }: {
   category: CategoryGroup;
   accountType: string;
@@ -596,6 +598,7 @@ function CategorySection({
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
   canEdit?: boolean;
+  globalAccountsMap?: Map<string, MappableAccount>;
 }) {
   const [expanded, setExpanded] = useState(true);
   const tree = buildTree(category.accounts).sort((a, b) => a.account_code.localeCompare(b.account_code));
@@ -626,6 +629,7 @@ function CategorySection({
           periodOBMap={periodOBMap}
           isPeriodClosed={isPeriodClosed}
           canEdit={canEdit}
+          globalAccountsMap={globalAccountsMap}
         />
       ))}
     </>
@@ -694,6 +698,11 @@ export default function ChartOfAccounts() {
     });
     return map;
   }, [periodBalances]);
+
+  // Global accounts map for mapping engine — built once, shared by all rows
+  const globalAccountsMap = useMemo(() => {
+    return buildAccountsMap(((accounts as any[]) || []) as MappableAccount[]);
+  }, [accounts]);
 
   const displayAccounts = useMemo(() => {
     return ((accounts as Account[] | undefined) || []).map((account) =>
@@ -932,6 +941,7 @@ export default function ChartOfAccounts() {
                   periodOBMap={periodOBMap}
                   isPeriodClosed={isPeriodClosed}
                   canEdit={hasEditPermission}
+                  globalAccountsMap={globalAccountsMap}
                 />
               ))}
             </tbody>
@@ -965,6 +975,7 @@ export default function ChartOfAccounts() {
                     periodOBMap={periodOBMap}
                     isPeriodClosed={isPeriodClosed}
                     canEdit={hasEditPermission}
+                    globalAccountsMap={globalAccountsMap}
                   />
                 ))}
             </tbody>
