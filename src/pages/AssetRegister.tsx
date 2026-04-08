@@ -10,6 +10,24 @@ import { useFixedAssets } from "@/hooks/useFixedAssets";
 import { useAccounts } from "@/hooks/useData";
 import { formatCurrency } from "@/lib/currency";
 
+// ─── Recursive helpers ────────────────────────────────────
+function getChildAccountIds(accountId: string, accounts: any[]): string[] {
+  const children = accounts.filter(a => a.parent_account_id === accountId);
+  return children.reduce<string[]>((acc, child) => {
+    return [...acc, child.id, ...getChildAccountIds(child.id, accounts)];
+  }, []);
+}
+
+function buildBreadcrumbChain(accountId: string, accountMap: Map<string, any>): Array<{ id: string; name: string }> {
+  const chain: Array<{ id: string; name: string }> = [];
+  let current = accountMap.get(accountId);
+  while (current) {
+    chain.unshift({ id: current.id, name: current.account_name });
+    current = current.parent_account_id ? accountMap.get(current.parent_account_id) : null;
+  }
+  return chain;
+}
+
 export default function AssetRegister() {
   const { data: assets, isLoading } = useFixedAssets();
   const { data: accounts } = useAccounts();
@@ -17,21 +35,28 @@ export default function AssetRegister() {
   const [searchParams] = useSearchParams();
   const accountId = searchParams.get("account_id");
 
-  // Build account lookup for category names
+  // Build account lookup
   const accountMap = useMemo(() => {
-    const map = new Map<string, string>();
-    accounts?.forEach((a: any) => map.set(a.id, a.account_name));
+    const map = new Map<string, any>();
+    (accounts as any[] || []).forEach(a => map.set(a.id, a));
     return map;
   }, [accounts]);
 
-  const categoryName = accountId ? accountMap.get(accountId) : null;
-
-  // Filter assets by category account if specified
+  // Recursive filtering: include accountId + all descendant account IDs
   const filteredAssets = useMemo(() => {
     if (!assets) return [];
     if (!accountId) return assets;
-    return assets.filter((a: any) => a.asset_account_id === accountId);
-  }, [assets, accountId]);
+    const ids = new Set([accountId, ...getChildAccountIds(accountId, accounts as any[] || [])]);
+    return (assets as any[]).filter(a => ids.has(a.asset_account_id));
+  }, [assets, accountId, accounts]);
+
+  // Breadcrumb chain
+  const breadcrumbChain = useMemo(() => {
+    if (!accountId) return [];
+    return buildBreadcrumbChain(accountId, accountMap);
+  }, [accountId, accountMap]);
+
+  const categoryName = accountId ? accountMap.get(accountId)?.account_name : null;
 
   const totalCost = filteredAssets.reduce((s, a: any) => s + (a.cost || 0), 0);
   const totalNBV = filteredAssets.reduce((s, a: any) => s + (a.net_book_value ?? a.cost - (a.accumulated_depreciation ?? 0)), 0);
@@ -47,23 +72,32 @@ export default function AssetRegister() {
             </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
-          {accountId && categoryName ? (
-            <>
-              <BreadcrumbItem>
-                <BreadcrumbLink asChild>
-                  <Link to="/assets/register">Fixed Assets</Link>
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage>{categoryName}</BreadcrumbPage>
-              </BreadcrumbItem>
-            </>
-          ) : (
-            <BreadcrumbItem>
+          <BreadcrumbItem>
+            {accountId ? (
+              <BreadcrumbLink asChild>
+                <Link to="/assets/register">Fixed Assets</Link>
+              </BreadcrumbLink>
+            ) : (
               <BreadcrumbPage>Fixed Assets</BreadcrumbPage>
-            </BreadcrumbItem>
-          )}
+            )}
+          </BreadcrumbItem>
+          {breadcrumbChain.map((crumb, idx) => {
+            const isLast = idx === breadcrumbChain.length - 1;
+            return (
+              <span key={crumb.id} className="contents">
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  {isLast ? (
+                    <BreadcrumbPage>{crumb.name}</BreadcrumbPage>
+                  ) : (
+                    <BreadcrumbLink asChild>
+                      <Link to={`/assets/register?account_id=${crumb.id}`}>{crumb.name}</Link>
+                    </BreadcrumbLink>
+                  )}
+                </BreadcrumbItem>
+              </span>
+            );
+          })}
         </BreadcrumbList>
       </Breadcrumb>
 
@@ -128,7 +162,7 @@ export default function AssetRegister() {
               ) : (
                 filteredAssets.map((asset: any) => {
                   const nbv = asset.net_book_value ?? (asset.cost - (asset.accumulated_depreciation ?? 0));
-                  const catName = asset.asset_account_id ? accountMap.get(asset.asset_account_id) : null;
+                  const catName = asset.asset_account_id ? accountMap.get(asset.asset_account_id)?.account_name : null;
                   return (
                     <TableRow key={asset.id} className="cursor-pointer" onClick={() => navigate(`/assets/${asset.id}`)}>
                       <TableCell className="font-medium">{asset.asset_name}</TableCell>
