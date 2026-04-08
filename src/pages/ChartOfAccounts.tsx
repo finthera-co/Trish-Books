@@ -339,6 +339,7 @@ function FlatAccountRow({
   periodOBMap,
   isPeriodClosed,
   canEdit,
+  globalAccountsMap,
 }: {
   account: Account;
   onEdit: (a: Account) => void;
@@ -348,11 +349,13 @@ function FlatAccountRow({
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
   canEdit?: boolean;
+  globalAccountsMap?: Map<string, MappableAccount>;
 }) {
   const navigate = useNavigate();
-  const accountsMap = useMemo(() => buildAccountsMap([account]), [account]);
+  const accountsMap = globalAccountsMap ?? useMemo(() => buildAccountsMap([account]), [account]);
   const controlAcct = isDirectControl(account);
-  const subledgerRoute = controlAcct ? mapAccountRoute(account, accountsMap) : null;
+  const isControlled = isAccountControlled(account, accountsMap);
+  const subledgerRoute = isControlled ? mapAccountRoute(account, accountsMap) : null;
   const subledgerModule = getModuleLabel(account, accountsMap);
   const periodOB = periodOBMap?.get(account.id);
   const displayBalance = periodOB
