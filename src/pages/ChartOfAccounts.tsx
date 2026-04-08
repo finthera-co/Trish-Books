@@ -498,6 +498,7 @@ function TypeSection({
   periodOBMap,
   isPeriodClosed,
   canEdit,
+  globalAccountsMap,
 }: {
   typeGroup: TypeGroup;
   onEdit: (a: Account) => void;
@@ -507,6 +508,7 @@ function TypeSection({
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
   canEdit?: boolean;
+  globalAccountsMap?: Map<string, MappableAccount>;
 }) {
   const [expanded, setExpanded] = useState(true);
   const totalAccounts = typeGroup.categories.reduce((s, c) => s + c.accounts.length, 0) + typeGroup.uncategorized.length;
@@ -544,6 +546,7 @@ function TypeSection({
           periodOBMap={periodOBMap}
           isPeriodClosed={isPeriodClosed}
           canEdit={canEdit}
+          globalAccountsMap={globalAccountsMap}
         />
       ))}
       {expanded && typeGroup.uncategorized.length > 0 && (
