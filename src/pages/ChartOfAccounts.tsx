@@ -322,6 +322,7 @@ function AccountRow({
           isPeriodClosed={isPeriodClosed}
           canEdit={canEdit}
           parentIsControl={controlAcct || parentIsControl}
+          globalAccountsMap={accountsMap}
         />
       ))}
     </>
