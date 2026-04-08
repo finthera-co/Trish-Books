@@ -629,6 +629,7 @@ function CategorySection({
           periodOBMap={periodOBMap}
           isPeriodClosed={isPeriodClosed}
           canEdit={canEdit}
+          globalAccountsMap={globalAccountsMap}
         />
       ))}
     </>
