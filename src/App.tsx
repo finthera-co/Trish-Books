@@ -119,6 +119,7 @@ const App = () => (
                 <Route element={<ModuleLayout config={MODULE_CONFIGS.sales} />}>
                   <Route path="/sales" element={<ModuleDashboard config={MODULE_CONFIGS.sales} />} />
                   <Route path="/sales/invoices" element={<Invoices />} />
+                  <Route path="/sales/invoices/new" element={<CreateInvoice />} />
                   <Route path="/sales/invoices/templates" element={<InvoiceTemplates />} />
                   <Route path="/sales/invoices/designer" element={<InvoiceTemplateDesigner />} />
                   <Route path="/sales/products-taxes" element={<ProductsTaxes />} />
