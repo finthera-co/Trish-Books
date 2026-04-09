@@ -8,26 +8,27 @@
 
 @layer base {
   :root {
-    --background: 220 14% 96%;
-    --foreground: 224 71% 4%;
+    /* Deep navy fintech palette */
+    --background: 224 71% 4%;
+    --foreground: 224 100% 95%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 224 71% 4%;
+    --card: 217 60% 8%;
+    --card-foreground: 224 100% 95%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 224 71% 4%;
+    --popover: 217 60% 10%;
+    --popover-foreground: 224 100% 95%;
 
-    --primary: 217 91% 60%;
+    --primary: 217 100% 56%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 14% 96%;
-    --secondary-foreground: 220 9% 46%;
+    --secondary: 217 50% 14%;
+    --secondary-foreground: 220 41% 74%;
 
-    --muted: 220 14% 96%;
-    --muted-foreground: 220 9% 46%;
+    --muted: 217 50% 14%;
+    --muted-foreground: 228 22% 54%;
 
-    --accent: 220 14% 96%;
-    --accent-foreground: 220 9% 34%;
+    --accent: 217 50% 18%;
+    --accent-foreground: 220 41% 74%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
@@ -38,46 +39,46 @@
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
 
-    --info: 199 89% 48%;
+    --info: 217 94% 68%;
     --info-foreground: 0 0% 100%;
 
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 217 91% 60%;
+    --border: 217 50% 18%;
+    --input: 217 50% 16%;
+    --ring: 217 100% 56%;
 
     --radius: 0.75rem;
 
-    /* Sidebar — dark theme like the reference */
-    --sidebar-background: 228 25% 18%;
-    --sidebar-foreground: 220 14% 80%;
-    --sidebar-primary: 217 91% 60%;
+    /* Sidebar — darker layer */
+    --sidebar-background: 224 80% 5%;
+    --sidebar-foreground: 220 41% 74%;
+    --sidebar-primary: 217 100% 56%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 228 20% 24%;
+    --sidebar-accent: 217 50% 12%;
     --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 228 20% 24%;
-    --sidebar-ring: 217 91% 60%;
-    --sidebar-muted: 220 9% 46%;
+    --sidebar-border: 217 50% 14%;
+    --sidebar-ring: 217 100% 56%;
+    --sidebar-muted: 228 22% 54%;
 
     --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
     --font-serif: 'Lora', ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
     --font-mono: 'Space Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
-    --chart-1: 217 91% 60%;
-    --chart-2: 160 84% 39%;
-    --chart-3: 38 92% 50%;
+    --chart-1: 217 100% 56%;
+    --chart-2: 217 94% 68%;
+    --chart-3: 217 91% 60%;
     --chart-4: 280 65% 60%;
-    --chart-5: 0 84% 60%;
+    --chart-5: 160 84% 45%;
 
-    --sidebar: 228 25% 18%;
+    --sidebar: 224 80% 5%;
 
-    --shadow-2xs: 0 1px 2px 0 hsl(0 0% 0% / 0.03);
-    --shadow-xs: 0 1px 3px 0 hsl(0 0% 0% / 0.04);
-    --shadow-sm: 0 1px 3px 0 hsl(0 0% 0% / 0.06), 0 1px 2px -1px hsl(0 0% 0% / 0.06);
-    --shadow: 0 4px 6px -1px hsl(0 0% 0% / 0.05), 0 2px 4px -2px hsl(0 0% 0% / 0.05);
-    --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.07), 0 2px 4px -2px hsl(0 0% 0% / 0.06);
-    --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.08), 0 4px 6px -4px hsl(0 0% 0% / 0.05);
-    --shadow-xl: 0 20px 25px -5px hsl(0 0% 0% / 0.08), 0 8px 10px -6px hsl(0 0% 0% / 0.04);
-    --shadow-2xl: 0 25px 50px -12px hsl(0 0% 0% / 0.15);
+    --shadow-2xs: 0 1px 2px 0 hsl(0 0% 0% / 0.15);
+    --shadow-xs: 0 1px 3px 0 hsl(0 0% 0% / 0.2);
+    --shadow-sm: 0 1px 3px 0 hsl(0 0% 0% / 0.25), 0 1px 2px -1px hsl(0 0% 0% / 0.2);
+    --shadow: 0 4px 6px -1px hsl(0 0% 0% / 0.3), 0 2px 4px -2px hsl(0 0% 0% / 0.2);
+    --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.35), 0 2px 4px -2px hsl(0 0% 0% / 0.25);
+    --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.4), 0 4px 6px -4px hsl(0 0% 0% / 0.2);
+    --shadow-xl: 0 20px 25px -5px hsl(0 0% 0% / 0.4), 0 8px 10px -6px hsl(0 0% 0% / 0.2);
+    --shadow-2xl: 0 25px 50px -12px hsl(0 0% 0% / 0.6);
 
     --tracking-normal: 0em;
     --spacing: 0.25rem;
@@ -85,38 +86,38 @@
 
   .dark {
     --background: 224 71% 4%;
-    --foreground: 220 14% 96%;
-    --card: 228 25% 12%;
-    --card-foreground: 220 14% 96%;
-    --popover: 228 25% 14%;
-    --popover-foreground: 220 14% 96%;
-    --primary: 217 91% 60%;
+    --foreground: 224 100% 95%;
+    --card: 217 60% 8%;
+    --card-foreground: 224 100% 95%;
+    --popover: 217 60% 10%;
+    --popover-foreground: 224 100% 95%;
+    --primary: 217 100% 56%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 228 20% 20%;
-    --secondary-foreground: 220 14% 80%;
-    --muted: 228 20% 20%;
-    --muted-foreground: 220 14% 70%;
-    --accent: 228 20% 16%;
-    --accent-foreground: 220 14% 80%;
+    --secondary: 217 50% 14%;
+    --secondary-foreground: 220 41% 74%;
+    --muted: 217 50% 14%;
+    --muted-foreground: 228 22% 54%;
+    --accent: 217 50% 18%;
+    --accent-foreground: 220 41% 74%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 228 20% 20%;
-    --input: 228 20% 20%;
-    --ring: 217 91% 60%;
-    --sidebar-background: 228 25% 10%;
-    --sidebar-foreground: 220 14% 80%;
-    --sidebar-primary: 217 91% 60%;
+    --border: 217 50% 18%;
+    --input: 217 50% 16%;
+    --ring: 217 100% 56%;
+    --sidebar-background: 224 80% 5%;
+    --sidebar-foreground: 220 41% 74%;
+    --sidebar-primary: 217 100% 56%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 228 20% 16%;
+    --sidebar-accent: 217 50% 12%;
     --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 228 20% 16%;
-    --sidebar-ring: 217 91% 60%;
-    --chart-1: 217 91% 65%;
-    --chart-2: 160 84% 45%;
-    --chart-3: 38 92% 55%;
+    --sidebar-border: 217 50% 14%;
+    --sidebar-ring: 217 100% 56%;
+    --chart-1: 217 100% 60%;
+    --chart-2: 217 94% 72%;
+    --chart-3: 217 91% 64%;
     --chart-4: 280 65% 65%;
-    --chart-5: 0 84% 65%;
-    --sidebar: 228 25% 10%;
+    --chart-5: 160 84% 50%;
+    --sidebar: 224 80% 5%;
   }
 }
 
@@ -148,12 +149,24 @@
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-family: var(--font-sans);
+    background:
+      radial-gradient(circle at 85% 50%, rgba(30,107,255,0.18) 0%, rgba(30,107,255,0.06) 25%, transparent 60%),
+      linear-gradient(180deg, #020617 0%, #021433 35%, #041A44 60%, #07245A 100%);
+    background-attachment: fixed;
+    min-height: 100vh;
   }
 }
 
 @layer components {
   .stat-card {
-    @apply bg-card rounded-xl border border-border p-6 shadow-sm transition-all duration-300 ease-out hover:shadow-md;
+    @apply rounded-2xl border border-border p-6 shadow-lg transition-all duration-300 ease-out;
+    background: rgba(255,255,255,0.04);
+    backdrop-filter: blur(12px);
+  }
+  .stat-card:hover {
+    box-shadow:
+      0 0 0 1px rgba(59,130,246,0.3),
+      0 10px 30px rgba(30,107,255,0.15);
   }
 
   .page-header {
@@ -173,11 +186,13 @@
   }
 
   .data-table th {
-    @apply text-left font-medium text-muted-foreground px-4 py-3 border-b bg-muted/50;
+    @apply text-left font-medium text-muted-foreground px-4 py-3 border-b;
+    background: rgba(255,255,255,0.03);
   }
 
   .data-table td {
-    @apply px-4 py-3 border-b border-border/60 transition-colors duration-150;
+    @apply px-4 py-3 transition-colors duration-150;
+    border-bottom: 1px solid rgba(148,163,184,0.12);
   }
 
   .data-table tr {
@@ -185,7 +200,7 @@
   }
 
   .data-table tr:hover td {
-    @apply bg-primary/[0.03];
+    background: rgba(30,107,255,0.08);
   }
 
   /* Animation utility classes */
@@ -194,7 +209,12 @@
   }
 
   .hover-lift {
-    @apply transition-all duration-300 hover:-translate-y-1 hover:shadow-lg;
+    @apply transition-all duration-300 hover:-translate-y-1;
+  }
+  .hover-lift:hover {
+    box-shadow:
+      0 0 0 1px rgba(59,130,246,0.3),
+      0 10px 30px rgba(30,107,255,0.2);
   }
 
   .click-scale {
@@ -213,15 +233,34 @@
 
   .sidebar-item-active {
     @apply bg-sidebar-primary/20 text-sidebar-primary-foreground font-medium shadow-sm;
+    border-left: 3px solid hsl(var(--primary));
   }
 
   .sidebar-item-inactive {
-    @apply text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:translate-x-0.5 transition-all duration-200;
+    @apply text-sidebar-foreground/70 hover:translate-x-0.5 transition-all duration-200;
+  }
+  .sidebar-item-inactive:hover {
+    background: rgba(59,130,246,0.08);
   }
 
-  /* Glass card */
+  /* Glass card — fintech glassmorphism */
   .glass-card {
-    @apply bg-card/80 backdrop-blur-sm rounded-xl border border-border/60 shadow-sm;
+    @apply rounded-2xl border shadow-lg;
+    background: rgba(255,255,255,0.04);
+    border-color: rgba(59,130,246,0.15);
+    backdrop-filter: blur(12px);
+  }
+
+  /* Glow text for important numbers */
+  .glow-text {
+    text-shadow: 0 0 20px rgba(30,107,255,0.5);
+  }
+
+  /* Glow border on hover */
+  .glow-border:hover {
+    box-shadow:
+      0 0 0 1px rgba(59,130,246,0.3),
+      0 10px 30px rgba(30,107,255,0.2);
   }
 }
 

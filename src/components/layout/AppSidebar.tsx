@@ -121,7 +121,7 @@ export default function AppSidebar() {
   };
 
   return (
-    <Sidebar collapsible="icon" className="border-r border-sidebar-border">
+    <Sidebar collapsible="icon" className="border-r border-sidebar-border" style={{ background: 'linear-gradient(180deg, rgba(2,6,23,0.95), rgba(4,26,68,0.85))' }}>
       <SidebarHeader className="border-b border-sidebar-border px-3 py-3">
         <div className="flex items-center gap-2 overflow-hidden">
           <div className="w-8 h-8 shrink-0 rounded-lg bg-sidebar-primary flex items-center justify-center">
@@ -179,8 +179,8 @@ export default function AppSidebar() {
                         <SidebarMenuButton asChild isActive={isActive}>
                           <NavLink
                             to={item.path}
-                            className="hover:bg-sidebar-accent/10"
-                            activeClassName="bg-primary text-primary-foreground font-medium"
+                            className="hover:bg-[rgba(59,130,246,0.08)]"
+                            activeClassName="bg-[rgba(30,107,255,0.15)] text-primary-foreground font-medium border-l-[3px] border-l-primary"
                           >
                             <item.icon className="w-[18px] h-[18px] shrink-0" />
                             {!collapsed && <span className="truncate">{item.label}</span>}
