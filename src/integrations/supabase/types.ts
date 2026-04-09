@@ -1965,14 +1965,20 @@ export type Database = {
           created_at: string
           currency: string
           customer_id: string | null
+          discount_amount: number
           due_date: string | null
           id: string
           invoice_number: string
           issue_date: string
           journal_entry_id: string | null
+          notes: string | null
           revenue_account_id: string | null
           status: string
+          subtotal: number
+          tax_amount: number
+          template_id: string | null
           tenant_id: string
+          terms: string | null
           total_amount: number
           updated_at: string
         }
@@ -1981,14 +1987,20 @@ export type Database = {
           created_at?: string
           currency?: string
           customer_id?: string | null
+          discount_amount?: number
           due_date?: string | null
           id?: string
           invoice_number: string
           issue_date?: string
           journal_entry_id?: string | null
+          notes?: string | null
           revenue_account_id?: string | null
           status?: string
+          subtotal?: number
+          tax_amount?: number
+          template_id?: string | null
           tenant_id: string
+          terms?: string | null
           total_amount?: number
           updated_at?: string
         }
@@ -1997,14 +2009,20 @@ export type Database = {
           created_at?: string
           currency?: string
           customer_id?: string | null
+          discount_amount?: number
           due_date?: string | null
           id?: string
           invoice_number?: string
           issue_date?: string
           journal_entry_id?: string | null
+          notes?: string | null
           revenue_account_id?: string | null
           status?: string
+          subtotal?: number
+          tax_amount?: number
+          template_id?: string | null
           tenant_id?: string
+          terms?: string | null
           total_amount?: number
           updated_at?: string
         }
@@ -2035,6 +2053,13 @@ export type Database = {
             columns: ["revenue_account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "invoice_templates"
             referencedColumns: ["id"]
           },
           {
