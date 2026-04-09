@@ -1,4 +1,5 @@
 import { Plus, Search, MoreHorizontal, Eye } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useInvoices, useCreateInvoice, useUpdateInvoice, useCustomers, useCreateCustomer } from "@/hooks/useData";
@@ -17,6 +18,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function Invoices() {
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [customerOpen, setCustomerOpen] = useState(false);
@@ -94,10 +96,10 @@ export default function Invoices() {
           <h1 className="page-title">Invoices</h1>
           <p className="page-description">Create and manage customer invoices with partial payment tracking</p>
         </div>
-        {canEditSales("sales") && <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button><Plus className="w-4 h-4" />New Invoice</Button>
-          </DialogTrigger>
+        {canEditSales("sales") && (
+            <Button onClick={() => navigate("/sales/invoices/new")}>
+              <Plus className="w-4 h-4" />New Invoice
+            </Button>)}
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create Invoice</DialogTitle>
