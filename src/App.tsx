@@ -30,6 +30,7 @@ import PettyCashVoucherForm from "./pages/PettyCashVoucherForm";
 import PettyCashVoucherDetail from "./pages/PettyCashVoucherDetail";
 import PettyCashReplenishments from "./pages/PettyCashReplenishments";
 import Invoices from "./pages/Invoices";
+import CreateInvoice from "./pages/CreateInvoice";
 import InvoiceTemplates from "./pages/InvoiceTemplates";
 import InvoiceTemplateDesigner from "./pages/InvoiceTemplateDesigner";
 import ProductsTaxes from "./pages/ProductsTaxes";
