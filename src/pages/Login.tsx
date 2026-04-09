@@ -27,7 +27,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex bg-background">
+    <div className="min-h-screen flex" style={{ background: 'linear-gradient(180deg, #020617 0%, #021433 35%, #041A44 60%, #07245A 100%)' }}>
       {/* Left panel — form */}
       <div className="w-full lg:w-[520px] xl:w-[560px] flex flex-col border-r border-border">
         {/* Logo */}
@@ -117,7 +117,7 @@ export default function Login() {
       </div>
 
       {/* Right panel — product showcase */}
-      <div className="hidden lg:flex flex-1 flex-col p-10 overflow-hidden bg-muted/30">
+      <div className="hidden lg:flex flex-1 flex-col p-10 overflow-hidden" style={{ background: 'radial-gradient(circle at 70% 40%, rgba(30,107,255,0.15) 0%, transparent 60%)' }}>
         {/* What's new header */}
         <div className="flex items-start justify-between mb-6 animate-fade-in">
           <div>
