@@ -21,7 +21,7 @@ export default function GlobalTopNav() {
   };
 
   return (
-    <header className="h-14 border-b border-border bg-card flex items-center justify-between px-5 shrink-0 shadow-xs">
+    <header className="h-14 border-b border-border flex items-center justify-between px-5 shrink-0 shadow-lg" style={{ background: 'rgba(2,6,23,0.85)', backdropFilter: 'blur(16px)' }}>
       {/* Left: Logo + Search */}
       <div className="flex items-center gap-5">
         <button onClick={() => navigate("/")} className="flex items-center gap-2.5 shrink-0 group">
