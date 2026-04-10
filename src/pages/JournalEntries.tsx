@@ -27,6 +27,7 @@ const fmt = (n: number) =>
   n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 type StatusFilter = "all" | "posted" | "voided";
+type SourceFilter = "all" | "manual" | "invoice" | "payment_received" | "credit_note" | "depreciation" | "opening_balance" | "other";
 
 export default function JournalEntries() {
   const { appUser } = useAuth();
