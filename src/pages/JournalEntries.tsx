@@ -683,6 +683,7 @@ export default function JournalEntries() {
                 <th>Date</th>
                 <th>Description</th>
                 <th>Reference</th>
+                <th>Source</th>
                 <th className="text-right">Debit</th>
                 <th className="text-right">Credit</th>
                 <th>Status</th>
