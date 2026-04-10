@@ -71,7 +71,7 @@ export default function DeleteAccountDialog({ open, onOpenChange, account, allAc
     deps.budgetItems > 0 && `${deps.budgetItems} budget item(s)`,
     deps.bankFeedTransactions > 0 && `${deps.bankFeedTransactions} bank feed transaction(s)`,
     deps.bankReconciliations > 0 && `${deps.bankReconciliations} bank reconciliation(s)`,
-    deps.fixedAssets > 0 && `${deps.fixedAssets} fixed asset(s)`,
+    deps.fixedAssets > 0 && `${deps.fixedAssets} fixed asset(s) — cannot delete while assets exist under this category`,
     deps.expenseCategories > 0 && `${deps.expenseCategories} expense category(ies)`,
     deps.transactions > 0 && `${deps.transactions} transaction(s)`,
     deps.openingBalances > 0 && `${deps.openingBalances} opening balance(s)`,
