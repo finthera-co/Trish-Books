@@ -1,12 +1,18 @@
-import { Plus, Search, MoreHorizontal, Eye } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Eye, Send, Ban } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
-import { useInvoices, useUpdateInvoice } from "@/hooks/useData";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useInvoices, useUpdateInvoice, useAccounts } from "@/hooks/useData";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { formatCurrency } from "@/lib/currency";
 import InvoiceDetails from "@/components/invoices/InvoiceDetails";
 import { useMyPermissions } from "@/hooks/usePermissions";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import { post, reverseJournalEntry, voidJournalEntry } from "@/lib/postingEngine";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 const statusColors: Record<string, string> = {
   paid: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
@@ -14,15 +20,22 @@ const statusColors: Record<string, string> = {
   sent: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
   overdue: "bg-destructive/10 text-destructive",
   draft: "bg-muted text-muted-foreground",
+  voided: "bg-destructive/10 text-destructive line-through",
 };
 
 export default function Invoices() {
   const navigate = useNavigate();
+  const { appUser } = useAuth();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [voidDialogInvoice, setVoidDialogInvoice] = useState<any>(null);
+  const [voidReason, setVoidReason] = useState("");
+  const [processing, setProcessing] = useState(false);
 
   const { data: invoices, isLoading } = useInvoices();
+  const { data: accounts } = useAccounts();
   const updateInvoice = useUpdateInvoice();
   const { canEdit: canEditSales } = useMyPermissions();
 
@@ -31,14 +44,114 @@ export default function Invoices() {
     (i.customers as any)?.name?.toLowerCase().includes(search.toLowerCase())
   ) || [];
 
-  const handleStatusChange = (id: string, status: string) => {
-    updateInvoice.mutate({ id, status });
-  };
-
   const getEffectiveStatus = (inv: any) => {
+    if (inv.status === "voided") return "voided";
     if (inv.balance_due <= 0) return "paid";
     if (inv.amount_paid > 0) return "partial";
     return inv.status;
+  };
+
+  // Post a draft invoice
+  const handlePostDraft = async (inv: any) => {
+    if (!appUser?.tenant_id) return;
+    setProcessing(true);
+    try {
+      const arAccount = accounts?.find((a) => a.account_subtype === "Accounts Receivable" || a.account_name?.toLowerCase().includes("accounts receivable"));
+      const revenueAccount = accounts?.find((a) => a.account_type === "Revenue" && !a.account_name?.toLowerCase().includes("return"));
+      const taxPayableAccount = accounts?.find((a) => a.account_name?.toLowerCase().includes("tax payable") || a.account_subtype === "Tax Payable");
+
+      if (!arAccount || !revenueAccount) {
+        toast.error("Missing required accounts (A/R or Revenue). Check your Chart of Accounts.");
+        return;
+      }
+
+      const total = Number(inv.total_amount);
+      const subtotal = Number(inv.subtotal || total);
+      const taxAmount = Number(inv.tax_amount || 0);
+
+      const journalLines: any[] = [
+        { account_id: arAccount.id, debit: total, credit: 0, customer_id: inv.customer_id },
+        { account_id: revenueAccount.id, debit: 0, credit: subtotal },
+      ];
+
+      if (taxAmount > 0 && taxPayableAccount) {
+        journalLines.push({ account_id: taxPayableAccount.id, debit: 0, credit: taxAmount });
+      }
+
+      const subledgerEntries = [{
+        type: "ar" as const,
+        entity_id: inv.customer_id,
+        document_type: "invoice" as const,
+        document_id: inv.id,
+        debit: total,
+        credit: 0,
+        invoice_no: inv.invoice_number,
+        due_date: inv.due_date || null,
+      }];
+
+      const postResult = await post({
+        tenant_id: appUser.tenant_id,
+        entry_date: inv.issue_date,
+        description: `Invoice ${inv.invoice_number}`,
+        source_type: "invoice",
+        source_id: inv.id,
+        reference: inv.invoice_number,
+        lines: journalLines,
+        subledger_entries: subledgerEntries,
+      });
+
+      await supabase
+        .from("invoices")
+        .update({ status: "sent", journal_entry_id: postResult.journal_entry_id } as any)
+        .eq("id", inv.id);
+
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      toast.success("Invoice posted — journal entry created");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to post invoice");
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // Void a posted invoice — reverse journal
+  const handleVoidInvoice = async () => {
+    if (!voidDialogInvoice || !appUser?.tenant_id) return;
+    setProcessing(true);
+    try {
+      const inv = voidDialogInvoice;
+
+      // Reverse the journal entry if it exists
+      if (inv.journal_entry_id) {
+        await reverseJournalEntry(
+          inv.journal_entry_id,
+          appUser.tenant_id,
+          new Date().toISOString().split("T")[0],
+          `Void invoice ${inv.invoice_number}: ${voidReason}`
+        );
+        // Mark original JE as voided
+        await voidJournalEntry(inv.journal_entry_id, `Invoice voided: ${voidReason}`, appUser.id);
+      }
+
+      // Mark invoice as voided
+      await supabase
+        .from("invoices")
+        .update({ status: "voided" } as any)
+        .eq("id", inv.id);
+
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      toast.success("Invoice voided — reversing journal entry created");
+      setVoidDialogInvoice(null);
+      setVoidReason("");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to void invoice");
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const stats = {
@@ -57,7 +170,7 @@ export default function Invoices() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Invoices</h1>
-          <p className="page-description">Create and manage customer invoices with partial payment tracking</p>
+          <p className="page-description">Create and manage customer invoices with automatic journal posting</p>
         </div>
         {canEditSales("sales") && (
           <Button onClick={() => navigate("/sales/invoices/new")}>
@@ -103,8 +216,11 @@ export default function Invoices() {
               <tbody>
                 {filtered.map((inv) => {
                   const status = getEffectiveStatus(inv);
+                  const isDraft = inv.status === "draft";
+                  const isVoided = inv.status === "voided";
+                  const isPosted = inv.status === "sent" || inv.status === "paid" || inv.status === "partial" || inv.status === "overdue";
                   return (
-                    <tr key={inv.id} className="border-t border-border hover:bg-muted/30 transition-colors">
+                    <tr key={inv.id} className={`border-t border-border hover:bg-muted/30 transition-colors ${isVoided ? "opacity-50" : ""}`}>
                       <td className="px-4 py-3 font-medium text-foreground">{inv.invoice_number}</td>
                       <td className="px-4 py-3 text-muted-foreground">{(inv.customers as any)?.name || "-"}</td>
                       <td className="px-4 py-3 text-muted-foreground">{inv.issue_date}</td>
@@ -126,14 +242,37 @@ export default function Invoices() {
                           <Button variant="ghost" size="sm" onClick={() => { setSelectedInvoice(inv); setDetailsOpen(true); }}>
                             <Eye className="w-4 h-4" />
                           </Button>
+                          {isDraft && (
+                            <Button variant="ghost" size="sm" title="Post Invoice" onClick={() => handlePostDraft(inv)} disabled={processing}>
+                              <Send className="w-4 h-4 text-primary" />
+                            </Button>
+                          )}
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <button className="p-1 rounded hover:bg-accent"><MoreHorizontal className="w-4 h-4 text-muted-foreground" /></button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent>
-                              <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "sent")}>Mark as Sent</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "paid")}>Mark as Paid</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "overdue")}>Mark as Overdue</DropdownMenuItem>
+                              {isDraft && (
+                                <DropdownMenuItem onClick={() => handlePostDraft(inv)} disabled={processing}>
+                                  <Send className="w-4 h-4 mr-2" /> Post & Create Journal
+                                </DropdownMenuItem>
+                              )}
+                              {isPosted && !isVoided && (
+                                <>
+                                  <DropdownMenuItem onClick={() => navigate(`/accounting/receive-payment?invoice_id=${inv.id}`)}>
+                                    Receive Payment
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem className="text-destructive" onClick={() => { setVoidDialogInvoice(inv); setVoidReason(""); }}>
+                                    <Ban className="w-4 h-4 mr-2" /> Void Invoice
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              {!isPosted && !isVoided && (
+                                <>
+                                  <DropdownMenuItem onClick={() => updateInvoice.mutate({ id: inv.id, status: "sent" })}>Mark as Sent</DropdownMenuItem>
+                                </>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
@@ -148,6 +287,46 @@ export default function Invoices() {
       </div>
 
       <InvoiceDetails invoice={selectedInvoice} open={detailsOpen} onOpenChange={setDetailsOpen} />
+
+      {/* Void Invoice Dialog */}
+      <Dialog open={!!voidDialogInvoice} onOpenChange={(v) => { if (!v) { setVoidDialogInvoice(null); setVoidReason(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Ban className="w-5 h-5" /> Void Invoice
+            </DialogTitle>
+            <DialogDescription>
+              {voidDialogInvoice?.invoice_number} — This will create a reversing journal entry and mark the invoice as voided.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="bg-destructive/5 border border-destructive/20 rounded-lg p-3 text-sm">
+              <p className="font-medium text-destructive mb-1">This action will:</p>
+              <ul className="text-xs text-muted-foreground space-y-0.5 list-disc list-inside">
+                <li>Create a reversing journal entry (opposite debits/credits)</li>
+                <li>Mark the original journal as voided</li>
+                <li>Mark the invoice as voided</li>
+                <li>Update the customer ledger balance</li>
+              </ul>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Reason for voiding <span className="text-destructive">*</span></label>
+              <textarea
+                value={voidReason}
+                onChange={(e) => setVoidReason(e.target.value)}
+                className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground min-h-[80px]"
+                placeholder="e.g. Customer returned goods, incorrect amount..."
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setVoidDialogInvoice(null)}>Cancel</Button>
+              <Button variant="destructive" className="flex-1" onClick={handleVoidInvoice} disabled={!voidReason.trim() || processing}>
+                {processing ? "Voiding..." : "Void Invoice"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
