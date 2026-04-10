@@ -275,7 +275,7 @@ export default function CreateInvoice() {
           due_date: dueDate || null,
         });
 
-        await post({
+        const postResult = await post({
           tenant_id: appUser?.tenant_id!,
           entry_date: issueDate,
           description: `Invoice ${invoiceNumber}`,
@@ -286,8 +286,11 @@ export default function CreateInvoice() {
           subledger_entries: subledgerEntries,
         });
 
-        // Update invoice with journal link
-        // (posting engine returns journal_entry_id but we need to update invoice)
+        // Link journal entry back to invoice
+        await supabase
+          .from("invoices")
+          .update({ journal_entry_id: postResult.journal_entry_id } as any)
+          .eq("id", invoice.id);
       }
 
       queryClient.invalidateQueries({ queryKey: ["invoices"] });

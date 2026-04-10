@@ -27,6 +27,7 @@ const fmt = (n: number) =>
   n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 type StatusFilter = "all" | "posted" | "voided";
+type SourceFilter = "all" | "manual" | "invoice" | "payment_received" | "credit_note" | "depreciation" | "opening_balance" | "other";
 
 export default function JournalEntries() {
   const { appUser } = useAuth();
@@ -36,6 +37,7 @@ export default function JournalEntries() {
   const highlightId = searchParams.get("highlight");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [open, setOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(highlightId);
   const highlightRef = useRef<HTMLTableRowElement>(null);
@@ -146,7 +148,12 @@ export default function JournalEntries() {
       e.description.toLowerCase().includes(search.toLowerCase()) ||
       (e.reference || "").toLowerCase().includes(search.toLowerCase());
     const matchesStatus = statusFilter === "all" || e.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    const entrySource = (e as any).source_type || (e as any).entry_type || "manual";
+    const matchesSource = sourceFilter === "all" 
+      || (sourceFilter === "other" 
+          ? !["manual","invoice","payment_received","credit_note","depreciation","opening_balance"].includes(entrySource)
+          : entrySource === sourceFilter);
+    return matchesSearch && matchesStatus && matchesSource;
   }) || [];
 
   // Stats
@@ -647,6 +654,19 @@ export default function JournalEntries() {
               </button>
             ))}
           </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Source:</span>
+            {(["all", "manual", "invoice", "payment_received", "credit_note", "depreciation", "opening_balance", "other"] as SourceFilter[]).map(s => (
+              <button key={s} onClick={() => setSourceFilter(s)}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  sourceFilter === s
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted/50 text-muted-foreground hover:bg-accent"
+                }`}>
+                {s === "all" ? "All" : s === "payment_received" ? "Payment" : s === "credit_note" ? "Credit Note" : s === "opening_balance" ? "OB" : s.charAt(0).toUpperCase() + s.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
 
         {isLoading ? (
@@ -663,6 +683,7 @@ export default function JournalEntries() {
                 <th>Date</th>
                 <th>Description</th>
                 <th>Reference</th>
+                <th>Source</th>
                 <th className="text-right">Debit</th>
                 <th className="text-right">Credit</th>
                 <th>Status</th>
@@ -678,6 +699,15 @@ export default function JournalEntries() {
                 const isExpanded = expandedId === entry.id;
                 const entryLines = (entry.journal_lines as any[]) || [];
                 const isHighlighted = highlightId === entry.id;
+                const entrySource = (entry as any).source_type || (entry as any).entry_type || "manual";
+                const isSystemGenerated = entry.is_system_generated || entrySource !== "manual";
+                const sourceLabel = entrySource === "payment_received" ? "Payment" : entrySource === "credit_note" ? "Credit Note" : entrySource === "opening_balance" ? "OB" : entrySource.charAt(0).toUpperCase() + entrySource.slice(1).replace(/_/g, " ");
+                const sourceColor = entrySource === "invoice" ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+                  : entrySource === "payment_received" ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                  : entrySource === "credit_note" ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+                  : entrySource === "depreciation" ? "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400"
+                  : entrySource === "opening_balance" ? "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400"
+                  : "bg-muted text-muted-foreground";
 
                 return (
                   <Fragment key={entry.id}>
@@ -697,6 +727,11 @@ export default function JournalEntries() {
                         {isReversal && <span className="ml-1.5 text-xs text-muted-foreground">(reversal)</span>}
                       </td>
                       <td className="font-mono text-xs text-muted-foreground">{entry.reference || "—"}</td>
+                      <td>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${sourceColor}`}>
+                          {sourceLabel}
+                        </span>
+                      </td>
                       <td className="text-right tabular-nums font-medium text-foreground">LKR {fmt(entryTotalDebit)}</td>
                       <td className="text-right tabular-nums font-medium text-foreground">LKR {fmt(entryTotalCredit)}</td>
                       <td>
@@ -708,6 +743,16 @@ export default function JournalEntries() {
                       <td className="text-right" onClick={e => e.stopPropagation()}>
                         {entry.status === "posted" && (
                           <div className="flex gap-1 justify-end">
+                            {isSystemGenerated && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="text-[10px] text-muted-foreground px-1.5 py-0.5 rounded bg-muted/50 self-center">Auto</span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="text-xs">System-generated from {sourceLabel}. Edit the source document instead.</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
                             <Button variant="ghost" size="sm" title="Reverse" onClick={() => setReverseDialogId(entry.id)}>
                               <RotateCcw className="w-3.5 h-3.5" />
                             </Button>
@@ -722,7 +767,7 @@ export default function JournalEntries() {
                     {/* Expanded line details */}
                     {isExpanded && (
                       <tr>
-                        <td colSpan={8} className="bg-muted/30 px-6 py-3">
+                        <td colSpan={9} className="bg-muted/30 px-6 py-3">
                           {/* Source Info Banner (shown when navigated from register) */}
                           {isHighlighted && (
                             <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 mb-4 space-y-1.5">
