@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -12,6 +12,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCreateAsset, useUpdateAsset, useFixedAsset } from "@/hooks/useFixedAssets";
 import { useAccounts } from "@/hooks/useData";
+import { buildAccountsMap, resolveSubledgerType } from "@/lib/accountMappingEngine";
 
 const assetSchema = z.object({
   asset_name: z.string().min(1, "Name is required"),
@@ -38,7 +39,40 @@ export default function AssetForm() {
   const createAsset = useCreateAsset();
   const updateAsset = useUpdateAsset();
 
-  const assetAccounts = accounts?.filter(a => a.account_type === "Asset" && a.is_active) ?? [];
+  // Build accounts map for subledger resolution
+  const accountsMap = useMemo(() => {
+    if (!accounts) return new Map();
+    return buildAccountsMap(accounts as any[]);
+  }, [accounts]);
+
+  // Dynamic category dropdown: accounts where resolved subledger = fixed_asset AND not a root control account
+  // This means any account under the Fixed Asset control hierarchy (children, grandchildren, etc.)
+  const assetCategoryAccounts = useMemo(() => {
+    if (!accounts) return [];
+    return (accounts as any[]).filter(a => {
+      if (!a.is_active) return false;
+      if (a.account_type !== "Asset") return false;
+      const resolved = resolveSubledgerType(a, accountsMap);
+      if (resolved !== "fixed_asset") return false;
+      // Exclude the root control account itself — only allow leaf/child categories
+      // But if a control account has no children, allow it as a category
+      const hasChildren = (accounts as any[]).some(c => c.parent_account_id === a.id);
+      if (a.is_control_account && hasChildren) return false;
+      return true;
+    });
+  }, [accounts, accountsMap]);
+
+  // Depreciation (contra-asset) accounts: resolved subledger = asset_depreciation
+  const depreciationAccounts = useMemo(() => {
+    if (!accounts) return [];
+    return (accounts as any[]).filter(a => {
+      if (!a.is_active) return false;
+      if (a.account_type !== "Asset") return false;
+      const resolved = resolveSubledgerType(a, accountsMap);
+      return resolved === "asset_depreciation";
+    });
+  }, [accounts, accountsMap]);
+
   const expenseAccounts = accounts?.filter(a => a.account_type === "Expense" && a.is_active) ?? [];
 
   const form = useForm<AssetFormValues>({
@@ -79,7 +113,7 @@ export default function AssetForm() {
     } else {
       await createAsset.mutateAsync(values as any);
     }
-    navigate("/assets");
+    navigate("/assets/register");
   };
 
   const hasDepreciation = isEdit && (existingAsset?.accumulated_depreciation ?? 0) > 0;
@@ -87,7 +121,7 @@ export default function AssetForm() {
   return (
     <div className="space-y-6 max-w-2xl">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/assets")}>
+        <Button variant="ghost" size="icon" onClick={() => navigate("/assets/register")}>
           <ArrowLeft className="w-4 h-4" />
         </Button>
         <h1 className="text-2xl font-bold text-foreground">{isEdit ? "Edit Asset" : "New Asset"}</h1>
@@ -167,17 +201,20 @@ export default function AssetForm() {
                 )} />
               </div>
 
-              {/* COA Account Linking */}
+              {/* COA Account Linking — Dynamic from subledger hierarchy */}
               <div className="border-t pt-4 mt-4">
-                <h3 className="text-sm font-semibold text-foreground mb-3">Account Linking (Chart of Accounts)</h3>
+                <h3 className="text-sm font-semibold text-foreground mb-1">Account Linking (Chart of Accounts)</h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Categories are loaded dynamically from your COA. New accounts created under Fixed Assets appear automatically.
+                </p>
                 <div className="space-y-4">
                   <FormField control={form.control} name="asset_account_id" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Asset Account</FormLabel>
+                      <FormLabel>Asset Category (COA)</FormLabel>
                       <Select value={field.value} onValueChange={field.onChange}>
-                        <FormControl><SelectTrigger><SelectValue placeholder="Select asset account" /></SelectTrigger></FormControl>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Select asset category" /></SelectTrigger></FormControl>
                         <SelectContent>
-                          {assetAccounts.map(a => (
+                          {assetCategoryAccounts.map(a => (
                             <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
                           ))}
                         </SelectContent>
@@ -188,11 +225,11 @@ export default function AssetForm() {
 
                   <FormField control={form.control} name="depreciation_account_id" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Accumulated Depreciation Account (Contra Asset)</FormLabel>
+                      <FormLabel>Accumulated Depreciation Account</FormLabel>
                       <Select value={field.value} onValueChange={field.onChange}>
-                        <FormControl><SelectTrigger><SelectValue placeholder="Select contra asset account" /></SelectTrigger></FormControl>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Select depreciation account" /></SelectTrigger></FormControl>
                         <SelectContent>
-                          {assetAccounts.map(a => (
+                          {depreciationAccounts.map(a => (
                             <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
                           ))}
                         </SelectContent>
@@ -230,7 +267,7 @@ export default function AssetForm() {
                 <Button type="submit" disabled={createAsset.isPending || updateAsset.isPending}>
                   {isEdit ? "Update Asset" : "Create Asset"}
                 </Button>
-                <Button type="button" variant="outline" onClick={() => navigate("/assets")}>Cancel</Button>
+                <Button type="button" variant="outline" onClick={() => navigate("/assets/register")}>Cancel</Button>
               </div>
             </form>
           </Form>
