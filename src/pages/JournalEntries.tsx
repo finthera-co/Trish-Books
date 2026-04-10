@@ -654,6 +654,19 @@ export default function JournalEntries() {
               </button>
             ))}
           </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Source:</span>
+            {(["all", "manual", "invoice", "payment_received", "credit_note", "depreciation", "opening_balance", "other"] as SourceFilter[]).map(s => (
+              <button key={s} onClick={() => setSourceFilter(s)}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  sourceFilter === s
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted/50 text-muted-foreground hover:bg-accent"
+                }`}>
+                {s === "all" ? "All" : s === "payment_received" ? "Payment" : s === "credit_note" ? "Credit Note" : s === "opening_balance" ? "OB" : s.charAt(0).toUpperCase() + s.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
 
         {isLoading ? (
