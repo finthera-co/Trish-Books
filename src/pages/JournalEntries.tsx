@@ -767,7 +767,7 @@ export default function JournalEntries() {
                     {/* Expanded line details */}
                     {isExpanded && (
                       <tr>
-                        <td colSpan={8} className="bg-muted/30 px-6 py-3">
+                        <td colSpan={9} className="bg-muted/30 px-6 py-3">
                           {/* Source Info Banner (shown when navigated from register) */}
                           {isHighlighted && (
                             <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 mb-4 space-y-1.5">
