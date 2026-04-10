@@ -1,28 +1,64 @@
 import { useState, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { Play, CheckCircle, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator, BreadcrumbPage } from "@/components/ui/breadcrumb";
 import { useRunDepreciation, useFixedAssets } from "@/hooks/useFixedAssets";
+import { useAccounts } from "@/hooks/useData";
 import { formatCurrency } from "@/lib/currency";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
+// Recursive child collection
+function getChildAccountIds(accountId: string, accounts: any[]): string[] {
+  const children = accounts.filter(a => a.parent_account_id === accountId);
+  return children.reduce<string[]>((acc, child) => {
+    return [...acc, child.id, ...getChildAccountIds(child.id, accounts)];
+  }, []);
+}
+
+function buildBreadcrumbChain(accountId: string, accountMap: Map<string, any>): Array<{ id: string; name: string }> {
+  const chain: Array<{ id: string; name: string }> = [];
+  let current = accountMap.get(accountId);
+  while (current) {
+    chain.unshift({ id: current.id, name: current.account_name });
+    current = current.parent_account_id ? accountMap.get(current.parent_account_id) : null;
+  }
+  return chain;
+}
 
 export default function DepreciationRun() {
   const now = new Date();
   const [period, setPeriod] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
   const runDep = useRunDepreciation();
   const { data: assets } = useFixedAssets();
+  const { data: accounts } = useAccounts();
   const [result, setResult] = useState<{ processed: number; skipped: number } | null>(null);
   const [searchParams] = useSearchParams();
   const accountId = searchParams.get("account_id");
 
-  const allActive = assets?.filter(a => a.status === "active") ?? [];
+  const accountMap = useMemo(() => {
+    const map = new Map<string, any>();
+    (accounts as any[] || []).forEach(a => map.set(a.id, a));
+    return map;
+  }, [accounts]);
+
+  // Recursive filtering: include accountId + all descendant depreciation account IDs
   const activeAssets = useMemo(() => {
-    if (!accountId) return allActive;
-    return allActive.filter((a: any) => a.depreciation_account_id === accountId);
-  }, [allActive, accountId]);
+    const all = assets?.filter(a => a.status === "active") ?? [];
+    if (!accountId) return all;
+    const ids = new Set([accountId, ...getChildAccountIds(accountId, accounts as any[] || [])]);
+    return all.filter((a: any) => ids.has(a.depreciation_account_id));
+  }, [assets, accountId, accounts]);
+
+  const breadcrumbChain = useMemo(() => {
+    if (!accountId) return [];
+    return buildBreadcrumbChain(accountId, accountMap);
+  }, [accountId, accountMap]);
+
+  const categoryName = accountId ? accountMap.get(accountId)?.account_name : null;
 
   const handleRun = async () => {
     const res = await runDep.mutateAsync(period);
@@ -31,9 +67,51 @@ export default function DepreciationRun() {
 
   return (
     <div className="space-y-6">
+      {/* Breadcrumb */}
+      <Breadcrumb>
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbLink asChild>
+              <Link to="/accounting/accounts">Chart of Accounts</Link>
+            </BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>
+            {accountId ? (
+              <BreadcrumbLink asChild>
+                <Link to="/assets/depreciation">Depreciation</Link>
+              </BreadcrumbLink>
+            ) : (
+              <BreadcrumbPage>Depreciation</BreadcrumbPage>
+            )}
+          </BreadcrumbItem>
+          {breadcrumbChain.map((crumb, idx) => {
+            const isLast = idx === breadcrumbChain.length - 1;
+            return (
+              <span key={crumb.id} className="contents">
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  {isLast ? (
+                    <BreadcrumbPage>{crumb.name}</BreadcrumbPage>
+                  ) : (
+                    <BreadcrumbLink asChild>
+                      <Link to={`/assets/depreciation?account_id=${crumb.id}`}>{crumb.name}</Link>
+                    </BreadcrumbLink>
+                  )}
+                </BreadcrumbItem>
+              </span>
+            );
+          })}
+        </BreadcrumbList>
+      </Breadcrumb>
+
       <div>
         <h1 className="text-2xl font-bold text-foreground">Run Depreciation</h1>
-        <p className="text-sm text-muted-foreground">Process monthly depreciation for all active assets</p>
+        <p className="text-sm text-muted-foreground">
+          {categoryName
+            ? `Showing assets under: ${categoryName}`
+            : "Process monthly depreciation for all active assets"}
+        </p>
       </div>
 
       <Card>
