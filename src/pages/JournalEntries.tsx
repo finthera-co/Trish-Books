@@ -37,6 +37,7 @@ export default function JournalEntries() {
   const highlightId = searchParams.get("highlight");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [open, setOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(highlightId);
   const highlightRef = useRef<HTMLTableRowElement>(null);
@@ -147,7 +148,12 @@ export default function JournalEntries() {
       e.description.toLowerCase().includes(search.toLowerCase()) ||
       (e.reference || "").toLowerCase().includes(search.toLowerCase());
     const matchesStatus = statusFilter === "all" || e.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    const entrySource = (e as any).source_type || (e as any).entry_type || "manual";
+    const matchesSource = sourceFilter === "all" 
+      || (sourceFilter === "other" 
+          ? !["manual","invoice","payment_received","credit_note","depreciation","opening_balance"].includes(entrySource)
+          : entrySource === sourceFilter);
+    return matchesSearch && matchesStatus && matchesSource;
   }) || [];
 
   // Stats
