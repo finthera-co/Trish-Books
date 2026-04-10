@@ -699,6 +699,15 @@ export default function JournalEntries() {
                 const isExpanded = expandedId === entry.id;
                 const entryLines = (entry.journal_lines as any[]) || [];
                 const isHighlighted = highlightId === entry.id;
+                const entrySource = (entry as any).source_type || (entry as any).entry_type || "manual";
+                const isSystemGenerated = entry.is_system_generated || entrySource !== "manual";
+                const sourceLabel = entrySource === "payment_received" ? "Payment" : entrySource === "credit_note" ? "Credit Note" : entrySource === "opening_balance" ? "OB" : entrySource.charAt(0).toUpperCase() + entrySource.slice(1).replace(/_/g, " ");
+                const sourceColor = entrySource === "invoice" ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+                  : entrySource === "payment_received" ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                  : entrySource === "credit_note" ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+                  : entrySource === "depreciation" ? "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400"
+                  : entrySource === "opening_balance" ? "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400"
+                  : "bg-muted text-muted-foreground";
 
                 return (
                   <Fragment key={entry.id}>
@@ -718,6 +727,11 @@ export default function JournalEntries() {
                         {isReversal && <span className="ml-1.5 text-xs text-muted-foreground">(reversal)</span>}
                       </td>
                       <td className="font-mono text-xs text-muted-foreground">{entry.reference || "—"}</td>
+                      <td>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${sourceColor}`}>
+                          {sourceLabel}
+                        </span>
+                      </td>
                       <td className="text-right tabular-nums font-medium text-foreground">LKR {fmt(entryTotalDebit)}</td>
                       <td className="text-right tabular-nums font-medium text-foreground">LKR {fmt(entryTotalCredit)}</td>
                       <td>
@@ -729,6 +743,16 @@ export default function JournalEntries() {
                       <td className="text-right" onClick={e => e.stopPropagation()}>
                         {entry.status === "posted" && (
                           <div className="flex gap-1 justify-end">
+                            {isSystemGenerated && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="text-[10px] text-muted-foreground px-1.5 py-0.5 rounded bg-muted/50 self-center">Auto</span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="text-xs">System-generated from {sourceLabel}. Edit the source document instead.</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
                             <Button variant="ghost" size="sm" title="Reverse" onClick={() => setReverseDialogId(entry.id)}>
                               <RotateCcw className="w-3.5 h-3.5" />
                             </Button>
