@@ -139,7 +139,6 @@ export function useCreateAsset() {
           tenant_id: tenantId,
           status: "active",
           accumulated_depreciation: 0,
-          net_book_value: asset.cost,
         } as any)
         .select()
         .single();
@@ -296,7 +295,6 @@ export function useRunDepreciation() {
           .from("fixed_assets")
           .update({
             accumulated_depreciation: Math.round(newAccumulated * 100) / 100,
-            net_book_value: Math.round(newNBV * 100) / 100,
           })
           .eq("id", raw.id);
 
