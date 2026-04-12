@@ -139,7 +139,6 @@ export function useCreateAsset() {
           tenant_id: tenantId,
           status: "active",
           accumulated_depreciation: 0,
-          net_book_value: asset.cost,
         } as any)
         .select()
         .single();
