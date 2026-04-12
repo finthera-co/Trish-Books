@@ -443,6 +443,100 @@ export type Database = {
           },
         ]
       }
+      asset_categories: {
+        Row: {
+          accumulated_depreciation_account_id: string | null
+          asset_account_id: string | null
+          created_at: string
+          default_useful_life_months: number
+          depreciation_expense_account_id: string | null
+          depreciation_method: string
+          disposal_gain_account_id: string | null
+          disposal_loss_account_id: string | null
+          id: string
+          is_active: boolean
+          name: string
+          proration_method: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          accumulated_depreciation_account_id?: string | null
+          asset_account_id?: string | null
+          created_at?: string
+          default_useful_life_months?: number
+          depreciation_expense_account_id?: string | null
+          depreciation_method?: string
+          disposal_gain_account_id?: string | null
+          disposal_loss_account_id?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          proration_method?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          accumulated_depreciation_account_id?: string | null
+          asset_account_id?: string | null
+          created_at?: string
+          default_useful_life_months?: number
+          depreciation_expense_account_id?: string | null
+          depreciation_method?: string
+          disposal_gain_account_id?: string | null
+          disposal_loss_account_id?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          proration_method?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_categories_accumulated_depreciation_account_id_fkey"
+            columns: ["accumulated_depreciation_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_categories_asset_account_id_fkey"
+            columns: ["asset_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_categories_depreciation_expense_account_id_fkey"
+            columns: ["depreciation_expense_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_categories_disposal_gain_account_id_fkey"
+            columns: ["disposal_gain_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_categories_disposal_loss_account_id_fkey"
+            columns: ["disposal_loss_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_categories_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       asset_depreciation: {
         Row: {
           accumulated_depreciation: number
@@ -453,6 +547,7 @@ export type Database = {
           journal_entry_id: string | null
           net_book_value: number
           period: string
+          status: string
           tenant_id: string
         }
         Insert: {
@@ -464,6 +559,7 @@ export type Database = {
           journal_entry_id?: string | null
           net_book_value?: number
           period: string
+          status?: string
           tenant_id: string
         }
         Update: {
@@ -475,6 +571,7 @@ export type Database = {
           journal_entry_id?: string | null
           net_book_value?: number
           period?: string
+          status?: string
           tenant_id?: string
         }
         Relationships: [
@@ -573,6 +670,7 @@ export type Database = {
           life_years: number | null
           salvage: number
           tenant_id: string
+          transaction_type: string | null
         }
         Insert: {
           amount?: number
@@ -590,6 +688,7 @@ export type Database = {
           life_years?: number | null
           salvage?: number
           tenant_id: string
+          transaction_type?: string | null
         }
         Update: {
           amount?: number
@@ -607,6 +706,7 @@ export type Database = {
           life_years?: number | null
           salvage?: number
           tenant_id?: string
+          transaction_type?: string | null
         }
         Relationships: [
           {
@@ -1596,6 +1696,7 @@ export type Database = {
           acquisition_date: string | null
           asset_account_id: string | null
           asset_name: string
+          category_id: string | null
           cost: number
           created_at: string
           depr_expense_account_id: string | null
@@ -1616,6 +1717,7 @@ export type Database = {
           acquisition_date?: string | null
           asset_account_id?: string | null
           asset_name: string
+          category_id?: string | null
           cost?: number
           created_at?: string
           depr_expense_account_id?: string | null
@@ -1636,6 +1738,7 @@ export type Database = {
           acquisition_date?: string | null
           asset_account_id?: string | null
           asset_name?: string
+          category_id?: string | null
           cost?: number
           created_at?: string
           depr_expense_account_id?: string | null
@@ -1657,6 +1760,13 @@ export type Database = {
             columns: ["asset_account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixed_assets_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "asset_categories"
             referencedColumns: ["id"]
           },
           {
