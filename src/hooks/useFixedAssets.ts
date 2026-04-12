@@ -295,7 +295,6 @@ export function useRunDepreciation() {
           .from("fixed_assets")
           .update({
             accumulated_depreciation: Math.round(newAccumulated * 100) / 100,
-            net_book_value: Math.round(newNBV * 100) / 100,
           })
           .eq("id", raw.id);
 
