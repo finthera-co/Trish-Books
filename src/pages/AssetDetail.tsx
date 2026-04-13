@@ -49,7 +49,7 @@ export default function AssetDetail() {
   const projectedSchedule = generateDepreciationSchedule(assetForCalc);
 
   const handleDispose = async () => {
-    await disposeAsset.mutateAsync({ assetId: asset.id, saleValue });
+    await disposeAsset.mutateAsync({ assetId: asset.id, saleValue, cashAccountId: "" });
     setDisposeOpen(false);
     navigate("/assets");
   };

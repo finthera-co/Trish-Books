@@ -107,7 +107,7 @@ export default function AssetForm() {
         category_id: values.category_id,
       });
     } else {
-      await createAsset.mutateAsync(values);
+      await createAsset.mutateAsync(values as Required<Pick<typeof values, 'name' | 'category_id' | 'cost' | 'payment_account_id'>> & typeof values);
     }
     navigate("/assets/register");
   };

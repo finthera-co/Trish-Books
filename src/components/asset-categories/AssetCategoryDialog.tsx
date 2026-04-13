@@ -79,7 +79,7 @@ export default function AssetCategoryDialog({ open, onOpenChange, editingId }: P
     if (editingId) {
       await updateCat.mutateAsync({ id: editingId, ...values });
     } else {
-      await createCat.mutateAsync(values);
+      await createCat.mutateAsync(values as Required<Pick<typeof values, 'name'>> & typeof values);
     }
     onOpenChange(false);
   };
