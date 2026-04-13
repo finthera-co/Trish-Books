@@ -124,6 +124,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
     sidebarItems: [
       { label: "Asset Register", path: "/assets/register", icon: ClipboardList },
       { label: "Add Asset", path: "/assets/new", icon: Warehouse },
+      { label: "Asset Categories", path: "/assets/categories", icon: Box },
       { label: "Run Depreciation", path: "/assets/depreciation", icon: Calculator },
     ],
   },
