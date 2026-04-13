@@ -44,6 +44,7 @@ import AssetRegister from "./pages/AssetRegister";
 import AssetForm from "./pages/AssetForm";
 import AssetDetail from "./pages/AssetDetail";
 import DepreciationRun from "./pages/DepreciationRun";
+import AssetCategories from "./pages/AssetCategories";
 import SettingsPage from "./pages/SettingsPage";
 import UsersPage from "./pages/UsersPage";
 import Tenants from "./pages/Tenants";
@@ -153,6 +154,7 @@ const App = () => (
                   <Route path="/assets" element={<ModuleDashboard config={MODULE_CONFIGS.assets} />} />
                   <Route path="/assets/register" element={<AssetRegister />} />
                   <Route path="/assets/new" element={<AssetForm />} />
+                  <Route path="/assets/categories" element={<AssetCategories />} />
                   <Route path="/assets/:id/edit" element={<AssetForm />} />
                   <Route path="/assets/:id" element={<AssetDetail />} />
                   <Route path="/assets/depreciation" element={<DepreciationRun />} />

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Edit, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useFixedAsset, useAssetDepreciation, useDisposeAsset, useAssetJournalEntries } from "@/hooks/useFixedAssets";
 import { useAccounts } from "@/hooks/useData";
 import { formatCurrency } from "@/lib/currency";
@@ -23,6 +24,16 @@ export default function AssetDetail() {
   const disposeAsset = useDisposeAsset();
   const [disposeOpen, setDisposeOpen] = useState(false);
   const [saleValue, setSaleValue] = useState(0);
+  const [cashAccountId, setCashAccountId] = useState("");
+
+  const cashAccounts = useMemo(() => {
+    return (accounts ?? []).filter((a: any) =>
+      a.is_active && a.account_type === "Asset" && (
+        a.account_name?.toLowerCase().includes("cash") ||
+        a.account_name?.toLowerCase().includes("bank")
+      )
+    );
+  }, [accounts]);
 
   if (isLoading || !asset) {
     return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading asset...</div>;
@@ -49,7 +60,7 @@ export default function AssetDetail() {
   const projectedSchedule = generateDepreciationSchedule(assetForCalc);
 
   const handleDispose = async () => {
-    await disposeAsset.mutateAsync({ assetId: asset.id, saleValue });
+    await disposeAsset.mutateAsync({ assetId: asset.id, saleValue, cashAccountId });
     setDisposeOpen(false);
     navigate("/assets");
   };
@@ -259,6 +270,17 @@ export default function AssetDetail() {
                 onChange={e => setSaleValue(Number(e.target.value))}
                 placeholder="0.00"
               />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Cash/Bank Account</label>
+              <Select value={cashAccountId} onValueChange={setCashAccountId}>
+                <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
+                <SelectContent>
+                  {cashAccounts.map((a: any) => (
+                    <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <p className="text-sm">
               Gain/Loss: <strong className={saleValue - nbv >= 0 ? "text-green-600" : "text-red-600"}>
