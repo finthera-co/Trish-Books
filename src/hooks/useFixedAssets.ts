@@ -102,6 +102,15 @@ async function callAssetEngine(body: Record<string, unknown>) {
   return data;
 }
 
+function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ["fixed_assets"] });
+  qc.invalidateQueries({ queryKey: ["fixed_asset"] });
+  qc.invalidateQueries({ queryKey: ["asset_subledger"] });
+  qc.invalidateQueries({ queryKey: ["asset_depreciation"] });
+  qc.invalidateQueries({ queryKey: ["asset_journal_entries"] });
+  COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
+}
+
 export function useCreateAsset() {
   const qc = useQueryClient();
   return useMutation({
@@ -116,16 +125,10 @@ export function useCreateAsset() {
       payment_account_id: string;
       description?: string;
     }) => {
-      return callAssetEngine({
-        event_type: "ASSET_CREATED",
-        ...asset,
-      });
+      return callAssetEngine({ event_type: "ASSET_CREATED", ...asset });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["fixed_assets"] });
-      qc.invalidateQueries({ queryKey: ["asset_subledger"] });
-      qc.invalidateQueries({ queryKey: ["asset_depreciation"] });
-      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
+      invalidateAll(qc);
       toast.success("Asset created with journal entry posted");
     },
     onError: (e: any) => toast.error(e.message),
@@ -143,9 +146,7 @@ export function useUpdateAsset() {
       if (error) throw error;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["fixed_assets"] });
-      qc.invalidateQueries({ queryKey: ["fixed_asset"] });
-      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
+      invalidateAll(qc);
       toast.success("Asset updated");
     },
     onError: (e: any) => toast.error(e.message),
@@ -156,16 +157,10 @@ export function useRunDepreciation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (period: string) => {
-      return callAssetEngine({
-        event_type: "DEPRECIATION_POSTED",
-        period,
-      });
+      return callAssetEngine({ event_type: "DEPRECIATION_POSTED", period });
     },
     onSuccess: (result: any) => {
-      qc.invalidateQueries({ queryKey: ["fixed_assets"] });
-      qc.invalidateQueries({ queryKey: ["asset_depreciation"] });
-      qc.invalidateQueries({ queryKey: ["asset_journal_entries"] });
-      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
+      invalidateAll(qc);
       toast.success(`Depreciation: ${result.processed} posted, ${result.skipped} skipped`);
     },
     onError: (e: any) => toast.error(e.message),
@@ -184,11 +179,74 @@ export function useDisposeAsset() {
       });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["fixed_assets"] });
-      qc.invalidateQueries({ queryKey: ["asset_journal_entries"] });
-      qc.invalidateQueries({ queryKey: ["asset_depreciation"] });
-      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
+      invalidateAll(qc);
       toast.success("Asset disposed successfully");
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+}
+
+export function useAdjustAsset() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ assetId, adjustmentType, amount, reason }: {
+      assetId: string;
+      adjustmentType: string;
+      amount: number;
+      reason?: string;
+    }) => {
+      return callAssetEngine({
+        event_type: "ASSET_ADJUSTED",
+        asset_id: assetId,
+        adjustment_type: adjustmentType,
+        amount,
+        reason,
+      });
+    },
+    onSuccess: () => {
+      invalidateAll(qc);
+      toast.success("Asset adjustment applied");
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+}
+
+export function useTransferCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ assetId, newCategoryId }: { assetId: string; newCategoryId: string }) => {
+      return callAssetEngine({
+        event_type: "CATEGORY_TRANSFER",
+        asset_id: assetId,
+        new_category_id: newCategoryId,
+      });
+    },
+    onSuccess: () => {
+      invalidateAll(qc);
+      toast.success("Asset category transferred");
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+}
+
+export function useBulkImportAssets() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (assets: Array<{
+      name: string;
+      category_id: string;
+      cost: number;
+      payment_account_id: string;
+      salvage_value?: number;
+      useful_life_months?: number;
+      purchase_date?: string;
+      description?: string;
+    }>) => {
+      return callAssetEngine({ event_type: "BULK_IMPORT", assets });
+    },
+    onSuccess: (result: any) => {
+      invalidateAll(qc);
+      toast.success(`Bulk import: ${result.created} created, ${result.failed} failed`);
     },
     onError: (e: any) => toast.error(e.message),
   });
