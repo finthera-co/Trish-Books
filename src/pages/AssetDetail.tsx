@@ -39,7 +39,8 @@ export default function AssetDetail() {
     return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading asset...</div>;
   }
 
-  const nbv = asset.net_book_value ?? (asset.cost - (asset.accumulated_depreciation ?? 0));
+  // NBV is a database-generated column: cost - accumulated_depreciation
+  const nbv = (asset as any).net_book_value ?? (asset.cost - (asset.accumulated_depreciation ?? 0));
   const depPercent = asset.cost > 0 ? ((asset.accumulated_depreciation ?? 0) / asset.cost) * 100 : 0;
 
   const getAccountLabel = (accountId: string | null) => {
