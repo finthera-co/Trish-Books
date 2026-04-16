@@ -1710,7 +1710,6 @@ export type Database = {
           depreciation_method: string
           description: string | null
           id: string
-          net_book_value: number | null
           salvage_value: number
           start_date: string | null
           status: string
@@ -1731,7 +1730,6 @@ export type Database = {
           depreciation_method?: string
           description?: string | null
           id?: string
-          net_book_value?: number | null
           salvage_value?: number
           start_date?: string | null
           status?: string
@@ -1752,7 +1750,6 @@ export type Database = {
           depreciation_method?: string
           description?: string | null
           id?: string
-          net_book_value?: number | null
           salvage_value?: number
           start_date?: string | null
           status?: string
@@ -1843,7 +1840,6 @@ export type Database = {
           quantity_on_hand: number
           sku: string | null
           tenant_id: string
-          total_value: number | null
           unit_cost: number
           updated_at: string
         }
@@ -1856,7 +1852,6 @@ export type Database = {
           quantity_on_hand?: number
           sku?: string | null
           tenant_id: string
-          total_value?: number | null
           unit_cost?: number
           updated_at?: string
         }
@@ -1869,7 +1864,6 @@ export type Database = {
           quantity_on_hand?: number
           sku?: string | null
           tenant_id?: string
-          total_value?: number | null
           unit_cost?: number
           updated_at?: string
         }
@@ -3774,6 +3768,66 @@ export type Database = {
           role_name?: string
         }
         Relationships: []
+      }
+      stock_movements: {
+        Row: {
+          created_at: string
+          id: string
+          item_id: string
+          movement_date: string
+          movement_type: string
+          notes: string | null
+          quantity: number
+          reference_id: string | null
+          reference_type: string | null
+          tenant_id: string
+          total_cost: number | null
+          unit_cost: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_id: string
+          movement_date?: string
+          movement_type?: string
+          notes?: string | null
+          quantity?: number
+          reference_id?: string | null
+          reference_type?: string | null
+          tenant_id: string
+          total_cost?: number | null
+          unit_cost?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_id?: string
+          movement_date?: string
+          movement_type?: string
+          notes?: string | null
+          quantity?: number
+          reference_id?: string | null
+          reference_type?: string | null
+          tenant_id?: string
+          total_cost?: number | null
+          unit_cost?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_movements_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_movements_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       subscription_plans: {
         Row: {
