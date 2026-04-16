@@ -124,7 +124,7 @@ export default function InlineOpeningBalance({
   if (editing) {
     return (
       <div>
-        <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 justify-end">
           <input
             type="number"
             step="0.01"
@@ -176,14 +176,14 @@ export default function InlineOpeningBalance({
   }
 
   return (
-    <div>
+    <div className="text-right">
       <button
         onClick={() => {
           setValue(currentBalance?.toString() || "0");
           setBalType((currentType as "debit" | "credit") || (normalBalance === "Debit" ? "debit" : "credit"));
           setEditing(true);
         }}
-        className="text-sm text-right w-full hover:underline cursor-pointer text-foreground/80"
+        className="text-sm w-full hover:underline cursor-pointer text-foreground/80 text-right"
         title="Click to edit opening balance"
       >
         {currentBalance ? (
