@@ -1,8 +1,11 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Search, Users } from "lucide-react";
+import { Search, MoreHorizontal, UserX, UserCheck, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { format } from "date-fns";
 import {
   Select,
   SelectContent,
@@ -10,11 +13,31 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function SuperAdminUsers() {
   const { isSuperAdmin } = useAuth();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [tenantFilter, setTenantFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [deleteUser, setDeleteUser] = useState<any>(null);
 
   const { data: tenants } = useQuery({
     queryKey: ["all_tenants_list"],
@@ -25,19 +48,45 @@ export default function SuperAdminUsers() {
   });
 
   const { data: users, isLoading } = useQuery({
-    queryKey: ["all_users_readonly", tenantFilter],
+    queryKey: ["all_users_admin", tenantFilter, statusFilter],
     queryFn: async () => {
       let query = supabase
         .from("users")
-        .select("id, email, first_name, last_name, tenant_id, created_at, roles(role_name), tenants:tenant_id(company_name)")
+        .select("id, email, first_name, last_name, tenant_id, created_at, status, login_count, last_login_at, roles(role_name), tenants:tenant_id(company_name)")
         .order("created_at", { ascending: false });
 
       if (tenantFilter !== "all") query = query.eq("tenant_id", tenantFilter);
+      if (statusFilter !== "all") query = query.eq("status", statusFilter);
 
       const { data, error } = await query;
       if (error) throw error;
       return data || [];
     },
+  });
+
+  const suspendUser = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      const { error } = await supabase.from("users").update({ status }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: (_, { status }) => {
+      queryClient.invalidateQueries({ queryKey: ["all_users_admin"] });
+      toast.success(`User ${status === "suspended" ? "suspended" : "reactivated"}`);
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("users").update({ status: "deleted" }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["all_users_admin"] });
+      toast.success("User deleted (soft)");
+      setDeleteUser(null);
+    },
+    onError: (err: any) => toast.error(err.message),
   });
 
   if (!isSuperAdmin) {
@@ -48,12 +97,48 @@ export default function SuperAdminUsers() {
     `${u.first_name} ${u.last_name} ${u.email}`.toLowerCase().includes(search.toLowerCase())
   ) || [];
 
+  const statusColors: Record<string, string> = {
+    active: "bg-primary/10 text-primary",
+    suspended: "bg-[hsl(var(--warning))]/10 text-[hsl(var(--warning))]",
+    deleted: "bg-destructive/10 text-destructive",
+  };
+
   return (
     <div className="space-y-6">
       <div className="page-header">
         <div>
           <h1 className="page-title">All Users</h1>
-          <p className="page-description">Read-only view of all users across all companies</p>
+          <p className="page-description">Manage all users across all companies</p>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="stat-card">
+          <p className="text-xs font-medium text-muted-foreground">Total Users</p>
+          <p className="text-2xl font-bold text-foreground tabular-nums">{users?.length || 0}</p>
+        </div>
+        <div className="stat-card">
+          <p className="text-xs font-medium text-muted-foreground">Active</p>
+          <p className="text-2xl font-bold text-foreground tabular-nums">
+            {users?.filter(u => (u as any).status === "active").length || 0}
+          </p>
+        </div>
+        <div className="stat-card">
+          <p className="text-xs font-medium text-muted-foreground">Suspended</p>
+          <p className="text-2xl font-bold text-foreground tabular-nums">
+            {users?.filter(u => (u as any).status === "suspended").length || 0}
+          </p>
+        </div>
+        <div className="stat-card">
+          <p className="text-xs font-medium text-muted-foreground">Recent Logins (7d)</p>
+          <p className="text-2xl font-bold text-foreground tabular-nums">
+            {users?.filter(u => {
+              const la = (u as any).last_login_at;
+              if (!la) return false;
+              return new Date(la) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+            }).length || 0}
+          </p>
         </div>
       </div>
 
@@ -61,23 +146,22 @@ export default function SuperAdminUsers() {
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <div className="flex items-center gap-2 flex-1 min-w-[200px]">
             <Search className="w-4 h-4 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search users..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="bg-transparent text-sm outline-none flex-1 text-foreground placeholder:text-muted-foreground"
-            />
+            <input type="text" placeholder="Search users..." value={search} onChange={e => setSearch(e.target.value)}
+              className="bg-transparent text-sm outline-none flex-1 text-foreground placeholder:text-muted-foreground" />
           </div>
           <Select value={tenantFilter} onValueChange={setTenantFilter}>
-            <SelectTrigger className="w-[200px] h-9 text-xs">
-              <SelectValue placeholder="All Companies" />
-            </SelectTrigger>
+            <SelectTrigger className="w-[200px] h-9 text-xs"><SelectValue placeholder="All Companies" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Companies</SelectItem>
-              {tenants?.map(t => (
-                <SelectItem key={t.id} value={t.id}>{t.company_name}</SelectItem>
-              ))}
+              {tenants?.map(t => <SelectItem key={t.id} value={t.id}>{t.company_name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[130px] h-9 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="suspended">Suspended</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -95,30 +179,79 @@ export default function SuperAdminUsers() {
                 <th>Company</th>
                 <th>Role</th>
                 <th>Status</th>
+                <th>Last Login</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map(user => (
-                <tr key={user.id}>
-                  <td className="font-medium text-foreground">{user.first_name} {user.last_name}</td>
-                  <td className="text-muted-foreground text-sm">{user.email}</td>
-                  <td className="text-sm">{(user.tenants as any)?.company_name || "—"}</td>
-                  <td>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
-                      {(user.roles as any)?.role_name || "—"}
-                    </span>
-                  </td>
-                  <td>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
-                      Active
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {filtered.map(user => {
+                const status = (user as any).status || "active";
+                const roleName = (user.roles as any)?.role_name || "—";
+                const isSuperAdminUser = roleName === "Super Admin";
+                return (
+                  <tr key={user.id}>
+                    <td className="font-medium text-foreground">{user.first_name} {user.last_name}</td>
+                    <td className="text-muted-foreground text-sm">{user.email}</td>
+                    <td className="text-sm">{(user.tenants as any)?.company_name || "—"}</td>
+                    <td>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">{roleName}</span>
+                    </td>
+                    <td>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[status] || statusColors.active}`}>{status}</span>
+                    </td>
+                    <td className="text-xs text-muted-foreground">
+                      {(user as any).last_login_at ? format(new Date((user as any).last_login_at), "MMM d, HH:mm") : "Never"}
+                    </td>
+                    <td>
+                      {!isSuperAdminUser && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className="p-1 rounded hover:bg-accent"><MoreHorizontal className="w-4 h-4 text-muted-foreground" /></button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent>
+                            {status === "active" ? (
+                              <DropdownMenuItem onClick={() => suspendUser.mutate({ id: user.id, status: "suspended" })}>
+                                <UserX className="w-3.5 h-3.5 mr-2" /> Suspend
+                              </DropdownMenuItem>
+                            ) : status === "suspended" ? (
+                              <DropdownMenuItem onClick={() => suspendUser.mutate({ id: user.id, status: "active" })}>
+                                <UserCheck className="w-3.5 h-3.5 mr-2" /> Reactivate
+                              </DropdownMenuItem>
+                            ) : null}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem className="text-destructive" onClick={() => setDeleteUser(user)}>
+                              <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete User
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={!!deleteUser} onOpenChange={(v) => !v && setDeleteUser(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete User</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will mark "{deleteUser?.first_name} {deleteUser?.last_name}" as deleted. This is a soft delete — the record is preserved for audit purposes.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteUser && deleteUserMutation.mutate(deleteUser.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete User
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

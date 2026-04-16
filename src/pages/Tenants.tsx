@@ -1,12 +1,23 @@
-import { Building2, Plus, MoreHorizontal, Search, UserPlus, Copy, Check, Eye, EyeOff } from "lucide-react";
+import { Building2, Plus, MoreHorizontal, Search, UserPlus, Copy, Check, Eye, EyeOff, Pencil, Trash2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useTenants, useUpdateTenant, useSubscriptionPlans } from "@/hooks/useData";
 import { useAuth } from "@/contexts/AuthContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { format } from "date-fns";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface ProvisionResult {
   email: string;
@@ -19,6 +30,7 @@ interface ProvisionResult {
 export default function Tenants() {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
+  const [showDeleted, setShowDeleted] = useState(false);
 
   // Form fields
   const [companyName, setCompanyName] = useState("");
@@ -32,6 +44,17 @@ export default function Tenants() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Edit dialog
+  const [editTenant, setEditTenant] = useState<any>(null);
+  const [editName, setEditName] = useState("");
+  const [editCountry, setEditCountry] = useState("");
+  const [editIndustry, setEditIndustry] = useState("");
+  const [editPlanId, setEditPlanId] = useState("");
+  const [editLoading, setEditLoading] = useState(false);
+
+  // Delete dialog
+  const [deleteTenant, setDeleteTenant] = useState<any>(null);
+
   // Success state
   const [result, setResult] = useState<ProvisionResult | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -41,9 +64,14 @@ export default function Tenants() {
   const updateTenant = useUpdateTenant();
   const { isSuperAdmin } = useAuth();
 
-  const filtered = tenants?.filter((t) =>
-    t.company_name.toLowerCase().includes(search.toLowerCase())
-  ) || [];
+  const filtered = tenants?.filter((t) => {
+    const matchesSearch = t.company_name.toLowerCase().includes(search.toLowerCase());
+    const isDeleted = !!(t as any).deleted_at;
+    if (showDeleted) return matchesSearch && isDeleted;
+    return matchesSearch && !isDeleted;
+  }) || [];
+
+  const deletedCount = tenants?.filter(t => !!(t as any).deleted_at).length || 0;
 
   const handleCopy = (text: string, field: string) => {
     navigator.clipboard.writeText(text);
@@ -52,16 +80,9 @@ export default function Tenants() {
   };
 
   const resetForm = () => {
-    setCompanyName("");
-    setCountry("");
-    setIndustry("");
-    setPlanId("");
-    setAdminEmail("");
-    setAdminPassword("");
-    setAdminFirstName("");
-    setAdminLastName("");
-    setShowPassword(false);
-    setResult(null);
+    setCompanyName(""); setCountry(""); setIndustry(""); setPlanId("");
+    setAdminEmail(""); setAdminPassword(""); setAdminFirstName(""); setAdminLastName("");
+    setShowPassword(false); setResult(null);
   };
 
   const handleCreate = async () => {
@@ -76,19 +97,12 @@ export default function Tenants() {
 
     setLoading(true);
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-
       const res = await supabase.functions.invoke("provision-tenant", {
         body: {
-          company_name: companyName,
-          country,
-          industry,
+          company_name: companyName, country, industry,
           subscription_plan_id: planId || undefined,
-          admin_email: adminEmail,
-          admin_password: adminPassword,
-          admin_first_name: adminFirstName,
-          admin_last_name: adminLastName,
+          admin_email: adminEmail, admin_password: adminPassword,
+          admin_first_name: adminFirstName, admin_last_name: adminLastName,
         },
       });
 
@@ -96,14 +110,7 @@ export default function Tenants() {
         throw new Error(res.data?.error || res.error?.message || "Provisioning failed");
       }
 
-      setResult({
-        email: adminEmail,
-        password: adminPassword,
-        companyName,
-        firstName: adminFirstName,
-        lastName: adminLastName,
-      });
-
+      setResult({ email: adminEmail, password: adminPassword, companyName, firstName: adminFirstName, lastName: adminLastName });
       toast.success(`Tenant "${companyName}" provisioned successfully`);
       refetch();
     } catch (err: any) {
@@ -116,12 +123,66 @@ export default function Tenants() {
     updateTenant.mutate({ id, status });
   };
 
+  const openEditDialog = (tenant: any) => {
+    setEditTenant(tenant);
+    setEditName(tenant.company_name);
+    setEditCountry(tenant.country || "");
+    setEditIndustry(tenant.industry || "");
+    setEditPlanId(tenant.subscription_plan_id || "");
+  };
+
+  const handleEditSave = async () => {
+    if (!editTenant || !editName.trim()) return;
+    setEditLoading(true);
+    try {
+      const { error } = await supabase.from("tenants").update({
+        company_name: editName.trim(),
+        country: editCountry || null,
+        industry: editIndustry || null,
+        subscription_plan_id: editPlanId || null,
+      }).eq("id", editTenant.id);
+      if (error) throw error;
+      toast.success("Company updated");
+      setEditTenant(null);
+      refetch();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+    setEditLoading(false);
+  };
+
+  const handleSoftDelete = async () => {
+    if (!deleteTenant) return;
+    try {
+      const { error } = await supabase.from("tenants").update({
+        deleted_at: new Date().toISOString(),
+        status: "suspended",
+      }).eq("id", deleteTenant.id);
+      if (error) throw error;
+      toast.success(`"${deleteTenant.company_name}" archived`);
+      setDeleteTenant(null);
+      refetch();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleRestore = async (tenant: any) => {
+    try {
+      const { error } = await supabase.from("tenants").update({
+        deleted_at: null,
+        status: "active",
+      }).eq("id", tenant.id);
+      if (error) throw error;
+      toast.success(`"${tenant.company_name}" restored`);
+      refetch();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
   if (!isSuperAdmin) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-muted-foreground">You don't have permission to view this page.</p>
-      </div>
-    );
+    return <div className="text-center py-12"><p className="text-muted-foreground">You don't have permission to view this page.</p></div>;
   }
 
   return (
@@ -139,14 +200,11 @@ export default function Tenants() {
             <DialogHeader>
               <DialogTitle>{result ? "Tenant Provisioned" : "Provision New Tenant"}</DialogTitle>
               <DialogDescription>
-                {result
-                  ? "Share the credentials below with the company administrator."
-                  : "Create the company and its admin account in one step."}
+                {result ? "Share the credentials below with the company administrator." : "Create the company and its admin account in one step."}
               </DialogDescription>
             </DialogHeader>
 
             {result ? (
-              /* ── Success: Show credentials ── */
               <div className="space-y-4 pt-2">
                 <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
                   <div className="flex items-center gap-2 text-sm">
@@ -156,25 +214,16 @@ export default function Tenants() {
                   <div className="border-t border-border pt-3 space-y-2">
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Admin Credentials</p>
                     <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Name</p>
-                        <p className="text-sm font-medium text-foreground">{result.firstName} {result.lastName}</p>
-                      </div>
+                      <div><p className="text-xs text-muted-foreground">Name</p><p className="text-sm font-medium text-foreground">{result.firstName} {result.lastName}</p></div>
                     </div>
                     <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Email</p>
-                        <p className="text-sm font-mono text-foreground">{result.email}</p>
-                      </div>
+                      <div><p className="text-xs text-muted-foreground">Email</p><p className="text-sm font-mono text-foreground">{result.email}</p></div>
                       <Button variant="ghost" size="sm" onClick={() => handleCopy(result.email, "email")}>
                         {copiedField === "email" ? <Check className="w-3.5 h-3.5 text-primary" /> : <Copy className="w-3.5 h-3.5" />}
                       </Button>
                     </div>
                     <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Password</p>
-                        <p className="text-sm font-mono text-foreground">{result.password}</p>
-                      </div>
+                      <div><p className="text-xs text-muted-foreground">Password</p><p className="text-sm font-mono text-foreground">{result.password}</p></div>
                       <Button variant="ghost" size="sm" onClick={() => handleCopy(result.password, "password")}>
                         {copiedField === "password" ? <Check className="w-3.5 h-3.5 text-primary" /> : <Copy className="w-3.5 h-3.5" />}
                       </Button>
@@ -182,18 +231,12 @@ export default function Tenants() {
                   </div>
                 </div>
                 <div className="rounded-md bg-accent/50 border border-accent p-3">
-                  <p className="text-xs text-muted-foreground">
-                    ⚠️ Make sure to copy and securely share these credentials. The password cannot be retrieved after closing this dialog.
-                  </p>
+                  <p className="text-xs text-muted-foreground">⚠️ Make sure to copy and securely share these credentials. The password cannot be retrieved after closing this dialog.</p>
                 </div>
-                <Button className="w-full" onClick={() => { setOpen(false); resetForm(); }}>
-                  Done
-                </Button>
+                <Button className="w-full" onClick={() => { setOpen(false); resetForm(); }}>Done</Button>
               </div>
             ) : (
-              /* ── Form ── */
               <div className="space-y-5 pt-2">
-                {/* Company Section */}
                 <div>
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">Company Details</p>
                   <div className="space-y-3">
@@ -227,8 +270,6 @@ export default function Tenants() {
                     </div>
                   </div>
                 </div>
-
-                {/* Admin Section */}
                 <div className="border-t border-border pt-4">
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
                     <UserPlus className="w-3.5 h-3.5" /> Company Admin Account
@@ -257,39 +298,21 @@ export default function Tenants() {
                     <div>
                       <label className="text-sm font-medium text-foreground">Password <span className="text-destructive">*</span></label>
                       <div className="relative mt-1">
-                        <input
-                          type={showPassword ? "text" : "password"}
-                          value={adminPassword}
-                          onChange={(e) => setAdminPassword(e.target.value)}
+                        <input type={showPassword ? "text" : "password"} value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)}
                           className="w-full text-sm border border-input rounded-lg px-3 py-2 pr-10 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
-                          placeholder="Min 6 characters"
-                          minLength={6}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                        >
+                          placeholder="Min 6 characters" minLength={6} />
+                        <button type="button" onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                           {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                         </button>
                       </div>
                     </div>
                   </div>
                 </div>
-
-                <Button
-                  onClick={handleCreate}
+                <Button onClick={handleCreate}
                   disabled={!companyName || !adminEmail || !adminPassword || !adminFirstName || !adminLastName || loading}
-                  className="w-full"
-                >
-                  {loading ? (
-                    <span className="flex items-center gap-2">
-                      <span className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                      Provisioning…
-                    </span>
-                  ) : (
-                    "Provision Tenant & Create Admin"
-                  )}
+                  className="w-full">
+                  {loading ? <span className="flex items-center gap-2"><span className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />Provisioning…</span> : "Provision Tenant & Create Admin"}
                 </Button>
               </div>
             )}
@@ -298,22 +321,26 @@ export default function Tenants() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div className="stat-card">
           <p className="text-xs font-medium text-muted-foreground">Total Tenants</p>
-          <p className="text-2xl font-bold text-foreground tabular-nums">{tenants?.length || 0}</p>
+          <p className="text-2xl font-bold text-foreground tabular-nums">{tenants?.filter(t => !(t as any).deleted_at).length || 0}</p>
         </div>
         <div className="stat-card">
           <p className="text-xs font-medium text-muted-foreground">Active</p>
           <p className="text-2xl font-bold text-foreground tabular-nums">
-            {tenants?.filter(t => t.status === "active").length || 0}
+            {tenants?.filter(t => t.status === "active" && !(t as any).deleted_at).length || 0}
           </p>
         </div>
         <div className="stat-card">
           <p className="text-xs font-medium text-muted-foreground">Suspended</p>
           <p className="text-2xl font-bold text-foreground tabular-nums">
-            {tenants?.filter(t => t.status === "suspended").length || 0}
+            {tenants?.filter(t => t.status === "suspended" && !(t as any).deleted_at).length || 0}
           </p>
+        </div>
+        <div className="stat-card">
+          <p className="text-xs font-medium text-muted-foreground">Archived</p>
+          <p className="text-2xl font-bold text-foreground tabular-nums">{deletedCount}</p>
         </div>
       </div>
 
@@ -323,16 +350,21 @@ export default function Tenants() {
           <Search className="w-4 h-4 text-muted-foreground" />
           <input type="text" placeholder="Search tenants..." value={search} onChange={(e) => setSearch(e.target.value)}
             className="bg-transparent text-sm outline-none flex-1 text-foreground placeholder:text-muted-foreground" />
+          {deletedCount > 0 && (
+            <Button variant={showDeleted ? "secondary" : "ghost"} size="sm" onClick={() => setShowDeleted(!showDeleted)}>
+              <Trash2 className="w-3.5 h-3.5 mr-1" /> Archived ({deletedCount})
+            </Button>
+          )}
         </div>
 
         {isLoading ? (
           <p className="text-center py-8 text-muted-foreground">Loading...</p>
         ) : filtered.length === 0 ? (
-          <p className="text-center py-8 text-muted-foreground">No tenants found</p>
+          <p className="text-center py-8 text-muted-foreground">{showDeleted ? "No archived tenants" : "No tenants found"}</p>
         ) : (
           <table className="data-table">
             <thead>
-              <tr><th>Company</th><th>Country</th><th>Industry</th><th>Plan</th><th>Status</th><th></th></tr>
+              <tr><th>Company</th><th>Country</th><th>Industry</th><th>Plan</th><th>Status</th><th>Created</th><th></th></tr>
             </thead>
             <tbody>
               {filtered.map((tenant) => (
@@ -355,23 +387,33 @@ export default function Tenants() {
                   <td>
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                       tenant.status === "active" ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"
-                    }`}>
-                      {tenant.status}
-                    </span>
+                    }`}>{tenant.status}</span>
                   </td>
+                  <td className="text-xs text-muted-foreground">{format(new Date(tenant.created_at), "MMM d, yyyy")}</td>
                   <td>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button className="p-1 rounded hover:bg-accent">
-                          <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        <DropdownMenuItem onClick={() => handleStatusChange(tenant.id, tenant.status === "active" ? "suspended" : "active")}>
-                          {tenant.status === "active" ? "Suspend" : "Activate"}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    {showDeleted ? (
+                      <Button variant="outline" size="sm" onClick={() => handleRestore(tenant)}>
+                        <RotateCcw className="w-3.5 h-3.5 mr-1" /> Restore
+                      </Button>
+                    ) : (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button className="p-1 rounded hover:bg-accent"><MoreHorizontal className="w-4 h-4 text-muted-foreground" /></button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent>
+                          <DropdownMenuItem onClick={() => openEditDialog(tenant)}>
+                            <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Details
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleStatusChange(tenant.id, tenant.status === "active" ? "suspended" : "active")}>
+                            {tenant.status === "active" ? "Suspend" : "Activate"}
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem className="text-destructive" onClick={() => setDeleteTenant(tenant)}>
+                            <Trash2 className="w-3.5 h-3.5 mr-2" /> Archive Company
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -379,6 +421,64 @@ export default function Tenants() {
           </table>
         )}
       </div>
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editTenant} onOpenChange={(v) => !v && setEditTenant(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Company Details</DialogTitle>
+            <DialogDescription>Update company information</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div>
+              <label className="text-sm font-medium text-foreground">Company Name</label>
+              <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)}
+                className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium text-foreground">Country</label>
+                <input type="text" value={editCountry} onChange={(e) => setEditCountry(e.target.value)}
+                  className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground">Industry</label>
+                <input type="text" value={editIndustry} onChange={(e) => setEditIndustry(e.target.value)}
+                  className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground">Subscription Plan</label>
+              <select value={editPlanId} onChange={(e) => setEditPlanId(e.target.value)}
+                className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors">
+                <option value="">No plan</option>
+                {plans?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <Button onClick={handleEditSave} disabled={!editName.trim() || editLoading} className="w-full">
+              {editLoading ? "Saving..." : "Save Changes"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={!!deleteTenant} onOpenChange={(v) => !v && setDeleteTenant(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive Company</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will suspend and archive "{deleteTenant?.company_name}". The company can be restored later from the Archived view.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleSoftDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Archive Company
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
