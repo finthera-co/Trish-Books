@@ -152,15 +152,20 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
   }, [recon, transactions]);
 
   const bankFeedSummary = useMemo(() => {
-    if (!bankFeeds) return { total: 0, unmatched: 0, suggested: 0, matched: 0, duplicates: 0 };
+    if (!bankFeeds) return { total: 0, unmatched: 0, suggested: 0, matched: 0, duplicates: 0, ruleMatched: 0 };
     return {
       total: bankFeeds.length,
       unmatched: bankFeeds.filter((f: any) => f.status === "unmatched").length,
       suggested: bankFeeds.filter((f: any) => f.status === "suggested").length,
       matched: bankFeeds.filter((f: any) => f.status === "matched").length,
+      ruleMatched: bankFeeds.filter((f: any) => f.status === "rule_matched").length,
       duplicates: bankFeeds.filter((f: any) => f.is_duplicate).length,
     };
   }, [bankFeeds]);
+
+  // No-orphan check: all bank feed txns must be matched, rule_matched, or deleted (not unmatched/suggested)
+  const hasOrphanBankTxns = bankFeedSummary.unmatched > 0 || bankFeedSummary.suggested > 0;
+  const hasBankFeeds = bankFeedSummary.total > 0;
 
   // Build a map of journal_line_id -> recon_txn for suggested matches
   const suggestedMatchMap = useMemo(() => {
@@ -174,7 +179,7 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
   }, [bankFeeds, transactions]);
 
   const isReconciled = recon?.status === "reconciled";
-  const canComplete = Math.abs(summary.difference) < 0.005;
+  const canComplete = Math.abs(summary.difference) < 0.005 && !(hasBankFeeds && hasOrphanBankTxns);
 
   const handleToggle = (txnId: string, currentCleared: boolean) => {
     if (isReconciled) return;
@@ -297,6 +302,12 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
               <Button onClick={handleComplete} disabled={!canComplete || completeRecon.isPending} size="sm" className="bg-green-600 hover:bg-green-700 text-white">
                 {completeRecon.isPending ? "Finishing..." : "Finalize Reconciliation"}
               </Button>
+              {hasBankFeeds && hasOrphanBankTxns && (
+                <div className="flex items-center gap-1 text-xs text-amber-600">
+                  <AlertTriangle className="w-3 h-3" />
+                  {bankFeedSummary.unmatched + bankFeedSummary.suggested} bank txns unresolved — match or delete before finalizing
+                </div>
+              )}
             </>
           )}
         </div>
@@ -382,7 +393,12 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
                             )}
                             {f.status === "matched" && (
                               <Badge className="text-[9px] px-1 py-0 bg-green-600">
-                                <Check className="w-2 h-2 mr-0.5" /> Matched
+                                <Check className="w-2 h-2 mr-0.5" /> {f.match_type === "AUTO_MATCHED" ? "Auto" : f.match_type === "GROUP_MATCHED" ? "Group" : "Matched"}
+                              </Badge>
+                            )}
+                            {f.status === "matched" && f.match_metadata?.method && (
+                              <Badge variant="outline" className="text-[9px] px-1 py-0">
+                                {f.match_metadata.method}
                               </Badge>
                             )}
                             {f.status === "rule_matched" && (
@@ -670,7 +686,8 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
                 <div className="flex justify-between"><span className="text-muted-foreground">Total Imported</span><span>{bankFeedSummary.total}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Unmatched</span><span className="text-amber-600">{bankFeedSummary.unmatched}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Suggested</span><span className="text-blue-600">{bankFeedSummary.suggested}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Matched</span><span className="text-green-600">{bankFeedSummary.matched}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Auto-Matched</span><span className="text-green-600">{bankFeedSummary.matched}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Rule-Matched</span><span className="text-purple-600">{bankFeedSummary.ruleMatched}</span></div>
                 {bankFeedSummary.duplicates > 0 && (
                   <div className="flex justify-between"><span className="text-destructive">Duplicates</span><span className="text-destructive">{bankFeedSummary.duplicates}</span></div>
                 )}

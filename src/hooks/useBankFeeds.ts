@@ -183,8 +183,19 @@ export function useRunAIMatching() {
     onSuccess: (result, vars) => {
       queryClient.invalidateQueries({ queryKey: ["bank_feed_transactions", vars.reconciliationId] });
       queryClient.invalidateQueries({ queryKey: ["reconciliation_transactions", vars.reconciliationId] });
-      toast.success(`AI Matching: ${result.matches} matches found, ${result.rules_applied} rules applied`);
+      const parts = [];
+      if (result.auto_matched > 0) parts.push(`${result.auto_matched} auto-matched`);
+      if (result.suggested > 0) parts.push(`${result.suggested} suggested`);
+      if (result.rules_applied > 0) parts.push(`${result.rules_applied} rules applied`);
+      const breakdown = result.breakdown;
+      const methods = [];
+      if (breakdown?.source > 0) methods.push(`source:${breakdown.source}`);
+      if (breakdown?.module > 0) methods.push(`module:${breakdown.module}`);
+      if (breakdown?.combo > 0) methods.push(`combo:${breakdown.combo}`);
+      if (breakdown?.scoring > 0) methods.push(`scoring:${breakdown.scoring}`);
+      const msg = `Matching: ${parts.join(", ")}` + (methods.length ? ` (${methods.join(", ")})` : "");
+      toast.success(msg || "No matches found");
     },
-    onError: (e: Error) => toast.error("AI Matching failed: " + e.message),
+    onError: (e: Error) => toast.error("Matching failed: " + e.message),
   });
 }

@@ -795,6 +795,8 @@ export type Database = {
           import_batch: string | null
           is_duplicate: boolean
           match_confidence: number | null
+          match_metadata: Json | null
+          match_type: string | null
           matched_journal_line_id: string | null
           reconciliation_id: string | null
           reference_number: string | null
@@ -813,6 +815,8 @@ export type Database = {
           import_batch?: string | null
           is_duplicate?: boolean
           match_confidence?: number | null
+          match_metadata?: Json | null
+          match_type?: string | null
           matched_journal_line_id?: string | null
           reconciliation_id?: string | null
           reference_number?: string | null
@@ -831,6 +835,8 @@ export type Database = {
           import_batch?: string | null
           is_duplicate?: boolean
           match_confidence?: number | null
+          match_metadata?: Json | null
+          match_type?: string | null
           matched_journal_line_id?: string | null
           reconciliation_id?: string | null
           reference_number?: string | null
