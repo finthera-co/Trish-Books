@@ -98,8 +98,15 @@ interface TypeGroup {
 
 function getAccountDisplayBalance(
   account: Account,
-  periodOBMap?: Map<string, { debit: number; credit: number }>
+  periodOBMap?: Map<string, { debit: number; credit: number }>,
+  computedBalanceMap?: Map<string, number>
 ): { balance: number; type: string } {
+  // If this account has a computed balance (e.g. Inventory), use it
+  const computedVal = computedBalanceMap?.get(account.id);
+  if (computedVal !== undefined) {
+    return { balance: computedVal, type: "debit" };
+  }
+
   const periodOB = periodOBMap?.get(account.id);
 
   return {
