@@ -637,6 +637,7 @@ function CategorySection({
   isPeriodClosed,
   canEdit,
   globalAccountsMap,
+  computedBalanceMap,
 }: {
   category: CategoryGroup;
   accountType: string;
@@ -648,6 +649,7 @@ function CategorySection({
   isPeriodClosed?: boolean;
   canEdit?: boolean;
   globalAccountsMap?: Map<string, MappableAccount>;
+  computedBalanceMap?: Map<string, number>;
 }) {
   const [expanded, setExpanded] = useState(true);
   const tree = buildTree(category.accounts).sort((a, b) => a.account_code.localeCompare(b.account_code));
