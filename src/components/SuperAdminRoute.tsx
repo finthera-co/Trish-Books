@@ -5,9 +5,9 @@ import { useAuth } from "@/contexts/AuthContext";
  * Blocks non-Super-Admin users from accessing SaaS control plane pages.
  */
 export default function SuperAdminRoute() {
-  const { isSuperAdmin, loading } = useAuth();
+  const { isSuperAdmin, loading, appUser } = useAuth();
 
-  if (loading) return null;
+  if (loading || !appUser) return null;
 
   if (!isSuperAdmin) {
     return <Navigate to="/" replace />;

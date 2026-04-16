@@ -6,9 +6,9 @@ import { useAuth } from "@/contexts/AuthContext";
  * Super Admin is a control-plane role only.
  */
 export default function TenantRoute() {
-  const { isSuperAdmin, loading } = useAuth();
+  const { isSuperAdmin, loading, appUser } = useAuth();
 
-  if (loading) return null;
+  if (loading || !appUser) return null;
 
   if (isSuperAdmin) {
     return <Navigate to="/" replace />;
