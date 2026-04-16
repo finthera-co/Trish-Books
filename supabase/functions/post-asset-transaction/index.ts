@@ -109,18 +109,10 @@ async function validatePeriodOpen(db: any, tenantId: string, date: string) {
   }
 }
 
-async function checkDuplicateDepreciation(db: any, assetId: string, period: string) {
-  const { data } = await db
-    .from("asset_depreciation")
-    .select("id")
-    .eq("asset_id", assetId)
-    .eq("period", period)
-    .eq("status", "posted")
-    .limit(1);
-  if (data && data.length > 0) {
-    throw new Error(`Depreciation already posted for asset ${assetId} in period ${period}`);
-  }
-}
+// checkDuplicateDepreciation removed — now enforced by:
+// 1. DB UNIQUE constraint on asset_depreciation(asset_id, period)
+// 2. unique_key idempotency on journal_entries
+// 3. 'processing' status lock preventing concurrent runs
 
 // ─── AUDIT HELPER ───
 
