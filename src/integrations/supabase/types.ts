@@ -2205,6 +2205,7 @@ export type Database = {
           source_type: string | null
           status: string
           tenant_id: string
+          unique_key: string | null
           void_reason: string | null
           voided_at: string | null
           voided_by: string | null
@@ -2226,6 +2227,7 @@ export type Database = {
           source_type?: string | null
           status?: string
           tenant_id: string
+          unique_key?: string | null
           void_reason?: string | null
           voided_at?: string | null
           voided_by?: string | null
@@ -2247,6 +2249,7 @@ export type Database = {
           source_type?: string | null
           status?: string
           tenant_id?: string
+          unique_key?: string | null
           void_reason?: string | null
           voided_at?: string | null
           voided_by?: string | null
