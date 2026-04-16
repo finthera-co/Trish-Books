@@ -11,10 +11,22 @@ import SystemHealthCheck from "@/components/dashboard/SystemHealthCheck";
 import RecentTransactions from "@/components/dashboard/RecentTransactions";
 import InsightsPanel from "@/components/dashboard/InsightsPanel";
 import CashFlowChart from "@/components/dashboard/CashFlowChart";
+import SuperAdminDashboard from "@/pages/SuperAdminDashboard";
 import { Loader2, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function Home() {
+  const { appUser, isSuperAdmin } = useAuth();
+
+  // Super Admin sees the control plane dashboard
+  if (isSuperAdmin) {
+    return <SuperAdminDashboard />;
+  }
+
+  return <TenantDashboard />;
+}
+
+function TenantDashboard() {
   const { appUser } = useAuth();
 
   const [fromDate, setFromDate] = useState(() => startOfMonth(subMonths(new Date(), 5)));
