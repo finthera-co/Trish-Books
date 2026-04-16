@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Building2, Users, Activity, TrendingUp, BarChart3 } from "lucide-react";
+import { Building2, Users, Activity, TrendingUp, BarChart3, LogIn } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function SystemAnalytics() {
@@ -11,7 +11,7 @@ export default function SystemAnalytics() {
     queryFn: async () => {
       const [tenantsRes, usersRes, logsRes, errorsRes] = await Promise.all([
         supabase.from("tenants").select("id, status, created_at, subscription_plans(name)"),
-        supabase.from("users").select("id, created_at, tenant_id"),
+        supabase.from("users").select("id, created_at, tenant_id, status, login_count, last_login_at"),
         supabase.from("audit_logs").select("id, action, created_at").order("created_at", { ascending: false }).limit(500),
         supabase.from("system_error_logs").select("id, severity, resolved, created_at"),
       ]);
@@ -29,10 +29,6 @@ export default function SystemAnalytics() {
       });
 
       // Users per tenant
-      const usersPerTenant: Record<string, number> = {};
-      users.forEach(u => {
-        usersPerTenant[u.tenant_id] = (usersPerTenant[u.tenant_id] || 0) + 1;
-      });
       const avgUsersPerTenant = tenants.length ? (users.length / tenants.length).toFixed(1) : "0";
 
       // Action distribution
@@ -41,12 +37,28 @@ export default function SystemAnalytics() {
         actionCounts[l.action] = (actionCounts[l.action] || 0) + 1;
       });
 
+      // Login activity (last 7 days)
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const recentLogins = users.filter(u => {
+        const la = (u as any).last_login_at;
+        return la && new Date(la) > sevenDaysAgo;
+      }).length;
+
+      const totalLogins = users.reduce((sum, u) => sum + ((u as any).login_count || 0), 0);
+
+      // Active users (logged in last 30 days)
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const activeUsers = users.filter(u => {
+        const la = (u as any).last_login_at;
+        return la && new Date(la) > thirtyDaysAgo;
+      }).length;
+
       return {
         totalTenants: tenants.length,
         activeTenants: tenants.filter(t => t.status === "active").length,
         suspendedTenants: tenants.filter(t => t.status === "suspended").length,
         totalUsers: users.length,
-        activeUsers: users.length,
+        activeUsers,
         avgUsersPerTenant,
         totalAuditEvents: logs.length,
         totalErrors: errors.length,
@@ -56,6 +68,8 @@ export default function SystemAnalytics() {
         topActions: Object.entries(actionCounts)
           .sort((a, b) => b[1] - a[1])
           .slice(0, 8),
+        recentLogins,
+        totalLogins,
       };
     },
   });
@@ -69,7 +83,7 @@ export default function SystemAnalytics() {
       <div className="page-header">
         <div>
           <h1 className="page-title">System Analytics</h1>
-          <p className="page-description">SaaS-level metrics and usage trends</p>
+          <p className="page-description">SaaS-level metrics and usage trends (non-financial)</p>
         </div>
       </div>
 
@@ -82,9 +96,37 @@ export default function SystemAnalytics() {
           {/* KPI row */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard label="Total Companies" value={analytics?.totalTenants || 0} sub={`${analytics?.activeTenants || 0} active`} icon={Building2} />
-            <StatCard label="Total Users" value={analytics?.totalUsers || 0} sub={`${analytics?.activeUsers || 0} active`} icon={Users} />
+            <StatCard label="Total Users" value={analytics?.totalUsers || 0} sub={`${analytics?.activeUsers || 0} active (30d)`} icon={Users} />
             <StatCard label="Avg Users/Company" value={analytics?.avgUsersPerTenant || "0"} sub="across all tenants" icon={TrendingUp} />
             <StatCard label="Audit Events" value={analytics?.totalAuditEvents || 0} sub={`${analytics?.unresolvedErrors || 0} unresolved errors`} icon={Activity} />
+          </div>
+
+          {/* Login Activity */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="stat-card">
+              <div className="flex items-center gap-2 mb-2">
+                <LogIn className="w-4 h-4 text-primary" />
+                <p className="text-xs font-medium text-muted-foreground">Logins (7 days)</p>
+              </div>
+              <p className="text-3xl font-bold text-foreground tabular-nums">{analytics?.recentLogins || 0}</p>
+              <p className="text-xs text-muted-foreground mt-1">unique users logged in</p>
+            </div>
+            <div className="stat-card">
+              <div className="flex items-center gap-2 mb-2">
+                <Activity className="w-4 h-4 text-primary" />
+                <p className="text-xs font-medium text-muted-foreground">Total Logins (All Time)</p>
+              </div>
+              <p className="text-3xl font-bold text-foreground tabular-nums">{analytics?.totalLogins || 0}</p>
+              <p className="text-xs text-muted-foreground mt-1">cumulative login count</p>
+            </div>
+            <div className="stat-card">
+              <div className="flex items-center gap-2 mb-2">
+                <Users className="w-4 h-4 text-primary" />
+                <p className="text-xs font-medium text-muted-foreground">Suspended Tenants</p>
+              </div>
+              <p className="text-3xl font-bold text-foreground tabular-nums">{analytics?.suspendedTenants || 0}</p>
+              <p className="text-xs text-muted-foreground mt-1">companies suspended</p>
+            </div>
           </div>
 
           {/* Plan distribution + Top actions */}
@@ -99,10 +141,8 @@ export default function SystemAnalytics() {
                     <span className="text-sm text-foreground">{plan}</span>
                     <div className="flex items-center gap-3">
                       <div className="w-32 h-2 rounded-full bg-muted overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-primary"
-                          style={{ width: `${((count as number) / (analytics?.totalTenants || 1)) * 100}%` }}
-                        />
+                        <div className="h-full rounded-full bg-primary"
+                          style={{ width: `${((count as number) / (analytics?.totalTenants || 1)) * 100}%` }} />
                       </div>
                       <span className="text-sm font-medium text-foreground tabular-nums w-8 text-right">{count as number}</span>
                     </div>
