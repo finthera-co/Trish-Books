@@ -756,6 +756,9 @@ export default function ChartOfAccounts() {
     return buildAccountsMap(((accounts as any[]) || []) as MappableAccount[]);
   }, [accounts]);
 
+  // Computed inventory balance — never stored, always derived
+  const computedBalanceMap = useInventoryAccountBalanceMap(accounts as any[]);
+
   const displayAccounts = useMemo(() => {
     return ((accounts as Account[] | undefined) || []).map((account) =>
       isOpeningBalanceEquityAccount(account)
@@ -994,6 +997,7 @@ export default function ChartOfAccounts() {
                   isPeriodClosed={isPeriodClosed}
                   canEdit={hasEditPermission}
                   globalAccountsMap={globalAccountsMap}
+                  computedBalanceMap={computedBalanceMap}
                 />
               ))}
             </tbody>
@@ -1028,6 +1032,7 @@ export default function ChartOfAccounts() {
                     isPeriodClosed={isPeriodClosed}
                     canEdit={hasEditPermission}
                     globalAccountsMap={globalAccountsMap}
+                    computedBalanceMap={computedBalanceMap}
                   />
                 ))}
             </tbody>
