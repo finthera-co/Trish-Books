@@ -29,6 +29,7 @@ import {
 import InlineOpeningBalance from "@/components/chart-of-accounts/InlineOpeningBalance";
 import { useSystemSetting } from "@/hooks/useOpeningBalanceSettings";
 import { useFiscalPeriods, usePeriodOpeningBalances } from "@/hooks/useFiscalPeriodBalances";
+import { useInventoryAccountBalanceMap } from "@/hooks/useComputedInventoryValue";
 import FiscalPeriodSelector from "@/components/FiscalPeriodSelector";
 
 import {
