@@ -1,9 +1,10 @@
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { ArrowRight, BookOpen, Landmark, ShoppingCart, Receipt, DollarSign, BarChart3, FileText, Users, Warehouse, Settings } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { ArrowRight, BookOpen, Landmark, ShoppingCart, Receipt, DollarSign, BarChart3, FileText, Users, Warehouse, Settings, Building2, UserCheck, Activity, Shield, AlertTriangle, CreditCard } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-const MODULES = [
+const TENANT_MODULES = [
   { id: "customers", label: "Customers", desc: "Manage customer records", icon: Users, path: "/sales/invoices", bg: "bg-[hsl(217,91%,60%)]/10", iconBg: "bg-[hsl(217,91%,60%)]" },
   { id: "suppliers", label: "Suppliers", desc: "Vendor & supplier management", icon: Receipt, path: "/expenses/tracker", bg: "bg-[hsl(38,92%,50%)]/10", iconBg: "bg-[hsl(38,92%,50%)]" },
   { id: "invoices", label: "Invoices", desc: "Create & track invoices", icon: FileText, path: "/sales/invoices", bg: "bg-[hsl(160,84%,39%)]/10", iconBg: "bg-[hsl(160,84%,39%)]" },
@@ -15,12 +16,25 @@ const MODULES = [
   { id: "journals", label: "Journals", desc: "Double-entry bookkeeping", icon: BookOpen, path: "/accounting/journals", bg: "bg-[hsl(217,91%,60%)]/10", iconBg: "bg-[hsl(217,91%,60%)]" },
 ];
 
+const SUPER_ADMIN_MODULES = [
+  { id: "companies", label: "Companies", desc: "Manage SaaS tenants", icon: Building2, path: "/admin/tenants", bg: "bg-primary/10", iconBg: "bg-primary" },
+  { id: "admins", label: "Admins", desc: "Company administrators", icon: UserCheck, path: "/admin/company-admins", bg: "bg-secondary/10", iconBg: "bg-secondary" },
+  { id: "users", label: "Users", desc: "All users (read-only)", icon: Users, path: "/admin/users", bg: "bg-[hsl(199,89%,48%)]/10", iconBg: "bg-[hsl(199,89%,48%)]" },
+  { id: "analytics", label: "Analytics", desc: "System-wide metrics", icon: Activity, path: "/admin/analytics", bg: "bg-[hsl(160,84%,39%)]/10", iconBg: "bg-[hsl(160,84%,39%)]" },
+  { id: "audit", label: "Audit Logs", desc: "System activity tracking", icon: Shield, path: "/admin/audit-logs", bg: "bg-[hsl(38,92%,50%)]/10", iconBg: "bg-[hsl(38,92%,50%)]" },
+  { id: "errors", label: "Error Logs", desc: "System error monitoring", icon: AlertTriangle, path: "/admin/error-logs", bg: "bg-destructive/10", iconBg: "bg-destructive" },
+  { id: "subs", label: "Subscriptions", desc: "Manage plans", icon: CreditCard, path: "/admin/subscriptions", bg: "bg-[hsl(280,65%,60%)]/10", iconBg: "bg-[hsl(280,65%,60%)]" },
+];
+
 export default function ModuleCards() {
   const navigate = useNavigate();
+  const { isSuperAdmin } = useAuth();
+
+  const modules = isSuperAdmin ? SUPER_ADMIN_MODULES : TENANT_MODULES;
 
   return (
-    <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-3 animate-fade-in">
-      {MODULES.map((mod, i) => (
+    <div className={cn("grid gap-3 animate-fade-in", isSuperAdmin ? "grid-cols-3 sm:grid-cols-4 lg:grid-cols-7" : "grid-cols-3 sm:grid-cols-5 lg:grid-cols-9")}>
+      {modules.map((mod, i) => (
         <Tooltip key={mod.id}>
           <TooltipTrigger asChild>
             <button
