@@ -45,9 +45,49 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // --- Authentication: require either a valid user JWT (Super Admin) or a CRON_SECRET bearer token ---
+  const authHeader = req.headers.get("Authorization") || "";
+  const cronSecret = Deno.env.get("CRON_SECRET");
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY") || "";
+
+  let authorized = false;
+
+  // Option 1: CRON_SECRET bearer token (for scheduled jobs)
+  if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
+    authorized = true;
+  }
+
+  // Option 2: Valid authenticated user who is Super Admin
+  if (!authorized && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.replace("Bearer ", "");
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+    const { data: { user }, error: userErr } = await userClient.auth.getUser();
+    if (user && !userErr) {
+      // Check if super admin
+      const adminClient = createClient(supabaseUrl, serviceRoleKey);
+      const { data: userData } = await adminClient
+        .from("users")
+        .select("id, roles(role_name)")
+        .eq("auth_user_id", user.id)
+        .maybeSingle();
+      if (userData && (userData.roles as any)?.role_name === "Super Admin") {
+        authorized = true;
+      }
+    }
+  }
+
+  if (!authorized) {
+    return new Response(
+      JSON.stringify({ error: "Unauthorized" }),
+      { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     // Get all active tenants
@@ -82,7 +122,6 @@ Deno.serve(async (req) => {
         if (directTenantTables.includes(table)) {
           query = query.eq("tenant_id", tenant.id);
         } else if (table === "journal_lines") {
-          // Get journal entry IDs for this tenant first
           const { data: jeIds } = await supabase
             .from("journal_entries")
             .select("id")
@@ -162,18 +201,19 @@ Deno.serve(async (req) => {
           tables_included: tableNames,
         });
 
-        results.push(`${tenant.company_name}: ${tableNames.length} tables exported`);
+        // Do NOT leak tenant names — use anonymized count only
+        results.push(`${tableNames.length} tables exported`);
       }
     }
 
     return new Response(
-      JSON.stringify({ success: true, results }),
+      JSON.stringify({ success: true, tenants_processed: results.length, tables_exported: results }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
     console.error("Export error:", err);
     return new Response(
-      JSON.stringify({ error: (err as Error).message }),
+      JSON.stringify({ error: "Internal server error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
