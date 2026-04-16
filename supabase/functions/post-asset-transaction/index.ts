@@ -109,18 +109,10 @@ async function validatePeriodOpen(db: any, tenantId: string, date: string) {
   }
 }
 
-async function checkDuplicateDepreciation(db: any, assetId: string, period: string) {
-  const { data } = await db
-    .from("asset_depreciation")
-    .select("id")
-    .eq("asset_id", assetId)
-    .eq("period", period)
-    .eq("status", "posted")
-    .limit(1);
-  if (data && data.length > 0) {
-    throw new Error(`Depreciation already posted for asset ${assetId} in period ${period}`);
-  }
-}
+// checkDuplicateDepreciation removed — now enforced by:
+// 1. DB UNIQUE constraint on asset_depreciation(asset_id, period)
+// 2. unique_key idempotency on journal_entries
+// 3. 'processing' status lock preventing concurrent runs
 
 // ─── AUDIT HELPER ───
 
@@ -187,6 +179,7 @@ async function createJournal(
     sourceType: string;
     sourceId: string;
     createdBy: string;
+    uniqueKey?: string;
     lines: Array<{ account_id: string; debit: number; credit: number; asset_id?: string }>;
   }
 ) {
@@ -195,6 +188,19 @@ async function createJournal(
   const totalCredit = opts.lines.reduce((s, l) => s + l.credit, 0);
   if (Math.abs(totalDebit - totalCredit) > 0.005) {
     throw new Error(`Journal unbalanced: Dr ${totalDebit.toFixed(2)} != Cr ${totalCredit.toFixed(2)}`);
+  }
+
+  // Idempotency check: if unique_key already exists, return existing JE
+  if (opts.uniqueKey) {
+    const { data: existing } = await db
+      .from("journal_entries")
+      .select("id")
+      .eq("unique_key", opts.uniqueKey)
+      .maybeSingle();
+    if (existing) {
+      console.log(`Idempotency: JE already exists for key ${opts.uniqueKey}, returning ${existing.id}`);
+      return existing.id;
+    }
   }
 
   const { data: je, error: jeErr } = await db
@@ -209,6 +215,7 @@ async function createJournal(
       source_type: opts.sourceType,
       source_id: opts.sourceId,
       created_by: opts.createdBy,
+      unique_key: opts.uniqueKey || null,
     })
     .select("id")
     .single();
@@ -460,9 +467,14 @@ async function handleAssetCreated(db: any, tenantId: string, body: any, userId: 
 async function handleDepreciationPosted(db: any, tenantId: string, body: any, userId: string) {
   const { period } = body;
   if (!period) return errorResponse("Required: period (YYYY-MM)");
+  if (!/^\d{4}-\d{2}$/.test(period)) return errorResponse("Period must be YYYY-MM format");
 
-  await validatePeriodOpen(db, tenantId, `${period}-01`);
+  const periodDate = `${period}-01`;
+  await validatePeriodOpen(db, tenantId, periodDate);
 
+  console.log(`[DEPRECIATION] Starting run for tenant=${tenantId}, period=${period}`);
+
+  // STEP 1: Fetch all pending rows for this period
   const { data: rows, error: rErr } = await db
     .from("asset_depreciation")
     .select("*, fixed_assets!inner(id, asset_name, category_id, cost, salvage_value, asset_account_id, depreciation_account_id, depr_expense_account_id, status)")
@@ -471,68 +483,117 @@ async function handleDepreciationPosted(db: any, tenantId: string, body: any, us
     .eq("status", "pending");
 
   if (rErr) throw new Error(`Failed to fetch schedule: ${rErr.message}`);
+
+  console.log(`[DEPRECIATION] Total pending rows found: ${rows?.length ?? 0}`);
+
   if (!rows || rows.length === 0) {
-    return jsonResponse({ success: true, processed: 0, skipped: 0, message: "No pending depreciation for this period" });
+    // Check if already posted
+    const { data: postedRows } = await db
+      .from("asset_depreciation")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("period", period)
+      .eq("status", "posted")
+      .limit(1);
+    const alreadyPosted = postedRows && postedRows.length > 0;
+    return jsonResponse({
+      success: true, processed: 0, skipped: 0,
+      message: alreadyPosted
+        ? "All depreciation for this period has already been posted"
+        : "No pending depreciation for this period",
+    });
   }
+
+  // STEP 2: Mark all rows as 'processing' to lock against concurrent runs
+  const rowIds = rows.map((r: any) => r.id);
+  const { error: lockErr } = await db
+    .from("asset_depreciation")
+    .update({ status: "processing" })
+    .in("id", rowIds);
+  if (lockErr) {
+    console.error(`[DEPRECIATION] Failed to lock rows: ${lockErr.message}`);
+    throw new Error(`Failed to lock depreciation rows: ${lockErr.message}`);
+  }
+  console.log(`[DEPRECIATION] Locked ${rowIds.length} rows to 'processing'`);
 
   let processed = 0;
   let skipped = 0;
   const errors: string[] = [];
+  const journalEntryIds: string[] = [];
 
+  // STEP 3: Process each row
   for (const row of rows) {
     const asset = row.fixed_assets;
-    if (!asset || asset.status !== "active") { skipped++; continue; }
+
+    // Skip inactive/disposed assets
+    if (!asset || asset.status !== "active") {
+      const reason = `Asset ${asset?.asset_name ?? row.asset_id}: status=${asset?.status ?? 'missing'}`;
+      errors.push(reason);
+      console.log(`[DEPRECIATION] SKIP: ${reason}`);
+      // Reset to pending so it can be retried if asset becomes active
+      await db.from("asset_depreciation").update({ status: "pending" }).eq("id", row.id);
+      skipped++;
+      continue;
+    }
 
     try {
-      // Duplicate check
-      await checkDuplicateDepreciation(db, asset.id, period);
-
-      // Resolve accounts ALWAYS from category (rule engine)
-      let expenseAccountId = asset.depr_expense_account_id;
-      let accumAccountId = asset.depreciation_account_id;
-
-      if (asset.category_id) {
-        const { data: cat } = await db
-          .from("asset_categories")
-          .select("depreciation_expense_account_id, accumulated_depreciation_account_id")
-          .eq("id", asset.category_id)
-          .single();
-        if (cat) {
-          expenseAccountId = cat.depreciation_expense_account_id || expenseAccountId;
-          accumAccountId = cat.accumulated_depreciation_account_id || accumAccountId;
-        }
+      // STEP 4: Resolve accounts from category (STRICT — no fallback)
+      if (!asset.category_id) {
+        throw new Error("Asset has no category_id — cannot resolve accounts");
       }
 
-      if (!expenseAccountId || !accumAccountId) {
-        errors.push(`Asset ${asset.asset_name}: missing depreciation accounts`);
-        skipped++;
-        continue;
+      const { data: cat, error: catErr } = await db
+        .from("asset_categories")
+        .select("depreciation_expense_account_id, accumulated_depreciation_account_id")
+        .eq("id", asset.category_id)
+        .single();
+      if (catErr || !cat) throw new Error("Asset category not found");
+
+      const expenseAccountId = cat.depreciation_expense_account_id;
+      const accumAccountId = cat.accumulated_depreciation_account_id;
+
+      // STRICT VALIDATION — DO NOT skip silently
+      if (!expenseAccountId) {
+        throw new Error("Category missing depreciation_expense_account_id — CANNOT post");
+      }
+      if (!accumAccountId) {
+        throw new Error("Category missing accumulated_depreciation_account_id — CANNOT post");
       }
 
-      // Post journal
+      // Validate both accounts are active
+      await validateAccountActive(db, expenseAccountId, "Depreciation Expense");
+      await validateAccountActive(db, accumAccountId, "Accumulated Depreciation");
+
+      // STEP 5: Build idempotency key
+      const uniqueKey = `dep_${asset.id}_${period}`;
+
+      // STEP 6: Create journal entry with idempotency
       const jeId = await createJournal(db, tenantId, {
-        date: `${period}-01`,
+        date: periodDate,
         description: `Depreciation – ${asset.asset_name} (${period})`,
         sourceType: "depreciation",
         sourceId: asset.id,
         createdBy: userId,
+        uniqueKey,
         lines: [
           { account_id: expenseAccountId, debit: row.depreciation_amount, credit: 0, asset_id: asset.id },
           { account_id: accumAccountId, debit: 0, credit: row.depreciation_amount, asset_id: asset.id },
         ],
       });
 
-      // Update schedule row
-      await db.from("asset_depreciation")
+      // STEP 7: Update schedule row → posted
+      const { error: updateErr } = await db.from("asset_depreciation")
         .update({ status: "posted", journal_entry_id: jeId })
         .eq("id", row.id);
+      if (updateErr) throw new Error(`Failed to update schedule: ${updateErr.message}`);
 
-      // Update asset accumulated_depreciation (NBV is generated column)
-      await db.from("fixed_assets")
+      // STEP 8: Update asset accumulated_depreciation
+      const { error: assetErr } = await db.from("fixed_assets")
         .update({ accumulated_depreciation: row.accumulated_depreciation })
         .eq("id", asset.id);
+      if (assetErr) throw new Error(`Failed to update asset: ${assetErr.message}`);
 
-      // Insert subledger entry
+      // STEP 9: Insert subledger entry
       const { data: depLine } = await db
         .from("journal_lines")
         .select("id")
@@ -557,19 +618,35 @@ async function handleDepreciationPosted(db: any, tenantId: string, body: any, us
         } as any);
       }
 
-      // Audit trail
+      // STEP 10: Audit trail
       await logAudit(db, tenantId, userId, "Depreciation Posted", "asset_depreciation", row.id, {
         asset_id: asset.id, period, amount: row.depreciation_amount, journal_entry_id: jeId,
       });
 
+      journalEntryIds.push(jeId);
       processed++;
+      console.log(`[DEPRECIATION] POSTED: ${asset.asset_name} | amount=${row.depreciation_amount} | JE=${jeId}`);
     } catch (err) {
-      errors.push(`Asset ${asset.asset_name}: ${err.message}`);
+      // FAILURE HANDLING: Reset row to 'pending' so it can be retried
+      await db.from("asset_depreciation").update({ status: "pending" }).eq("id", row.id);
+      const msg = `Asset ${asset.asset_name}: ${err.message}`;
+      errors.push(msg);
+      console.error(`[DEPRECIATION] ERROR: ${msg}`);
       skipped++;
     }
   }
 
-  return jsonResponse({ success: true, processed, skipped, errors: errors.length > 0 ? errors : undefined });
+  // Debug summary
+  console.log(`[DEPRECIATION] ===== RUN COMPLETE =====`);
+  console.log(`[DEPRECIATION] Total rows: ${rows.length} | Processed: ${processed} | Skipped: ${skipped}`);
+  if (errors.length > 0) console.log(`[DEPRECIATION] Errors: ${JSON.stringify(errors)}`);
+  if (journalEntryIds.length > 0) console.log(`[DEPRECIATION] JE IDs: ${journalEntryIds.join(", ")}`);
+
+  return jsonResponse({
+    success: true, processed, skipped,
+    journal_entry_ids: journalEntryIds,
+    errors: errors.length > 0 ? errors : undefined,
+  });
 }
 
 // ─── EVENT: ASSET_DISPOSED ───
