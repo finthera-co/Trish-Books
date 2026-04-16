@@ -35,7 +35,7 @@ export default function DepreciationRun() {
   const runDep = useRunDepreciation();
   const { data: assets } = useFixedAssets();
   const { data: accounts } = useAccounts();
-  const [result, setResult] = useState<{ processed: number; skipped: number } | null>(null);
+  const [result, setResult] = useState<{ processed: number; skipped: number; message?: string; errors?: string[]; journal_entry_ids?: string[] } | null>(null);
   const [searchParams] = useSearchParams();
   const accountId = searchParams.get("account_id");
 
