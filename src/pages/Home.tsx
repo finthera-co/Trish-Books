@@ -12,7 +12,6 @@ import SystemHealthCheck from "@/components/dashboard/SystemHealthCheck";
 import RecentTransactions from "@/components/dashboard/RecentTransactions";
 import InsightsPanel from "@/components/dashboard/InsightsPanel";
 import CashFlowChart from "@/components/dashboard/CashFlowChart";
-import SuperAdminDashboard from "@/pages/SuperAdminDashboard";
 import { Loader2, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
