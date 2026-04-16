@@ -302,6 +302,12 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
               <Button onClick={handleComplete} disabled={!canComplete || completeRecon.isPending} size="sm" className="bg-green-600 hover:bg-green-700 text-white">
                 {completeRecon.isPending ? "Finishing..." : "Finalize Reconciliation"}
               </Button>
+              {hasBankFeeds && hasOrphanBankTxns && (
+                <div className="flex items-center gap-1 text-xs text-amber-600">
+                  <AlertTriangle className="w-3 h-3" />
+                  {bankFeedSummary.unmatched + bankFeedSummary.suggested} bank txns unresolved — match or delete before finalizing
+                </div>
+              )}
             </>
           )}
         </div>
