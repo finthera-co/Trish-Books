@@ -179,7 +179,7 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
   }, [bankFeeds, transactions]);
 
   const isReconciled = recon?.status === "reconciled";
-  const canComplete = Math.abs(summary.difference) < 0.005;
+  const canComplete = Math.abs(summary.difference) < 0.005 && !(hasBankFeeds && hasOrphanBankTxns);
 
   const handleToggle = (txnId: string, currentCleared: boolean) => {
     if (isReconciled) return;
