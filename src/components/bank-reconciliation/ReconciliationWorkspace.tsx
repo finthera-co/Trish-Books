@@ -686,7 +686,8 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
                 <div className="flex justify-between"><span className="text-muted-foreground">Total Imported</span><span>{bankFeedSummary.total}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Unmatched</span><span className="text-amber-600">{bankFeedSummary.unmatched}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Suggested</span><span className="text-blue-600">{bankFeedSummary.suggested}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Matched</span><span className="text-green-600">{bankFeedSummary.matched}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Auto-Matched</span><span className="text-green-600">{bankFeedSummary.matched}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Rule-Matched</span><span className="text-purple-600">{bankFeedSummary.ruleMatched}</span></div>
                 {bankFeedSummary.duplicates > 0 && (
                   <div className="flex justify-between"><span className="text-destructive">Duplicates</span><span className="text-destructive">{bankFeedSummary.duplicates}</span></div>
                 )}
