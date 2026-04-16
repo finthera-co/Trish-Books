@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export default function GlobalTopNav() {
-  const { appUser, signOut } = useAuth();
+  const { appUser, isSuperAdmin, signOut } = useAuth();
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
@@ -43,36 +43,40 @@ export default function GlobalTopNav() {
 
       {/* Right: Actions */}
       <div className="flex items-center gap-1.5">
-        {/* + Create */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size="sm" className="h-9 text-xs gap-1.5 rounded-lg shadow-sm">
-              <Plus className="w-4 h-4" /> Create
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem onClick={() => navigate("/accounting/journals")}>Journal Entry</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate("/sales/invoices")}>Invoice</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate("/expenses/tracker")}>Expense</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate("/banking/payment-vouchers")}>Payment Voucher</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* + Create — only for tenant users, NOT Super Admin */}
+        {!isSuperAdmin && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" className="h-9 text-xs gap-1.5 rounded-lg shadow-sm">
+                <Plus className="w-4 h-4" /> Create
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={() => navigate("/accounting/journals")}>Journal Entry</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/sales/invoices")}>Invoice</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/expenses/tracker")}>Expense</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/banking/payment-vouchers")}>Payment Voucher</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
 
         <NotificationBell />
 
-        {/* Company Switcher */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="hidden md:flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-muted text-xs text-muted-foreground transition-all duration-200">
-              <Building2 className="w-4 h-4" />
-              <span className="max-w-[100px] truncate">{appUser?.tenant_id ? "My Company" : "—"}</span>
-              <ChevronDown className="w-3 h-3" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem>My Company</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* Company Switcher — only for tenant users */}
+        {!isSuperAdmin && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="hidden md:flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-muted text-xs text-muted-foreground transition-all duration-200">
+                <Building2 className="w-4 h-4" />
+                <span className="max-w-[100px] truncate">{appUser?.tenant_id ? "My Company" : "—"}</span>
+                <ChevronDown className="w-3 h-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem>My Company</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
 
         {/* User */}
         <DropdownMenu>
@@ -90,7 +94,9 @@ export default function GlobalTopNav() {
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem onClick={() => navigate("/admin/settings")}>Settings</DropdownMenuItem>
+            {!isSuperAdmin && (
+              <DropdownMenuItem onClick={() => navigate("/settings/general")}>Settings</DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
               <LogOut className="w-3.5 h-3.5 mr-2" /> Sign Out

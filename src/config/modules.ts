@@ -28,10 +28,35 @@ import {
   Calculator,
   ClipboardList,
   Layout,
+  Activity,
+  AlertTriangle,
 } from "lucide-react";
 import type { ModuleConfig } from "@/components/layout/ModuleLayout";
 
 export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
+  /* ═══════════════════════════════════════════
+     SUPER ADMIN — Control Plane
+     ═══════════════════════════════════════════ */
+  superadmin: {
+    id: "superadmin",
+    label: "Control Plane",
+    icon: Shield,
+    color: "bg-muted-foreground",
+    basePath: "/admin",
+    sidebarItems: [
+      { label: "Companies", path: "/admin/tenants", icon: Building2 },
+      { label: "Company Admins", path: "/admin/company-admins", icon: UserCheck },
+      { label: "Users (Read-only)", path: "/admin/users", icon: Users },
+      { label: "System Analytics", path: "/admin/analytics", icon: Activity },
+      { label: "Audit Logs", path: "/admin/audit-logs", icon: Shield },
+      { label: "Error Logs", path: "/admin/error-logs", icon: AlertTriangle },
+      { label: "Subscriptions", path: "/admin/subscriptions", icon: CreditCard },
+    ],
+  },
+
+  /* ═══════════════════════════════════════════
+     TENANT MODULES — Business Operations
+     ═══════════════════════════════════════════ */
   accounting: {
     id: "accounting",
     label: "Accounting",
@@ -128,18 +153,15 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "Run Depreciation", path: "/assets/depreciation", icon: Calculator },
     ],
   },
-  admin: {
-    id: "admin",
+  tenantAdmin: {
+    id: "tenantAdmin",
     label: "Settings",
     icon: Settings,
     color: "bg-muted-foreground",
-    basePath: "/admin",
+    basePath: "/settings",
     sidebarItems: [
-      { label: "General Settings", path: "/admin/settings", icon: Settings },
-      { label: "Users", path: "/admin/users", icon: Users },
-      { label: "Tenants", path: "/admin/tenants", icon: Building2 },
-      { label: "Subscriptions", path: "/admin/subscriptions", icon: CreditCard },
-      { label: "Audit Logs", path: "/admin/audit-logs", icon: Shield },
+      { label: "General Settings", path: "/settings/general", icon: Settings },
+      { label: "Users", path: "/settings/users", icon: Users },
     ],
   },
 };
@@ -153,6 +175,7 @@ export interface ModuleCard {
   path: string;
 }
 
+/** Module cards shown on the tenant home page */
 export const HOME_MODULES: ModuleCard[] = [
   { id: "accounting", label: "Accounting", description: "Chart of accounts, journal entries, ledger & trial balance", icon: BookOpen, color: "bg-primary", path: "/accounting" },
   { id: "banking", label: "Banking", description: "Bank reconciliation, payment vouchers & petty cash", icon: Landmark, color: "bg-secondary", path: "/banking" },
@@ -161,5 +184,16 @@ export const HOME_MODULES: ModuleCard[] = [
   { id: "payroll", label: "Payroll", description: "Process payroll, manage employees & pay schedules", icon: DollarSign, color: "bg-[hsl(var(--info))]", path: "/payroll" },
   { id: "reports", label: "Reports", description: "Financial reports, budgets & data exports", icon: BarChart3, color: "bg-[hsl(var(--chart-5))]", path: "/reports" },
   { id: "assets", label: "Fixed Assets", description: "Asset tracking, depreciation & disposal management", icon: Warehouse, color: "bg-[hsl(var(--chart-4))]", path: "/assets" },
-  { id: "admin", label: "Settings", description: "Users, tenants, subscriptions & system config", icon: Settings, color: "bg-muted-foreground", path: "/admin" },
+  { id: "tenantAdmin", label: "Settings", description: "Users & system configuration", icon: Settings, color: "bg-muted-foreground", path: "/settings" },
+];
+
+/** Module cards shown on the Super Admin home page */
+export const SUPER_ADMIN_MODULES: ModuleCard[] = [
+  { id: "tenants", label: "Companies", description: "Manage SaaS tenants and company provisioning", icon: Building2, color: "bg-primary", path: "/admin/tenants" },
+  { id: "admins", label: "Company Admins", description: "Manage company administrator accounts", icon: UserCheck, color: "bg-secondary", path: "/admin/company-admins" },
+  { id: "users", label: "Users", description: "Read-only overview of all system users", icon: Users, color: "bg-[hsl(var(--info))]", path: "/admin/users" },
+  { id: "analytics", label: "System Analytics", description: "SaaS-level metrics and usage trends", icon: Activity, color: "bg-[hsl(var(--success))]", path: "/admin/analytics" },
+  { id: "audit", label: "Audit Logs", description: "Track all system actions and changes", icon: Shield, color: "bg-[hsl(var(--warning))]", path: "/admin/audit-logs" },
+  { id: "errors", label: "Error Logs", description: "System error monitoring and resolution", icon: AlertTriangle, color: "bg-destructive", path: "/admin/error-logs" },
+  { id: "subscriptions", label: "Subscriptions", description: "Manage subscription plans", icon: CreditCard, color: "bg-muted-foreground", path: "/admin/subscriptions" },
 ];

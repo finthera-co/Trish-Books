@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import TenantRoute from "@/components/TenantRoute";
+import SuperAdminRoute from "@/components/SuperAdminRoute";
 import AppLayout from "./components/layout/AppLayout";
 import ModuleLayout from "./components/layout/ModuleLayout";
 import { MODULE_CONFIGS } from "./config/modules";
@@ -64,6 +66,12 @@ import VendorsPage from "./pages/VendorsPage";
 import InventoryPage from "./pages/InventoryPage";
 import BankAccountsPage from "./pages/BankAccountsPage";
 
+// Super Admin pages
+import SuperAdminDashboard from "./pages/SuperAdminDashboard";
+import SystemAnalytics from "./pages/SystemAnalytics";
+import ErrorLogs from "./pages/ErrorLogs";
+import SuperAdminUsers from "./pages/SuperAdminUsers";
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -78,96 +86,114 @@ const App = () => (
             <Route path="/signup" element={<Signup />} />
             <Route element={<ProtectedRoute />}>
               <Route element={<AppLayout />}>
-                {/* Home launcher */}
+                {/* Home — renders different dashboard based on role */}
                 <Route path="/" element={<Home />} />
 
-                {/* Accounting module */}
-                <Route element={<ModuleLayout config={MODULE_CONFIGS.accounting} />}>
-                  <Route path="/accounting" element={<ModuleDashboard config={MODULE_CONFIGS.accounting} />} />
-                  <Route path="/accounting/accounts" element={<ChartOfAccounts />} />
-                  <Route path="/accounting/accounts/:id/report" element={<AccountReport />} />
-                  <Route path="/accounting/journals" element={<JournalEntries />} />
-                  <Route path="/accounting/journals/:id" element={<JournalEntryView />} />
-                  <Route path="/accounting/journals/:id/edit" element={<JournalEntryEdit />} />
-                  <Route path="/accounting/ledger" element={<Ledger />} />
-                  <Route path="/accounting/trial-balance" element={<TrialBalance />} />
-                  <Route path="/accounting/fiscal-periods" element={<FiscalPeriods />} />
-                  <Route path="/accounting/opening-balances" element={<OpeningBalances />} />
-                  <Route path="/accounting/close-obe" element={<CloseOBE />} />
-                  <Route path="/accounting/gl-verify" element={<GLVerification />} />
-                  <Route path="/accounting/customers" element={<CustomersPage />} />
-                  <Route path="/accounting/customers/:id" element={<CustomerDetail />} />
-                  <Route path="/accounting/receive-payment" element={<ReceivePayment />} />
-                  <Route path="/accounting/credit-notes" element={<CreditNotePage />} />
-                  <Route path="/accounting/ar-aging" element={<ARAgingReport />} />
-                  <Route path="/accounting/vendors" element={<VendorsPage />} />
-                  <Route path="/accounting/inventory" element={<InventoryPage />} />
-                  <Route path="/accounting/bank-accounts" element={<BankAccountsPage />} />
+                {/* ═══════════════════════════════════════════════════
+                    SUPER ADMIN ONLY — Control Plane
+                    ═══════════════════════════════════════════════════ */}
+                <Route element={<SuperAdminRoute />}>
+                  <Route element={<ModuleLayout config={MODULE_CONFIGS.superadmin} />}>
+                    <Route path="/admin" element={<ModuleDashboard config={MODULE_CONFIGS.superadmin} />} />
+                    <Route path="/admin/tenants" element={<Tenants />} />
+                    <Route path="/admin/company-admins" element={<UsersPage />} />
+                    <Route path="/admin/users" element={<SuperAdminUsers />} />
+                    <Route path="/admin/analytics" element={<SystemAnalytics />} />
+                    <Route path="/admin/audit-logs" element={<AuditLogs />} />
+                    <Route path="/admin/error-logs" element={<ErrorLogs />} />
+                    <Route path="/admin/subscriptions" element={<Subscriptions />} />
+                  </Route>
                 </Route>
 
-                {/* Banking module */}
-                <Route element={<ModuleLayout config={MODULE_CONFIGS.banking} />}>
-                  <Route path="/banking" element={<ModuleDashboard config={MODULE_CONFIGS.banking} />} />
-                  <Route path="/banking/reconciliation" element={<BankReconciliation />} />
-                  <Route path="/banking/payment-vouchers" element={<PaymentVouchers />} />
-                  <Route path="/banking/petty-cash" element={<PettyCash />} />
-                  <Route path="/banking/petty-cash/voucher/new" element={<PettyCashVoucherForm />} />
-                  <Route path="/banking/petty-cash/voucher/:id" element={<PettyCashVoucherDetail />} />
-                  <Route path="/banking/petty-cash/replenishments" element={<PettyCashReplenishments />} />
-                </Route>
+                {/* ═══════════════════════════════════════════════════
+                    TENANT USERS ONLY — Business Modules
+                    ═══════════════════════════════════════════════════ */}
+                <Route element={<TenantRoute />}>
+                  {/* Accounting module */}
+                  <Route element={<ModuleLayout config={MODULE_CONFIGS.accounting} />}>
+                    <Route path="/accounting" element={<ModuleDashboard config={MODULE_CONFIGS.accounting} />} />
+                    <Route path="/accounting/accounts" element={<ChartOfAccounts />} />
+                    <Route path="/accounting/accounts/:id/report" element={<AccountReport />} />
+                    <Route path="/accounting/journals" element={<JournalEntries />} />
+                    <Route path="/accounting/journals/:id" element={<JournalEntryView />} />
+                    <Route path="/accounting/journals/:id/edit" element={<JournalEntryEdit />} />
+                    <Route path="/accounting/ledger" element={<Ledger />} />
+                    <Route path="/accounting/trial-balance" element={<TrialBalance />} />
+                    <Route path="/accounting/fiscal-periods" element={<FiscalPeriods />} />
+                    <Route path="/accounting/opening-balances" element={<OpeningBalances />} />
+                    <Route path="/accounting/close-obe" element={<CloseOBE />} />
+                    <Route path="/accounting/gl-verify" element={<GLVerification />} />
+                    <Route path="/accounting/customers" element={<CustomersPage />} />
+                    <Route path="/accounting/customers/:id" element={<CustomerDetail />} />
+                    <Route path="/accounting/receive-payment" element={<ReceivePayment />} />
+                    <Route path="/accounting/credit-notes" element={<CreditNotePage />} />
+                    <Route path="/accounting/ar-aging" element={<ARAgingReport />} />
+                    <Route path="/accounting/vendors" element={<VendorsPage />} />
+                    <Route path="/accounting/inventory" element={<InventoryPage />} />
+                    <Route path="/accounting/bank-accounts" element={<BankAccountsPage />} />
+                  </Route>
 
-                {/* Sales module */}
-                <Route element={<ModuleLayout config={MODULE_CONFIGS.sales} />}>
-                  <Route path="/sales" element={<ModuleDashboard config={MODULE_CONFIGS.sales} />} />
-                  <Route path="/sales/invoices" element={<Invoices />} />
-                  <Route path="/sales/invoices/new" element={<CreateInvoice />} />
-                  <Route path="/sales/invoices/templates" element={<InvoiceTemplates />} />
-                  <Route path="/sales/invoices/designer" element={<InvoiceTemplateDesigner />} />
-                  <Route path="/sales/products-taxes" element={<ProductsTaxes />} />
-                </Route>
+                  {/* Banking module */}
+                  <Route element={<ModuleLayout config={MODULE_CONFIGS.banking} />}>
+                    <Route path="/banking" element={<ModuleDashboard config={MODULE_CONFIGS.banking} />} />
+                    <Route path="/banking/reconciliation" element={<BankReconciliation />} />
+                    <Route path="/banking/payment-vouchers" element={<PaymentVouchers />} />
+                    <Route path="/banking/petty-cash" element={<PettyCash />} />
+                    <Route path="/banking/petty-cash/voucher/new" element={<PettyCashVoucherForm />} />
+                    <Route path="/banking/petty-cash/voucher/:id" element={<PettyCashVoucherDetail />} />
+                    <Route path="/banking/petty-cash/replenishments" element={<PettyCashReplenishments />} />
+                  </Route>
 
-                {/* Expenses module */}
-                <Route element={<ModuleLayout config={MODULE_CONFIGS.expenses} />}>
-                  <Route path="/expenses" element={<ModuleDashboard config={MODULE_CONFIGS.expenses} />} />
-                  <Route path="/expenses/tracker" element={<Expenses />} />
-                </Route>
+                  {/* Sales module */}
+                  <Route element={<ModuleLayout config={MODULE_CONFIGS.sales} />}>
+                    <Route path="/sales" element={<ModuleDashboard config={MODULE_CONFIGS.sales} />} />
+                    <Route path="/sales/invoices" element={<Invoices />} />
+                    <Route path="/sales/invoices/new" element={<CreateInvoice />} />
+                    <Route path="/sales/invoices/templates" element={<InvoiceTemplates />} />
+                    <Route path="/sales/invoices/designer" element={<InvoiceTemplateDesigner />} />
+                    <Route path="/sales/products-taxes" element={<ProductsTaxes />} />
+                  </Route>
 
-                {/* Payroll module */}
-                <Route element={<ModuleLayout config={MODULE_CONFIGS.payroll} />}>
-                  <Route path="/payroll" element={<ModuleDashboard config={MODULE_CONFIGS.payroll} />} />
-                  <Route path="/payroll/runs" element={<Payroll />} />
-                  <Route path="/payroll/employees" element={<Employees />} />
-                </Route>
+                  {/* Expenses module */}
+                  <Route element={<ModuleLayout config={MODULE_CONFIGS.expenses} />}>
+                    <Route path="/expenses" element={<ModuleDashboard config={MODULE_CONFIGS.expenses} />} />
+                    <Route path="/expenses/tracker" element={<Expenses />} />
+                  </Route>
 
-                {/* Reports module */}
-                <Route element={<ModuleLayout config={MODULE_CONFIGS.reports} />}>
-                  <Route path="/reports" element={<ModuleDashboard config={MODULE_CONFIGS.reports} />} />
-                  <Route path="/reports/financial" element={<Reports />} />
-                  <Route path="/reports/budgets" element={<Budgets />} />
-                  <Route path="/reports/exports" element={<DataExports />} />
-                  <Route path="/reports/anomalies" element={<AnomalyDashboard />} />
-                  <Route path="/reports/intelligence" element={<TransactionsLedger />} />
-                </Route>
+                  {/* Payroll module */}
+                  <Route element={<ModuleLayout config={MODULE_CONFIGS.payroll} />}>
+                    <Route path="/payroll" element={<ModuleDashboard config={MODULE_CONFIGS.payroll} />} />
+                    <Route path="/payroll/runs" element={<Payroll />} />
+                    <Route path="/payroll/employees" element={<Employees />} />
+                  </Route>
 
-                {/* Fixed Assets module */}
-                <Route element={<ModuleLayout config={MODULE_CONFIGS.assets} />}>
-                  <Route path="/assets" element={<ModuleDashboard config={MODULE_CONFIGS.assets} />} />
-                  <Route path="/assets/register" element={<AssetRegister />} />
-                  <Route path="/assets/new" element={<AssetForm />} />
-                  <Route path="/assets/categories" element={<AssetCategories />} />
-                  <Route path="/assets/:id/edit" element={<AssetForm />} />
-                  <Route path="/assets/:id" element={<AssetDetail />} />
-                  <Route path="/assets/depreciation" element={<DepreciationRun />} />
-                </Route>
+                  {/* Reports module */}
+                  <Route element={<ModuleLayout config={MODULE_CONFIGS.reports} />}>
+                    <Route path="/reports" element={<ModuleDashboard config={MODULE_CONFIGS.reports} />} />
+                    <Route path="/reports/financial" element={<Reports />} />
+                    <Route path="/reports/budgets" element={<Budgets />} />
+                    <Route path="/reports/exports" element={<DataExports />} />
+                    <Route path="/reports/anomalies" element={<AnomalyDashboard />} />
+                    <Route path="/reports/intelligence" element={<TransactionsLedger />} />
+                  </Route>
 
-                {/* Admin/Settings module */}
-                <Route element={<ModuleLayout config={MODULE_CONFIGS.admin} />}>
-                  <Route path="/admin" element={<ModuleDashboard config={MODULE_CONFIGS.admin} />} />
-                  <Route path="/admin/settings" element={<SettingsPage />} />
-                  <Route path="/admin/users" element={<UsersPage />} />
-                  <Route path="/admin/tenants" element={<Tenants />} />
-                  <Route path="/admin/subscriptions" element={<Subscriptions />} />
-                  <Route path="/admin/audit-logs" element={<AuditLogs />} />
+                  {/* Fixed Assets module */}
+                  <Route element={<ModuleLayout config={MODULE_CONFIGS.assets} />}>
+                    <Route path="/assets" element={<ModuleDashboard config={MODULE_CONFIGS.assets} />} />
+                    <Route path="/assets/register" element={<AssetRegister />} />
+                    <Route path="/assets/new" element={<AssetForm />} />
+                    <Route path="/assets/categories" element={<AssetCategories />} />
+                    <Route path="/assets/:id/edit" element={<AssetForm />} />
+                    <Route path="/assets/:id" element={<AssetDetail />} />
+                    <Route path="/assets/depreciation" element={<DepreciationRun />} />
+                  </Route>
+
+                  {/* Tenant Admin/Settings */}
+                  <Route element={<ModuleLayout config={MODULE_CONFIGS.tenantAdmin} />}>
+                    <Route path="/settings" element={<ModuleDashboard config={MODULE_CONFIGS.tenantAdmin} />} />
+                    <Route path="/settings/general" element={<SettingsPage />} />
+                    <Route path="/settings/users" element={<UsersPage />} />
+                  </Route>
                 </Route>
               </Route>
             </Route>
