@@ -145,6 +145,9 @@ export default function DepreciationRun() {
               <CheckCircle className="w-6 h-6 text-primary" />
               <h3 className="text-lg font-semibold">Depreciation Run Complete</h3>
             </div>
+            {result.message && (
+              <p className="text-sm text-muted-foreground mb-4">{result.message}</p>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div className="text-center p-4 rounded-lg bg-background">
                 <p className="text-3xl font-bold text-primary">{result.processed}</p>
@@ -155,6 +158,22 @@ export default function DepreciationRun() {
                 <p className="text-sm text-muted-foreground">Assets Skipped</p>
               </div>
             </div>
+            {result.journal_entry_ids && result.journal_entry_ids.length > 0 && (
+              <p className="text-xs text-muted-foreground mt-3">
+                {result.journal_entry_ids.length} journal {result.journal_entry_ids.length === 1 ? 'entry' : 'entries'} created
+              </p>
+            )}
+            {result.errors && result.errors.length > 0 && (
+              <div className="mt-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertCircle className="w-4 h-4 text-destructive" />
+                  <span className="text-sm font-medium text-destructive">Errors</span>
+                </div>
+                <ul className="text-xs text-destructive space-y-1">
+                  {result.errors.map((e, i) => <li key={i}>• {e}</li>)}
+                </ul>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
