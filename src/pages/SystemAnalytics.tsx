@@ -11,7 +11,7 @@ export default function SystemAnalytics() {
     queryFn: async () => {
       const [tenantsRes, usersRes, logsRes, errorsRes] = await Promise.all([
         supabase.from("tenants").select("id, status, created_at, subscription_plans(name)"),
-        supabase.from("users").select("id, is_active, created_at, tenant_id"),
+        supabase.from("users").select("id, created_at, tenant_id"),
         supabase.from("audit_logs").select("id, action, created_at").order("created_at", { ascending: false }).limit(500),
         supabase.from("system_error_logs").select("id, severity, resolved, created_at"),
       ]);
@@ -46,7 +46,7 @@ export default function SystemAnalytics() {
         activeTenants: tenants.filter(t => t.status === "active").length,
         suspendedTenants: tenants.filter(t => t.status === "suspended").length,
         totalUsers: users.length,
-        activeUsers: users.filter(u => u.is_active !== false).length,
+        activeUsers: users.length,
         avgUsersPerTenant,
         totalAuditEvents: logs.length,
         totalErrors: errors.length,

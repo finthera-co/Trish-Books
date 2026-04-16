@@ -12,7 +12,7 @@ export default function SuperAdminDashboard() {
     queryFn: async () => {
       const [tenantsRes, usersRes, errorsRes, logsRes] = await Promise.all([
         supabase.from("tenants").select("id, status", { count: "exact" }),
-        supabase.from("users").select("id, is_active", { count: "exact" }),
+        supabase.from("users").select("id", { count: "exact" }),
         supabase.from("system_error_logs").select("id, severity", { count: "exact" }).eq("resolved", false),
         supabase.from("audit_logs").select("id", { count: "exact" }),
       ]);
@@ -23,7 +23,7 @@ export default function SuperAdminDashboard() {
         totalTenants: tenantsRes.count || 0,
         activeTenants: tenants.filter(t => t.status === "active").length,
         totalUsers: usersRes.count || 0,
-        activeUsers: users.filter(u => u.is_active !== false).length,
+        activeUsers: users.length,
         unresolvedErrors: errorsRes.count || 0,
         criticalErrors: errors.filter(e => e.severity === "critical").length,
         totalAuditLogs: logsRes.count || 0,

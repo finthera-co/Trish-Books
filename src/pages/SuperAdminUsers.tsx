@@ -29,7 +29,7 @@ export default function SuperAdminUsers() {
     queryFn: async () => {
       let query = supabase
         .from("users")
-        .select("id, email, first_name, last_name, is_active, tenant_id, created_at, roles(role_name), tenants:tenant_id(company_name)")
+        .select("id, email, first_name, last_name, tenant_id, created_at, roles(role_name), tenants:tenant_id(company_name)")
         .order("created_at", { ascending: false });
 
       if (tenantFilter !== "all") query = query.eq("tenant_id", tenantFilter);
@@ -109,10 +109,8 @@ export default function SuperAdminUsers() {
                     </span>
                   </td>
                   <td>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${
-                      user.is_active !== false ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"
-                    }`}>
-                      {user.is_active !== false ? "Active" : "Inactive"}
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                      Active
                     </span>
                   </td>
                 </tr>
