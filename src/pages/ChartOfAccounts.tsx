@@ -449,7 +449,25 @@ function FlatAccountRow({
             {getNormalBalance(account.account_type)}
           </td>
           <td className="text-right">
-            {(controlAcct || isControlled) && subledgerRoute ? (
+            {isComputedBalance ? (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => subledgerRoute && navigate(subledgerRoute)}
+                      className="text-sm font-mono text-primary hover:underline cursor-pointer inline-flex items-center gap-1"
+                    >
+                      {formatCurrency(displayBalance)}
+                      <span className="text-[9px] font-sans text-muted-foreground bg-muted px-1 py-0.5 rounded">computed</span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="left" className="max-w-[280px] text-xs">
+                    <p className="font-medium mb-1">Dynamically Computed</p>
+                    <p>This value is calculated in real-time from inventory items (qty × unit cost). It is never stored in the Chart of Accounts.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : (controlAcct || isControlled) && subledgerRoute ? (
               <button
                 onClick={() => navigate(subledgerRoute)}
                 className="text-sm font-mono text-primary hover:underline cursor-pointer"
