@@ -544,6 +544,7 @@ function TypeSection({
   isPeriodClosed,
   canEdit,
   globalAccountsMap,
+  computedBalanceMap,
 }: {
   typeGroup: TypeGroup;
   onEdit: (a: Account) => void;
@@ -554,6 +555,7 @@ function TypeSection({
   isPeriodClosed?: boolean;
   canEdit?: boolean;
   globalAccountsMap?: Map<string, MappableAccount>;
+  computedBalanceMap?: Map<string, number>;
 }) {
   const [expanded, setExpanded] = useState(true);
   const totalAccounts = typeGroup.categories.reduce((s, c) => s + c.accounts.length, 0) + typeGroup.uncategorized.length;
