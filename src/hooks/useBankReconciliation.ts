@@ -188,6 +188,39 @@ export function useCompleteReconciliation() {
   const { appUser } = useAuth();
   return useMutation({
     mutationFn: async ({ id, clearedBalance }: { id: string; clearedBalance: number }) => {
+      // Fetch reconciliation for period lock check
+      const { data: recon, error: reconErr } = await supabase
+        .from("bank_reconciliations")
+        .select("tenant_id, statement_ending_date")
+        .eq("id", id)
+        .single();
+      if (reconErr) throw reconErr;
+
+      // Period lock enforcement
+      const { data: closedPeriods } = await supabase
+        .from("fiscal_periods")
+        .select("name")
+        .eq("tenant_id", recon.tenant_id)
+        .eq("status", "closed")
+        .lte("period_start", recon.statement_ending_date)
+        .gte("period_end", recon.statement_ending_date)
+        .limit(1);
+      if (closedPeriods && closedPeriods.length > 0) {
+        throw new Error(`Cannot finalize: fiscal period "${closedPeriods[0].name}" is closed.`);
+      }
+
+      // No-orphan enforcement: check for unresolved bank feed txns
+      const { data: orphans } = await supabase
+        .from("bank_feed_transactions")
+        .select("id")
+        .eq("reconciliation_id", id)
+        .in("status", ["unmatched", "suggested"])
+        .eq("is_duplicate", false)
+        .limit(1);
+      if (orphans && orphans.length > 0) {
+        throw new Error("Cannot finalize: unresolved bank feed transactions exist. Match or delete them first.");
+      }
+
       const { error } = await supabase
         .from("bank_reconciliations")
         .update({
