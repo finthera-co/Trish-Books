@@ -187,6 +187,7 @@ async function createJournal(
     sourceType: string;
     sourceId: string;
     createdBy: string;
+    uniqueKey?: string;
     lines: Array<{ account_id: string; debit: number; credit: number; asset_id?: string }>;
   }
 ) {
@@ -195,6 +196,19 @@ async function createJournal(
   const totalCredit = opts.lines.reduce((s, l) => s + l.credit, 0);
   if (Math.abs(totalDebit - totalCredit) > 0.005) {
     throw new Error(`Journal unbalanced: Dr ${totalDebit.toFixed(2)} != Cr ${totalCredit.toFixed(2)}`);
+  }
+
+  // Idempotency check: if unique_key already exists, return existing JE
+  if (opts.uniqueKey) {
+    const { data: existing } = await db
+      .from("journal_entries")
+      .select("id")
+      .eq("unique_key", opts.uniqueKey)
+      .maybeSingle();
+    if (existing) {
+      console.log(`Idempotency: JE already exists for key ${opts.uniqueKey}, returning ${existing.id}`);
+      return existing.id;
+    }
   }
 
   const { data: je, error: jeErr } = await db
@@ -209,6 +223,7 @@ async function createJournal(
       source_type: opts.sourceType,
       source_id: opts.sourceId,
       created_by: opts.createdBy,
+      unique_key: opts.uniqueKey || null,
     })
     .select("id")
     .single();
