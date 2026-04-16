@@ -681,6 +681,7 @@ function CategorySection({
           isPeriodClosed={isPeriodClosed}
           canEdit={canEdit}
           globalAccountsMap={globalAccountsMap}
+          computedBalanceMap={computedBalanceMap}
         />
       ))}
     </>
