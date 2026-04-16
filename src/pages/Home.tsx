@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { Navigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { format, subMonths, startOfMonth } from "date-fns";
 import { useDashboardMetrics } from "@/hooks/useDashboardMetrics";
@@ -11,7 +12,6 @@ import SystemHealthCheck from "@/components/dashboard/SystemHealthCheck";
 import RecentTransactions from "@/components/dashboard/RecentTransactions";
 import InsightsPanel from "@/components/dashboard/InsightsPanel";
 import CashFlowChart from "@/components/dashboard/CashFlowChart";
-import SuperAdminDashboard from "@/pages/SuperAdminDashboard";
 import { Loader2, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -30,9 +30,9 @@ export default function Home() {
     );
   }
 
-  // Super Admin sees the control plane dashboard
+  // Super Admin should always land inside the control-plane module shell
   if (isSuperAdmin) {
-    return <SuperAdminDashboard />;
+    return <Navigate to="/admin" replace />;
   }
 
   return <TenantDashboard />;
