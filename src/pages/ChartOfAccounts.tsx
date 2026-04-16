@@ -594,6 +594,7 @@ function TypeSection({
           isPeriodClosed={isPeriodClosed}
           canEdit={canEdit}
           globalAccountsMap={globalAccountsMap}
+          computedBalanceMap={computedBalanceMap}
         />
       ))}
       {expanded && typeGroup.uncategorized.length > 0 && (
@@ -616,6 +617,7 @@ function TypeSection({
               isPeriodClosed={isPeriodClosed}
               canEdit={canEdit}
               globalAccountsMap={globalAccountsMap}
+              computedBalanceMap={computedBalanceMap}
             />
           ))}
         </>
