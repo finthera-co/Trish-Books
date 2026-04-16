@@ -6,7 +6,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-interface BankFeedTxn {
+// ─── Types ───
+interface BankFeed {
   id: string;
   transaction_date: string;
   description: string;
@@ -14,65 +15,403 @@ interface BankFeedTxn {
   reference_number: string | null;
 }
 
-interface LedgerTxn {
-  id: string;
+interface LedgerEntry {
+  recon_txn_id: string;
+  journal_line_id: string;
   entry_date: string;
   description: string;
   reference: string | null;
+  source_type: string | null;
+  source_id: string | null;
   debit: number;
   credit: number;
-  journal_line_id: string;
+  net_amount: number;
 }
 
+interface MatchResult {
+  bank_feed_id: string;
+  recon_txn_ids: string[];
+  journal_line_ids: string[];
+  confidence: number;
+  method: string;
+  match_type: string;
+  reasons: string[];
+}
+
+// ─── Utility: Trigram similarity ───
 function similarity(a: string, b: string): number {
   if (!a || !b) return 0;
   const sa = a.toLowerCase().replace(/[^a-z0-9]/g, "");
   const sb = b.toLowerCase().replace(/[^a-z0-9]/g, "");
   if (sa === sb) return 1;
   if (sa.includes(sb) || sb.includes(sa)) return 0.7;
-  // Jaccard on trigrams
-  const trigramsA = new Set<string>();
-  const trigramsB = new Set<string>();
-  for (let i = 0; i <= sa.length - 3; i++) trigramsA.add(sa.slice(i, i + 3));
-  for (let i = 0; i <= sb.length - 3; i++) trigramsB.add(sb.slice(i, i + 3));
-  if (trigramsA.size === 0 || trigramsB.size === 0) return 0;
-  let intersection = 0;
-  trigramsA.forEach((t) => { if (trigramsB.has(t)) intersection++; });
-  return intersection / (trigramsA.size + trigramsB.size - intersection);
+  const triA = new Set<string>();
+  const triB = new Set<string>();
+  for (let i = 0; i <= sa.length - 3; i++) triA.add(sa.slice(i, i + 3));
+  for (let i = 0; i <= sb.length - 3; i++) triB.add(sb.slice(i, i + 3));
+  if (triA.size === 0 || triB.size === 0) return 0;
+  let inter = 0;
+  triA.forEach((t) => { if (triB.has(t)) inter++; });
+  return inter / (triA.size + triB.size - inter);
 }
 
-function matchScore(bankTxn: BankFeedTxn, ledgerTxn: LedgerTxn): number {
-  let score = 0;
-  const bankAmount = Math.abs(bankTxn.amount);
-  const ledgerAmount = bankTxn.amount > 0 ? ledgerTxn.debit : ledgerTxn.credit;
+// ─── Step 1: Period Lock Check ───
+async function checkPeriodLock(supabase: any, tenantId: string, statementDate: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("fiscal_periods")
+    .select("id, name, status")
+    .eq("tenant_id", tenantId)
+    .eq("status", "closed")
+    .lte("period_start", statementDate)
+    .gte("period_end", statementDate)
+    .limit(1);
+  if (data && data.length > 0) {
+    return `Period "${data[0].name}" is closed. Cannot run matching on closed periods.`;
+  }
+  return null;
+}
 
-  // Amount match (most important - 40%)
-  if (Math.abs(bankAmount - ledgerAmount) < 0.01) score += 0.4;
-  else if (Math.abs(bankAmount - ledgerAmount) / Math.max(bankAmount, 1) < 0.01) score += 0.3;
-  else return 0; // Amount must be reasonably close
+// ─── Step 2: Rule Engine (runs FIRST) ───
+async function applyRules(
+  supabase: any,
+  bankFeeds: BankFeed[],
+  usedBank: Set<string>
+): Promise<{ applied: number; ruleMatchedIds: Set<string> }> {
+  const { data: rules } = await supabase
+    .from("reconciliation_rules")
+    .select("*")
+    .eq("is_active", true)
+    .order("priority", { ascending: false });
 
-  // Date proximity (25%)
-  const bankDate = new Date(bankTxn.transaction_date).getTime();
-  const ledgerDate = new Date(ledgerTxn.entry_date).getTime();
-  const daysDiff = Math.abs(bankDate - ledgerDate) / (1000 * 60 * 60 * 24);
-  if (daysDiff === 0) score += 0.25;
-  else if (daysDiff <= 1) score += 0.2;
-  else if (daysDiff <= 3) score += 0.15;
-  else if (daysDiff <= 7) score += 0.05;
+  let applied = 0;
+  const ruleMatchedIds = new Set<string>();
 
-  // Description similarity (20%)
-  const descSim = similarity(bankTxn.description || "", ledgerTxn.description || "");
-  score += descSim * 0.2;
+  for (const bf of bankFeeds) {
+    if (usedBank.has(bf.id)) continue;
+    for (const rule of (rules || [])) {
+      let met = false;
+      const desc = (bf.description || "").toLowerCase();
+      const val = (rule.condition_value || "").toLowerCase();
 
-  // Reference match (15%)
-  if (bankTxn.reference_number && ledgerTxn.reference) {
-    const refSim = similarity(bankTxn.reference_number, ledgerTxn.reference);
-    score += refSim * 0.15;
+      if (rule.condition_field === "description") {
+        if (rule.condition_operator === "contains" && desc.includes(val)) met = true;
+        if (rule.condition_operator === "equals" && desc === val) met = true;
+      }
+      if (rule.condition_field === "amount") {
+        const amt = Math.abs(bf.amount);
+        if (rule.condition_operator === "range" && rule.condition_amount_min != null && rule.condition_amount_max != null) {
+          met = amt >= rule.condition_amount_min && amt <= rule.condition_amount_max;
+        }
+        if (rule.condition_operator === "equals" && Math.abs(amt - parseFloat(val)) < 0.01) met = true;
+      }
+
+      if (met) {
+        await supabase
+          .from("bank_feed_transactions")
+          .update({
+            status: "rule_matched",
+            match_type: "rule",
+            match_metadata: {
+              method: "rule",
+              confidence: 100,
+              reasons: [`Rule "${rule.name}" matched`],
+              timestamp: new Date().toISOString(),
+              rule_id: rule.id,
+            },
+          })
+          .eq("id", bf.id);
+        usedBank.add(bf.id);
+        ruleMatchedIds.add(bf.id);
+        applied++;
+        break;
+      }
+    }
+  }
+  return { applied, ruleMatchedIds };
+}
+
+// ─── Step 3: Source-Based Matching (100% confidence) ───
+function sourceMatch(
+  bankFeeds: BankFeed[],
+  ledgerEntries: LedgerEntry[],
+  usedBank: Set<string>,
+  usedLedger: Set<string>
+): MatchResult[] {
+  const results: MatchResult[] = [];
+
+  for (const bf of bankFeeds) {
+    if (usedBank.has(bf.id)) continue;
+    if (!bf.reference_number) continue;
+
+    const refNorm = bf.reference_number.toLowerCase().replace(/[^a-z0-9]/g, "");
+    for (const le of ledgerEntries) {
+      if (usedLedger.has(le.recon_txn_id)) continue;
+
+      // Match by external_ref / reference
+      const leRef = (le.reference || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const amountMatch = Math.abs(Math.abs(bf.amount) - Math.abs(le.net_amount)) < 0.01;
+
+      if (amountMatch && refNorm && leRef && (refNorm === leRef || refNorm.includes(leRef) || leRef.includes(refNorm))) {
+        results.push({
+          bank_feed_id: bf.id,
+          recon_txn_ids: [le.recon_txn_id],
+          journal_line_ids: [le.journal_line_id],
+          confidence: 100,
+          method: "source",
+          match_type: "AUTO_MATCHED",
+          reasons: [`Reference match: "${bf.reference_number}" ↔ "${le.reference}"`, "Amount exact match"],
+        });
+        usedBank.add(bf.id);
+        usedLedger.add(le.recon_txn_id);
+        break;
+      }
+
+      // Match by source_id if bank ref contains it
+      if (le.source_id && refNorm.includes(le.source_id.replace(/-/g, "").substring(0, 8))) {
+        if (amountMatch) {
+          results.push({
+            bank_feed_id: bf.id,
+            recon_txn_ids: [le.recon_txn_id],
+            journal_line_ids: [le.journal_line_id],
+            confidence: 100,
+            method: "source",
+            match_type: "AUTO_MATCHED",
+            reasons: [`Source ID match: ${le.source_type}/${le.source_id}`, "Amount exact match"],
+          });
+          usedBank.add(bf.id);
+          usedLedger.add(le.recon_txn_id);
+          break;
+        }
+      }
+    }
+  }
+  return results;
+}
+
+// ─── Step 4: Module Resolver (AR/AP/Payroll/Tax/Asset) ───
+function moduleResolve(
+  bankFeeds: BankFeed[],
+  ledgerEntries: LedgerEntry[],
+  usedBank: Set<string>,
+  usedLedger: Set<string>
+): MatchResult[] {
+  const results: MatchResult[] = [];
+  const moduleKeywords: Record<string, string[]> = {
+    invoice: ["inv", "invoice", "payment received", "customer payment"],
+    bill: ["bill", "vendor payment", "supplier", "purchase"],
+    payroll: ["salary", "payroll", "wage", "compensation", "epf", "etf"],
+    tax: ["tax", "vat", "gst", "withholding", "irs", "hmrc"],
+    asset: ["asset", "equipment", "machinery", "vehicle", "furniture"],
+  };
+
+  for (const bf of bankFeeds) {
+    if (usedBank.has(bf.id)) continue;
+    const descLower = (bf.description || "").toLowerCase();
+    const bankAmt = Math.abs(bf.amount);
+
+    for (const le of ledgerEntries) {
+      if (usedLedger.has(le.recon_txn_id)) continue;
+      if (Math.abs(bankAmt - Math.abs(le.net_amount)) > 0.01) continue;
+
+      // Check if source_type matches known modules
+      const srcType = (le.source_type || "").toLowerCase();
+      let moduleMatch: string | null = null;
+
+      for (const [mod, keywords] of Object.entries(moduleKeywords)) {
+        if (srcType.includes(mod) || keywords.some(k => descLower.includes(k) || srcType.includes(k))) {
+          moduleMatch = mod;
+          break;
+        }
+      }
+
+      if (moduleMatch) {
+        const dateDiff = Math.abs(new Date(bf.transaction_date).getTime() - new Date(le.entry_date).getTime()) / 86400000;
+        if (dateDiff <= 5) {
+          results.push({
+            bank_feed_id: bf.id,
+            recon_txn_ids: [le.recon_txn_id],
+            journal_line_ids: [le.journal_line_id],
+            confidence: 95,
+            method: "module",
+            match_type: "AUTO_MATCHED",
+            reasons: [`Module: ${moduleMatch}`, `Source: ${le.source_type || "GL"}`, "Amount exact match", `Date proximity: ${dateDiff}d`],
+          });
+          usedBank.add(bf.id);
+          usedLedger.add(le.recon_txn_id);
+          break;
+        }
+      }
+    }
+  }
+  return results;
+}
+
+// ─── Step 5: One-to-Many / Many-to-One Combination Matching ───
+function comboMatch(
+  bankFeeds: BankFeed[],
+  ledgerEntries: LedgerEntry[],
+  usedBank: Set<string>,
+  usedLedger: Set<string>
+): MatchResult[] {
+  const results: MatchResult[] = [];
+  const MAX_COMBO = 5;
+  const TOLERANCE = 0.01;
+
+  // One bank → many ledger
+  for (const bf of bankFeeds) {
+    if (usedBank.has(bf.id)) continue;
+    const target = Math.abs(bf.amount);
+
+    // Get available ledger entries within date range
+    const candidates = ledgerEntries.filter(le =>
+      !usedLedger.has(le.recon_txn_id) &&
+      Math.abs(new Date(bf.transaction_date).getTime() - new Date(le.entry_date).getTime()) / 86400000 <= 7
+    );
+
+    // Try combinations of 2..MAX_COMBO
+    for (let size = 2; size <= Math.min(MAX_COMBO, candidates.length); size++) {
+      const found = findCombination(candidates, target, size, TOLERANCE);
+      if (found) {
+        results.push({
+          bank_feed_id: bf.id,
+          recon_txn_ids: found.map(l => l.recon_txn_id),
+          journal_line_ids: found.map(l => l.journal_line_id),
+          confidence: 88,
+          method: "combo",
+          match_type: "GROUP_MATCHED",
+          reasons: [`1 bank txn → ${found.length} GL entries`, `Sum matches within ${TOLERANCE}`],
+        });
+        usedBank.add(bf.id);
+        found.forEach(l => usedLedger.add(l.recon_txn_id));
+        break;
+      }
+    }
+  }
+  return results;
+}
+
+function findCombination(entries: LedgerEntry[], target: number, size: number, tolerance: number): LedgerEntry[] | null {
+  if (entries.length < size) return null;
+
+  function backtrack(start: number, remaining: number, current: LedgerEntry[], sum: number): LedgerEntry[] | null {
+    if (remaining === 0) {
+      return Math.abs(sum - target) <= tolerance ? [...current] : null;
+    }
+    for (let i = start; i < entries.length; i++) {
+      const amt = Math.abs(entries[i].net_amount);
+      if (sum + amt > target + tolerance) continue;
+      current.push(entries[i]);
+      const result = backtrack(i + 1, remaining - 1, current, sum + amt);
+      if (result) return result;
+      current.pop();
+    }
+    return null;
   }
 
-  return score;
+  return backtrack(0, size, [], 0);
 }
 
+// ─── Step 6: Standard Scoring Engine (Fallback) ───
+function scoringMatch(
+  bankFeeds: BankFeed[],
+  ledgerEntries: LedgerEntry[],
+  usedBank: Set<string>,
+  usedLedger: Set<string>
+): MatchResult[] {
+  const results: MatchResult[] = [];
+  const allScores: Array<{
+    bank_feed_id: string;
+    recon_txn_id: string;
+    journal_line_id: string;
+    score: number;
+    reasons: string[];
+  }> = [];
+
+  for (const bf of bankFeeds) {
+    if (usedBank.has(bf.id)) continue;
+    const bankAmt = Math.abs(bf.amount);
+
+    for (const le of ledgerEntries) {
+      if (usedLedger.has(le.recon_txn_id)) continue;
+      const ledgerAmt = Math.abs(le.net_amount);
+
+      // Pre-filter: amount must be within 20
+      if (Math.abs(bankAmt - ledgerAmt) >= 20) continue;
+
+      let score = 0;
+      const reasons: string[] = [];
+
+      // Amount (40%)
+      if (Math.abs(bankAmt - ledgerAmt) < 0.01) {
+        score += 0.4;
+        reasons.push("Amount: exact match");
+      } else if (Math.abs(bankAmt - ledgerAmt) / Math.max(bankAmt, 1) < 0.01) {
+        score += 0.3;
+        reasons.push("Amount: within 1%");
+      } else {
+        continue;
+      }
+
+      // Date (25%)
+      const daysDiff = Math.abs(new Date(bf.transaction_date).getTime() - new Date(le.entry_date).getTime()) / 86400000;
+      if (daysDiff === 0) { score += 0.25; reasons.push("Date: same day"); }
+      else if (daysDiff <= 1) { score += 0.2; reasons.push("Date: ±1 day"); }
+      else if (daysDiff <= 3) { score += 0.15; reasons.push("Date: ±3 days"); }
+      else if (daysDiff <= 7) { score += 0.05; reasons.push(`Date: ${daysDiff}d apart`); }
+
+      // Description (20%)
+      const descSim = similarity(bf.description || "", le.description || "");
+      score += descSim * 0.2;
+      if (descSim > 0.3) reasons.push(`Description: ${Math.round(descSim * 100)}% similar`);
+
+      // Reference (15%)
+      if (bf.reference_number && le.reference) {
+        const refSim = similarity(bf.reference_number, le.reference);
+        score += refSim * 0.15;
+        if (refSim > 0.3) reasons.push(`Reference: ${Math.round(refSim * 100)}% similar`);
+      }
+
+      // Source type boost
+      if (le.source_type) {
+        score += 0.03;
+        reasons.push(`Source: ${le.source_type}`);
+      }
+
+      if (score >= 0.4) {
+        allScores.push({
+          bank_feed_id: bf.id,
+          recon_txn_id: le.recon_txn_id,
+          journal_line_id: le.journal_line_id,
+          score,
+          reasons,
+        });
+      }
+    }
+  }
+
+  // Greedy best-match
+  allScores.sort((a, b) => b.score - a.score);
+  for (const s of allScores) {
+    if (usedBank.has(s.bank_feed_id) || usedLedger.has(s.recon_txn_id)) continue;
+    const confidence = Math.round(s.score * 100);
+    const isAuto = confidence >= 90;
+
+    results.push({
+      bank_feed_id: s.bank_feed_id,
+      recon_txn_ids: [s.recon_txn_id],
+      journal_line_ids: [s.journal_line_id],
+      confidence,
+      method: "scoring",
+      match_type: isAuto ? "AUTO_MATCHED" : "SUGGESTED",
+      reasons: s.reasons,
+    });
+    usedBank.add(s.bank_feed_id);
+    usedLedger.add(s.recon_txn_id);
+  }
+  return results;
+}
+
+// ─── Main Handler ───
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -86,151 +425,173 @@ serve(async (req) => {
 
     const { reconciliation_id, bank_account_id } = await req.json();
     if (!reconciliation_id || !bank_account_id) {
-      return new Response(JSON.stringify({ error: "Missing parameters" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      return new Response(JSON.stringify({ error: "Missing reconciliation_id or bank_account_id" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Get unmatched bank feed transactions
-    const { data: bankFeeds, error: bfError } = await supabase
+    // ─── Fetch reconciliation for tenant context ───
+    const { data: recon, error: reconErr } = await supabase
+      .from("bank_reconciliations")
+      .select("tenant_id, statement_ending_date, status")
+      .eq("id", reconciliation_id)
+      .single();
+    if (reconErr) throw reconErr;
+    if (recon.status === "reconciled") {
+      return new Response(JSON.stringify({ error: "Reconciliation is already completed" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ─── STEP 1: Period Lock Check ───
+    const lockError = await checkPeriodLock(supabase, recon.tenant_id, recon.statement_ending_date);
+    if (lockError) {
+      return new Response(JSON.stringify({ error: lockError }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ─── Fetch bank feed transactions ───
+    const { data: bankFeeds, error: bfErr } = await supabase
       .from("bank_feed_transactions")
       .select("id, transaction_date, description, amount, reference_number")
       .eq("reconciliation_id", reconciliation_id)
       .eq("status", "unmatched")
       .eq("is_duplicate", false);
-    if (bfError) throw bfError;
+    if (bfErr) throw bfErr;
 
-    // Get uncleared reconciliation transactions (ledger side)
-    const { data: reconTxns, error: rtError } = await supabase
+    // ─── Fetch ledger entries with source info ───
+    const { data: reconTxns, error: rtErr } = await supabase
       .from("reconciliation_transactions")
-      .select("id, journal_line_id, cleared, journal_lines(id, debit, credit, journal_entries(entry_date, description, reference))")
+      .select("id, journal_line_id, cleared, journal_lines(id, debit, credit, journal_entries(entry_date, description, reference, source_type, source_id))")
       .eq("reconciliation_id", reconciliation_id)
       .eq("cleared", false);
-    if (rtError) throw rtError;
+    if (rtErr) throw rtErr;
 
-    // Build ledger transactions list
-    const ledgerTxns: (LedgerTxn & { recon_txn_id: string })[] = (reconTxns || []).map((rt: any) => ({
-      id: rt.journal_lines?.id,
-      entry_date: rt.journal_lines?.journal_entries?.entry_date,
-      description: rt.journal_lines?.journal_entries?.description,
-      reference: rt.journal_lines?.journal_entries?.reference,
-      debit: Number(rt.journal_lines?.debit) || 0,
-      credit: Number(rt.journal_lines?.credit) || 0,
-      journal_line_id: rt.journal_line_id,
-      recon_txn_id: rt.id,
-    }));
+    const ledgerEntries: LedgerEntry[] = (reconTxns || []).map((rt: any) => {
+      const jl = rt.journal_lines;
+      const je = jl?.journal_entries;
+      const debit = Number(jl?.debit) || 0;
+      const credit = Number(jl?.credit) || 0;
+      return {
+        recon_txn_id: rt.id,
+        journal_line_id: rt.journal_line_id,
+        entry_date: je?.entry_date || "",
+        description: je?.description || "",
+        reference: je?.reference || null,
+        source_type: je?.source_type || null,
+        source_id: je?.source_id || null,
+        debit,
+        credit,
+        net_amount: debit - credit,
+      };
+    });
 
-    // Match each bank feed against each ledger transaction
-    const matches: Array<{
-      bank_feed_id: string;
-      recon_txn_id: string;
-      journal_line_id: string;
-      confidence: number;
-    }> = [];
-
-    const usedLedger = new Set<string>();
     const usedBank = new Set<string>();
+    const usedLedger = new Set<string>();
+    const allMatches: MatchResult[] = [];
 
-    // Build all possible matches
-    const allScores: Array<{
-      bank_feed_id: string;
-      recon_txn_id: string;
-      journal_line_id: string;
-      score: number;
-    }> = [];
+    // ─── STEP 2: Rule Engine FIRST ───
+    const { applied: rulesApplied } = await applyRules(supabase, bankFeeds || [], usedBank);
 
-    for (const bf of (bankFeeds || [])) {
-      for (const lt of ledgerTxns) {
-        const score = matchScore(bf, lt);
-        if (score >= 0.4) {
-          allScores.push({
-            bank_feed_id: bf.id,
-            recon_txn_id: lt.recon_txn_id,
-            journal_line_id: lt.journal_line_id,
-            score,
-          });
-        }
-      }
-    }
+    // ─── STEP 3: Source-Based Matching ───
+    const sourceMatches = sourceMatch(bankFeeds || [], ledgerEntries, usedBank, usedLedger);
+    allMatches.push(...sourceMatches);
 
-    // Sort by score descending, greedy match
-    allScores.sort((a, b) => b.score - a.score);
-    for (const s of allScores) {
-      if (usedBank.has(s.bank_feed_id) || usedLedger.has(s.recon_txn_id)) continue;
-      usedBank.add(s.bank_feed_id);
-      usedLedger.add(s.recon_txn_id);
-      matches.push({
-        bank_feed_id: s.bank_feed_id,
-        recon_txn_id: s.recon_txn_id,
-        journal_line_id: s.journal_line_id,
-        confidence: Math.round(s.score * 100),
-      });
-    }
+    // ─── STEP 4: Module Resolver ───
+    const moduleMatches = moduleResolve(bankFeeds || [], ledgerEntries, usedBank, usedLedger);
+    allMatches.push(...moduleMatches);
 
-    // Update bank feed transactions with suggested matches
-    for (const m of matches) {
+    // ─── STEP 5: Combination Matching ───
+    const comboMatches = comboMatch(bankFeeds || [], ledgerEntries, usedBank, usedLedger);
+    allMatches.push(...comboMatches);
+
+    // ─── STEP 6: Standard Scoring ───
+    const scoringMatches = scoringMatch(bankFeeds || [], ledgerEntries, usedBank, usedLedger);
+    allMatches.push(...scoringMatches);
+
+    // ─── Persist all matches ───
+    let autoMatched = 0;
+    let suggested = 0;
+
+    for (const m of allMatches) {
+      const isAuto = m.match_type === "AUTO_MATCHED" || m.match_type === "GROUP_MATCHED";
+      const metadata = {
+        method: m.method,
+        confidence: m.confidence,
+        reasons: m.reasons,
+        timestamp: new Date().toISOString(),
+        matched_entries: m.journal_line_ids,
+      };
+
+      // Update bank feed
       await supabase
         .from("bank_feed_transactions")
         .update({
-          status: "suggested",
-          matched_journal_line_id: m.journal_line_id,
+          status: isAuto ? "matched" : "suggested",
+          matched_journal_line_id: m.journal_line_ids[0],
           match_confidence: m.confidence,
+          match_type: m.match_type,
+          match_metadata: metadata,
         })
         .eq("id", m.bank_feed_id);
-    }
 
-    // Also apply rules
-    const { data: rules } = await supabase
-      .from("reconciliation_rules")
-      .select("*")
-      .eq("is_active", true)
-      .order("priority", { ascending: false });
-
-    let rulesApplied = 0;
-    const unmatchedFeeds = (bankFeeds || []).filter((bf: any) => !usedBank.has(bf.id));
-
-    for (const bf of unmatchedFeeds) {
-      for (const rule of (rules || [])) {
-        let conditionMet = false;
-        const desc = (bf.description || "").toLowerCase();
-        const val = (rule.condition_value || "").toLowerCase();
-
-        if (rule.condition_field === "description") {
-          if (rule.condition_operator === "contains" && desc.includes(val)) conditionMet = true;
-          if (rule.condition_operator === "equals" && desc === val) conditionMet = true;
-        }
-        if (rule.condition_field === "amount") {
-          const amt = Math.abs(bf.amount);
-          if (rule.condition_operator === "range" && rule.condition_amount_min != null && rule.condition_amount_max != null) {
-            conditionMet = amt >= rule.condition_amount_min && amt <= rule.condition_amount_max;
-          }
-          if (rule.condition_operator === "equals" && Math.abs(amt - parseFloat(val)) < 0.01) conditionMet = true;
-        }
-
-        if (conditionMet) {
+      // Auto-clear for high confidence matches
+      if (isAuto) {
+        for (const rtId of m.recon_txn_ids) {
           await supabase
-            .from("bank_feed_transactions")
-            .update({ status: "rule_matched" })
-            .eq("id", bf.id);
-          rulesApplied++;
-          break;
+            .from("reconciliation_transactions")
+            .update({ cleared: true, cleared_date: new Date().toISOString().split("T")[0] })
+            .eq("id", rtId);
         }
+        autoMatched++;
+      } else {
+        suggested++;
       }
     }
 
-    return new Response(JSON.stringify({ 
-      matches: matches.length, 
+    // ─── Update reconciliation cleared balance ───
+    // Recalculate cleared balance after auto-matches
+    const { data: clearedTxns } = await supabase
+      .from("reconciliation_transactions")
+      .select("journal_lines(debit, credit)")
+      .eq("reconciliation_id", reconciliation_id)
+      .eq("cleared", true);
+
+    let clearedBalance = Number(recon.statement_ending_date ? 0 : 0);
+    if (clearedTxns) {
+      for (const ct of clearedTxns) {
+        const d = Number((ct as any).journal_lines?.debit) || 0;
+        const c = Number((ct as any).journal_lines?.credit) || 0;
+        clearedBalance += d - c;
+      }
+    }
+
+    return new Response(JSON.stringify({
+      matches: allMatches.length,
+      auto_matched: autoMatched,
+      suggested,
       rules_applied: rulesApplied,
-      match_details: matches 
+      breakdown: {
+        source: sourceMatches.length,
+        module: moduleMatches.length,
+        combo: comboMatches.length,
+        scoring: scoringMatches.length,
+      },
+      match_details: allMatches.map(m => ({
+        bank_feed_id: m.bank_feed_id,
+        confidence: m.confidence,
+        method: m.method,
+        match_type: m.match_type,
+        reasons: m.reasons,
+      })),
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
     console.error("match-transactions error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
