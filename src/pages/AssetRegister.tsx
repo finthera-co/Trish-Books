@@ -59,7 +59,7 @@ export default function AssetRegister() {
   const categoryName = accountId ? accountMap.get(accountId)?.account_name : null;
 
   const totalCost = filteredAssets.reduce((s, a: any) => s + (a.cost || 0), 0);
-  const totalNBV = filteredAssets.reduce((s, a: any) => s + (a.net_book_value ?? a.cost - (a.accumulated_depreciation ?? 0)), 0);
+  const totalNBV = filteredAssets.reduce((s, a: any) => s + (a.cost || 0) - (a.accumulated_depreciation ?? 0), 0);
 
   return (
     <div className="space-y-6">
@@ -161,7 +161,7 @@ export default function AssetRegister() {
                 </TableRow>
               ) : (
                 filteredAssets.map((asset: any) => {
-                  const nbv = asset.net_book_value ?? (asset.cost - (asset.accumulated_depreciation ?? 0));
+                  const nbv = asset.cost - (asset.accumulated_depreciation ?? 0);
                   const catName = asset.asset_account_id ? accountMap.get(asset.asset_account_id)?.account_name : null;
                   return (
                     <TableRow key={asset.id} className="cursor-pointer" onClick={() => navigate(`/assets/${asset.id}`)}>

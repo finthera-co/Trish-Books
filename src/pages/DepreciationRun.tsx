@@ -208,7 +208,7 @@ export default function DepreciationRun() {
                     <TableCell className="font-medium">{asset.asset_name}</TableCell>
                     <TableCell className="text-right">{formatCurrency(asset.cost)}</TableCell>
                     <TableCell className="text-right">{formatCurrency(asset.accumulated_depreciation)}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(asset.net_book_value ?? (asset.cost - (asset.accumulated_depreciation ?? 0)))}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(asset.cost - (asset.accumulated_depreciation ?? 0))}</TableCell>
                     <TableCell>
                       <Badge variant="outline">{(asset as any).depreciation_method ?? "straight_line"}</Badge>
                     </TableCell>
