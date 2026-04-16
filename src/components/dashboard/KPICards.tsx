@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import {
   TrendingUp, TrendingDown, DollarSign, Percent, BarChart3,
   Wallet, ShieldCheck, Activity, ArrowUpRight, ArrowDownRight,
-  Layers, Gauge, PiggyBank, Target, Clock, Zap,
+  Layers, Gauge, Coins, Target, Clock, Zap,
   Settings2, X, Plus, Pin, PinOff, Check,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -48,7 +48,7 @@ function buildAllKPIs(m: DashboardMetrics): KPIItem[] {
     { key: "net_profit_margin", label: "Net Profit Margin", value: pct(m.netProfitMargin), formula: "(Net Profit ÷ Revenue) × 100", icon: Percent, positive: m.netProfitMargin >= 0, category: "Profitability", color: KPI_COLORS["Profitability"] },
     { key: "current_ratio", label: "Current Ratio", value: ratio(m.currentRatio), formula: "Current Assets ÷ Current Liabilities", icon: Gauge, positive: m.currentRatio >= 1, category: "Liquidity", color: KPI_COLORS["Liquidity"] },
     { key: "quick_ratio", label: "Quick Ratio", value: ratio(m.quickRatio), formula: "(Current Assets − Inventory) ÷ Current Liabilities", icon: Zap, positive: m.quickRatio >= 1, category: "Liquidity", color: KPI_COLORS["Liquidity"] },
-    { key: "cash_ratio", label: "Cash Ratio", value: ratio(m.cashRatio), formula: "Cash ÷ Current Liabilities", icon: PiggyBank, positive: m.cashRatio >= 0.5, category: "Liquidity", color: KPI_COLORS["Liquidity"] },
+    { key: "cash_ratio", label: "Cash Ratio", value: ratio(m.cashRatio), formula: "Cash ÷ Current Liabilities", icon: Coins, positive: m.cashRatio >= 0.5, category: "Liquidity", color: KPI_COLORS["Liquidity"] },
     { key: "working_capital", label: "Working Capital", value: fmt(m.workingCapital), formula: "Current Assets − Current Liabilities", icon: Wallet, positive: m.workingCapital >= 0, category: "Liquidity", color: KPI_COLORS["Liquidity"] },
     { key: "roa", label: "ROA", value: pct(m.roa), formula: "(Net Profit ÷ Total Assets) × 100", icon: BarChart3, positive: m.roa >= 0, category: "Investment", color: KPI_COLORS["Investment"] },
     { key: "roe", label: "ROE", value: pct(m.roe), formula: "(Net Profit ÷ Equity) × 100", icon: ShieldCheck, positive: m.roe >= 0, category: "Investment", color: KPI_COLORS["Investment"] },

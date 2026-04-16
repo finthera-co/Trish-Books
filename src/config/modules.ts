@@ -6,7 +6,8 @@ import {
   Banknote,
   Wallet,
   Package,
-  PiggyBank,
+  Coins,
+  RefreshCw,
   DollarSign,
   TrendingUp,
   BarChart3,
@@ -90,8 +91,8 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
     sidebarItems: [
       { label: "Bank Reconciliation", path: "/banking/reconciliation", icon: Banknote },
       { label: "Payment Vouchers", path: "/banking/payment-vouchers", icon: FileText },
-      { label: "Petty Cash", path: "/banking/petty-cash", icon: PiggyBank },
-      { label: "Replenishments", path: "/banking/petty-cash/replenishments", icon: PiggyBank },
+      { label: "Petty Cash", path: "/banking/petty-cash", icon: Coins },
+      { label: "Replenishments", path: "/banking/petty-cash/replenishments", icon: RefreshCw },
     ],
   },
   sales: {
