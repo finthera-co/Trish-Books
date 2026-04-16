@@ -76,10 +76,16 @@ export default function AssetCategoryDialog({ open, onOpenChange, editingId }: P
   }, [existing, open]);
 
   const onSubmit = async (values: FormValues) => {
+    // Convert empty strings to null for optional UUID fields
+    const sanitized = {
+      ...values,
+      disposal_gain_account_id: values.disposal_gain_account_id || null,
+      disposal_loss_account_id: values.disposal_loss_account_id || null,
+    };
     if (editingId) {
-      await updateCat.mutateAsync({ id: editingId, ...values });
+      await updateCat.mutateAsync({ id: editingId, ...sanitized });
     } else {
-      await createCat.mutateAsync(values as Required<Pick<typeof values, 'name'>> & typeof values);
+      await createCat.mutateAsync(sanitized as any);
     }
     onOpenChange(false);
   };
