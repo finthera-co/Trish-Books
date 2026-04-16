@@ -152,15 +152,20 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
   }, [recon, transactions]);
 
   const bankFeedSummary = useMemo(() => {
-    if (!bankFeeds) return { total: 0, unmatched: 0, suggested: 0, matched: 0, duplicates: 0 };
+    if (!bankFeeds) return { total: 0, unmatched: 0, suggested: 0, matched: 0, duplicates: 0, ruleMatched: 0 };
     return {
       total: bankFeeds.length,
       unmatched: bankFeeds.filter((f: any) => f.status === "unmatched").length,
       suggested: bankFeeds.filter((f: any) => f.status === "suggested").length,
       matched: bankFeeds.filter((f: any) => f.status === "matched").length,
+      ruleMatched: bankFeeds.filter((f: any) => f.status === "rule_matched").length,
       duplicates: bankFeeds.filter((f: any) => f.is_duplicate).length,
     };
   }, [bankFeeds]);
+
+  // No-orphan check: all bank feed txns must be matched, rule_matched, or deleted (not unmatched/suggested)
+  const hasOrphanBankTxns = bankFeedSummary.unmatched > 0 || bankFeedSummary.suggested > 0;
+  const hasBankFeeds = bankFeedSummary.total > 0;
 
   // Build a map of journal_line_id -> recon_txn for suggested matches
   const suggestedMatchMap = useMemo(() => {
