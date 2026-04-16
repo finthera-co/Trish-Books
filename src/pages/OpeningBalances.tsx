@@ -326,10 +326,10 @@ export default function OpeningBalances() {
             <h3 className="text-sm font-semibold text-foreground mb-4">
               {editingEntryId ? "Edit Opening Balance" : "Add Opening Balance"}
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
               {/* Account */}
               <div className="md:col-span-4 space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Account</label>
+                <label className="block min-h-4 text-xs font-medium text-muted-foreground">Account</label>
                 <div className="flex gap-1">
                   <select
                     value={formAccountId}
@@ -366,7 +366,7 @@ export default function OpeningBalances() {
 
               {/* Amount */}
               <div className="md:col-span-2 space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Opening Balance</label>
+                <label className="block min-h-4 text-xs font-medium text-muted-foreground">Opening Balance</label>
                 <input
                   type="number"
                   step="0.01"
@@ -380,7 +380,7 @@ export default function OpeningBalances() {
 
               {/* Date */}
               <div className="md:col-span-2 space-y-1">
-                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                <label className="flex min-h-4 items-center gap-1 text-xs font-medium text-muted-foreground">
                   <Calendar className="w-3 h-3" /> As Of Date
                 </label>
                 <input
@@ -393,7 +393,7 @@ export default function OpeningBalances() {
 
               {/* Description */}
               <div className="md:col-span-2 space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Description</label>
+                <label className="block min-h-4 text-xs font-medium text-muted-foreground">Description</label>
                 <input
                   type="text"
                   value={formDescription}
@@ -404,16 +404,19 @@ export default function OpeningBalances() {
               </div>
 
               {/* Actions */}
-              <div className="md:col-span-2 flex gap-2">
-                <Button onClick={handleSave} disabled={saveMutation.isPending} className="flex-1">
-                  <Save className="w-4 h-4 mr-1" />
-                  {saveMutation.isPending ? "Saving…" : editingEntryId ? "Update" : "Save"}
-                </Button>
-                {editingEntryId && (
-                  <Button variant="ghost" size="icon" onClick={resetForm}>
-                    <RefreshCw className="w-4 h-4" />
+              <div className="md:col-span-2 space-y-1">
+                <div className="min-h-4" aria-hidden="true" />
+                <div className="flex gap-2">
+                  <Button onClick={handleSave} disabled={saveMutation.isPending} className="flex-1">
+                    <Save className="w-4 h-4 mr-1" />
+                    {saveMutation.isPending ? "Saving…" : editingEntryId ? "Update" : "Save"}
                   </Button>
-                )}
+                  {editingEntryId && (
+                    <Button variant="ghost" size="icon" onClick={resetForm}>
+                      <RefreshCw className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
 
