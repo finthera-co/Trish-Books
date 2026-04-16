@@ -393,7 +393,12 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
                             )}
                             {f.status === "matched" && (
                               <Badge className="text-[9px] px-1 py-0 bg-green-600">
-                                <Check className="w-2 h-2 mr-0.5" /> Matched
+                                <Check className="w-2 h-2 mr-0.5" /> {f.match_type === "AUTO_MATCHED" ? "Auto" : f.match_type === "GROUP_MATCHED" ? "Group" : "Matched"}
+                              </Badge>
+                            )}
+                            {f.status === "matched" && f.match_metadata?.method && (
+                              <Badge variant="outline" className="text-[9px] px-1 py-0">
+                                {f.match_metadata.method}
                               </Badge>
                             )}
                             {f.status === "rule_matched" && (
