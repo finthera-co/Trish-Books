@@ -16,7 +16,19 @@ import { Loader2, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function Home() {
-  const { appUser, isSuperAdmin } = useAuth();
+  const { appUser, isSuperAdmin, loading } = useAuth();
+
+  // Wait for user data to resolve before deciding which dashboard to show
+  if (loading || !appUser) {
+    return (
+      <div className="flex items-center justify-center flex-1 py-20">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <span className="text-sm text-muted-foreground">Loading…</span>
+        </div>
+      </div>
+    );
+  }
 
   // Super Admin sees the control plane dashboard
   if (isSuperAdmin) {
