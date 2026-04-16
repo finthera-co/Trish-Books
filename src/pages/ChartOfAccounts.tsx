@@ -29,6 +29,7 @@ import {
 import InlineOpeningBalance from "@/components/chart-of-accounts/InlineOpeningBalance";
 import { useSystemSetting } from "@/hooks/useOpeningBalanceSettings";
 import { useFiscalPeriods, usePeriodOpeningBalances } from "@/hooks/useFiscalPeriodBalances";
+import { useInventoryAccountBalanceMap } from "@/hooks/useComputedInventoryValue";
 import FiscalPeriodSelector from "@/components/FiscalPeriodSelector";
 
 import {
@@ -97,8 +98,15 @@ interface TypeGroup {
 
 function getAccountDisplayBalance(
   account: Account,
-  periodOBMap?: Map<string, { debit: number; credit: number }>
+  periodOBMap?: Map<string, { debit: number; credit: number }>,
+  computedBalanceMap?: Map<string, number>
 ): { balance: number; type: string } {
+  // If this account has a computed balance (e.g. Inventory), use it
+  const computedVal = computedBalanceMap?.get(account.id);
+  if (computedVal !== undefined) {
+    return { balance: computedVal, type: "debit" };
+  }
+
   const periodOB = periodOBMap?.get(account.id);
 
   return {
@@ -123,6 +131,7 @@ function AccountRow({
   canEdit,
   parentIsControl,
   globalAccountsMap,
+  computedBalanceMap,
 }: {
   account: Account;
   depth?: number;
@@ -135,6 +144,7 @@ function AccountRow({
   canEdit?: boolean;
   parentIsControl?: boolean;
   globalAccountsMap?: Map<string, MappableAccount>;
+  computedBalanceMap?: Map<string, number>;
 }) {
   const [expanded, setExpanded] = useState(true);
   const navigate = useNavigate();
@@ -147,7 +157,8 @@ function AccountRow({
   const isControlled = isAccountControlled(account, accountsMap);
   const subledgerRoute = isControlled ? mapAccountRoute(account, accountsMap) : null;
   const subledgerModule = getModuleLabel(account, accountsMap);
-  const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap);
+  const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap, computedBalanceMap);
+  const isComputedBalance = computedBalanceMap?.has(account.id) ?? false;
 
   // Determine if this account inherits control status from parent
   const isInheritedControl = !controlAcct && parentIsControl;
@@ -226,7 +237,25 @@ function AccountRow({
               {getNormalBalance(account.account_type)}
             </td>
             <td className="text-right">
-              {(controlAcct || isInheritedControl) && subledgerRoute ? (
+              {isComputedBalance ? (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => subledgerRoute && navigate(subledgerRoute)}
+                        className="text-sm font-mono text-primary hover:underline cursor-pointer inline-flex items-center gap-1"
+                      >
+                        {formatCurrency(displayBalance)}
+                        <span className="text-[9px] font-sans text-muted-foreground bg-muted px-1 py-0.5 rounded">computed</span>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="left" className="max-w-[280px] text-xs">
+                      <p className="font-medium mb-1">Dynamically Computed</p>
+                      <p>This value is calculated in real-time from inventory items (qty × unit cost). It is never stored in the Chart of Accounts.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ) : (controlAcct || isInheritedControl) && subledgerRoute ? (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -323,6 +352,7 @@ function AccountRow({
           canEdit={canEdit}
           parentIsControl={controlAcct || parentIsControl}
           globalAccountsMap={accountsMap}
+          computedBalanceMap={computedBalanceMap}
         />
       ))}
     </>
@@ -340,6 +370,7 @@ function FlatAccountRow({
   isPeriodClosed,
   canEdit,
   globalAccountsMap,
+  computedBalanceMap,
 }: {
   account: Account;
   onEdit: (a: Account) => void;
@@ -350,6 +381,7 @@ function FlatAccountRow({
   isPeriodClosed?: boolean;
   canEdit?: boolean;
   globalAccountsMap?: Map<string, MappableAccount>;
+  computedBalanceMap?: Map<string, number>;
 }) {
   const navigate = useNavigate();
   const accountsMap = globalAccountsMap ?? useMemo(() => buildAccountsMap([account]), [account]);
@@ -357,13 +389,8 @@ function FlatAccountRow({
   const isControlled = isAccountControlled(account, accountsMap);
   const subledgerRoute = isControlled ? mapAccountRoute(account, accountsMap) : null;
   const subledgerModule = getModuleLabel(account, accountsMap);
-  const periodOB = periodOBMap?.get(account.id);
-  const displayBalance = periodOB
-    ? (periodOB.debit > periodOB.credit ? periodOB.debit - periodOB.credit : periodOB.credit - periodOB.debit)
-    : (account as any).opening_balance ?? 0;
-  const displayType = periodOB
-    ? (periodOB.debit >= periodOB.credit ? "debit" : "credit")
-    : (account as any).opening_balance_type ?? "debit";
+  const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap, computedBalanceMap);
+  const isComputedBalance = computedBalanceMap?.has(account.id) ?? false;
 
   return (
     <ContextMenu>
@@ -422,7 +449,25 @@ function FlatAccountRow({
             {getNormalBalance(account.account_type)}
           </td>
           <td className="text-right">
-            {(controlAcct || isControlled) && subledgerRoute ? (
+            {isComputedBalance ? (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => subledgerRoute && navigate(subledgerRoute)}
+                      className="text-sm font-mono text-primary hover:underline cursor-pointer inline-flex items-center gap-1"
+                    >
+                      {formatCurrency(displayBalance)}
+                      <span className="text-[9px] font-sans text-muted-foreground bg-muted px-1 py-0.5 rounded">computed</span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="left" className="max-w-[280px] text-xs">
+                    <p className="font-medium mb-1">Dynamically Computed</p>
+                    <p>This value is calculated in real-time from inventory items (qty × unit cost). It is never stored in the Chart of Accounts.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : (controlAcct || isControlled) && subledgerRoute ? (
               <button
                 onClick={() => navigate(subledgerRoute)}
                 className="text-sm font-mono text-primary hover:underline cursor-pointer"
@@ -499,6 +544,7 @@ function TypeSection({
   isPeriodClosed,
   canEdit,
   globalAccountsMap,
+  computedBalanceMap,
 }: {
   typeGroup: TypeGroup;
   onEdit: (a: Account) => void;
@@ -509,6 +555,7 @@ function TypeSection({
   isPeriodClosed?: boolean;
   canEdit?: boolean;
   globalAccountsMap?: Map<string, MappableAccount>;
+  computedBalanceMap?: Map<string, number>;
 }) {
   const [expanded, setExpanded] = useState(true);
   const totalAccounts = typeGroup.categories.reduce((s, c) => s + c.accounts.length, 0) + typeGroup.uncategorized.length;
@@ -547,6 +594,7 @@ function TypeSection({
           isPeriodClosed={isPeriodClosed}
           canEdit={canEdit}
           globalAccountsMap={globalAccountsMap}
+          computedBalanceMap={computedBalanceMap}
         />
       ))}
       {expanded && typeGroup.uncategorized.length > 0 && (
@@ -569,6 +617,7 @@ function TypeSection({
               isPeriodClosed={isPeriodClosed}
               canEdit={canEdit}
               globalAccountsMap={globalAccountsMap}
+              computedBalanceMap={computedBalanceMap}
             />
           ))}
         </>
@@ -588,6 +637,7 @@ function CategorySection({
   isPeriodClosed,
   canEdit,
   globalAccountsMap,
+  computedBalanceMap,
 }: {
   category: CategoryGroup;
   accountType: string;
@@ -599,6 +649,7 @@ function CategorySection({
   isPeriodClosed?: boolean;
   canEdit?: boolean;
   globalAccountsMap?: Map<string, MappableAccount>;
+  computedBalanceMap?: Map<string, number>;
 }) {
   const [expanded, setExpanded] = useState(true);
   const tree = buildTree(category.accounts).sort((a, b) => a.account_code.localeCompare(b.account_code));
@@ -630,6 +681,7 @@ function CategorySection({
           isPeriodClosed={isPeriodClosed}
           canEdit={canEdit}
           globalAccountsMap={globalAccountsMap}
+          computedBalanceMap={computedBalanceMap}
         />
       ))}
     </>
@@ -703,6 +755,9 @@ export default function ChartOfAccounts() {
   const globalAccountsMap = useMemo(() => {
     return buildAccountsMap(((accounts as any[]) || []) as MappableAccount[]);
   }, [accounts]);
+
+  // Computed inventory balance — never stored, always derived
+  const computedBalanceMap = useInventoryAccountBalanceMap(accounts as any[]);
 
   const displayAccounts = useMemo(() => {
     return ((accounts as Account[] | undefined) || []).map((account) =>
@@ -942,6 +997,7 @@ export default function ChartOfAccounts() {
                   isPeriodClosed={isPeriodClosed}
                   canEdit={hasEditPermission}
                   globalAccountsMap={globalAccountsMap}
+                  computedBalanceMap={computedBalanceMap}
                 />
               ))}
             </tbody>
@@ -976,6 +1032,7 @@ export default function ChartOfAccounts() {
                     isPeriodClosed={isPeriodClosed}
                     canEdit={hasEditPermission}
                     globalAccountsMap={globalAccountsMap}
+                    computedBalanceMap={computedBalanceMap}
                   />
                 ))}
             </tbody>
