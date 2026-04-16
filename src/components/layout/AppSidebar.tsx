@@ -9,7 +9,7 @@ import {
   Receipt,
   Wallet,
   Banknote,
-  PiggyBank,
+  Coins,
   BarChart3,
   TrendingUp,
   Shield,
@@ -84,7 +84,7 @@ const navGroups: NavGroup[] = [
       { label: "Products & Taxes", path: "/products-taxes", icon: Package },
       { label: "Expenses", path: "/expenses", icon: Banknote },
       { label: "Payment Vouchers", path: "/payment-vouchers", icon: FileText },
-      { label: "Petty Cash", path: "/petty-cash", icon: PiggyBank },
+      { label: "Petty Cash", path: "/petty-cash", icon: Coins },
     ],
   },
   {
