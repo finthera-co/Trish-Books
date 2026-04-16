@@ -131,6 +131,7 @@ function AccountRow({
   canEdit,
   parentIsControl,
   globalAccountsMap,
+  computedBalanceMap,
 }: {
   account: Account;
   depth?: number;
@@ -143,6 +144,7 @@ function AccountRow({
   canEdit?: boolean;
   parentIsControl?: boolean;
   globalAccountsMap?: Map<string, MappableAccount>;
+  computedBalanceMap?: Map<string, number>;
 }) {
   const [expanded, setExpanded] = useState(true);
   const navigate = useNavigate();
@@ -155,7 +157,8 @@ function AccountRow({
   const isControlled = isAccountControlled(account, accountsMap);
   const subledgerRoute = isControlled ? mapAccountRoute(account, accountsMap) : null;
   const subledgerModule = getModuleLabel(account, accountsMap);
-  const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap);
+  const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap, computedBalanceMap);
+  const isComputedBalance = computedBalanceMap?.has(account.id) ?? false;
 
   // Determine if this account inherits control status from parent
   const isInheritedControl = !controlAcct && parentIsControl;
