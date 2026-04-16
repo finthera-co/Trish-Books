@@ -4029,6 +4029,7 @@ export type Database = {
           company_name: string
           country: string | null
           created_at: string
+          deleted_at: string | null
           id: string
           industry: string | null
           status: string
@@ -4039,6 +4040,7 @@ export type Database = {
           company_name: string
           country?: string | null
           created_at?: string
+          deleted_at?: string | null
           id?: string
           industry?: string | null
           status?: string
@@ -4049,6 +4051,7 @@ export type Database = {
           company_name?: string
           country?: string | null
           created_at?: string
+          deleted_at?: string | null
           id?: string
           industry?: string | null
           status?: string
@@ -4165,7 +4168,9 @@ export type Database = {
           first_name: string
           id: string
           is_primary: boolean
+          last_login_at: string | null
           last_name: string
+          login_count: number
           role_id: string | null
           status: string
           tenant_id: string
@@ -4178,7 +4183,9 @@ export type Database = {
           first_name: string
           id?: string
           is_primary?: boolean
+          last_login_at?: string | null
           last_name: string
+          login_count?: number
           role_id?: string | null
           status?: string
           tenant_id: string
@@ -4191,7 +4198,9 @@ export type Database = {
           first_name?: string
           id?: string
           is_primary?: boolean
+          last_login_at?: string | null
           last_name?: string
+          login_count?: number
           role_id?: string | null
           status?: string
           tenant_id?: string
