@@ -352,6 +352,7 @@ function AccountRow({
           canEdit={canEdit}
           parentIsControl={controlAcct || parentIsControl}
           globalAccountsMap={accountsMap}
+          computedBalanceMap={computedBalanceMap}
         />
       ))}
     </>
@@ -369,6 +370,7 @@ function FlatAccountRow({
   isPeriodClosed,
   canEdit,
   globalAccountsMap,
+  computedBalanceMap,
 }: {
   account: Account;
   onEdit: (a: Account) => void;
@@ -379,6 +381,7 @@ function FlatAccountRow({
   isPeriodClosed?: boolean;
   canEdit?: boolean;
   globalAccountsMap?: Map<string, MappableAccount>;
+  computedBalanceMap?: Map<string, number>;
 }) {
   const navigate = useNavigate();
   const accountsMap = globalAccountsMap ?? useMemo(() => buildAccountsMap([account]), [account]);
@@ -386,13 +389,8 @@ function FlatAccountRow({
   const isControlled = isAccountControlled(account, accountsMap);
   const subledgerRoute = isControlled ? mapAccountRoute(account, accountsMap) : null;
   const subledgerModule = getModuleLabel(account, accountsMap);
-  const periodOB = periodOBMap?.get(account.id);
-  const displayBalance = periodOB
-    ? (periodOB.debit > periodOB.credit ? periodOB.debit - periodOB.credit : periodOB.credit - periodOB.debit)
-    : (account as any).opening_balance ?? 0;
-  const displayType = periodOB
-    ? (periodOB.debit >= periodOB.credit ? "debit" : "credit")
-    : (account as any).opening_balance_type ?? "debit";
+  const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap, computedBalanceMap);
+  const isComputedBalance = computedBalanceMap?.has(account.id) ?? false;
 
   return (
     <ContextMenu>
