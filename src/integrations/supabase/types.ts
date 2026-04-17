@@ -3836,6 +3836,89 @@ export type Database = {
         }
         Relationships: []
       }
+      scenario_models: {
+        Row: {
+          baseline_cash: number
+          baseline_expense: number
+          baseline_revenue: number
+          capital_injection: number
+          created_at: string
+          created_by: string | null
+          description: string | null
+          expense_reduction_pct: number
+          horizon_months: number
+          id: string
+          name: string
+          one_time_investment: number
+          payback_months: number | null
+          projected_cash: number
+          projected_expense: number
+          projected_profit: number
+          projected_revenue: number
+          result_series: Json | null
+          revenue_uplift_pct: number
+          roi_pct: number
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          baseline_cash?: number
+          baseline_expense?: number
+          baseline_revenue?: number
+          capital_injection?: number
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          expense_reduction_pct?: number
+          horizon_months?: number
+          id?: string
+          name: string
+          one_time_investment?: number
+          payback_months?: number | null
+          projected_cash?: number
+          projected_expense?: number
+          projected_profit?: number
+          projected_revenue?: number
+          result_series?: Json | null
+          revenue_uplift_pct?: number
+          roi_pct?: number
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          baseline_cash?: number
+          baseline_expense?: number
+          baseline_revenue?: number
+          capital_injection?: number
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          expense_reduction_pct?: number
+          horizon_months?: number
+          id?: string
+          name?: string
+          one_time_investment?: number
+          payback_months?: number | null
+          projected_cash?: number
+          projected_expense?: number
+          projected_profit?: number
+          projected_revenue?: number
+          result_series?: Json | null
+          revenue_uplift_pct?: number
+          roi_pct?: number
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scenario_models_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stock_movements: {
         Row: {
           created_at: string
