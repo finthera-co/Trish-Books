@@ -55,6 +55,7 @@ import AuditLogs from "./pages/AuditLogs";
 import NotFound from "./pages/NotFound";
 import AnomalyDashboard from "./pages/AnomalyDashboard";
 import TransactionsLedger from "./pages/TransactionsLedger";
+import ForecastDashboard from "./pages/ForecastDashboard";
 import AccountReport from "./pages/AccountReport";
 import GLVerification from "./pages/GLVerification";
 import CustomersPage from "./pages/CustomersPage";
@@ -175,6 +176,7 @@ const App = () => (
                     <Route path="/reports/exports" element={<DataExports />} />
                     <Route path="/reports/anomalies" element={<AnomalyDashboard />} />
                     <Route path="/reports/intelligence" element={<TransactionsLedger />} />
+                    <Route path="/reports/forecasting" element={<ForecastDashboard />} />
                   </Route>
 
                   {/* Fixed Assets module */}
