@@ -323,17 +323,28 @@ export default function AccountReport() {
             {/* Right Column — Balances */}
             <div className="space-y-3">
               <div className="bg-muted/40 rounded-xl p-4 space-y-3">
+                {!isPeriodBased && (
+                  <>
+                    <div className="flex justify-between items-center">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium">Opening Balance</p>
+                      <p className="text-sm font-mono font-semibold text-foreground">{formatCurrency(openingBalance)}</p>
+                    </div>
+                    <div className="border-t border-border" />
+                  </>
+                )}
                 <div className="flex justify-between items-center">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium">Opening Balance</p>
-                  <p className="text-sm font-mono font-semibold text-foreground">{formatCurrency(openingBalance)}</p>
-                </div>
-                <div className="border-t border-border" />
-                <div className="flex justify-between items-center">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium">Current Balance</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium">
+                    {isPeriodBased ? "Period Total" : "Current Balance"}
+                  </p>
                   <p className={`text-lg font-mono font-bold ${closingBalance < 0 ? "text-destructive" : "text-foreground"}`}>
                     {formatCurrency(closingBalance)}
                   </p>
                 </div>
+                {isPeriodBased && (
+                  <p className="text-[10px] text-muted-foreground italic">
+                    Income & Expense accounts reset each fiscal year. Showing activity within the selected period only.
+                  </p>
+                )}
               </div>
               <div className="flex gap-4">
                 <div>
@@ -427,8 +438,8 @@ export default function AccountReport() {
                 </tr>
               </thead>
               <tbody>
-                {/* Opening balance row */}
-                {openingBalance !== 0 && (
+                {/* Opening balance row — only for cumulative (Balance Sheet) accounts */}
+                {!isPeriodBased && openingBalance !== 0 && (
                   <tr className="bg-muted/10 border-b">
                     <td className="px-4 py-2 text-muted-foreground">{dateFrom}</td>
                     <td colSpan={5} className="px-4 py-2 italic text-muted-foreground">Opening Balance</td>
