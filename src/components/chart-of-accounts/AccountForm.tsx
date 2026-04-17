@@ -9,6 +9,8 @@ import {
   ACCOUNT_NUMBER_RANGES,
   getNormalBalance,
   getStatementPlacement,
+  isContraSubtype,
+  getAccountTypeLabel,
 } from "@/lib/accountTypes";
 import { generateAccountCode } from "@/lib/accountCodeGenerator";
 import {
@@ -346,8 +348,12 @@ export default function AccountForm({
           {/* Info panel */}
           <div className="bg-muted/50 rounded-lg px-3 py-2.5 text-xs text-muted-foreground space-y-1">
             <div className="flex justify-between">
+              <span>Classification:</span>
+              <strong className="text-foreground">{getAccountTypeLabel(accountType, isContraSubtype(accountSubtype))}</strong>
+            </div>
+            <div className="flex justify-between">
               <span>Normal balance:</span>
-              <strong className="text-foreground">{getNormalBalance(accountType)}</strong>
+              <strong className="text-foreground">{getNormalBalance(accountType, isContraSubtype(accountSubtype))}</strong>
             </div>
             <div className="flex justify-between">
               <span>Financial statement:</span>
