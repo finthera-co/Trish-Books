@@ -5,8 +5,6 @@ import { ArrowRight, BookOpen, Landmark, ShoppingCart, Receipt, DollarSign, BarC
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const TENANT_MODULES = [
-  { id: "customers", label: "Customers", desc: "Manage customer records", icon: Users, path: "/sales/invoices", bg: "bg-[hsl(217,91%,60%)]/10", iconBg: "bg-[hsl(217,91%,60%)]" },
-  { id: "suppliers", label: "Suppliers", desc: "Vendor & supplier management", icon: Receipt, path: "/expenses/tracker", bg: "bg-[hsl(38,92%,50%)]/10", iconBg: "bg-[hsl(38,92%,50%)]" },
   { id: "invoices", label: "Invoices", desc: "Create & track invoices", icon: FileText, path: "/sales/invoices", bg: "bg-[hsl(160,84%,39%)]/10", iconBg: "bg-[hsl(160,84%,39%)]" },
   { id: "bills", label: "Bills", desc: "Bills & payment vouchers", icon: Landmark, path: "/banking/payment-vouchers", bg: "bg-[hsl(280,65%,60%)]/10", iconBg: "bg-[hsl(280,65%,60%)]" },
   { id: "payroll", label: "Payroll", desc: "Process payroll runs", icon: DollarSign, path: "/payroll/runs", bg: "bg-[hsl(199,89%,48%)]/10", iconBg: "bg-[hsl(199,89%,48%)]" },
