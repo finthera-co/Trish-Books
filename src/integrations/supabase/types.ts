@@ -1586,6 +1586,10 @@ export type Database = {
           category_id: string | null
           category_name: string
           created_at: string
+          data_points_used: number
+          data_quality_score: number
+          fallback_used: boolean
+          forecast_run_id: string | null
           forecast_value: number
           granularity: string
           id: string
@@ -1593,6 +1597,7 @@ export type Database = {
           metadata: Json | null
           model_type: string
           period: string
+          residual_std_dev: number
           stream: string
           tenant_id: string
           upper_bound: number
@@ -1601,6 +1606,10 @@ export type Database = {
           category_id?: string | null
           category_name: string
           created_at?: string
+          data_points_used?: number
+          data_quality_score?: number
+          fallback_used?: boolean
+          forecast_run_id?: string | null
           forecast_value?: number
           granularity?: string
           id?: string
@@ -1608,6 +1617,7 @@ export type Database = {
           metadata?: Json | null
           model_type?: string
           period: string
+          residual_std_dev?: number
           stream?: string
           tenant_id: string
           upper_bound?: number
@@ -1616,6 +1626,10 @@ export type Database = {
           category_id?: string | null
           category_name?: string
           created_at?: string
+          data_points_used?: number
+          data_quality_score?: number
+          fallback_used?: boolean
+          forecast_run_id?: string | null
           forecast_value?: number
           granularity?: string
           id?: string
@@ -1623,6 +1637,7 @@ export type Database = {
           metadata?: Json | null
           model_type?: string
           period?: string
+          residual_std_dev?: number
           stream?: string
           tenant_id?: string
           upper_bound?: number
@@ -1633,6 +1648,13 @@ export type Database = {
             columns: ["category_id"]
             isOneToOne: false
             referencedRelation: "account_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_forecasts_forecast_run_id_fkey"
+            columns: ["forecast_run_id"]
+            isOneToOne: false
+            referencedRelation: "forecast_runs"
             referencedColumns: ["id"]
           },
           {
@@ -1826,6 +1848,60 @@ export type Database = {
           },
         ]
       }
+      forecast_accuracy: {
+        Row: {
+          category_name: string
+          created_at: string
+          data_points: number
+          evaluated_period: string
+          forecast_run_id: string
+          id: string
+          mape: number
+          rmse: number
+          stream: string
+          tenant_id: string
+        }
+        Insert: {
+          category_name: string
+          created_at?: string
+          data_points?: number
+          evaluated_period: string
+          forecast_run_id: string
+          id?: string
+          mape?: number
+          rmse?: number
+          stream: string
+          tenant_id: string
+        }
+        Update: {
+          category_name?: string
+          created_at?: string
+          data_points?: number
+          evaluated_period?: string
+          forecast_run_id?: string
+          id?: string
+          mape?: number
+          rmse?: number
+          stream?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "forecast_accuracy_forecast_run_id_fkey"
+            columns: ["forecast_run_id"]
+            isOneToOne: false
+            referencedRelation: "forecast_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "forecast_accuracy_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       forecast_jobs: {
         Row: {
           created_at: string
@@ -1861,6 +1937,99 @@ export type Database = {
           tenants_processed?: number
         }
         Relationships: []
+      }
+      forecast_runs: {
+        Row: {
+          created_at: string
+          forecast_job_id: string | null
+          id: string
+          model_version: string
+          notes: string | null
+          run_timestamp: string
+          tenant_id: string
+        }
+        Insert: {
+          created_at?: string
+          forecast_job_id?: string | null
+          id?: string
+          model_version?: string
+          notes?: string | null
+          run_timestamp?: string
+          tenant_id: string
+        }
+        Update: {
+          created_at?: string
+          forecast_job_id?: string | null
+          id?: string
+          model_version?: string
+          notes?: string | null
+          run_timestamp?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "forecast_runs_forecast_job_id_fkey"
+            columns: ["forecast_job_id"]
+            isOneToOne: false
+            referencedRelation: "forecast_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "forecast_runs_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      forecast_validations: {
+        Row: {
+          check_name: string
+          created_at: string
+          forecast_run_id: string
+          id: string
+          message: string | null
+          metadata: Json | null
+          status: string
+          tenant_id: string
+        }
+        Insert: {
+          check_name: string
+          created_at?: string
+          forecast_run_id: string
+          id?: string
+          message?: string | null
+          metadata?: Json | null
+          status: string
+          tenant_id: string
+        }
+        Update: {
+          check_name?: string
+          created_at?: string
+          forecast_run_id?: string
+          id?: string
+          message?: string | null
+          metadata?: Json | null
+          status?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "forecast_validations_forecast_run_id_fkey"
+            columns: ["forecast_run_id"]
+            isOneToOne: false
+            referencedRelation: "forecast_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "forecast_validations_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       insights: {
         Row: {
@@ -3838,6 +4007,7 @@ export type Database = {
       }
       scenario_models: {
         Row: {
+          base_forecast_run_id: string | null
           baseline_cash: number
           baseline_expense: number
           baseline_revenue: number
@@ -3845,10 +4015,14 @@ export type Database = {
           created_at: string
           created_by: string | null
           description: string | null
+          discount_rate: number
           expense_reduction_pct: number
           horizon_months: number
           id: string
+          input_parameters: Json | null
+          irr: number | null
           name: string
+          npv: number | null
           one_time_investment: number
           payback_months: number | null
           projected_cash: number
@@ -3859,9 +4033,11 @@ export type Database = {
           revenue_uplift_pct: number
           roi_pct: number
           tenant_id: string
+          time_horizon_years: number
           updated_at: string
         }
         Insert: {
+          base_forecast_run_id?: string | null
           baseline_cash?: number
           baseline_expense?: number
           baseline_revenue?: number
@@ -3869,10 +4045,14 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           description?: string | null
+          discount_rate?: number
           expense_reduction_pct?: number
           horizon_months?: number
           id?: string
+          input_parameters?: Json | null
+          irr?: number | null
           name: string
+          npv?: number | null
           one_time_investment?: number
           payback_months?: number | null
           projected_cash?: number
@@ -3883,9 +4063,11 @@ export type Database = {
           revenue_uplift_pct?: number
           roi_pct?: number
           tenant_id: string
+          time_horizon_years?: number
           updated_at?: string
         }
         Update: {
+          base_forecast_run_id?: string | null
           baseline_cash?: number
           baseline_expense?: number
           baseline_revenue?: number
@@ -3893,10 +4075,14 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           description?: string | null
+          discount_rate?: number
           expense_reduction_pct?: number
           horizon_months?: number
           id?: string
+          input_parameters?: Json | null
+          irr?: number | null
           name?: string
+          npv?: number | null
           one_time_investment?: number
           payback_months?: number | null
           projected_cash?: number
@@ -3907,9 +4093,17 @@ export type Database = {
           revenue_uplift_pct?: number
           roi_pct?: number
           tenant_id?: string
+          time_horizon_years?: number
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "scenario_models_base_forecast_run_id_fkey"
+            columns: ["base_forecast_run_id"]
+            isOneToOne: false
+            referencedRelation: "forecast_runs"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "scenario_models_tenant_id_fkey"
             columns: ["tenant_id"]
