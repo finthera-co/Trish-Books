@@ -436,7 +436,7 @@ function FlatAccountRow({
           </td>
           <td>
             <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${typeColors[account.account_type] || "bg-muted text-muted-foreground"}`}>
-              {getTypeLabel(account.account_type)}
+              {isContraAccount(account) ? getAccountTypeLabel(account.account_type, true) : getTypeLabel(account.account_type)}
             </span>
           </td>
           <td className="text-xs text-muted-foreground">
