@@ -514,13 +514,15 @@ function InsightsTab({ tenantId }: { tenantId?: string }) {
         </Button>
       </CardHeader>
       <CardContent>
-        {items.length === 0 ? (
+        {!data ? (
           <p className="text-sm text-muted-foreground py-6 text-center">
             Click <span className="font-medium">Generate</span> to analyze your forecast data.
           </p>
         ) : (
-          <div className="space-y-3">
-            {items.map((i, idx) => <InsightCard key={idx} insight={i} />)}
+          <div className="grid gap-4 md:grid-cols-3">
+            <InsightColumn title="Risks" icon={<AlertTriangle className="w-4 h-4 text-red-600" />} items={data.risks} tone="risk" />
+            <InsightColumn title="Opportunities" icon={<TrendingUp className="w-4 h-4 text-emerald-600" />} items={data.opportunities} tone="opp" />
+            <InsightColumn title="Recommended Actions" icon={<Lightbulb className="w-4 h-4 text-primary" />} items={data.recommended_actions} tone="action" />
           </div>
         )}
       </CardContent>
@@ -528,30 +530,28 @@ function InsightsTab({ tenantId }: { tenantId?: string }) {
   );
 }
 
-function InsightCard({ insight }: { insight: ForecastInsight }) {
-  const cfg = {
-    growth_opportunity: { icon: TrendingUp, color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40" },
-    cost_warning:       { icon: AlertTriangle, color: "text-amber-600 bg-amber-50 dark:bg-amber-950/40" },
-    cash_alert:         { icon: AlertTriangle, color: "text-red-600 bg-red-50 dark:bg-red-950/40" },
-    investment_suggestion: { icon: Lightbulb, color: "text-primary bg-primary/10" },
-  } as const;
-  const c = cfg[insight.type as keyof typeof cfg] ?? cfg.investment_suggestion;
-  const Icon = c.icon;
-
+function InsightColumn({ title, icon, items, tone }: { title: string; icon: React.ReactNode; items: StructuredInsightItem[]; tone: "risk" | "opp" | "action" }) {
+  const toneClass =
+    tone === "risk" ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900" :
+    tone === "opp" ? "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900" :
+    "bg-primary/5 border-primary/20";
   return (
-    <div className="flex gap-3 p-3 rounded-lg border bg-card">
-      <div className={`w-8 h-8 rounded-md flex items-center justify-center shrink-0 ${c.color}`}>
-        <Icon className="w-4 h-4" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <h4 className="text-sm font-semibold">{insight.title}</h4>
-          <Badge variant={insight.severity === "critical" ? "destructive" : insight.severity === "warning" ? "secondary" : "outline"} className="text-[10px]">
-            {insight.severity}
-          </Badge>
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-sm font-semibold">{icon}{title}</div>
+      {items.length === 0 ? (
+        <p className="text-xs text-muted-foreground">None identified.</p>
+      ) : items.map((i, idx) => (
+        <div key={idx} className={`p-3 rounded-lg border ${toneClass}`}>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h4 className="text-sm font-semibold">{i.title}</h4>
+            {(i.severity || i.impact) && (
+              <Badge variant="outline" className="text-[10px]">{i.severity ?? i.impact}</Badge>
+            )}
+            {i.owner && <Badge variant="secondary" className="text-[10px]">{i.owner}</Badge>}
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">{i.detail}</p>
         </div>
-        <p className="text-xs text-muted-foreground mt-1">{insight.message}</p>
-      </div>
+      ))}
     </div>
   );
 }
