@@ -7,6 +7,8 @@ export interface ScenarioModel {
   name: string;
   description: string | null;
   horizon_months: number;
+  time_horizon_years: number | null;
+  discount_rate: number | null;
   revenue_uplift_pct: number;
   expense_reduction_pct: number;
   capital_injection: number;
@@ -20,7 +22,11 @@ export interface ScenarioModel {
   projected_profit: number;
   roi_pct: number;
   payback_months: number | null;
+  npv: number | null;
+  irr: number | null;
   result_series: Array<Record<string, number | string>> | null;
+  input_parameters: Record<string, unknown> | null;
+  base_forecast_run_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -31,6 +37,8 @@ export interface SimulateInput {
   name?: string;
   description?: string;
   horizon_months: number;
+  time_horizon_years?: number;
+  discount_rate?: number;
   revenue_uplift_pct: number;
   expense_reduction_pct: number;
   capital_injection: number;
@@ -40,6 +48,9 @@ export interface SimulateInput {
 
 export interface SimulateResult {
   horizon_months: number;
+  time_horizon_years: number;
+  discount_rate: number;
+  base_forecast_run_id: string | null;
   baseline_revenue: number;
   baseline_expense: number;
   baseline_cash: number;
@@ -50,6 +61,8 @@ export interface SimulateResult {
   profit_delta: number;
   roi_pct: number;
   payback_months: number | null;
+  npv: number;
+  irr_pct: number | null;
   series: Array<Record<string, number | string>>;
   scenario_id?: string;
 }
@@ -91,11 +104,20 @@ export function useDeleteScenario() {
   });
 }
 
-export interface ForecastInsight {
-  type: string;
+// New structured insight schema (#8)
+export interface StructuredInsightItem {
   title: string;
-  message: string;
-  severity: "info" | "warning" | "critical";
+  detail: string;
+  severity?: "low" | "medium" | "high";
+  impact?: "low" | "medium" | "high";
+  owner?: string;
+}
+
+export interface StructuredInsights {
+  risks: StructuredInsightItem[];
+  opportunities: StructuredInsightItem[];
+  recommended_actions: StructuredInsightItem[];
+  generated_at?: string;
 }
 
 export function useForecastInsights(tenantId?: string) {
@@ -106,7 +128,7 @@ export function useForecastInsights(tenantId?: string) {
         body: { tenant_id: tenantId },
       });
       if (error) throw error;
-      return data as { insights: ForecastInsight[]; generated_at?: string };
+      return data as StructuredInsights;
     },
   });
 }
