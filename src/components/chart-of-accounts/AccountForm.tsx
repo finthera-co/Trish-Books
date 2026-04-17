@@ -9,6 +9,8 @@ import {
   ACCOUNT_NUMBER_RANGES,
   getNormalBalance,
   getStatementPlacement,
+  isContraSubtype,
+  getAccountTypeLabel,
 } from "@/lib/accountTypes";
 import { generateAccountCode } from "@/lib/accountCodeGenerator";
 import {
