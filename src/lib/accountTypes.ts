@@ -26,8 +26,48 @@ export function isDebitNormal(accountType: string): boolean {
   return DEBIT_NORMAL_TYPES.includes(accountType as AccountType);
 }
 
-export function getNormalBalance(accountType: string): "Debit" | "Credit" {
-  return isDebitNormal(accountType) ? "Debit" : "Credit";
+/**
+ * Subtypes that represent contra accounts. A contra account inverts the
+ * normal balance of its parent type (e.g. Accumulated Depreciation is a
+ * contra-asset and therefore has a Credit normal balance).
+ */
+export const CONTRA_SUBTYPES = [
+  "Accumulated Depreciation",
+];
+
+export function isContraSubtype(subtype: string | null | undefined): boolean {
+  if (!subtype) return false;
+  return CONTRA_SUBTYPES.some(s => subtype.toLowerCase().includes(s.toLowerCase()));
+}
+
+/** Detects contra accounts from either an explicit flag, name or subtype. */
+export function isContraAccount(account?: {
+  is_contra?: boolean | null;
+  account_name?: string | null;
+  account_subtype?: string | null;
+} | null): boolean {
+  if (!account) return false;
+  if (account.is_contra) return true;
+  if (isContraSubtype(account.account_subtype)) return true;
+  if (account.account_name && account.account_name.toLowerCase().includes("accumulated depreciation")) return true;
+  return false;
+}
+
+export function getNormalBalance(accountType: string, isContra = false): "Debit" | "Credit" {
+  const debit = isDebitNormal(accountType);
+  const effective = isContra ? !debit : debit;
+  return effective ? "Debit" : "Credit";
+}
+
+/** Display label for an account type, accounting for contra classification. */
+export function getAccountTypeLabel(accountType: string, isContra = false): string {
+  if (!isContra) return accountType;
+  if (accountType === "Asset") return "Contra Asset";
+  if (accountType === "Liability") return "Contra Liability";
+  if (accountType === "Equity") return "Contra Equity";
+  if (accountType === "Income" || accountType === "Other Income") return "Contra Income";
+  if (accountType === "Expense" || accountType === "Other Expense" || accountType === "Cost of Goods Sold") return "Contra Expense";
+  return accountType;
 }
 
 // Financial statement placement
