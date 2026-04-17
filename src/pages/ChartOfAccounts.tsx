@@ -39,6 +39,8 @@ import {
   getNormalBalance,
   getStatementPlacement,
   isOpeningBalanceEquityAccount,
+  isContraAccount,
+  getAccountTypeLabel,
 } from "@/lib/accountTypes";
 import {
   buildAccountsMap,
