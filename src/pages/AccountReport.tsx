@@ -499,7 +499,7 @@ export default function AccountReport() {
               {rows.length > 0 && (
                 <tfoot>
                   <tr className="border-t-2 border-foreground/20 bg-muted/20">
-                    <td colSpan={6} className="px-4 py-3 font-semibold text-xs text-foreground">Totals / Closing</td>
+                    <td colSpan={6} className="px-4 py-3 font-semibold text-xs text-foreground">{isPeriodBased ? "Period Total" : "Totals / Closing"}</td>
                     <td className="text-right px-4 py-3 font-mono font-bold text-foreground tabular-nums">
                       {totalDebit > 0 ? formatCurrency(totalDebit) : "—"}
                     </td>
