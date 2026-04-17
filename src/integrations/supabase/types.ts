@@ -75,6 +75,7 @@ export type Database = {
           created_from: string | null
           id: string
           is_active: boolean
+          is_contra: boolean
           is_control_account: boolean
           is_locked: boolean
           is_system: boolean
@@ -98,6 +99,7 @@ export type Database = {
           created_from?: string | null
           id?: string
           is_active?: boolean
+          is_contra?: boolean
           is_control_account?: boolean
           is_locked?: boolean
           is_system?: boolean
@@ -121,6 +123,7 @@ export type Database = {
           created_from?: string | null
           id?: string
           is_active?: boolean
+          is_contra?: boolean
           is_control_account?: boolean
           is_locked?: boolean
           is_system?: boolean
