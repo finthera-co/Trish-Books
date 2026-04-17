@@ -5,8 +5,6 @@ import { ArrowRight, BookOpen, Landmark, ShoppingCart, Receipt, DollarSign, BarC
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const TENANT_MODULES = [
-  { id: "customers", label: "Customers", desc: "Manage customer records", icon: Users, path: "/sales/invoices", bg: "bg-[hsl(217,91%,60%)]/10", iconBg: "bg-[hsl(217,91%,60%)]" },
-  { id: "suppliers", label: "Suppliers", desc: "Vendor & supplier management", icon: Receipt, path: "/expenses/tracker", bg: "bg-[hsl(38,92%,50%)]/10", iconBg: "bg-[hsl(38,92%,50%)]" },
   { id: "invoices", label: "Invoices", desc: "Create & track invoices", icon: FileText, path: "/sales/invoices", bg: "bg-[hsl(160,84%,39%)]/10", iconBg: "bg-[hsl(160,84%,39%)]" },
   { id: "bills", label: "Bills", desc: "Bills & payment vouchers", icon: Landmark, path: "/banking/payment-vouchers", bg: "bg-[hsl(280,65%,60%)]/10", iconBg: "bg-[hsl(280,65%,60%)]" },
   { id: "payroll", label: "Payroll", desc: "Process payroll runs", icon: DollarSign, path: "/payroll/runs", bg: "bg-[hsl(199,89%,48%)]/10", iconBg: "bg-[hsl(199,89%,48%)]" },
@@ -33,19 +31,19 @@ export default function ModuleCards() {
   const modules = isSuperAdmin ? SUPER_ADMIN_MODULES : TENANT_MODULES;
 
   return (
-    <div className={cn("grid gap-3 animate-fade-in", isSuperAdmin ? "grid-cols-3 sm:grid-cols-4 lg:grid-cols-7" : "grid-cols-3 sm:grid-cols-5 lg:grid-cols-9")}>
+    <div className={cn("grid gap-4 animate-fade-in", isSuperAdmin ? "grid-cols-3 sm:grid-cols-4 lg:grid-cols-7" : "grid-cols-2 sm:grid-cols-4 lg:grid-cols-7")}>
       {modules.map((mod, i) => (
         <Tooltip key={mod.id}>
           <TooltipTrigger asChild>
             <button
               onClick={() => navigate(mod.path)}
-              className="group flex flex-col items-center gap-2.5 rounded-xl bg-card border border-border p-4 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 hover:border-primary/20 active:scale-[0.97]"
+              className="group flex flex-col items-center gap-3 rounded-xl bg-card border border-border p-5 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 hover:border-primary/20 active:scale-[0.97]"
               style={{ animationDelay: `${i * 0.03}s` }}
             >
-              <div className={cn("w-11 h-11 rounded-xl flex items-center justify-center shadow-sm transition-all duration-300 group-hover:scale-110 group-hover:shadow-md", mod.iconBg)}>
-                <mod.icon className="w-5 h-5 text-white" />
+              <div className={cn("w-14 h-14 rounded-xl flex items-center justify-center shadow-sm transition-all duration-300 group-hover:scale-110 group-hover:shadow-md", mod.iconBg)}>
+                <mod.icon className="w-6 h-6 text-white" />
               </div>
-              <span className="text-xs font-semibold text-foreground text-center leading-tight">{mod.label}</span>
+              <span className="text-sm font-semibold text-foreground text-center leading-tight">{mod.label}</span>
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="text-xs">{mod.desc}</TooltipContent>
