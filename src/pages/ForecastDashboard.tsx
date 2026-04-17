@@ -11,8 +11,16 @@ import {
   useDeleteScenario,
   useForecastInsights,
   type SimulateResult,
-  type ForecastInsight,
+  type StructuredInsights,
+  type StructuredInsightItem,
 } from "@/hooks/useScenarios";
+import {
+  useRunValidation,
+  useRunBacktest,
+  type ForecastValidation,
+  type ValidationSummary,
+  type ForecastAccuracy,
+} from "@/hooks/useForecastQuality";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -67,6 +75,7 @@ export default function ForecastDashboard() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="scenarios">Scenarios</TabsTrigger>
+          <TabsTrigger value="quality">Quality</TabsTrigger>
           <TabsTrigger value="insights">AI Insights</TabsTrigger>
         </TabsList>
 
@@ -80,6 +89,10 @@ export default function ForecastDashboard() {
 
         <TabsContent value="scenarios">
           <ScenariosTab tenantId={tenantId} />
+        </TabsContent>
+
+        <TabsContent value="quality">
+          <QualityTab tenantId={tenantId} />
         </TabsContent>
 
         <TabsContent value="insights">
@@ -360,16 +373,127 @@ function ScenarioResult({ result }: { result: SimulateResult }) {
   );
 }
 
-/* ─────────────────────────────  AI INSIGHTS  ───────────────────────────── */
+/* ─────────────────────────────  QUALITY (Validation + Backtest)  ───────────────────────────── */
+function QualityTab({ tenantId }: { tenantId?: string }) {
+  const validation = useRunValidation(tenantId);
+  const backtest = useRunBacktest(tenantId);
+  const [checks, setChecks] = useState<ForecastValidation[]>([]);
+  const [summary, setSummary] = useState<ValidationSummary | null>(null);
+  const [accuracy, setAccuracy] = useState<ForecastAccuracy[]>([]);
+  const [overall, setOverall] = useState<{ mape: number | null; rmse: number | null } | null>(null);
+
+  const runValidation = async () => {
+    try {
+      const res = await validation.mutateAsync();
+      setChecks(res.checks);
+      setSummary(res.summary);
+      toast.success(`${res.summary.pass}/${res.summary.total} checks passed`);
+    } catch (e) { toast.error((e as Error).message); }
+  };
+  const runBacktest = async () => {
+    try {
+      const res = await backtest.mutateAsync();
+      setAccuracy(res.results);
+      setOverall({ mape: res.overall_mape, rmse: res.overall_rmse });
+      toast.success(`Backtested ${res.categories_evaluated} categories`);
+    } catch (e) { toast.error((e as Error).message); }
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between">
+          <div>
+            <CardTitle className="text-base">Financial Validation</CardTitle>
+            <CardDescription>Accounting integrity & sanity checks for the latest forecast run.</CardDescription>
+          </div>
+          <Button size="sm" onClick={runValidation} disabled={validation.isPending} className="gap-1.5">
+            {validation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Activity className="w-3.5 h-3.5" />}
+            Run
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {summary && (
+            <div className="flex gap-2 text-xs">
+              <Badge variant="outline">Total {summary.total}</Badge>
+              <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Pass {summary.pass}</Badge>
+              {summary.warning > 0 && <Badge variant="secondary">Warn {summary.warning}</Badge>}
+              {summary.fail > 0 && <Badge variant="destructive">Fail {summary.fail}</Badge>}
+            </div>
+          )}
+          {checks.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No validation results yet. Click Run.</p>
+          ) : (
+            <div className="space-y-2">
+              {checks.map((c, i) => (
+                <div key={i} className="p-3 rounded-lg border bg-card">
+                  <div className="flex items-center gap-2">
+                    <Badge variant={c.status === "pass" ? "outline" : c.status === "fail" ? "destructive" : "secondary"} className="text-[10px]">
+                      {c.status}
+                    </Badge>
+                    <span className="text-sm font-medium">{c.check_name}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">{c.message}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between">
+          <div>
+            <CardTitle className="text-base">Backtest Accuracy</CardTitle>
+            <CardDescription>Walk-forward MAPE & RMSE on a 14-day holdout window.</CardDescription>
+          </div>
+          <Button size="sm" onClick={runBacktest} disabled={backtest.isPending} className="gap-1.5">
+            {backtest.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <TrendingUp className="w-3.5 h-3.5" />}
+            Run
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {overall && (
+            <div className="grid grid-cols-2 gap-2">
+              <MetricBox icon={<Activity className="w-4 h-4" />} label="Overall MAPE" value={overall.mape != null ? `${overall.mape.toFixed(1)}%` : "—"} positive={(overall.mape ?? 100) < 25} />
+              <MetricBox icon={<Activity className="w-4 h-4" />} label="Overall RMSE" value={overall.rmse != null ? formatCurrencyShort(overall.rmse) : "—"} positive={true} />
+            </div>
+          )}
+          {accuracy.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No backtest yet. Click Run.</p>
+          ) : (
+            <div className="space-y-1.5 max-h-80 overflow-y-auto">
+              {accuracy.map((a) => (
+                <div key={a.id ?? `${a.category_name}-${a.stream}`} className="flex items-center justify-between p-2 rounded border bg-card text-xs">
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{a.category_name}</div>
+                    <div className="text-muted-foreground">{a.stream} · n={a.data_points}</div>
+                  </div>
+                  <div className="flex gap-3 text-right">
+                    <span>MAPE <span className="font-semibold">{Number(a.mape).toFixed(1)}%</span></span>
+                    <span>RMSE <span className="font-semibold">{formatCurrencyShort(Number(a.rmse))}</span></span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+/* ─────────────────────────────  AI INSIGHTS (structured)  ───────────────────────────── */
 function InsightsTab({ tenantId }: { tenantId?: string }) {
   const insights = useForecastInsights(tenantId);
-  const [items, setItems] = useState<ForecastInsight[]>([]);
+  const [data, setData] = useState<StructuredInsights | null>(null);
 
   const generate = async () => {
     try {
       const res = await insights.mutateAsync();
-      setItems(res.insights);
-      toast.success(`Generated ${res.insights.length} insights`);
+      setData(res);
+      const total = res.risks.length + res.opportunities.length + res.recommended_actions.length;
+      toast.success(`Generated ${total} insights`);
     } catch (e) {
       toast.error((e as Error).message);
     }
