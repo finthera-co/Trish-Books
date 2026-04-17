@@ -11,7 +11,7 @@ import {
   ChevronsLeft, ChevronsRight, AlertCircle,
 } from "lucide-react";
 import { format } from "date-fns";
-import { isDebitNormal as checkDebitNormal, getTypeLabel, ACCOUNT_TYPES, typeColors } from "@/lib/accountTypes";
+import { isDebitNormal as checkDebitNormal, isPeriodBasedAccount, getTypeLabel, ACCOUNT_TYPES, typeColors } from "@/lib/accountTypes";
 import { formatCurrency } from "@/lib/currency";
 import GeneralLedgerReport from "@/components/ledger/GeneralLedgerReport";
 import { ARSubledger, APSubledger } from "@/components/ledger/SubsidiaryLedger";
@@ -155,10 +155,16 @@ export default function Ledger() {
   const effectiveDateFrom = selectedPeriod ? selectedPeriod.period_start : dateFrom;
   const effectiveDateTo = selectedPeriod ? selectedPeriod.period_end : dateTo;
 
-  // Opening balance: computed from journal lines BEFORE the date range (single source of truth)
-  // This prevents double-counting with OBE journal entries that appear as transactions
+  // Reporting Layer rule:
+  //   - Balance Sheet accounts: opening balance = sum of journal lines BEFORE
+  //     the date range (cumulative carry-forward).
+  //   - P&L accounts (Income/Expense/COGS): opening balance is conceptually 0
+  //     because these accounts reset each fiscal year via closing entries.
+  //     The ledger posting is unchanged — this is a presentation-only rule.
+  const isPeriodBased = selectedAccount ? isPeriodBasedAccount(selectedAccount.account_type) : false;
   const openingBalance = useMemo(() => {
     if (!selectedAccount || !journalEntries) return 0;
+    if (isPeriodBased) return 0;
 
     const targetDate = effectiveDateFrom || new Date().toISOString().slice(0, 10);
     const debitNormal = checkDebitNormal(selectedAccount.account_type);
@@ -171,7 +177,7 @@ export default function Ledger() {
         const credit = Number(line.credit) || 0;
         return sum + (debitNormal ? debit - credit : credit - debit);
       }, 0);
-  }, [selectedAccount, journalEntries, effectiveDateFrom]);
+  }, [selectedAccount, journalEntries, effectiveDateFrom, isPeriodBased]);
 
   // Group accounts by type for selector
   const accountsByType = useMemo(() => {
@@ -550,8 +556,15 @@ export default function Ledger() {
             {/* ── Summary Strip ── */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div className="stat-card">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Opening Balance</p>
-                <p className="text-base font-bold text-foreground mt-0.5 font-mono">{fmtBal(openingBalance)}</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-widest">
+                  {isPeriodBased ? "Period Start" : "Opening Balance"}
+                </p>
+                <p className="text-base font-bold text-foreground mt-0.5 font-mono">
+                  {isPeriodBased ? "LKR 0.00" : fmtBal(openingBalance)}
+                </p>
+                {isPeriodBased && (
+                  <p className="text-[9px] text-muted-foreground italic">P&L resets each year</p>
+                )}
               </div>
               <div className="stat-card">
                 <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Total Debits</p>
@@ -562,7 +575,9 @@ export default function Ledger() {
                 <p className="text-base font-bold text-foreground mt-0.5 font-mono">{fmtAmt(totalCredit) === "—" ? "LKR 0.00" : fmtAmt(totalCredit)}</p>
               </div>
               <div className="stat-card">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Closing Balance</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-widest">
+                  {isPeriodBased ? "Period Total" : "Closing Balance"}
+                </p>
                 <p className={`text-base font-bold mt-0.5 font-mono ${closingBalance < 0 ? "text-destructive" : "text-foreground"}`}>
                   {fmtBal(closingBalance)}
                 </p>
@@ -641,22 +656,23 @@ export default function Ledger() {
                       </tr>
                     </thead>
                     <tbody>
-                      {/* Opening Balance Row */}
-                      <tr className="bg-muted/20 border-b border-border">
-                        <td className="px-3 py-2 text-muted-foreground text-xs tabular-nums">{effectiveDateFrom || "—"}</td>
-                        <td className="px-3 py-2">
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-secondary text-secondary-foreground">
-                            Opening Balance
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-muted-foreground">—</td>
-                        <td className="px-3 py-2 text-muted-foreground">—</td>
-                        <td className="px-3 py-2 text-muted-foreground italic" colSpan={2}>Carried forward from prior period</td>
-                        <td className="text-right px-3 py-2 font-mono text-muted-foreground">—</td>
-                        <td className="text-right px-3 py-2 font-mono text-muted-foreground">—</td>
-                        <td className="text-right px-3 py-2 font-mono font-semibold text-foreground">{fmtBal(openingBalance)}</td>
-                      </tr>
-
+                      {/* Opening Balance Row — only for cumulative (Balance Sheet) accounts */}
+                      {!isPeriodBased && (
+                        <tr className="bg-muted/20 border-b border-border">
+                          <td className="px-3 py-2 text-muted-foreground text-xs tabular-nums">{effectiveDateFrom || "—"}</td>
+                          <td className="px-3 py-2">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-secondary text-secondary-foreground">
+                              Opening Balance
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-muted-foreground">—</td>
+                          <td className="px-3 py-2 text-muted-foreground">—</td>
+                          <td className="px-3 py-2 text-muted-foreground italic" colSpan={2}>Carried forward from prior period</td>
+                          <td className="text-right px-3 py-2 font-mono text-muted-foreground">—</td>
+                          <td className="text-right px-3 py-2 font-mono text-muted-foreground">—</td>
+                          <td className="text-right px-3 py-2 font-mono font-semibold text-foreground">{fmtBal(openingBalance)}</td>
+                        </tr>
+                      )}
                       {/* Transaction Rows */}
                       {pagedRows.map((row) => (
                         <tr

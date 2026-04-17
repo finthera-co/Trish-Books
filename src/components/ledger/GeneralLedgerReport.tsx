@@ -3,7 +3,7 @@ import { useAccounts, useJournalEntries } from "@/hooks/useData";
 import { Button } from "@/components/ui/button";
 import { Download, Printer, BookOpen, Filter } from "lucide-react";
 import { format } from "date-fns";
-import { isDebitNormal as checkDebitNormal, ACCOUNT_TYPES, getTypeLabel } from "@/lib/accountTypes";
+import { isDebitNormal as checkDebitNormal, isPeriodBasedAccount, ACCOUNT_TYPES, getTypeLabel } from "@/lib/accountTypes";
 
 const fmtAmount = (n: number): string => {
   if (n === 0) return "—";
@@ -23,6 +23,7 @@ interface AccountLedger {
   totalDebit: number;
   totalCredit: number;
   closingBalance: number;
+  isPeriodBased: boolean;
 }
 
 export default function GeneralLedgerReport() {
@@ -54,17 +55,23 @@ export default function GeneralLedgerReport() {
 
     return sorted.map(account => {
       const isDebitNormal = checkDebitNormal(account.account_type);
+      const periodBased = isPeriodBasedAccount(account.account_type);
 
-      // Opening balance = sum of all journal lines for this account BEFORE dateFrom
-      // This is the single source of truth — no separate opening_balances table lookup
-      const openingBalance = postedEntries
-        .filter((entry: any) => entry.entry_date < dateFrom)
-        .flatMap((entry: any) => ((entry.journal_lines as any[]) || []).filter((line: any) => line.account_id === account.id))
-        .reduce((sum: number, line: any) => {
-          const debit = Number(line.debit) || 0;
-          const credit = Number(line.credit) || 0;
-          return sum + (isDebitNormal ? debit - credit : credit - debit);
-        }, 0);
+      // Reporting Layer rule:
+      //   - Balance Sheet accounts: opening balance carries forward (cumulative).
+      //   - P&L accounts: opening balance is conceptually 0 (period-based — they
+      //     reset each fiscal year via closing entries). Underlying ledger is
+      //     unchanged; this is a presentation-only rule.
+      const openingBalance = periodBased
+        ? 0
+        : postedEntries
+            .filter((entry: any) => entry.entry_date < dateFrom)
+            .flatMap((entry: any) => ((entry.journal_lines as any[]) || []).filter((line: any) => line.account_id === account.id))
+            .reduce((sum: number, line: any) => {
+              const debit = Number(line.debit) || 0;
+              const credit = Number(line.credit) || 0;
+              return sum + (isDebitNormal ? debit - credit : credit - debit);
+            }, 0);
 
       const rows = postedEntries
         .filter(entry => {
@@ -87,7 +94,7 @@ export default function GeneralLedgerReport() {
         })
         .sort((a, b) => a.date.localeCompare(b.date));
 
-      // Calculate running balances
+      // Running balance starts from opening (0 for period-based accounts).
       let bal = openingBalance;
       rows.forEach(row => {
         bal += isDebitNormal ? (row.debit - row.credit) : (row.credit - row.debit);
@@ -104,6 +111,7 @@ export default function GeneralLedgerReport() {
         totalDebit,
         totalCredit,
         closingBalance: bal,
+        isPeriodBased: periodBased,
       };
     }).filter(al => al.rows.length > 0 || al.openingBalance !== 0);
   }, [accounts, journalEntries, dateFrom, dateTo, typeFilter]);

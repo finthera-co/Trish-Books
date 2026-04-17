@@ -36,6 +36,22 @@ export function getStatementPlacement(accountType: string): "Balance Sheet" | "P
   return "Profit & Loss";
 }
 
+/**
+ * Reporting behavior:
+ * - Balance Sheet accounts (Asset, Liability, Equity) are CUMULATIVE — they carry
+ *   forward across periods and have meaningful opening/closing balances.
+ * - Income Statement accounts (Income, Expense, COGS, Other Income, Other Expense)
+ *   are PERIOD-BASED — they reset each fiscal year via closing entries and should
+ *   NOT display "Opening Balance" semantics in P&L-style reports.
+ *
+ * This helper is used by the Reporting Layer (AccountReport, Ledger, P&L) to
+ * decide whether to show cumulative or period-only views. The underlying ledger
+ * (journal_entries / journal_lines) is unchanged — this is presentation only.
+ */
+export function isPeriodBasedAccount(accountType: string): boolean {
+  return getStatementPlacement(accountType) === "Profit & Loss";
+}
+
 // Opening balance eligibility — only Balance Sheet accounts may have opening balances
 export const OPENING_BALANCE_ELIGIBLE_TYPES: AccountType[] = [
   "Asset",

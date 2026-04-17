@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { formatCurrency } from "@/lib/currency";
-import { isDebitNormal, getNormalBalance, getTypeLabel, getStatementPlacement, isOpeningBalanceEquityAccount, typeColors } from "@/lib/accountTypes";
+import { isDebitNormal, getNormalBalance, getTypeLabel, getStatementPlacement, isOpeningBalanceEquityAccount, isPeriodBasedAccount, typeColors } from "@/lib/accountTypes";
 import EditTransactionModal from "@/components/account-report/EditTransactionModal";
 
 interface TransactionRow {
@@ -92,25 +92,34 @@ export default function AccountReport() {
     return (accounts as any[]).find((a) => a.id === account.parent_account_id);
   }, [account, accounts]);
 
-  // Build transaction rows
-  const { rows, openingBalance, totalDebit, totalCredit, closingBalance } = useMemo(() => {
-    if (!account || !journalEntries) return { rows: [], openingBalance: 0, totalDebit: 0, totalCredit: 0, closingBalance: 0 };
+  // Build transaction rows.
+  // REPORTING LAYER RULE:
+  //   - Balance Sheet accounts (Asset/Liability/Equity) → cumulative view with
+  //     opening balance carried forward and a true running balance.
+  //   - P&L accounts (Income/Expense/COGS) → period-only view; opening balance
+  //     is suppressed and the running balance starts at 0 within the window.
+  //   The underlying journal_lines are NEVER modified — this is presentation only.
+  const { rows, openingBalance, totalDebit, totalCredit, closingBalance, isPeriodBased } = useMemo(() => {
+    if (!account || !journalEntries) return { rows: [], openingBalance: 0, totalDebit: 0, totalCredit: 0, closingBalance: 0, isPeriodBased: false };
 
     const debitNormal = isDebitNormal(account.account_type);
+    const periodBased = isPeriodBasedAccount(account.account_type);
     const postedEntries = (journalEntries as any[]).filter(
       (entry: any) => entry.status === "posted" && !entry.voided_at
     );
 
-    // Opening balance: sum of all journal lines for this account BEFORE dateFrom
-    // This includes opening_balance type entries, so we use journal lines as single source of truth.
-    const historicalOpening = postedEntries
-      .filter((entry: any) => entry.entry_date < dateFrom)
-      .flatMap((entry: any) => ((entry.journal_lines as any[]) || []).filter((line: any) => line.account_id === account.id))
-      .reduce((sum: number, line: any) => {
-        const debit = Number(line.debit) || 0;
-        const credit = Number(line.credit) || 0;
-        return sum + (debitNormal ? debit - credit : credit - debit);
-      }, 0);
+    // For Balance Sheet accounts only: sum of all journal lines BEFORE dateFrom.
+    // For P&L accounts: opening balance is conceptually zero (period-based).
+    const historicalOpening = periodBased
+      ? 0
+      : postedEntries
+          .filter((entry: any) => entry.entry_date < dateFrom)
+          .flatMap((entry: any) => ((entry.journal_lines as any[]) || []).filter((line: any) => line.account_id === account.id))
+          .reduce((sum: number, line: any) => {
+            const debit = Number(line.debit) || 0;
+            const credit = Number(line.credit) || 0;
+            return sum + (debitNormal ? debit - credit : credit - debit);
+          }, 0);
 
     const opening = historicalOpening;
 
@@ -124,7 +133,6 @@ export default function AccountReport() {
         return lines
           .filter((line) => line.account_id === account.id)
           .map((line) => {
-            // Find contra account
             const contraLines = lines.filter((l: any) => l.account_id !== account.id);
             const contraAccount = contraLines.length === 1 && accounts
               ? (accounts as any[]).find((a) => a.id === contraLines[0].account_id)
@@ -147,14 +155,13 @@ export default function AccountReport() {
       })
       .sort((a, b) => a.date.localeCompare(b.date) || a.journalNo.localeCompare(b.journalNo));
 
-    // Calculate running balances
+    // Running balance starts from opening (0 for period-based accounts).
     let bal = opening;
     txRows.forEach((row) => {
       bal += debitNormal ? row.debit - row.credit : row.credit - row.debit;
       row.balance = bal;
     });
 
-    // Apply filters
     let filtered = txRows;
     if (search) {
       const s = search.toLowerCase();
@@ -179,6 +186,7 @@ export default function AccountReport() {
       totalDebit: tDebit,
       totalCredit: tCredit,
       closingBalance: bal,
+      isPeriodBased: periodBased,
     };
   }, [account, journalEntries, dateFrom, dateTo, search, typeFilter, matchingPeriod, openingBalances, accounts, isOBEAccount]);
 
@@ -315,17 +323,28 @@ export default function AccountReport() {
             {/* Right Column — Balances */}
             <div className="space-y-3">
               <div className="bg-muted/40 rounded-xl p-4 space-y-3">
+                {!isPeriodBased && (
+                  <>
+                    <div className="flex justify-between items-center">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium">Opening Balance</p>
+                      <p className="text-sm font-mono font-semibold text-foreground">{formatCurrency(openingBalance)}</p>
+                    </div>
+                    <div className="border-t border-border" />
+                  </>
+                )}
                 <div className="flex justify-between items-center">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium">Opening Balance</p>
-                  <p className="text-sm font-mono font-semibold text-foreground">{formatCurrency(openingBalance)}</p>
-                </div>
-                <div className="border-t border-border" />
-                <div className="flex justify-between items-center">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium">Current Balance</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium">
+                    {isPeriodBased ? "Period Total" : "Current Balance"}
+                  </p>
                   <p className={`text-lg font-mono font-bold ${closingBalance < 0 ? "text-destructive" : "text-foreground"}`}>
                     {formatCurrency(closingBalance)}
                   </p>
                 </div>
+                {isPeriodBased && (
+                  <p className="text-[10px] text-muted-foreground italic">
+                    Income & Expense accounts reset each fiscal year. Showing activity within the selected period only.
+                  </p>
+                )}
               </div>
               <div className="flex gap-4">
                 <div>
@@ -419,8 +438,8 @@ export default function AccountReport() {
                 </tr>
               </thead>
               <tbody>
-                {/* Opening balance row */}
-                {openingBalance !== 0 && (
+                {/* Opening balance row — only for cumulative (Balance Sheet) accounts */}
+                {!isPeriodBased && openingBalance !== 0 && (
                   <tr className="bg-muted/10 border-b">
                     <td className="px-4 py-2 text-muted-foreground">{dateFrom}</td>
                     <td colSpan={5} className="px-4 py-2 italic text-muted-foreground">Opening Balance</td>
@@ -480,7 +499,7 @@ export default function AccountReport() {
               {rows.length > 0 && (
                 <tfoot>
                   <tr className="border-t-2 border-foreground/20 bg-muted/20">
-                    <td colSpan={6} className="px-4 py-3 font-semibold text-xs text-foreground">Totals / Closing</td>
+                    <td colSpan={6} className="px-4 py-3 font-semibold text-xs text-foreground">{isPeriodBased ? "Period Total" : "Totals / Closing"}</td>
                     <td className="text-right px-4 py-3 font-mono font-bold text-foreground tabular-nums">
                       {totalDebit > 0 ? formatCurrency(totalDebit) : "—"}
                     </td>
