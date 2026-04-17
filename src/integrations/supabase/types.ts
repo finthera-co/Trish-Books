@@ -1140,38 +1140,6 @@ export type Database = {
           },
         ]
       }
-      cashflow_forecast: {
-        Row: {
-          created_at: string
-          date: string
-          id: string
-          predicted_balance: number
-          tenant_id: string
-        }
-        Insert: {
-          created_at?: string
-          date: string
-          id?: string
-          predicted_balance?: number
-          tenant_id: string
-        }
-        Update: {
-          created_at?: string
-          date?: string
-          id?: string
-          predicted_balance?: number
-          tenant_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "cashflow_forecast_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: false
-            referencedRelation: "tenants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       cost_centers: {
         Row: {
           created_at: string
@@ -1613,6 +1581,69 @@ export type Database = {
           },
         ]
       }
+      financial_forecasts: {
+        Row: {
+          category_id: string | null
+          category_name: string
+          created_at: string
+          forecast_value: number
+          granularity: string
+          id: string
+          lower_bound: number
+          metadata: Json | null
+          model_type: string
+          period: string
+          stream: string
+          tenant_id: string
+          upper_bound: number
+        }
+        Insert: {
+          category_id?: string | null
+          category_name: string
+          created_at?: string
+          forecast_value?: number
+          granularity?: string
+          id?: string
+          lower_bound?: number
+          metadata?: Json | null
+          model_type?: string
+          period: string
+          stream?: string
+          tenant_id: string
+          upper_bound?: number
+        }
+        Update: {
+          category_id?: string | null
+          category_name?: string
+          created_at?: string
+          forecast_value?: number
+          granularity?: string
+          id?: string
+          lower_bound?: number
+          metadata?: Json | null
+          model_type?: string
+          period?: string
+          stream?: string
+          tenant_id?: string
+          upper_bound?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_forecasts_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "account_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_forecasts_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       financial_reports: {
         Row: {
           file_url: string | null
@@ -1794,6 +1825,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      forecast_jobs: {
+        Row: {
+          created_at: string
+          duration_ms: number | null
+          error_message: string | null
+          forecast_rows_inserted: number
+          id: string
+          logs: Json | null
+          run_time: string
+          status: string
+          tenants_processed: number
+        }
+        Insert: {
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          forecast_rows_inserted?: number
+          id?: string
+          logs?: Json | null
+          run_time?: string
+          status?: string
+          tenants_processed?: number
+        }
+        Update: {
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          forecast_rows_inserted?: number
+          id?: string
+          logs?: Json | null
+          run_time?: string
+          status?: string
+          tenants_processed?: number
+        }
+        Relationships: []
       }
       insights: {
         Row: {
@@ -4326,6 +4393,44 @@ export type Database = {
       }
     }
     Views: {
+      cashflow_forecast: {
+        Row: {
+          created_at: string | null
+          date: string | null
+          id: string | null
+          lower_bound: number | null
+          predicted_balance: number | null
+          tenant_id: string | null
+          upper_bound: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          date?: string | null
+          id?: string | null
+          lower_bound?: number | null
+          predicted_balance?: number | null
+          tenant_id?: string | null
+          upper_bound?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          date?: string | null
+          id?: string | null
+          lower_bound?: number | null
+          predicted_balance?: number | null
+          tenant_id?: string | null
+          upper_bound?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_forecasts_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       monthly_financials: {
         Row: {
           month: string | null
@@ -4367,6 +4472,21 @@ export type Database = {
       generate_voucher_number: {
         Args: { p_tenant_id: string }
         Returns: string
+      }
+      get_category_time_series: {
+        Args: {
+          p_granularity?: string
+          p_lookback_days?: number
+          p_tenant_id: string
+        }
+        Returns: {
+          account_type: string
+          amount: number
+          category_id: string
+          category_name: string
+          period: string
+          stream: string
+        }[]
       }
       get_user_permission: {
         Args: { p_module: string; p_user_id: string }
