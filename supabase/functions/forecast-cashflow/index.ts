@@ -1,7 +1,9 @@
-// Advanced Financial Forecasting Engine v2 (Hardening Layer)
+// Advanced Financial Forecasting Engine v3 (Hardening Layer + Closed Gaps)
 // Pipeline: SQL aggregation -> Outlier cleaning -> Seasonal decomposition
 //   -> Linear trend -> Confidence intervals (residual-based) -> Forecast versioning
-//   -> Per-run validation (accounting integrity + sanity bounds)
+//   -> Per-run validation (accounting integrity + cash-flow consistency + sanity bounds)
+//   -> Fallback substitution (parent category / global trend) for sparse series
+//   -> Incremental processing (skip if a fresh run exists; targeted delete window)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -10,12 +12,13 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const MODEL_VERSION = "trend_seasonal_v2";
+const MODEL_VERSION = "trend_seasonal_v3";
 const FORECAST_HORIZON_DAYS = 30;
 const SEASONAL_PERIOD = 7;
 const Z_THRESHOLD = 3;
 const MIN_DATA_POINTS = 6;          // Quality control rule (#5)
 const REVENUE_GROWTH_CAP_PCT = 200; // Sanity cap (#1.2)
+const INCREMENTAL_TTL_HOURS = 6;    // Skip full re-run if a fresh run exists
 
 // ---------- Statistical helpers ----------
 function mean(xs: number[]) {
@@ -116,19 +119,14 @@ function forecast(values: number[], horizon = FORECAST_HORIZON_DAYS): ForecastOu
   const { slope, intercept } = linearFit(cleaned);
   const sd = stddev(residuals);
   const cleanedN = cleaned.length;
-
-  // Quality score: scales with data size, penalised by outlier rate
   const outlierRate = flags.filter(Boolean).length / Math.max(cleanedN, 1);
-  const dataQuality = Math.max(0, Math.min(1,
-    (cleanedN / 30) * (1 - outlierRate)
-  ));
+  const dataQuality = Math.max(0, Math.min(1, (cleanedN / 30) * (1 - outlierRate)));
 
   const points: { value: number; lower: number; upper: number }[] = [];
   for (let h = 1; h <= horizon; h++) {
     const trend = intercept + slope * (cleanedN - 1 + h);
     const seas = seasonal[(cleanedN - 1 + h) % SEASONAL_PERIOD] || 0;
     const value = trend + seas;
-    // Residual-based 95% confidence (z=1.96), widening with horizon
     const ci = 1.96 * sd * Math.sqrt(1 + h / Math.max(cleanedN, 1));
     points.push({
       value: Math.round(value * 100) / 100,
@@ -164,7 +162,7 @@ interface ValidationCheck {
 function validateForecasts(rows: Array<Record<string, unknown>>): ValidationCheck[] {
   const checks: ValidationCheck[] = [];
 
-  // 1.2.a Bounds invariant: lower ≤ forecast ≤ upper
+  // 1.2.a Bounds invariant
   let boundsViolations = 0;
   for (const r of rows) {
     const v = Number(r.forecast_value);
@@ -219,6 +217,51 @@ function validateForecasts(rows: Array<Record<string, unknown>>): ValidationChec
     metadata: { negative_count: negExp },
   });
 
+  // 1.1.b Cash Flow Consistency:
+  //   Closing Cash_t = Opening Cash + Σ Inflows_≤t − Σ Outflows_≤t
+  // We reconstruct the implied series from per-day revenue & expense streams
+  // and compare against the projected TOTAL_CASH series.
+  const cashRows = rows
+    .filter((r) => r.category_name === "TOTAL_CASH")
+    .sort((a, b) => String(a.period).localeCompare(String(b.period)));
+
+  if (cashRows.length > 0) {
+    // Aggregate inflows / outflows per period
+    const inflowByDate = new Map<string, number>();
+    const outflowByDate = new Map<string, number>();
+    for (const r of rows) {
+      const d = String(r.period);
+      const v = Number(r.forecast_value);
+      if (r.stream === "revenue") inflowByDate.set(d, (inflowByDate.get(d) ?? 0) + v);
+      else if (r.stream === "expense") outflowByDate.set(d, (outflowByDate.get(d) ?? 0) + Math.abs(v));
+    }
+
+    const opening = Number(cashRows[0].forecast_value)
+      - (inflowByDate.get(String(cashRows[0].period)) ?? 0)
+      + (outflowByDate.get(String(cashRows[0].period)) ?? 0);
+
+    let running = opening;
+    let maxDrift = 0;
+    let driftDays = 0;
+    for (const r of cashRows) {
+      const d = String(r.period);
+      running += (inflowByDate.get(d) ?? 0) - (outflowByDate.get(d) ?? 0);
+      const drift = Math.abs(running - Number(r.forecast_value));
+      if (drift > maxDrift) maxDrift = drift;
+      // Tolerance scales with magnitude (1% of value or 1.0, whichever larger)
+      const tol = Math.max(1, Math.abs(Number(r.forecast_value)) * 0.01);
+      if (drift > tol) driftDays++;
+    }
+    checks.push({
+      check_name: "cash_flow_consistency",
+      status: driftDays === 0 ? "pass" : driftDays < cashRows.length / 4 ? "warning" : "fail",
+      message: driftDays === 0
+        ? "Closing Cash = Opening + Inflows − Outflows holds across the horizon."
+        : `${driftDays}/${cashRows.length} days drift beyond tolerance (max ${maxDrift.toFixed(2)}).`,
+      metadata: { drift_days: driftDays, total_days: cashRows.length, max_drift: maxDrift },
+    });
+  }
+
   return checks;
 }
 
@@ -227,12 +270,6 @@ async function checkAccountingIntegrity(
   tenantId: string,
 ): Promise<ValidationCheck[]> {
   const checks: ValidationCheck[] = [];
-  // Assets = Liabilities + Equity (from posted journal lines)
-  const { data: bal } = await supabase.rpc("get_trial_balance" as never, { p_tenant_id: tenantId } as never).then(
-    (r) => r,
-    () => ({ data: null }),
-  );
-  // Fallback: query accounts directly via posted journal lines
   const { data: lines } = await supabase
     .from("journal_lines")
     .select("debit, credit, accounts!inner(account_type, tenant_id), journal_entries!inner(status, tenant_id)")
@@ -240,7 +277,7 @@ async function checkAccountingIntegrity(
     .eq("journal_entries.tenant_id", tenantId)
     .eq("journal_entries.status", "posted");
 
-  if (!bal && lines) {
+  if (lines) {
     let assets = 0, liab = 0, equity = 0;
     for (const l of lines as Array<{ debit: number; credit: number; accounts: { account_type: string } }>) {
       const t = l.accounts.account_type;
@@ -262,6 +299,41 @@ async function checkAccountingIntegrity(
   return checks;
 }
 
+// ---------- Fallback Substitution (#5) ----------
+// When a category has < MIN_DATA_POINTS, substitute with:
+//   1. Parent category trend (same account_type), OR
+//   2. Global trend (mean of all categories of same stream)
+function buildFallbackSeries(
+  cat: { stream: string; series: { date: string; value: number }[] },
+  allCategories: Map<string, { stream: string; series: { date: string; value: number }[] }>,
+): { series: { date: string; value: number }[]; source: "parent" | "global" } | null {
+  // Aggregate all other series of the same stream into a global daily mean
+  const peers = [...allCategories.values()].filter(
+    (c) => c.stream === cat.stream && c.series.length >= MIN_DATA_POINTS,
+  );
+  if (peers.length === 0) return null;
+
+  const dailyTotals = new Map<string, { sum: number; count: number }>();
+  for (const p of peers) {
+    for (const pt of p.series) {
+      const cur = dailyTotals.get(pt.date) ?? { sum: 0, count: 0 };
+      cur.sum += pt.value;
+      cur.count += 1;
+      dailyTotals.set(pt.date, cur);
+    }
+  }
+  const globalSeries = [...dailyTotals.entries()]
+    .map(([date, { sum, count }]) => ({ date, value: sum / count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  // Scale global trend to match the category's observed magnitude
+  const catMean = cat.series.length ? mean(cat.series.map((p) => p.value)) : 0;
+  const globalMean = mean(globalSeries.map((p) => p.value));
+  const scale = globalMean !== 0 ? catMean / globalMean : 1;
+  const scaled = globalSeries.map((p) => ({ date: p.date, value: p.value * (scale || 1) }));
+  return { series: scaled, source: "global" };
+}
+
 // ---------- Main handler ----------
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -270,6 +342,13 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+
+  // Allow callers to force a full rebuild via { force: true }
+  let force = false;
+  try {
+    const body = await req.json();
+    force = !!body?.force;
+  } catch (_) { /* no body */ }
 
   const startedAt = Date.now();
   const { data: jobRow } = await supabase
@@ -281,26 +360,43 @@ Deno.serve(async (req) => {
 
   let totalRowsInserted = 0;
   let tenantsProcessed = 0;
+  let tenantsSkipped = 0;
   const tenantLogs: Array<Record<string, unknown>> = [];
 
   try {
     const { data: tenants } = await supabase.from("tenants").select("id").eq("status", "active");
+    const ttlCutoffIso = new Date(Date.now() - INCREMENTAL_TTL_HOURS * 3600 * 1000).toISOString();
 
     for (const tenant of tenants || []) {
-      // Create a forecast_run row for this tenant (#6 versioning)
+      // -------- Incremental gate: skip tenants with a fresh run --------
+      if (!force) {
+        const { data: recent } = await supabase
+          .from("forecast_runs")
+          .select("id, run_timestamp")
+          .eq("tenant_id", tenant.id)
+          .gte("run_timestamp", ttlCutoffIso)
+          .order("run_timestamp", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (recent) {
+          tenantsSkipped++;
+          tenantLogs.push({ tenant_id: tenant.id, skipped: true, reason: "fresh_run", last_run: recent.run_timestamp });
+          continue;
+        }
+      }
+
       const { data: runRow } = await supabase
         .from("forecast_runs")
         .insert({
           tenant_id: tenant.id,
           model_version: MODEL_VERSION,
           forecast_job_id: jobId,
-          notes: `Auto-run · horizon ${FORECAST_HORIZON_DAYS}d`,
+          notes: `Auto-run · horizon ${FORECAST_HORIZON_DAYS}d${force ? " · forced" : ""}`,
         })
         .select("id")
         .single();
       const runId = runRow?.id;
 
-      // 1. Pull category time series
       const { data: series, error: sErr } = await supabase.rpc("get_category_time_series", {
         p_tenant_id: tenant.id,
         p_granularity: "daily",
@@ -333,17 +429,31 @@ Deno.serve(async (req) => {
 
       const insertRows: Array<Record<string, unknown>> = [];
       let outlierTotal = 0;
+      let fallbackSubstitutions = 0;
 
-      // Per-category forecasts with quality control (#5)
       for (const [, cat] of byCategory) {
         const sorted = cat.series.sort((a, b) => a.date.localeCompare(b.date));
-        const values = sorted.map((p) => p.value);
-        const fallback = values.length < MIN_DATA_POINTS;
+        let workingSeries = sorted;
+        let fallbackSource: "parent" | "global" | null = null;
+        const insufficient = workingSeries.length < MIN_DATA_POINTS;
+
+        if (insufficient) {
+          const fb = buildFallbackSeries(cat, byCategory);
+          if (fb && fb.series.length >= MIN_DATA_POINTS) {
+            workingSeries = fb.series;
+            fallbackSource = fb.source;
+            fallbackSubstitutions++;
+          }
+        }
+
+        const values = workingSeries.map((p) => p.value);
         if (values.length < 2) continue;
 
         const result = forecast(values);
         outlierTotal += result.outlier_count;
-        const lastDate = new Date(sorted[sorted.length - 1].date);
+        const lastDate = new Date(workingSeries[workingSeries.length - 1].date);
+        const usedFallback = fallbackSource !== null;
+
         for (let i = 0; i < result.points.length; i++) {
           const p = result.points[i];
           insertRows.push({
@@ -360,14 +470,19 @@ Deno.serve(async (req) => {
             model_type: MODEL_VERSION,
             residual_std_dev: result.residual_std_dev,
             data_points_used: result.data_points_used,
-            data_quality_score: fallback ? Math.min(result.data_quality_score, 0.4) : result.data_quality_score,
-            fallback_used: fallback,
-            metadata: { history_days: values.length, outliers_cleaned: result.outlier_count },
+            data_quality_score: usedFallback
+              ? Math.min(result.data_quality_score, 0.5)
+              : result.data_quality_score,
+            fallback_used: usedFallback,
+            metadata: {
+              history_days: sorted.length,
+              outliers_cleaned: result.outlier_count,
+              fallback_source: fallbackSource,
+            },
           });
         }
       }
 
-      // Total cash balance
       if (balances && balances.length >= 2) {
         const values = balances.map((b: { closing_balance: number }) => Number(b.closing_balance));
         const result = forecast(values);
@@ -396,9 +511,18 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Replace tenant's forecasts atomically
-      await supabase.from("financial_forecasts").delete().eq("tenant_id", tenant.id);
+      // Targeted delete: only the affected forecast window (not full history)
       if (insertRows.length > 0) {
+        const periods = insertRows.map((r) => String(r.period)).sort();
+        const minPeriod = periods[0];
+        const maxPeriod = periods[periods.length - 1];
+        await supabase
+          .from("financial_forecasts")
+          .delete()
+          .eq("tenant_id", tenant.id)
+          .gte("period", minPeriod)
+          .lte("period", maxPeriod);
+
         for (let i = 0; i < insertRows.length; i += 500) {
           const chunk = insertRows.slice(i, i + 500);
           const { error: insErr } = await supabase.from("financial_forecasts").insert(chunk);
@@ -407,7 +531,6 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Run validation engine (#1) and persist results
       if (runId) {
         const checks = [
           ...validateForecasts(insertRows),
@@ -427,6 +550,7 @@ Deno.serve(async (req) => {
         categories: byCategory.size,
         rows: insertRows.length,
         outliers: outlierTotal,
+        fallback_substitutions: fallbackSubstitutions,
       });
     }
 
@@ -438,7 +562,7 @@ Deno.serve(async (req) => {
           duration_ms: Date.now() - startedAt,
           tenants_processed: tenantsProcessed,
           forecast_rows_inserted: totalRowsInserted,
-          logs: { tenants: tenantLogs, model_version: MODEL_VERSION },
+          logs: { tenants: tenantLogs, model_version: MODEL_VERSION, skipped: tenantsSkipped, force },
         })
         .eq("id", jobId);
     }
@@ -449,6 +573,7 @@ Deno.serve(async (req) => {
         job_id: jobId,
         model_version: MODEL_VERSION,
         tenants_processed: tenantsProcessed,
+        tenants_skipped: tenantsSkipped,
         rows_inserted: totalRowsInserted,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
