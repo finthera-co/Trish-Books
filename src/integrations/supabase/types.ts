@@ -1372,6 +1372,9 @@ export type Database = {
           first_name: string
           hire_date: string | null
           id: string
+          is_epf_applicable: boolean
+          is_etf_applicable: boolean
+          is_paye_applicable: boolean
           last_name: string
           leave_balance: number
           nic_number: string | null
@@ -1396,6 +1399,9 @@ export type Database = {
           first_name: string
           hire_date?: string | null
           id?: string
+          is_epf_applicable?: boolean
+          is_etf_applicable?: boolean
+          is_paye_applicable?: boolean
           last_name: string
           leave_balance?: number
           nic_number?: string | null
@@ -1420,6 +1426,9 @@ export type Database = {
           first_name?: string
           hire_date?: string | null
           id?: string
+          is_epf_applicable?: boolean
+          is_etf_applicable?: boolean
+          is_paye_applicable?: boolean
           last_name?: string
           leave_balance?: number
           nic_number?: string | null
@@ -3061,6 +3070,76 @@ export type Database = {
           },
         ]
       }
+      payroll_components: {
+        Row: {
+          code: string
+          created_at: string
+          description: string | null
+          gl_credit_account_id: string | null
+          gl_debit_account_id: string | null
+          id: string
+          is_active: boolean
+          is_statutory: boolean
+          is_taxable: boolean
+          kind: string
+          name: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          description?: string | null
+          gl_credit_account_id?: string | null
+          gl_debit_account_id?: string | null
+          id?: string
+          is_active?: boolean
+          is_statutory?: boolean
+          is_taxable?: boolean
+          kind: string
+          name: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          description?: string | null
+          gl_credit_account_id?: string | null
+          gl_debit_account_id?: string | null
+          id?: string
+          is_active?: boolean
+          is_statutory?: boolean
+          is_taxable?: boolean
+          kind?: string
+          name?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payroll_components_gl_credit_account_id_fkey"
+            columns: ["gl_credit_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payroll_components_gl_debit_account_id_fkey"
+            columns: ["gl_debit_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payroll_components_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payroll_earning_types: {
         Row: {
           category: string
@@ -3190,6 +3269,71 @@ export type Database = {
             columns: ["employee_id"]
             isOneToOne: false
             referencedRelation: "employees"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payroll_rules: {
+        Row: {
+          base_component_code: string | null
+          condition_json: Json | null
+          created_at: string
+          description: string | null
+          effective_from: string | null
+          effective_to: string | null
+          expression: string | null
+          formula_type: string
+          formula_value: number
+          id: string
+          is_active: boolean
+          name: string
+          priority: number
+          target_component_code: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          base_component_code?: string | null
+          condition_json?: Json | null
+          created_at?: string
+          description?: string | null
+          effective_from?: string | null
+          effective_to?: string | null
+          expression?: string | null
+          formula_type: string
+          formula_value?: number
+          id?: string
+          is_active?: boolean
+          name: string
+          priority?: number
+          target_component_code: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          base_component_code?: string | null
+          condition_json?: Json | null
+          created_at?: string
+          description?: string | null
+          effective_from?: string | null
+          effective_to?: string | null
+          expression?: string | null
+          formula_type?: string
+          formula_value?: number
+          id?: string
+          is_active?: boolean
+          name?: string
+          priority?: number
+          target_component_code?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payroll_rules_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
         ]
@@ -4778,6 +4922,10 @@ export type Database = {
       is_super_admin: { Args: never; Returns: boolean }
       recalculate_daily_balance: {
         Args: { p_date: string; p_tenant_id: string }
+        Returns: undefined
+      }
+      seed_default_payroll_engine: {
+        Args: { p_tenant_id: string }
         Returns: undefined
       }
     }
