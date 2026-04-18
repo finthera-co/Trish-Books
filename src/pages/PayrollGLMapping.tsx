@@ -150,7 +150,7 @@ export default function PayrollGLMapping() {
                       </TableCell>
                       <TableCell>
                         {mapping ? (
-                          <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                          <Badge variant="secondary">
                             Mapped
                           </Badge>
                         ) : (

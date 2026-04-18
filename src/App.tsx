@@ -38,6 +38,7 @@ import InvoiceTemplateDesigner from "./pages/InvoiceTemplateDesigner";
 import ProductsTaxes from "./pages/ProductsTaxes";
 import Expenses from "./pages/Expenses";
 import Payroll from "./pages/Payroll";
+import PayrollGLMapping from "./pages/PayrollGLMapping";
 import Employees from "./pages/Employees";
 import Reports from "./pages/Reports";
 import Budgets from "./pages/Budgets";
@@ -166,6 +167,7 @@ const App = () => (
                     <Route path="/payroll" element={<ModuleDashboard config={MODULE_CONFIGS.payroll} />} />
                     <Route path="/payroll/runs" element={<Payroll />} />
                     <Route path="/payroll/employees" element={<Employees />} />
+                    <Route path="/payroll/gl-mapping" element={<PayrollGLMapping />} />
                   </Route>
 
                   {/* Reports module */}
