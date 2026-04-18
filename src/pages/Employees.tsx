@@ -14,6 +14,18 @@ export default function Employees() {
   const [department, setDepartment] = useState("");
   const [salary, setSalary] = useState(0);
   const [hireDate, setHireDate] = useState(new Date().toISOString().split("T")[0]);
+  const [employmentType, setEmploymentType] = useState("salaried");
+  const [isEpfApplicable, setIsEpfApplicable] = useState(true);
+  const [isEtfApplicable, setIsEtfApplicable] = useState(true);
+  const [isPayeApplicable, setIsPayeApplicable] = useState(false);
+
+  // Smart defaults: non-permanent staff default to no statutory deductions
+  const handleEmploymentTypeChange = (val: string) => {
+    setEmploymentType(val);
+    const nonStatutory = ["contract", "casual", "intern", "consultant"].includes(val);
+    setIsEpfApplicable(!nonStatutory);
+    setIsEtfApplicable(!nonStatutory);
+  };
 
   const { data: employees, isLoading } = useEmployees();
   const createEmployee = useCreateEmployee();
@@ -33,13 +45,21 @@ export default function Employees() {
       department: department || undefined,
       salary: salary || undefined,
       hire_date: hireDate || undefined,
-    });
+      employment_type: employmentType,
+      is_epf_applicable: isEpfApplicable,
+      is_etf_applicable: isEtfApplicable,
+      is_paye_applicable: isPayeApplicable,
+    } as any);
     setOpen(false);
     setFirstName("");
     setLastName("");
     setEmail("");
     setDepartment("");
     setSalary(0);
+    setEmploymentType("salaried");
+    setIsEpfApplicable(true);
+    setIsEtfApplicable(true);
+    setIsPayeApplicable(false);
   };
 
   const totalSalary = employees?.reduce((s, e) => s + Number(e.salary || 0), 0) || 0;
@@ -90,11 +110,46 @@ export default function Employees() {
                     className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" />
                 </div>
               </div>
-              <div>
-                <label className="text-sm font-medium">Hire Date</label>
-                <input type="date" value={hireDate} onChange={(e) => setHireDate(e.target.value)}
-                  className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium">Hire Date</label>
+                  <input type="date" value={hireDate} onChange={(e) => setHireDate(e.target.value)}
+                    className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Employment Type</label>
+                  <select value={employmentType} onChange={(e) => handleEmploymentTypeChange(e.target.value)}
+                    className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground">
+                    <option value="salaried">Salaried</option>
+                    <option value="hourly">Hourly</option>
+                    <option value="contract">Contract</option>
+                    <option value="casual">Casual</option>
+                    <option value="intern">Intern</option>
+                    <option value="consultant">Consultant</option>
+                  </select>
+                </div>
               </div>
+
+              <div className="border rounded-md p-3 space-y-2 bg-muted/30">
+                <p className="text-sm font-medium text-foreground">Statutory Deductions</p>
+                <p className="text-xs text-muted-foreground">Defaults adjust automatically based on employment type.</p>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={isEpfApplicable} onChange={(e) => setIsEpfApplicable(e.target.checked)}
+                    className="rounded border-input" />
+                  <span>EPF Applicable <span className="text-muted-foreground">(8% employee / 12% employer)</span></span>
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={isEtfApplicable} onChange={(e) => setIsEtfApplicable(e.target.checked)}
+                    className="rounded border-input" />
+                  <span>ETF Applicable <span className="text-muted-foreground">(3% employer)</span></span>
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={isPayeApplicable} onChange={(e) => setIsPayeApplicable(e.target.checked)}
+                    className="rounded border-input" />
+                  <span>PAYE Applicable <span className="text-muted-foreground">(income tax)</span></span>
+                </label>
+              </div>
+
               <Button onClick={handleCreate} disabled={!firstName || !lastName || createEmployee.isPending} className="w-full">
                 {createEmployee.isPending ? "Adding..." : "Add Employee"}
               </Button>
