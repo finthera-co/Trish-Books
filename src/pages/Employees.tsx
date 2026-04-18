@@ -14,6 +14,18 @@ export default function Employees() {
   const [department, setDepartment] = useState("");
   const [salary, setSalary] = useState(0);
   const [hireDate, setHireDate] = useState(new Date().toISOString().split("T")[0]);
+  const [employmentType, setEmploymentType] = useState("salaried");
+  const [isEpfApplicable, setIsEpfApplicable] = useState(true);
+  const [isEtfApplicable, setIsEtfApplicable] = useState(true);
+  const [isPayeApplicable, setIsPayeApplicable] = useState(false);
+
+  // Smart defaults: non-permanent staff default to no statutory deductions
+  const handleEmploymentTypeChange = (val: string) => {
+    setEmploymentType(val);
+    const nonStatutory = ["contract", "casual", "intern", "consultant"].includes(val);
+    setIsEpfApplicable(!nonStatutory);
+    setIsEtfApplicable(!nonStatutory);
+  };
 
   const { data: employees, isLoading } = useEmployees();
   const createEmployee = useCreateEmployee();
