@@ -469,19 +469,9 @@ export function useProcessPayrollRun() {
       const { data, error } = await supabase.functions.invoke("post-payroll-gl", {
         body: { run_id: runId },
       });
-      if (error) {
-        // Surface mapping errors clearly
-        const ctx: any = (error as any).context;
-        try {
-          const body = ctx ? await ctx.json?.() : null;
-          if (body?.unmapped?.length) {
-            throw new Error(
-              `Unmapped components: ${body.unmapped.map((u: any) => u.component_code).join(", ")}. Configure mappings at Payroll → GL Mapping.`
-            );
-          }
-          if (body?.error) throw new Error(body.error);
-        } catch (e) { /* fall through */ }
-        throw error;
+      if (error) throw error;
+      if (data && (data as any).ok === false) {
+        throw new Error((data as any).error || "Failed to post payroll to GL");
       }
       if ((data as any)?.error) throw new Error((data as any).error);
       return data;
