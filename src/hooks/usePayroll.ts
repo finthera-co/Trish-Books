@@ -2,6 +2,48 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import {
+  runPayrollForEmployee,
+  type PayrollComponent,
+  type PayrollRule,
+  type EmployeePayrollInput,
+} from "@/lib/payrollRuleEngine";
+
+// ===== Rule Engine Hooks =====
+export function usePayrollComponents() {
+  return useQuery({
+    queryKey: ["payroll_components"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("payroll_components").select("*").eq("is_active", true);
+      if (error) throw error;
+      return data as PayrollComponent[];
+    },
+  });
+}
+
+export function usePayrollRules() {
+  return useQuery({
+    queryKey: ["payroll_rules"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("payroll_rules").select("*").eq("is_active", true).order("priority");
+      if (error) throw error;
+      return (data || []) as unknown as PayrollRule[];
+    },
+  });
+}
+
+async function loadEngineConfig() {
+  const [compsRes, rulesRes] = await Promise.all([
+    supabase.from("payroll_components").select("*").eq("is_active", true),
+    supabase.from("payroll_rules").select("*").eq("is_active", true).order("priority"),
+  ]);
+  if (compsRes.error) throw compsRes.error;
+  if (rulesRes.error) throw rulesRes.error;
+  return {
+    components: (compsRes.data || []) as PayrollComponent[],
+    rules: ((rulesRes.data || []) as unknown) as PayrollRule[],
+  };
+}
 
 // Helper: Write audit log
 async function writeAuditLog(action: string, tableName: string, recordId?: string, details?: Record<string, any>) {
@@ -101,11 +143,6 @@ export function usePayrollRunItems(runId?: string) {
   });
 }
 
-// Sri Lanka statutory rates
-const EPF_EMPLOYEE_RATE = 0.08; // 8%
-const EPF_EMPLOYER_RATE = 0.12; // 12%
-const ETF_EMPLOYER_RATE = 0.03; // 3%
-
 export interface PayrollRunInput {
   pay_schedule_id?: string;
   period_start: string;
@@ -134,36 +171,59 @@ export function useCreatePayrollRun() {
       const { count } = await supabase.from("payroll_runs").select("*", { count: "exact", head: true });
       const runNumber = `PR-${String((count || 0) + 1).padStart(5, "0")}`;
 
-      // Calculate totals
+      // Load rule engine config + employee statutory flags
+      const [config, empRes] = await Promise.all([
+        loadEngineConfig(),
+        supabase.from("employees")
+          .select("id,is_epf_applicable,is_etf_applicable,is_paye_applicable,employment_type")
+          .in("id", input.employees.map((e) => e.employee_id)),
+      ]);
+      if (empRes.error) throw empRes.error;
+      const empMap = new Map((empRes.data || []).map((e: any) => [e.id, e]));
+
       let totalGross = 0, totalDeductions = 0, totalNet = 0, totalEmployerEpf = 0, totalEmployerEtf = 0;
 
       const items = input.employees.map((emp) => {
-        const grossPay = emp.basic_salary + (emp.overtime_pay || 0) + (emp.bonuses || 0) + (emp.allowances || 0);
-        const employeeEpf = Math.round(emp.basic_salary * EPF_EMPLOYEE_RATE * 100) / 100;
-        const employerEpf = Math.round(emp.basic_salary * EPF_EMPLOYER_RATE * 100) / 100;
-        const employerEtf = Math.round(emp.basic_salary * ETF_EMPLOYER_RATE * 100) / 100;
-        const totalDed = employeeEpf + (emp.other_deductions || 0);
-        const netPay = grossPay - totalDed;
+        const empFlags = empMap.get(emp.employee_id) || {
+          id: emp.employee_id,
+          is_epf_applicable: true,
+          is_etf_applicable: true,
+          is_paye_applicable: false,
+        };
+        const engineInput: EmployeePayrollInput = {
+          id: emp.employee_id,
+          is_epf_applicable: !!empFlags.is_epf_applicable,
+          is_etf_applicable: !!empFlags.is_etf_applicable,
+          is_paye_applicable: !!empFlags.is_paye_applicable,
+          employment_type: empFlags.employment_type,
+          basic_salary: emp.basic_salary,
+          overtime_pay: emp.overtime_pay || 0,
+          bonuses: emp.bonuses || 0,
+          allowances: emp.allowances || 0,
+          other_deductions: emp.other_deductions || 0,
+        };
 
-        totalGross += grossPay;
-        totalDeductions += totalDed;
-        totalNet += netPay;
-        totalEmployerEpf += employerEpf;
-        totalEmployerEtf += employerEtf;
+        const result = runPayrollForEmployee(engineInput, config.rules, config.components);
+
+        totalGross += result.gross_pay;
+        totalDeductions += result.total_deductions;
+        totalNet += result.net_pay;
+        totalEmployerEpf += result.employer_epf;
+        totalEmployerEtf += result.employer_etf;
 
         return {
           employee_id: emp.employee_id,
           basic_salary: emp.basic_salary,
           overtime_hours: emp.overtime_hours || 0,
           overtime_pay: emp.overtime_pay || 0,
-          gross_pay: grossPay,
-          employee_epf: employeeEpf,
-          employer_epf: employerEpf,
-          employer_etf: employerEtf,
+          gross_pay: result.gross_pay,
+          employee_epf: result.employee_epf,
+          employer_epf: result.employer_epf,
+          employer_etf: result.employer_etf,
           other_deductions: emp.other_deductions || 0,
           bonuses: emp.bonuses || 0,
           allowances: emp.allowances || 0,
-          net_pay: netPay,
+          net_pay: result.net_pay,
           payment_method: emp.payment_method || "bank_transfer",
           notes: emp.notes,
         };
@@ -200,11 +260,99 @@ export function useCreatePayrollRun() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["payroll_runs"] });
-      toast.success("Payroll run created");
+      toast.success("Payroll run created via rule engine");
     },
     onError: (e: Error) => toast.error(e.message),
   });
 }
+
+// ===== Recalculate Draft Runs (re-applies current rule set) =====
+export function useRecalculateDraftRuns() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const config = await loadEngineConfig();
+
+      // Get all draft runs and their items
+      const { data: drafts, error: dErr } = await supabase
+        .from("payroll_runs").select("id,tenant_id").eq("status", "draft");
+      if (dErr) throw dErr;
+      if (!drafts || drafts.length === 0) return { runs: 0, items: 0 };
+
+      const runIds = drafts.map((r) => r.id);
+      const { data: items, error: iErr } = await supabase
+        .from("payroll_run_items")
+        .select("id,run_id,employee_id,basic_salary,overtime_pay,bonuses,allowances,other_deductions")
+        .in("run_id", runIds);
+      if (iErr) throw iErr;
+      if (!items || items.length === 0) return { runs: drafts.length, items: 0 };
+
+      // Load employee flags
+      const empIds = Array.from(new Set(items.map((it) => it.employee_id)));
+      const { data: emps } = await supabase
+        .from("employees")
+        .select("id,is_epf_applicable,is_etf_applicable,is_paye_applicable,employment_type")
+        .in("id", empIds);
+      const empMap = new Map((emps || []).map((e: any) => [e.id, e]));
+
+      // Recompute each item via the engine
+      const runTotals = new Map<string, { gross: number; ded: number; net: number; eEpf: number; eEtf: number }>();
+      let updated = 0;
+
+      for (const it of items) {
+        const ef = empMap.get(it.employee_id) || { id: it.employee_id, is_epf_applicable: true, is_etf_applicable: true, is_paye_applicable: false };
+        const result = runPayrollForEmployee({
+          id: it.employee_id,
+          is_epf_applicable: !!ef.is_epf_applicable,
+          is_etf_applicable: !!ef.is_etf_applicable,
+          is_paye_applicable: !!ef.is_paye_applicable,
+          employment_type: ef.employment_type,
+          basic_salary: Number(it.basic_salary || 0),
+          overtime_pay: Number(it.overtime_pay || 0),
+          bonuses: Number(it.bonuses || 0),
+          allowances: Number(it.allowances || 0),
+          other_deductions: Number(it.other_deductions || 0),
+        }, config.rules, config.components);
+
+        await supabase.from("payroll_run_items").update({
+          gross_pay: result.gross_pay,
+          employee_epf: result.employee_epf,
+          employer_epf: result.employer_epf,
+          employer_etf: result.employer_etf,
+          net_pay: result.net_pay,
+        }).eq("id", it.id);
+        updated++;
+
+        const t = runTotals.get(it.run_id) || { gross: 0, ded: 0, net: 0, eEpf: 0, eEtf: 0 };
+        t.gross += result.gross_pay;
+        t.ded += result.total_deductions;
+        t.net += result.net_pay;
+        t.eEpf += result.employer_epf;
+        t.eEtf += result.employer_etf;
+        runTotals.set(it.run_id, t);
+      }
+
+      // Update run totals
+      for (const [runId, t] of runTotals) {
+        await supabase.from("payroll_runs").update({
+          total_gross: t.gross, total_deductions: t.ded, total_net: t.net,
+          total_employer_epf: t.eEpf, total_employer_etf: t.eEtf,
+        }).eq("id", runId);
+      }
+
+      writeAuditLog("Draft Payroll Runs Recalculated", "payroll_runs", undefined, { runs: drafts.length, items: updated });
+      return { runs: drafts.length, items: updated };
+    },
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ["payroll_runs"] });
+      qc.invalidateQueries({ queryKey: ["payroll_run_items"] });
+      toast.success(`Recalculated ${r.items} items across ${r.runs} draft run(s)`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+
 
 export function useApprovePayrollRun() {
   const qc = useQueryClient();
