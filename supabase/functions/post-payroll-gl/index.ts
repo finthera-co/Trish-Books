@@ -113,11 +113,12 @@ Deno.serve(async (req) => {
     }
 
     if (unmapped.length > 0) {
+      // Return 200 so supabase-js client can read the body (non-2xx strips it)
       return json({
-        error: "Unmapped payroll components — configure GL mapping first",
+        ok: false,
+        error: `Unmapped payroll components: ${unmapped.map((u) => u.component_code).join(", ")}. Go to Payroll → GL Mapping to assign accounts.`,
         unmapped,
-        hint: "Go to Payroll → GL Mapping to assign accounts",
-      }, 422);
+      }, 200);
     }
 
     const lines = Array.from(linesByKey.values()).map((l) => ({
@@ -131,14 +132,15 @@ Deno.serve(async (req) => {
     const totalCr = lines.reduce((s, l) => s + l.credit, 0);
     if (Math.abs(totalDr - totalCr) > EPSILON) {
       return json({
-        error: "Generated journal is unbalanced — check mapping (each component should be on the side that produces a balanced entry)",
+        ok: false,
+        error: `Generated journal is unbalanced — check mapping (Dr ${round2(totalDr)} ≠ Cr ${round2(totalCr)}, off by ${round2(totalDr - totalCr)})`,
         total_debit: round2(totalDr),
         total_credit: round2(totalCr),
         difference: round2(totalDr - totalCr),
         lines,
-      }, 422);
+      }, 200);
     }
-    if (lines.length < 2) return json({ error: "Need at least two journal lines" }, 422);
+    if (lines.length < 2) return json({ ok: false, error: "Need at least two journal lines — map more components" }, 200);
 
     // 7. Insert journal entry as draft → lines → flip to posted (mirrors validate-journal-entry pattern)
     const { data: je, error: jeErr } = await admin
