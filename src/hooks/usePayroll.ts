@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import {
   runPayrollForEmployee,
+  hashRuleSet,
   type PayrollComponent,
   type PayrollRule,
   type EmployeePayrollInput,
@@ -33,15 +34,46 @@ export function usePayrollRules() {
 }
 
 async function loadEngineConfig() {
+  // Load active components and the LATEST version of each active rule from payroll_rule_versions.
+  // This is what gets locked into the run snapshot.
   const [compsRes, rulesRes] = await Promise.all([
     supabase.from("payroll_components").select("*").eq("is_active", true),
-    supabase.from("payroll_rules").select("*").eq("is_active", true).order("priority"),
+    supabase
+      .from("payroll_rule_versions")
+      .select("*")
+      .eq("is_active", true)
+      .order("rule_id")
+      .order("version_no", { ascending: false }),
   ]);
   if (compsRes.error) throw compsRes.error;
   if (rulesRes.error) throw rulesRes.error;
+
+  // Keep only the latest version per rule_id
+  const latestByRule = new Map<string, any>();
+  for (const v of rulesRes.data || []) {
+    if (!latestByRule.has(v.rule_id)) latestByRule.set(v.rule_id, v);
+  }
+  const versionedRules: PayrollRule[] = Array.from(latestByRule.values()).map((v: any) => ({
+    id: v.rule_id,
+    rule_version_id: v.id,
+    version_no: v.version_no,
+    name: v.name,
+    target_component_code: v.target_component_code,
+    formula_type: v.formula_type,
+    formula_value: Number(v.formula_value),
+    base_component_code: v.base_component_code,
+    expression: v.expression,
+    condition_json: v.condition_json,
+    priority: v.priority,
+    is_active: v.is_active,
+    effective_from: v.effective_from,
+    effective_to: v.effective_to,
+  }));
+
   return {
     components: (compsRes.data || []) as PayrollComponent[],
-    rules: ((rulesRes.data || []) as unknown) as PayrollRule[],
+    rules: versionedRules,
+    rawVersions: Array.from(latestByRule.values()),
   };
 }
 
