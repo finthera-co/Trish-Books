@@ -132,14 +132,15 @@ Deno.serve(async (req) => {
     const totalCr = lines.reduce((s, l) => s + l.credit, 0);
     if (Math.abs(totalDr - totalCr) > EPSILON) {
       return json({
-        error: "Generated journal is unbalanced — check mapping (each component should be on the side that produces a balanced entry)",
+        ok: false,
+        error: `Generated journal is unbalanced — check mapping (Dr ${round2(totalDr)} ≠ Cr ${round2(totalCr)}, off by ${round2(totalDr - totalCr)})`,
         total_debit: round2(totalDr),
         total_credit: round2(totalCr),
         difference: round2(totalDr - totalCr),
         lines,
-      }, 422);
+      }, 200);
     }
-    if (lines.length < 2) return json({ error: "Need at least two journal lines" }, 422);
+    if (lines.length < 2) return json({ ok: false, error: "Need at least two journal lines — map more components" }, 200);
 
     // 7. Insert journal entry as draft → lines → flip to posted (mirrors validate-journal-entry pattern)
     const { data: je, error: jeErr } = await admin
