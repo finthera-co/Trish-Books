@@ -61,6 +61,26 @@ export default function JournalEntries() {
   const { data: entries, isLoading } = useJournalEntries();
   const { data: accounts } = useAccounts();
 
+  // Compute next JV reference (JV-001, JV-002, …) from existing entries
+  const nextJvReference = useMemo(() => {
+    let max = 0;
+    (entries || []).forEach((e: any) => {
+      const m = /^JV-(\d+)$/i.exec((e.reference || "").trim());
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (n > max) max = n;
+      }
+    });
+    return `JV-${String(max + 1).padStart(3, "0")}`;
+  }, [entries]);
+
+  // Auto-fill reference when opening the New Entry dialog
+  useEffect(() => {
+    if (open && !reference) {
+      setReference(nextJvReference);
+    }
+  }, [open, nextJvReference]);
+
   // Auto-scroll to highlighted entry from source navigation
   useEffect(() => {
     if (highlightId && highlightRef.current) {
