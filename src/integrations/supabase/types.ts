@@ -3273,6 +3273,162 @@ export type Database = {
           },
         ]
       }
+      payroll_results: {
+        Row: {
+          calculation_trace: Json | null
+          component_code: string
+          component_name: string
+          created_at: string
+          employee_id: string
+          id: string
+          rule_id: string | null
+          rule_version_id: string | null
+          run_id: string
+          tenant_id: string
+          value: number
+        }
+        Insert: {
+          calculation_trace?: Json | null
+          component_code: string
+          component_name: string
+          created_at?: string
+          employee_id: string
+          id?: string
+          rule_id?: string | null
+          rule_version_id?: string | null
+          run_id: string
+          tenant_id: string
+          value?: number
+        }
+        Update: {
+          calculation_trace?: Json | null
+          component_code?: string
+          component_name?: string
+          created_at?: string
+          employee_id?: string
+          id?: string
+          rule_id?: string | null
+          rule_version_id?: string | null
+          run_id?: string
+          tenant_id?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payroll_results_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payroll_results_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "payroll_rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payroll_results_rule_version_id_fkey"
+            columns: ["rule_version_id"]
+            isOneToOne: false
+            referencedRelation: "payroll_rule_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payroll_results_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "payroll_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payroll_results_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payroll_rule_versions: {
+        Row: {
+          base_component_code: string | null
+          condition_json: Json | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          effective_from: string | null
+          effective_to: string | null
+          expression: string | null
+          formula_type: string
+          formula_value: number
+          id: string
+          is_active: boolean
+          name: string
+          priority: number
+          rule_id: string
+          target_component_code: string
+          tenant_id: string
+          version_no: number
+        }
+        Insert: {
+          base_component_code?: string | null
+          condition_json?: Json | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          effective_from?: string | null
+          effective_to?: string | null
+          expression?: string | null
+          formula_type: string
+          formula_value?: number
+          id?: string
+          is_active?: boolean
+          name: string
+          priority?: number
+          rule_id: string
+          target_component_code: string
+          tenant_id: string
+          version_no: number
+        }
+        Update: {
+          base_component_code?: string | null
+          condition_json?: Json | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          effective_from?: string | null
+          effective_to?: string | null
+          expression?: string | null
+          formula_type?: string
+          formula_value?: number
+          id?: string
+          is_active?: boolean
+          name?: string
+          priority?: number
+          rule_id?: string
+          target_component_code?: string
+          tenant_id?: string
+          version_no?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payroll_rule_versions_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "payroll_rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payroll_rule_versions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payroll_rules: {
         Row: {
           base_component_code: string | null
@@ -3416,19 +3572,69 @@ export type Database = {
           },
         ]
       }
+      payroll_run_snapshots: {
+        Row: {
+          created_at: string
+          employee_snapshots: Json
+          id: string
+          rule_set: Json
+          rule_set_version_hash: string
+          run_id: string
+          tenant_id: string
+        }
+        Insert: {
+          created_at?: string
+          employee_snapshots: Json
+          id?: string
+          rule_set: Json
+          rule_set_version_hash: string
+          run_id: string
+          tenant_id: string
+        }
+        Update: {
+          created_at?: string
+          employee_snapshots?: Json
+          id?: string
+          rule_set?: Json
+          rule_set_version_hash?: string
+          run_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payroll_run_snapshots_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: true
+            referencedRelation: "payroll_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payroll_run_snapshots_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payroll_runs: {
         Row: {
+          adjusts_run_id: string | null
           approved_at: string | null
           approved_by: string | null
           created_at: string
           created_by: string | null
+          finalized_at: string | null
+          finalized_by: string | null
           id: string
+          is_adjustment: boolean
           journal_entry_id: string | null
           notes: string | null
           pay_schedule_id: string | null
           payment_date: string | null
           period_end: string
           period_start: string
+          rule_set_version_hash: string | null
           run_number: string
           status: string
           tenant_id: string
@@ -3440,17 +3646,22 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          adjusts_run_id?: string | null
           approved_at?: string | null
           approved_by?: string | null
           created_at?: string
           created_by?: string | null
+          finalized_at?: string | null
+          finalized_by?: string | null
           id?: string
+          is_adjustment?: boolean
           journal_entry_id?: string | null
           notes?: string | null
           pay_schedule_id?: string | null
           payment_date?: string | null
           period_end: string
           period_start: string
+          rule_set_version_hash?: string | null
           run_number: string
           status?: string
           tenant_id: string
@@ -3462,17 +3673,22 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          adjusts_run_id?: string | null
           approved_at?: string | null
           approved_by?: string | null
           created_at?: string
           created_by?: string | null
+          finalized_at?: string | null
+          finalized_by?: string | null
           id?: string
+          is_adjustment?: boolean
           journal_entry_id?: string | null
           notes?: string | null
           pay_schedule_id?: string | null
           payment_date?: string | null
           period_end?: string
           period_start?: string
+          rule_set_version_hash?: string | null
           run_number?: string
           status?: string
           tenant_id?: string
@@ -3485,8 +3701,22 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "payroll_runs_adjusts_run_id_fkey"
+            columns: ["adjusts_run_id"]
+            isOneToOne: false
+            referencedRelation: "payroll_runs"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "payroll_runs_created_by_fkey"
             columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payroll_runs_finalized_by_fkey"
+            columns: ["finalized_by"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]

@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import {
   runPayrollForEmployee,
+  hashRuleSet,
   type PayrollComponent,
   type PayrollRule,
   type EmployeePayrollInput,
@@ -33,15 +34,46 @@ export function usePayrollRules() {
 }
 
 async function loadEngineConfig() {
+  // Load active components and the LATEST version of each active rule from payroll_rule_versions.
+  // This is what gets locked into the run snapshot.
   const [compsRes, rulesRes] = await Promise.all([
     supabase.from("payroll_components").select("*").eq("is_active", true),
-    supabase.from("payroll_rules").select("*").eq("is_active", true).order("priority"),
+    supabase
+      .from("payroll_rule_versions")
+      .select("*")
+      .eq("is_active", true)
+      .order("rule_id")
+      .order("version_no", { ascending: false }),
   ]);
   if (compsRes.error) throw compsRes.error;
   if (rulesRes.error) throw rulesRes.error;
+
+  // Keep only the latest version per rule_id
+  const latestByRule = new Map<string, any>();
+  for (const v of rulesRes.data || []) {
+    if (!latestByRule.has(v.rule_id)) latestByRule.set(v.rule_id, v);
+  }
+  const versionedRules: PayrollRule[] = Array.from(latestByRule.values()).map((v: any) => ({
+    id: v.rule_id,
+    rule_version_id: v.id,
+    version_no: v.version_no,
+    name: v.name,
+    target_component_code: v.target_component_code,
+    formula_type: v.formula_type,
+    formula_value: Number(v.formula_value),
+    base_component_code: v.base_component_code,
+    expression: v.expression,
+    condition_json: v.condition_json,
+    priority: v.priority,
+    is_active: v.is_active,
+    effective_from: v.effective_from,
+    effective_to: v.effective_to,
+  }));
+
   return {
     components: (compsRes.data || []) as PayrollComponent[],
-    rules: ((rulesRes.data || []) as unknown) as PayrollRule[],
+    rules: versionedRules,
+    rawVersions: Array.from(latestByRule.values()),
   };
 }
 
@@ -182,6 +214,14 @@ export function useCreatePayrollRun() {
       const empMap = new Map((empRes.data || []).map((e: any) => [e.id, e]));
 
       let totalGross = 0, totalDeductions = 0, totalNet = 0, totalEmployerEpf = 0, totalEmployerEtf = 0;
+      const ruleSetHash = hashRuleSet(config.rules);
+
+      // Capture per-employee traces for the immutable ledger
+      const perEmployeeTraces: Array<{
+        employee_id: string;
+        engineInput: EmployeePayrollInput;
+        traces: Record<string, any>;
+      }> = [];
 
       const items = input.employees.map((emp) => {
         const empFlags = empMap.get(emp.employee_id) || {
@@ -204,6 +244,7 @@ export function useCreatePayrollRun() {
         };
 
         const result = runPayrollForEmployee(engineInput, config.rules, config.components);
+        perEmployeeTraces.push({ employee_id: emp.employee_id, engineInput, traces: result.traces });
 
         totalGross += result.gross_pay;
         totalDeductions += result.total_deductions;
@@ -229,7 +270,7 @@ export function useCreatePayrollRun() {
         };
       });
 
-      // Create run
+      // Create run (with locked rule-set hash)
       const { data: run, error } = await supabase.from("payroll_runs").insert({
         tenant_id: appUser?.tenant_id,
         run_number: runNumber,
@@ -245,22 +286,65 @@ export function useCreatePayrollRun() {
         total_employer_etf: totalEmployerEtf,
         notes: input.notes,
         created_by: appUser?.id,
+        rule_set_version_hash: ruleSetHash,
       }).select().single();
       if (error) throw error;
 
-      // Create run items
+      // Cache layer: legacy run items (kept for backward-compat with PayStub UI)
       const runItems = items.map((item) => ({ ...item, run_id: run.id }));
       const { error: itemsError } = await supabase.from("payroll_run_items").insert(runItems);
       if (itemsError) throw itemsError;
 
+      // ====== Immutable ledger writes ======
+      // 1. Run snapshot (frozen rule-set + employee snapshots)
+      await supabase.from("payroll_run_snapshots").insert({
+        run_id: run.id,
+        tenant_id: appUser?.tenant_id,
+        rule_set_version_hash: ruleSetHash,
+        rule_set: config.rawVersions as any,
+        employee_snapshots: perEmployeeTraces.map((p) => p.engineInput) as any,
+      });
+
+      // 2. payroll_results: one row per (employee, component) with full trace
+      const componentNameByCode = new Map(config.components.map((c) => [c.code, c.name]));
+      const resultRows: any[] = [];
+      for (const pet of perEmployeeTraces) {
+        for (const [code, trace] of Object.entries(pet.traces)) {
+          resultRows.push({
+            tenant_id: appUser?.tenant_id,
+            run_id: run.id,
+            employee_id: pet.employee_id,
+            component_code: code,
+            component_name: componentNameByCode.get(code) || code,
+            value: (trace as any).result,
+            rule_id: (trace as any).rule_id,
+            rule_version_id: (trace as any).rule_version_id,
+            calculation_trace: trace as any,
+          });
+        }
+      }
+      if (resultRows.length > 0) {
+        // chunk to avoid payload limits
+        for (let i = 0; i < resultRows.length; i += 500) {
+          const chunk = resultRows.slice(i, i + 500);
+          const { error: prErr } = await supabase.from("payroll_results").insert(chunk);
+          if (prErr) throw prErr;
+        }
+      }
+
       writeAuditLog("Payroll Run Created", "payroll_runs", run.id, {
-        run_number: runNumber, employee_count: items.length, total_net: totalNet,
+        run_number: runNumber,
+        employee_count: items.length,
+        total_net: totalNet,
+        rule_set_version_hash: ruleSetHash,
+        result_rows: resultRows.length,
       });
       return run;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["payroll_runs"] });
-      toast.success("Payroll run created via rule engine");
+      qc.invalidateQueries({ queryKey: ["payroll_results"] });
+      toast.success("Payroll run created with full audit trace");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -429,5 +513,99 @@ export function useVoidPayrollRun() {
       toast.success("Payroll run voided");
     },
     onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ===== Finalize Payroll Run (lock as immutable) =====
+export function useFinalizePayrollRun() {
+  const qc = useQueryClient();
+  const { appUser } = useAuth();
+  return useMutation({
+    mutationFn: async (runId: string) => {
+      const { error } = await supabase.from("payroll_runs").update({
+        status: "finalized",
+        finalized_at: new Date().toISOString(),
+        finalized_by: appUser?.id,
+      }).eq("id", runId);
+      if (error) throw error;
+      writeAuditLog("Payroll Run Finalized", "payroll_runs", runId);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["payroll_runs"] });
+      toast.success("Payroll run finalized — now immutable");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ===== Read Immutable Results (audit trail) =====
+export function usePayrollResults(runId?: string) {
+  return useQuery({
+    queryKey: ["payroll_results", runId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("payroll_results")
+        .select("*, employees(first_name,last_name,department,epf_number)")
+        .eq("run_id", runId!)
+        .order("employee_id")
+        .order("component_code");
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!runId,
+  });
+}
+
+export function usePayrollRunSnapshot(runId?: string) {
+  return useQuery({
+    queryKey: ["payroll_run_snapshot", runId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("payroll_run_snapshots")
+        .select("*")
+        .eq("run_id", runId!)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!runId,
+  });
+}
+
+// ===== Simulate Payroll (what-if mode, no persistence) =====
+export interface SimulatePayrollInput {
+  employee_id?: string;
+  overrides?: {
+    basic_salary?: number;
+    overtime_pay?: number;
+    bonuses?: number;
+    allowances?: number;
+    other_deductions?: number;
+    is_epf_applicable?: boolean;
+    is_etf_applicable?: boolean;
+    is_paye_applicable?: boolean;
+    employment_type?: string;
+  };
+  synthetic_employee?: {
+    basic_salary: number;
+    is_epf_applicable?: boolean;
+    is_etf_applicable?: boolean;
+    is_paye_applicable?: boolean;
+    overtime_pay?: number;
+    bonuses?: number;
+    allowances?: number;
+    other_deductions?: number;
+  };
+  as_of_date?: string;
+}
+
+export function useSimulatePayroll() {
+  return useMutation({
+    mutationFn: async (input: SimulatePayrollInput) => {
+      const { data, error } = await supabase.functions.invoke("simulate-payroll", { body: input });
+      if (error) throw error;
+      return data;
+    },
+    onError: (e: Error) => toast.error(`Simulation failed: ${e.message}`),
   });
 }
