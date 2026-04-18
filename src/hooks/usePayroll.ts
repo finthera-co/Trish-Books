@@ -214,6 +214,14 @@ export function useCreatePayrollRun() {
       const empMap = new Map((empRes.data || []).map((e: any) => [e.id, e]));
 
       let totalGross = 0, totalDeductions = 0, totalNet = 0, totalEmployerEpf = 0, totalEmployerEtf = 0;
+      const ruleSetHash = hashRuleSet(config.rules);
+
+      // Capture per-employee traces for the immutable ledger
+      const perEmployeeTraces: Array<{
+        employee_id: string;
+        engineInput: EmployeePayrollInput;
+        traces: Record<string, any>;
+      }> = [];
 
       const items = input.employees.map((emp) => {
         const empFlags = empMap.get(emp.employee_id) || {
@@ -236,6 +244,7 @@ export function useCreatePayrollRun() {
         };
 
         const result = runPayrollForEmployee(engineInput, config.rules, config.components);
+        perEmployeeTraces.push({ employee_id: emp.employee_id, engineInput, traces: result.traces });
 
         totalGross += result.gross_pay;
         totalDeductions += result.total_deductions;
