@@ -126,6 +126,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
     sidebarItems: [
       { label: "Payroll Runs", path: "/payroll/runs", icon: DollarSign },
       { label: "Employees", path: "/payroll/employees", icon: UserCheck },
+      { label: "GL Mapping", path: "/payroll/gl-mapping", icon: FileText },
     ],
   },
   reports: {
