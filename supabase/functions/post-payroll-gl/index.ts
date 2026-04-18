@@ -113,11 +113,12 @@ Deno.serve(async (req) => {
     }
 
     if (unmapped.length > 0) {
+      // Return 200 so supabase-js client can read the body (non-2xx strips it)
       return json({
-        error: "Unmapped payroll components — configure GL mapping first",
+        ok: false,
+        error: `Unmapped payroll components: ${unmapped.map((u) => u.component_code).join(", ")}. Go to Payroll → GL Mapping to assign accounts.`,
         unmapped,
-        hint: "Go to Payroll → GL Mapping to assign accounts",
-      }, 422);
+      }, 200);
     }
 
     const lines = Array.from(linesByKey.values()).map((l) => ({
