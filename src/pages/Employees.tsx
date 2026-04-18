@@ -45,13 +45,21 @@ export default function Employees() {
       department: department || undefined,
       salary: salary || undefined,
       hire_date: hireDate || undefined,
-    });
+      employment_type: employmentType,
+      is_epf_applicable: isEpfApplicable,
+      is_etf_applicable: isEtfApplicable,
+      is_paye_applicable: isPayeApplicable,
+    } as any);
     setOpen(false);
     setFirstName("");
     setLastName("");
     setEmail("");
     setDepartment("");
     setSalary(0);
+    setEmploymentType("salaried");
+    setIsEpfApplicable(true);
+    setIsEtfApplicable(true);
+    setIsPayeApplicable(false);
   };
 
   const totalSalary = employees?.reduce((s, e) => s + Number(e.salary || 0), 0) || 0;
