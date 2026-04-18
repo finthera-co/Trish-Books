@@ -270,7 +270,7 @@ export function useCreatePayrollRun() {
         };
       });
 
-      // Create run
+      // Create run (with locked rule-set hash)
       const { data: run, error } = await supabase.from("payroll_runs").insert({
         tenant_id: appUser?.tenant_id,
         run_number: runNumber,
@@ -286,22 +286,65 @@ export function useCreatePayrollRun() {
         total_employer_etf: totalEmployerEtf,
         notes: input.notes,
         created_by: appUser?.id,
+        rule_set_version_hash: ruleSetHash,
       }).select().single();
       if (error) throw error;
 
-      // Create run items
+      // Cache layer: legacy run items (kept for backward-compat with PayStub UI)
       const runItems = items.map((item) => ({ ...item, run_id: run.id }));
       const { error: itemsError } = await supabase.from("payroll_run_items").insert(runItems);
       if (itemsError) throw itemsError;
 
+      // ====== Immutable ledger writes ======
+      // 1. Run snapshot (frozen rule-set + employee snapshots)
+      await supabase.from("payroll_run_snapshots").insert({
+        run_id: run.id,
+        tenant_id: appUser?.tenant_id,
+        rule_set_version_hash: ruleSetHash,
+        rule_set: config.rawVersions as any,
+        employee_snapshots: perEmployeeTraces.map((p) => p.engineInput) as any,
+      });
+
+      // 2. payroll_results: one row per (employee, component) with full trace
+      const componentNameByCode = new Map(config.components.map((c) => [c.code, c.name]));
+      const resultRows: any[] = [];
+      for (const pet of perEmployeeTraces) {
+        for (const [code, trace] of Object.entries(pet.traces)) {
+          resultRows.push({
+            tenant_id: appUser?.tenant_id,
+            run_id: run.id,
+            employee_id: pet.employee_id,
+            component_code: code,
+            component_name: componentNameByCode.get(code) || code,
+            value: (trace as any).result,
+            rule_id: (trace as any).rule_id,
+            rule_version_id: (trace as any).rule_version_id,
+            calculation_trace: trace as any,
+          });
+        }
+      }
+      if (resultRows.length > 0) {
+        // chunk to avoid payload limits
+        for (let i = 0; i < resultRows.length; i += 500) {
+          const chunk = resultRows.slice(i, i + 500);
+          const { error: prErr } = await supabase.from("payroll_results").insert(chunk);
+          if (prErr) throw prErr;
+        }
+      }
+
       writeAuditLog("Payroll Run Created", "payroll_runs", run.id, {
-        run_number: runNumber, employee_count: items.length, total_net: totalNet,
+        run_number: runNumber,
+        employee_count: items.length,
+        total_net: totalNet,
+        rule_set_version_hash: ruleSetHash,
+        result_rows: resultRows.length,
       });
       return run;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["payroll_runs"] });
-      toast.success("Payroll run created via rule engine");
+      qc.invalidateQueries({ queryKey: ["payroll_results"] });
+      toast.success("Payroll run created with full audit trace");
     },
     onError: (e: Error) => toast.error(e.message),
   });
