@@ -2,6 +2,48 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import {
+  runPayrollForEmployee,
+  type PayrollComponent,
+  type PayrollRule,
+  type EmployeePayrollInput,
+} from "@/lib/payrollRuleEngine";
+
+// ===== Rule Engine Hooks =====
+export function usePayrollComponents() {
+  return useQuery({
+    queryKey: ["payroll_components"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("payroll_components").select("*").eq("is_active", true);
+      if (error) throw error;
+      return data as PayrollComponent[];
+    },
+  });
+}
+
+export function usePayrollRules() {
+  return useQuery({
+    queryKey: ["payroll_rules"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("payroll_rules").select("*").eq("is_active", true).order("priority");
+      if (error) throw error;
+      return data as PayrollRule[];
+    },
+  });
+}
+
+async function loadEngineConfig() {
+  const [compsRes, rulesRes] = await Promise.all([
+    supabase.from("payroll_components").select("*").eq("is_active", true),
+    supabase.from("payroll_rules").select("*").eq("is_active", true).order("priority"),
+  ]);
+  if (compsRes.error) throw compsRes.error;
+  if (rulesRes.error) throw rulesRes.error;
+  return {
+    components: (compsRes.data || []) as PayrollComponent[],
+    rules: (rulesRes.data || []) as PayrollRule[],
+  };
+}
 
 // Helper: Write audit log
 async function writeAuditLog(action: string, tableName: string, recordId?: string, details?: Record<string, any>) {
