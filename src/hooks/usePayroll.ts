@@ -515,3 +515,97 @@ export function useVoidPayrollRun() {
     onError: (e: Error) => toast.error(e.message),
   });
 }
+
+// ===== Finalize Payroll Run (lock as immutable) =====
+export function useFinalizePayrollRun() {
+  const qc = useQueryClient();
+  const { appUser } = useAuth();
+  return useMutation({
+    mutationFn: async (runId: string) => {
+      const { error } = await supabase.from("payroll_runs").update({
+        status: "finalized",
+        finalized_at: new Date().toISOString(),
+        finalized_by: appUser?.id,
+      }).eq("id", runId);
+      if (error) throw error;
+      writeAuditLog("Payroll Run Finalized", "payroll_runs", runId);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["payroll_runs"] });
+      toast.success("Payroll run finalized — now immutable");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ===== Read Immutable Results (audit trail) =====
+export function usePayrollResults(runId?: string) {
+  return useQuery({
+    queryKey: ["payroll_results", runId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("payroll_results")
+        .select("*, employees(first_name,last_name,department,epf_number)")
+        .eq("run_id", runId!)
+        .order("employee_id")
+        .order("component_code");
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!runId,
+  });
+}
+
+export function usePayrollRunSnapshot(runId?: string) {
+  return useQuery({
+    queryKey: ["payroll_run_snapshot", runId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("payroll_run_snapshots")
+        .select("*")
+        .eq("run_id", runId!)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!runId,
+  });
+}
+
+// ===== Simulate Payroll (what-if mode, no persistence) =====
+export interface SimulatePayrollInput {
+  employee_id?: string;
+  overrides?: {
+    basic_salary?: number;
+    overtime_pay?: number;
+    bonuses?: number;
+    allowances?: number;
+    other_deductions?: number;
+    is_epf_applicable?: boolean;
+    is_etf_applicable?: boolean;
+    is_paye_applicable?: boolean;
+    employment_type?: string;
+  };
+  synthetic_employee?: {
+    basic_salary: number;
+    is_epf_applicable?: boolean;
+    is_etf_applicable?: boolean;
+    is_paye_applicable?: boolean;
+    overtime_pay?: number;
+    bonuses?: number;
+    allowances?: number;
+    other_deductions?: number;
+  };
+  as_of_date?: string;
+}
+
+export function useSimulatePayroll() {
+  return useMutation({
+    mutationFn: async (input: SimulatePayrollInput) => {
+      const { data, error } = await supabase.functions.invoke("simulate-payroll", { body: input });
+      if (error) throw error;
+      return data;
+    },
+    onError: (e: Error) => toast.error(`Simulation failed: ${e.message}`),
+  });
+}
