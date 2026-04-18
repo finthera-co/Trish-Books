@@ -27,7 +27,7 @@ export function usePayrollRules() {
     queryFn: async () => {
       const { data, error } = await supabase.from("payroll_rules").select("*").eq("is_active", true).order("priority");
       if (error) throw error;
-      return data as PayrollRule[];
+      return (data || []) as unknown as PayrollRule[];
     },
   });
 }
@@ -41,7 +41,7 @@ async function loadEngineConfig() {
   if (rulesRes.error) throw rulesRes.error;
   return {
     components: (compsRes.data || []) as PayrollComponent[],
-    rules: (rulesRes.data || []) as PayrollRule[],
+    rules: ((rulesRes.data || []) as unknown) as PayrollRule[],
   };
 }
 
