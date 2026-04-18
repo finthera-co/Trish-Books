@@ -3070,6 +3070,57 @@ export type Database = {
           },
         ]
       }
+      payroll_component_accounts: {
+        Row: {
+          account_id: string
+          component_code: string
+          created_at: string
+          id: string
+          is_active: boolean
+          notes: string | null
+          posting_side: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          component_code: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          notes?: string | null
+          posting_side: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          component_code?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          notes?: string | null
+          posting_side?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payroll_component_accounts_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payroll_component_accounts_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payroll_components: {
         Row: {
           code: string

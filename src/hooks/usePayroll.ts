@@ -461,40 +461,35 @@ export function useApprovePayrollRun() {
 
 export function useProcessPayrollRun() {
   const qc = useQueryClient();
-  const { appUser } = useAuth();
   return useMutation({
     mutationFn: async (runId: string) => {
-      // Get run data
-      const { data: run } = await supabase.from("payroll_runs").select("*").eq("id", runId).single();
-      if (!run) throw new Error("Run not found");
-
-      // Create journal entry for GL integration
-      const { data: je, error: jeError } = await supabase.from("journal_entries").insert({
-        tenant_id: run.tenant_id,
-        description: `Payroll - ${run.run_number} (${run.period_start} to ${run.period_end})`,
-        entry_date: run.payment_date || run.period_end,
-        reference: run.run_number,
-        created_by: appUser?.id,
-        status: "posted",
-      }).select().single();
-
-      if (jeError) {
-        console.error("Journal entry creation failed:", jeError);
-        // Continue without JE - update status anyway
+      // Delegates to edge function which reads payroll_results, looks up
+      // payroll_component_accounts mapping, builds a balanced double-entry
+      // journal, and posts it. Returns 422 with `unmapped` array if mapping incomplete.
+      const { data, error } = await supabase.functions.invoke("post-payroll-gl", {
+        body: { run_id: runId },
+      });
+      if (error) {
+        // Surface mapping errors clearly
+        const ctx: any = (error as any).context;
+        try {
+          const body = ctx ? await ctx.json?.() : null;
+          if (body?.unmapped?.length) {
+            throw new Error(
+              `Unmapped components: ${body.unmapped.map((u: any) => u.component_code).join(", ")}. Configure mappings at Payroll → GL Mapping.`
+            );
+          }
+          if (body?.error) throw new Error(body.error);
+        } catch (e) { /* fall through */ }
+        throw error;
       }
-
-      const { error } = await supabase.from("payroll_runs").update({
-        status: "processed",
-        journal_entry_id: je?.id || null,
-      }).eq("id", runId);
-      if (error) throw error;
-
-      writeAuditLog("Payroll Run Processed", "payroll_runs", runId, { journal_entry_id: je?.id });
+      if ((data as any)?.error) throw new Error((data as any).error);
+      return data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["payroll_runs"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
-      toast.success("Payroll processed and posted to general ledger");
+      toast.success("Payroll posted to General Ledger");
     },
     onError: (e: Error) => toast.error(e.message),
   });
