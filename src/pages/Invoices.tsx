@@ -3,14 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useInvoices, useUpdateInvoice, useAccounts } from "@/hooks/useData";
+import { usePostInvoice } from "@/hooks/useAccountSettings";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { formatCurrency } from "@/lib/currency";
 import InvoiceDetails from "@/components/invoices/InvoiceDetails";
 import { useMyPermissions } from "@/hooks/usePermissions";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
-import { post, reverseJournalEntry, voidJournalEntry } from "@/lib/postingEngine";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -51,109 +50,34 @@ export default function Invoices() {
     return inv.status;
   };
 
-  // Post a draft invoice
+  const postInvoice = usePostInvoice();
+
+  // Post a draft invoice via edge function (atomic, idempotent, validated)
   const handlePostDraft = async (inv: any) => {
-    if (!appUser?.tenant_id) return;
     setProcessing(true);
     try {
-      const arAccount = accounts?.find((a) => a.account_subtype === "Accounts Receivable" || a.account_name?.toLowerCase().includes("accounts receivable"));
-      const revenueAccount = accounts?.find((a) => a.account_type === "Revenue" && !a.account_name?.toLowerCase().includes("return"));
-      const taxPayableAccount = accounts?.find((a) => a.account_name?.toLowerCase().includes("tax payable") || a.account_subtype === "Tax Payable");
-
-      if (!arAccount || !revenueAccount) {
-        toast.error("Missing required accounts (A/R or Revenue). Check your Chart of Accounts.");
-        return;
-      }
-
-      const total = Number(inv.total_amount);
-      const subtotal = Number(inv.subtotal || total);
-      const taxAmount = Number(inv.tax_amount || 0);
-
-      const journalLines: any[] = [
-        { account_id: arAccount.id, debit: total, credit: 0, customer_id: inv.customer_id },
-        { account_id: revenueAccount.id, debit: 0, credit: subtotal },
-      ];
-
-      if (taxAmount > 0 && taxPayableAccount) {
-        journalLines.push({ account_id: taxPayableAccount.id, debit: 0, credit: taxAmount });
-      }
-
-      const subledgerEntries = [{
-        type: "ar" as const,
-        entity_id: inv.customer_id,
-        document_type: "invoice" as const,
-        document_id: inv.id,
-        debit: total,
-        credit: 0,
-        invoice_no: inv.invoice_number,
-        due_date: inv.due_date || null,
-      }];
-
-      const postResult = await post({
-        tenant_id: appUser.tenant_id,
-        entry_date: inv.issue_date,
-        description: `Invoice ${inv.invoice_number}`,
-        source_type: "invoice",
-        source_id: inv.id,
-        reference: inv.invoice_number,
-        lines: journalLines,
-        subledger_entries: subledgerEntries,
-      });
-
-      await supabase
-        .from("invoices")
-        .update({ status: "sent", journal_entry_id: postResult.journal_entry_id } as any)
-        .eq("id", inv.id);
-
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
-      queryClient.invalidateQueries({ queryKey: ["accounts"] });
-      toast.success("Invoice posted — journal entry created");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to post invoice");
+      await postInvoice.mutateAsync({ invoice_id: inv.id, action: "post" });
+    } catch (e) {
+      // toast handled by mutation
     } finally {
       setProcessing(false);
     }
   };
 
-  // Void a posted invoice — reverse journal
+  // Void a posted invoice via edge function (creates reversal journal)
   const handleVoidInvoice = async () => {
-    if (!voidDialogInvoice || !appUser?.tenant_id) return;
+    if (!voidDialogInvoice) return;
     setProcessing(true);
     try {
-      const inv = voidDialogInvoice;
-
-      // Reverse the journal entry if it exists
-      if (inv.journal_entry_id) {
-        await reverseJournalEntry(
-          inv.journal_entry_id,
-          appUser.tenant_id,
-          new Date().toISOString().split("T")[0],
-          `Void invoice ${inv.invoice_number}: ${voidReason}`
-        );
-        // Mark original JE as voided
-        await voidJournalEntry(inv.journal_entry_id, `Invoice voided: ${voidReason}`, appUser.id);
-      }
-
-      // Mark invoice as voided
-      await supabase
-        .from("invoices")
-        .update({ status: "voided" } as any)
-        .eq("id", inv.id);
-
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
-      queryClient.invalidateQueries({ queryKey: ["accounts"] });
-      toast.success("Invoice voided — reversing journal entry created");
+      await postInvoice.mutateAsync({ invoice_id: voidDialogInvoice.id, action: "void" });
       setVoidDialogInvoice(null);
       setVoidReason("");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to void invoice");
+    } catch (e) {
+      // toast handled by mutation
     } finally {
       setProcessing(false);
     }
   };
-
   const stats = {
     outstanding: invoices?.filter(i => getEffectiveStatus(i) === "sent" || getEffectiveStatus(i) === "partial")
       .reduce((s, i) => s + Number(i.balance_due), 0) || 0,

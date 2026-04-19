@@ -164,6 +164,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
     basePath: "/settings",
     sidebarItems: [
       { label: "General Settings", path: "/settings/general", icon: Settings },
+      { label: "Account Mapping", path: "/settings/account-mapping", icon: Settings },
       { label: "Users", path: "/settings/users", icon: Users },
     ],
   },

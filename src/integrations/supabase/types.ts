@@ -49,6 +49,85 @@ export type Database = {
           },
         ]
       }
+      account_settings: {
+        Row: {
+          ap_account_id: string | null
+          ar_account_id: string | null
+          bank_account_id: string | null
+          created_at: string
+          id: string
+          sales_account_id: string | null
+          tax_payable_account_id: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          ap_account_id?: string | null
+          ar_account_id?: string | null
+          bank_account_id?: string | null
+          created_at?: string
+          id?: string
+          sales_account_id?: string | null
+          tax_payable_account_id?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          ap_account_id?: string | null
+          ar_account_id?: string | null
+          bank_account_id?: string | null
+          created_at?: string
+          id?: string
+          sales_account_id?: string | null
+          tax_payable_account_id?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_settings_ap_account_id_fkey"
+            columns: ["ap_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_ar_account_id_fkey"
+            columns: ["ar_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_bank_account_id_fkey"
+            columns: ["bank_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_sales_account_id_fkey"
+            columns: ["sales_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_tax_payable_account_id_fkey"
+            columns: ["tax_payable_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       account_types: {
         Row: {
           id: string
@@ -2207,6 +2286,7 @@ export type Database = {
       }
       invoice_items: {
         Row: {
+          account_id: string | null
           description: string | null
           id: string
           invoice_id: string
@@ -2217,6 +2297,7 @@ export type Database = {
           unit_price: number
         }
         Insert: {
+          account_id?: string | null
           description?: string | null
           id?: string
           invoice_id: string
@@ -2227,6 +2308,7 @@ export type Database = {
           unit_price?: number
         }
         Update: {
+          account_id?: string | null
           description?: string | null
           id?: string
           invoice_id?: string
@@ -2237,6 +2319,13 @@ export type Database = {
           unit_price?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "invoice_items_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "invoice_items_invoice_id_fkey"
             columns: ["invoice_id"]
@@ -2330,6 +2419,8 @@ export type Database = {
           issue_date: string
           journal_entry_id: string | null
           notes: string | null
+          posted_at: string | null
+          posted_by: string | null
           revenue_account_id: string | null
           status: string
           subtotal: number
@@ -2339,6 +2430,8 @@ export type Database = {
           terms: string | null
           total_amount: number
           updated_at: string
+          voided_at: string | null
+          voided_by: string | null
         }
         Insert: {
           ar_account_id?: string | null
@@ -2352,6 +2445,8 @@ export type Database = {
           issue_date?: string
           journal_entry_id?: string | null
           notes?: string | null
+          posted_at?: string | null
+          posted_by?: string | null
           revenue_account_id?: string | null
           status?: string
           subtotal?: number
@@ -2361,6 +2456,8 @@ export type Database = {
           terms?: string | null
           total_amount?: number
           updated_at?: string
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Update: {
           ar_account_id?: string | null
@@ -2374,6 +2471,8 @@ export type Database = {
           issue_date?: string
           journal_entry_id?: string | null
           notes?: string | null
+          posted_at?: string | null
+          posted_by?: string | null
           revenue_account_id?: string | null
           status?: string
           subtotal?: number
@@ -2383,6 +2482,8 @@ export type Database = {
           terms?: string | null
           total_amount?: number
           updated_at?: string
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Relationships: [
           {
@@ -2407,6 +2508,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "invoices_posted_by_fkey"
+            columns: ["posted_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "invoices_revenue_account_id_fkey"
             columns: ["revenue_account_id"]
             isOneToOne: false
@@ -2425,6 +2533,13 @@ export type Database = {
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_voided_by_fkey"
+            columns: ["voided_by"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
