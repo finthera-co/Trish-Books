@@ -3,14 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useInvoices, useUpdateInvoice, useAccounts } from "@/hooks/useData";
+import { usePostInvoice } from "@/hooks/useAccountSettings";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { formatCurrency } from "@/lib/currency";
 import InvoiceDetails from "@/components/invoices/InvoiceDetails";
 import { useMyPermissions } from "@/hooks/usePermissions";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
-import { post, reverseJournalEntry, voidJournalEntry } from "@/lib/postingEngine";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
