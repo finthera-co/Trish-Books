@@ -49,6 +49,7 @@ import AssetDetail from "./pages/AssetDetail";
 import DepreciationRun from "./pages/DepreciationRun";
 import AssetCategories from "./pages/AssetCategories";
 import SettingsPage from "./pages/SettingsPage";
+import AccountMapping from "./pages/AccountMapping";
 import UsersPage from "./pages/UsersPage";
 import Tenants from "./pages/Tenants";
 import Subscriptions from "./pages/Subscriptions";
@@ -197,6 +198,7 @@ const App = () => (
                     <Route path="/settings" element={<ModuleDashboard config={MODULE_CONFIGS.tenantAdmin} />} />
                     <Route path="/settings/general" element={<SettingsPage />} />
                     <Route path="/settings/users" element={<UsersPage />} />
+                    <Route path="/settings/account-mapping" element={<AccountMapping />} />
                   </Route>
                 </Route>
               </Route>
