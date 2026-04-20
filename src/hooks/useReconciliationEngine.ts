@@ -26,8 +26,10 @@ export function useReconcileEngine() {
       if (vars.action === "match") {
         const ra = data.rule_auto_created || 0;
         const rl = data.rules_loaded || 0;
+        const ap = data.ap_matched || 0;
         toast.success(
           `Engine: ${data.auto || 0} auto · ${data.suggested || 0} suggested · ${data.composite || 0} composite` +
+          (ap ? ` · ${ap} AP` : "") +
           (ra ? ` · ${ra} rule-posted` : "") +
           (rl ? ` (${rl} rules active)` : "")
         );
