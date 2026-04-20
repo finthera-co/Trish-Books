@@ -480,6 +480,7 @@ Deno.serve(async (req) => {
               match_metadata: meta,
             }).eq("id", b.id);
             auto++;
+            if (target?.is_ap_payment) apMatched++;
           } else {
             assertTransition(b.state, "suggested");
             await supabase.from("bank_feed_transactions").update({
