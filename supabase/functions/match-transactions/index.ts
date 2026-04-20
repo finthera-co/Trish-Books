@@ -311,7 +311,358 @@ function findCombination(entries: LedgerEntry[], target: number, size: number, t
   return backtrack(0, size, [], 0);
 }
 
-// ─── Step 6: Standard Scoring Engine (Fallback) ───
+// ─── Step 6: AR Inference Engine (QuickBooks-style payment intent) ───
+// Matches positive bank inflows to OPEN/PARTIAL invoices using multi-signal scoring.
+// On high confidence (>=95) creates a payments_received record + JE automatically.
+interface OpenInvoice {
+  id: string;
+  invoice_number: string;
+  customer_id: string;
+  customer_name: string;
+  total_amount: number;
+  balance_due: number;
+  issue_date: string;
+  ar_account_id: string | null;
+  status: string;
+}
+
+const PAYMENT_INTENT_KEYWORDS = [
+  "payment", "paid", "received", "deposit", "transfer", "remit",
+  "settlement", "inv", "invoice", "ref", "txn", "neft", "rtgs", "ach", "wire",
+];
+
+function detectPaymentIntent(desc: string, amount: number): boolean {
+  if (amount <= 0) return false; // outflows excluded
+  const d = (desc || "").toLowerCase();
+  // Default: any positive inflow is a possible payment unless clearly a fee/charge/interest
+  if (/(fee|charge|interest earned|service charge)/.test(d)) return false;
+  return true;
+}
+
+async function fetchOpenInvoices(supabase: any, tenantId: string): Promise<OpenInvoice[]> {
+  // Fetch posted/sent/partial invoices with customers
+  const { data: invs } = await supabase
+    .from("invoices")
+    .select("id, invoice_number, customer_id, total_amount, issue_date, ar_account_id, status, customers(name)")
+    .eq("tenant_id", tenantId)
+    .in("status", ["posted", "sent", "partial"]);
+  if (!invs || invs.length === 0) return [];
+
+  // Compute balance_due via payments_received
+  const ids = invs.map((i: any) => i.id);
+  const { data: pmts } = await supabase
+    .from("payments_received")
+    .select("invoice_id, amount")
+    .in("invoice_id", ids);
+  const paidMap = new Map<string, number>();
+  (pmts || []).forEach((p: any) => {
+    paidMap.set(p.invoice_id, (paidMap.get(p.invoice_id) || 0) + Number(p.amount));
+  });
+
+  return invs
+    .map((i: any) => {
+      const total = Number(i.total_amount) || 0;
+      const paid = paidMap.get(i.id) || 0;
+      return {
+        id: i.id,
+        invoice_number: i.invoice_number,
+        customer_id: i.customer_id,
+        customer_name: i.customers?.name || "",
+        total_amount: total,
+        balance_due: total - paid,
+        issue_date: i.issue_date,
+        ar_account_id: i.ar_account_id,
+        status: i.status,
+      } as OpenInvoice;
+    })
+    .filter((i) => i.balance_due > 0.01);
+}
+
+function scoreInvoiceMatch(bf: BankFeed, inv: OpenInvoice): { score: number; reasons: string[]; partial: boolean } {
+  const reasons: string[] = [];
+  let score = 0;
+  const bankAmt = Math.abs(bf.amount);
+  const desc = (bf.description || "").toLowerCase();
+  const ref = (bf.reference_number || "").toLowerCase();
+
+  // 1. Amount (40)
+  let partial = false;
+  if (Math.abs(bankAmt - inv.balance_due) < 0.01) {
+    score += 40; reasons.push(`Amount exact match (${bankAmt})`);
+  } else if (Math.abs(bankAmt - inv.total_amount) < 0.01) {
+    score += 35; reasons.push(`Amount matches invoice total`);
+  } else if (bankAmt < inv.balance_due && bankAmt >= inv.balance_due * 0.1) {
+    score += 25; partial = true; reasons.push(`Partial payment (${bankAmt} of ${inv.balance_due})`);
+  } else {
+    return { score: 0, reasons: [], partial: false };
+  }
+
+  // 2. Date window (20)
+  const days = Math.abs(new Date(bf.transaction_date).getTime() - new Date(inv.issue_date).getTime()) / 86400000;
+  if (days <= 1) { score += 20; reasons.push("Date: within 1 day"); }
+  else if (days <= 7) { score += 15; reasons.push(`Date: within ${Math.round(days)}d`); }
+  else if (days <= 30) { score += 10; reasons.push(`Date: within ${Math.round(days)}d`); }
+  else if (days <= 90) { score += 5; }
+
+  // 3. Customer/invoice ref in description (20)
+  const invNumNorm = inv.invoice_number.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const descNorm = desc.replace(/[^a-z0-9]/g, "");
+  const refNorm = ref.replace(/[^a-z0-9]/g, "");
+  if (invNumNorm && (descNorm.includes(invNumNorm) || refNorm.includes(invNumNorm))) {
+    score += 20; reasons.push(`Invoice # "${inv.invoice_number}" found in description`);
+  } else if (inv.customer_name) {
+    const custTokens = inv.customer_name.toLowerCase().split(/\s+/).filter((t) => t.length >= 3);
+    const hit = custTokens.some((t) => desc.includes(t));
+    if (hit) { score += 15; reasons.push(`Customer "${inv.customer_name}" matched in description`); }
+  }
+
+  // 4. Description payment intent (10)
+  if (PAYMENT_INTENT_KEYWORDS.some((k) => desc.includes(k))) {
+    score += 10; reasons.push("Payment intent detected");
+  }
+
+  // 5. Status open boost (10)
+  if (inv.status === "posted" || inv.status === "sent" || inv.status === "partial") {
+    score += 10;
+  }
+
+  return { score, reasons, partial };
+}
+
+async function arInferenceMatch(
+  supabase: any,
+  tenantId: string,
+  bankAccountId: string,
+  bankFeeds: BankFeed[],
+  usedBank: Set<string>,
+  reconciliationId: string
+): Promise<{ matches: MatchResult[]; suggestions: number; auto: number }> {
+  const results: MatchResult[] = [];
+  let suggestions = 0;
+  let auto = 0;
+
+  // Filter to inflows with payment intent
+  const candidates = bankFeeds.filter((bf) => !usedBank.has(bf.id) && detectPaymentIntent(bf.description, bf.amount));
+  if (candidates.length === 0) return { matches: results, suggestions, auto };
+
+  // Resolve default AR account from settings (fallback)
+  const { data: settings } = await supabase
+    .from("account_settings")
+    .select("ar_account_id")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  const defaultArAccountId = settings?.ar_account_id || null;
+
+  // Fetch open invoices
+  const openInvoices = await fetchOpenInvoices(supabase, tenantId);
+  if (openInvoices.length === 0) return { matches: results, suggestions, auto };
+
+  // Score each candidate against all invoices
+  for (const bf of candidates) {
+    let best: { inv: OpenInvoice; score: number; reasons: string[]; partial: boolean } | null = null;
+
+    for (const inv of openInvoices) {
+      const { score, reasons, partial } = scoreInvoiceMatch(bf, inv);
+      if (score < 60) continue; // floor
+      if (!best || score > best.score) best = { inv, score, reasons, partial };
+    }
+
+    if (!best) continue;
+
+    const arAccountId = best.inv.ar_account_id || defaultArAccountId;
+    if (!arAccountId) {
+      // Cannot create payment without AR account; emit suggestion only
+      results.push({
+        bank_feed_id: bf.id,
+        recon_txn_ids: [],
+        journal_line_ids: [],
+        confidence: best.score,
+        method: "ar_inference",
+        match_type: "AR_SUGGESTED",
+        reasons: [...best.reasons, "⚠ AR account not configured — cannot auto-create payment"],
+      });
+      await supabase.from("bank_feed_transactions").update({
+        status: "suggested",
+        match_type: "AR_INFERRED",
+        match_confidence: best.score,
+        match_metadata: {
+          method: "ar_inference",
+          confidence: best.score,
+          reasons: best.reasons,
+          inferred_invoice_id: best.inv.id,
+          inferred_invoice_number: best.inv.invoice_number,
+          partial: best.partial,
+          timestamp: new Date().toISOString(),
+        },
+      }).eq("id", bf.id);
+      usedBank.add(bf.id);
+      suggestions++;
+      continue;
+    }
+
+    // High confidence (>=95) → auto-create payment + JE + recon link + cleared
+    if (best.score >= 95) {
+      const payAmount = best.partial ? Math.abs(bf.amount) : Math.min(Math.abs(bf.amount), best.inv.balance_due);
+      try {
+        // 1. Insert payments_received
+        const { data: pmt, error: pmtErr } = await supabase
+          .from("payments_received")
+          .insert({
+            invoice_id: best.inv.id,
+            amount: payAmount,
+            payment_date: bf.transaction_date,
+            payment_method: "bank_transfer",
+            reference: bf.reference_number || `BANK-${bf.id.slice(0, 8)}`,
+            bank_account_id: bankAccountId,
+            ar_account_id: arAccountId,
+          })
+          .select()
+          .single();
+        if (pmtErr) throw pmtErr;
+
+        // 2. Create JE: Dr Bank / Cr AR
+        const { data: je, error: jeErr } = await supabase
+          .from("journal_entries")
+          .insert({
+            tenant_id: tenantId,
+            entry_date: bf.transaction_date,
+            description: `Auto-matched payment from bank feed for invoice ${best.inv.invoice_number}`,
+            reference: bf.reference_number || best.inv.invoice_number,
+            source_type: "payment_received",
+            source_id: pmt.id,
+            status: "posted",
+          })
+          .select()
+          .single();
+        if (jeErr) throw jeErr;
+
+        // 3. Insert journal lines
+        const { data: jLines, error: jlErr } = await supabase
+          .from("journal_lines")
+          .insert([
+            { journal_entry_id: je.id, account_id: bankAccountId, debit: payAmount, credit: 0 },
+            { journal_entry_id: je.id, account_id: arAccountId, debit: 0, credit: payAmount, customer_id: best.inv.customer_id },
+          ])
+          .select();
+        if (jlErr) throw jlErr;
+
+        // 4. AR subledger entry (credit reduces AR)
+        await supabase.from("ar_subledger").insert({
+          tenant_id: tenantId,
+          customer_id: best.inv.customer_id,
+          journal_line_id: jLines!.find((l: any) => l.account_id === arAccountId)!.id,
+          journal_id: je.id,
+          document_type: "payment_received",
+          document_id: pmt.id,
+          debit: 0,
+          credit: payAmount,
+          amount: payAmount,
+        });
+
+        // 5. Link payment to JE
+        await supabase.from("payments_received").update({ journal_entry_id: je.id }).eq("id", pmt.id);
+
+        // 6. Update invoice status (partial vs paid)
+        const newStatus = best.partial ? "partial" : "paid";
+        await supabase.from("invoices").update({ status: newStatus }).eq("id", best.inv.id);
+
+        // 7. Add the bank-side journal line into reconciliation_transactions as cleared
+        const bankLine = jLines!.find((l: any) => l.account_id === bankAccountId)!;
+        const { data: newReconTxn } = await supabase
+          .from("reconciliation_transactions")
+          .insert({
+            reconciliation_id: reconciliationId,
+            journal_line_id: bankLine.id,
+            cleared: true,
+            cleared_date: bf.transaction_date,
+          })
+          .select()
+          .single();
+
+        // 8. Mark bank feed matched
+        await supabase.from("bank_feed_transactions").update({
+          status: "matched",
+          matched_journal_line_id: bankLine.id,
+          match_type: "AR_INFERRED",
+          match_confidence: best.score,
+          match_metadata: {
+            method: "ar_inference",
+            confidence: best.score,
+            reasons: best.reasons,
+            created_payment_id: pmt.id,
+            inferred_invoice_id: best.inv.id,
+            inferred_invoice_number: best.inv.invoice_number,
+            partial: best.partial,
+            payment_amount: payAmount,
+            timestamp: new Date().toISOString(),
+          },
+        }).eq("id", bf.id);
+
+        usedBank.add(bf.id);
+        auto++;
+        results.push({
+          bank_feed_id: bf.id,
+          recon_txn_ids: newReconTxn ? [newReconTxn.id] : [],
+          journal_line_ids: [bankLine.id],
+          confidence: best.score,
+          method: "ar_inference",
+          match_type: best.partial ? "AR_AUTO_PARTIAL" : "AR_AUTO_FULL",
+          reasons: [...best.reasons, `✓ Created payment for invoice ${best.inv.invoice_number} (${payAmount})`],
+        });
+      } catch (e) {
+        console.error("AR auto-post failed for bank feed", bf.id, e);
+        // Fallback to suggestion
+        await supabase.from("bank_feed_transactions").update({
+          status: "suggested",
+          match_type: "AR_INFERRED",
+          match_confidence: best.score,
+          match_metadata: {
+            method: "ar_inference",
+            confidence: best.score,
+            reasons: [...best.reasons, `⚠ Auto-post failed: ${e instanceof Error ? e.message : "unknown"}`],
+            inferred_invoice_id: best.inv.id,
+            inferred_invoice_number: best.inv.invoice_number,
+            partial: best.partial,
+            timestamp: new Date().toISOString(),
+          },
+        }).eq("id", bf.id);
+        usedBank.add(bf.id);
+        suggestions++;
+      }
+    } else if (best.score >= 80) {
+      // Suggestion only
+      await supabase.from("bank_feed_transactions").update({
+        status: "suggested",
+        match_type: "AR_INFERRED",
+        match_confidence: best.score,
+        match_metadata: {
+          method: "ar_inference",
+          confidence: best.score,
+          reasons: best.reasons,
+          inferred_invoice_id: best.inv.id,
+          inferred_invoice_number: best.inv.invoice_number,
+          partial: best.partial,
+          timestamp: new Date().toISOString(),
+        },
+      }).eq("id", bf.id);
+      usedBank.add(bf.id);
+      suggestions++;
+      results.push({
+        bank_feed_id: bf.id,
+        recon_txn_ids: [],
+        journal_line_ids: [],
+        confidence: best.score,
+        method: "ar_inference",
+        match_type: "AR_SUGGESTED",
+        reasons: [...best.reasons, `Suggested invoice ${best.inv.invoice_number} — review and approve`],
+      });
+    }
+  }
+
+  return { matches: results, suggestions, auto };
+}
+
+// ─── Step 7: Standard Scoring Engine (Fallback) ───
 function scoringMatch(
   bankFeeds: BankFeed[],
   ledgerEntries: LedgerEntry[],
@@ -506,15 +857,27 @@ serve(async (req) => {
     const comboMatches = comboMatch(bankFeeds || [], ledgerEntries, usedBank, usedLedger);
     allMatches.push(...comboMatches);
 
-    // ─── STEP 6: Standard Scoring ───
+    // ─── STEP 6: AR Inference (QuickBooks-style payment intent → invoice) ───
+    const arResult = await arInferenceMatch(
+      supabase,
+      recon.tenant_id,
+      bank_account_id,
+      bankFeeds || [],
+      usedBank,
+      reconciliation_id
+    );
+    allMatches.push(...arResult.matches);
+
+    // ─── STEP 7: Standard Scoring (final fallback) ───
     const scoringMatches = scoringMatch(bankFeeds || [], ledgerEntries, usedBank, usedLedger);
     allMatches.push(...scoringMatches);
 
-    // ─── Persist all matches ───
-    let autoMatched = 0;
-    let suggested = 0;
+    // ─── Persist all matches (skip ar_inference — already persisted) ───
+    let autoMatched = arResult.auto;
+    let suggested = arResult.suggestions;
 
     for (const m of allMatches) {
+      if (m.method === "ar_inference") continue; // already written by arInferenceMatch
       const isAuto = m.match_type === "AUTO_MATCHED" || m.match_type === "GROUP_MATCHED";
       const metadata = {
         method: m.method,
@@ -524,7 +887,6 @@ serve(async (req) => {
         matched_entries: m.journal_line_ids,
       };
 
-      // Update bank feed
       await supabase
         .from("bank_feed_transactions")
         .update({
@@ -536,7 +898,6 @@ serve(async (req) => {
         })
         .eq("id", m.bank_feed_id);
 
-      // Auto-clear for high confidence matches
       if (isAuto) {
         for (const rtId of m.recon_txn_ids) {
           await supabase
@@ -551,14 +912,13 @@ serve(async (req) => {
     }
 
     // ─── Update reconciliation cleared balance ───
-    // Recalculate cleared balance after auto-matches
     const { data: clearedTxns } = await supabase
       .from("reconciliation_transactions")
       .select("journal_lines(debit, credit)")
       .eq("reconciliation_id", reconciliation_id)
       .eq("cleared", true);
 
-    let clearedBalance = Number(recon.statement_ending_date ? 0 : 0);
+    let clearedBalance = 0;
     if (clearedTxns) {
       for (const ct of clearedTxns) {
         const d = Number((ct as any).journal_lines?.debit) || 0;
@@ -576,6 +936,8 @@ serve(async (req) => {
         source: sourceMatches.length,
         module: moduleMatches.length,
         combo: comboMatches.length,
+        ar_inference: arResult.matches.length,
+        ar_auto_posted: arResult.auto,
         scoring: scoringMatches.length,
       },
       match_details: allMatches.map(m => ({
