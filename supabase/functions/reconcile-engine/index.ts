@@ -51,12 +51,44 @@ function exactSourceMatch(b: any, candidates: any[]) {
   for (const c of candidates) {
     const cref = (c.je_reference || "").toLowerCase();
     if (cref && (cref === ref || cref.includes(ref) || ref.includes(cref))) {
-      const signed = c.debit - c.credit; // bank deposit = debit on bank account
+      const signed = c.debit - c.credit;
       if (near(Math.abs(signed), Math.abs(b.amount))) {
         return { type: "SOURCE", target: c, score: 100 };
       }
     }
   }
+  return null;
+}
+
+// AP tier: vendor-aware matching for bank outflows against AP payment journal lines.
+// Bank outflow = negative; AP payment on bank account = credit (signed < 0).
+// Boost on (a) bill_no in description, (b) vendor name token similarity.
+function apMatch(b: any, candidates: any[]) {
+  if (Number(b.amount) >= 0) return null;
+  const desc = (b.description || "").toLowerCase();
+  const ref = (b.reference_number || "").toLowerCase();
+  let best: any = null;
+  let bestScore = 0;
+  for (const c of candidates) {
+    if (!c.is_ap_payment) continue;
+    const signed = c.debit - c.credit;
+    if (!near(signed, b.amount)) continue;
+    const dd = dateDistance(b.transaction_date, c.entry_date);
+    if (dd > 14) continue;
+    let s = 70;
+    if (dd <= 2) s += 10;
+    else if (dd <= 7) s += 5;
+    if (c.bill_no) {
+      const bn = String(c.bill_no).toLowerCase();
+      if (bn && (desc.includes(bn) || ref.includes(bn))) s += 15;
+    }
+    if (c.vendor_name) {
+      s += Math.round(tokenSim(b.description || "", c.vendor_name) * 15);
+    }
+    if (s > bestScore) { best = c; bestScore = s; }
+  }
+  if (bestScore >= 90) return { type: "AP_AUTO", target: best, score: bestScore };
+  if (bestScore >= 75) return { type: "AP_SUGGEST", target: best, score: bestScore };
   return null;
 }
 
@@ -166,6 +198,7 @@ function compositeMatch(b: any, candidates: any[]) {
 function matchOne(b: any, candidates: any[], userRules: any[]) {
   return (
     exactSourceMatch(b, candidates) ||
+    apMatch(b, candidates) ||
     ruleMatch(b, candidates, userRules) ||
     scoringMatch(b, candidates) ||
     compositeMatch(b, candidates)
@@ -247,12 +280,39 @@ Deno.serve(async (req) => {
     const ledger = (lines || []).map((l: any) => ({
       id: l.id,
       account_id: l.account_id,
+      journal_entry_id: l.journal_entries.id,
       debit: Number(l.debit) || 0,
       credit: Number(l.credit) || 0,
       entry_date: l.journal_entries.entry_date,
       je_description: l.journal_entries.description,
       je_reference: l.journal_entries.reference,
+      vendor_name: null as string | null,
+      vendor_id: null as string | null,
+      bill_no: null as string | null,
+      is_ap_payment: false,
     }));
+
+    // Enrich ledger lines with AP subledger context (vendor-aware AP matching).
+    // For each bank-side line whose JE also touches AP, attach vendor name + bill no.
+    const jeIds = ledger.map((l) => l.journal_entry_id);
+    if (jeIds.length) {
+      const { data: apLinks } = await supabase
+        .from("ap_subledger")
+        .select("journal_id, vendor_id, bill_no, vendors(name)")
+        .in("journal_id", jeIds)
+        .eq("tenant_id", recon.tenant_id);
+      const byJe = new Map<string, any>();
+      for (const a of apLinks || []) byJe.set(a.journal_id, a);
+      for (const l of ledger) {
+        const ap = byJe.get(l.journal_entry_id);
+        if (ap) {
+          l.is_ap_payment = true;
+          l.vendor_id = ap.vendor_id;
+          l.vendor_name = (ap as any).vendors?.name || null;
+          l.bill_no = ap.bill_no;
+        }
+      }
+    }
 
     // Load bank feed
     const { data: feed } = await supabase
@@ -317,7 +377,7 @@ Deno.serve(async (req) => {
         const clearedSet = new Set((clearedTx || []).map((c: any) => c.journal_line_id));
         const open = ledger.filter((l) => !clearedSet.has(l.id));
 
-        let auto = 0, suggested = 0, composite = 0, ruleAutoCreated = 0;
+        let auto = 0, suggested = 0, composite = 0, ruleAutoCreated = 0, apMatched = 0;
         const results: any[] = [];
 
         for (const b of bankTxns.filter((t: any) => t.state === "unmatched")) {
@@ -402,6 +462,11 @@ Deno.serve(async (req) => {
           }
 
           const target = (m as any).target;
+          const apMeta = target?.is_ap_payment
+            ? { vendor_id: target.vendor_id, vendor_name: target.vendor_name, bill_no: target.bill_no, ap_payment: true }
+            : null;
+          const ruleMeta = (m as any).rule ? { rule_id: (m as any).rule.id, rule_name: (m as any).rule.name } : null;
+          const meta = apMeta || ruleMeta;
           if (m.score >= 90) {
             await supabase.from("reconciliation_transactions").upsert(
               { reconciliation_id, journal_line_id: target.id, cleared: true, cleared_date: b.transaction_date },
@@ -412,15 +477,17 @@ Deno.serve(async (req) => {
               state: "matched", status: "matched",
               matched_journal_line_id: target.id,
               match_type: m.type, match_confidence: m.score,
-              match_metadata: (m as any).rule ? { rule_id: (m as any).rule.id, rule_name: (m as any).rule.name } : null,
+              match_metadata: meta,
             }).eq("id", b.id);
             auto++;
+            if (target?.is_ap_payment) apMatched++;
           } else {
             assertTransition(b.state, "suggested");
             await supabase.from("bank_feed_transactions").update({
               state: "suggested", status: "suggested",
               matched_journal_line_id: target.id,
               match_type: m.type, match_confidence: m.score,
+              match_metadata: meta,
             }).eq("id", b.id);
             suggested++;
           }
@@ -429,7 +496,7 @@ Deno.serve(async (req) => {
 
         return new Response(JSON.stringify({
           ok: true, snapshot: snapRow,
-          auto, suggested, composite, rule_auto_created: ruleAutoCreated,
+          auto, suggested, composite, rule_auto_created: ruleAutoCreated, ap_matched: apMatched,
           rules_loaded: rules.length, results,
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
