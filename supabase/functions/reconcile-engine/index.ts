@@ -198,6 +198,7 @@ function compositeMatch(b: any, candidates: any[]) {
 function matchOne(b: any, candidates: any[], userRules: any[]) {
   return (
     exactSourceMatch(b, candidates) ||
+    apMatch(b, candidates) ||
     ruleMatch(b, candidates, userRules) ||
     scoringMatch(b, candidates) ||
     compositeMatch(b, candidates)
