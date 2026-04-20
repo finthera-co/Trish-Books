@@ -1114,13 +1114,24 @@ serve(async (req) => {
     );
     allMatches.push(...arResult.matches);
 
+    // ─── STEP 6b: AR Allocation (one bank deposit → many invoices, FIFO) ───
+    const allocResult = await arAllocationMatch(
+      supabase,
+      recon.tenant_id,
+      bank_account_id,
+      bankFeeds || [],
+      usedBank,
+      reconciliation_id
+    );
+    allMatches.push(...allocResult.matches);
+
     // ─── STEP 7: Standard Scoring (final fallback) ───
     const scoringMatches = scoringMatch(bankFeeds || [], ledgerEntries, usedBank, usedLedger);
     allMatches.push(...scoringMatches);
 
-    // ─── Persist all matches (skip ar_inference — already persisted) ───
-    let autoMatched = arResult.auto;
-    let suggested = arResult.suggestions;
+    // ─── Persist all matches (skip ar_inference & ar_allocation — already persisted) ───
+    let autoMatched = arResult.auto + allocResult.auto;
+    let suggested = arResult.suggestions + allocResult.suggestions;
 
     for (const m of allMatches) {
       if (m.method === "ar_inference") continue; // already written by arInferenceMatch
