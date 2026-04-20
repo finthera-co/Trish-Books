@@ -1195,6 +1195,8 @@ serve(async (req) => {
         combo: comboMatches.length,
         ar_inference: arResult.matches.length,
         ar_auto_posted: arResult.auto,
+        ar_allocation: allocResult.matches.length,
+        ar_allocation_auto: allocResult.auto,
         scoring: scoringMatches.length,
       },
       match_details: allMatches.map(m => ({
