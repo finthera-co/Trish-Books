@@ -462,6 +462,11 @@ Deno.serve(async (req) => {
           }
 
           const target = (m as any).target;
+          const apMeta = target?.is_ap_payment
+            ? { vendor_id: target.vendor_id, vendor_name: target.vendor_name, bill_no: target.bill_no, ap_payment: true }
+            : null;
+          const ruleMeta = (m as any).rule ? { rule_id: (m as any).rule.id, rule_name: (m as any).rule.name } : null;
+          const meta = apMeta || ruleMeta;
           if (m.score >= 90) {
             await supabase.from("reconciliation_transactions").upsert(
               { reconciliation_id, journal_line_id: target.id, cleared: true, cleared_date: b.transaction_date },
@@ -472,7 +477,7 @@ Deno.serve(async (req) => {
               state: "matched", status: "matched",
               matched_journal_line_id: target.id,
               match_type: m.type, match_confidence: m.score,
-              match_metadata: (m as any).rule ? { rule_id: (m as any).rule.id, rule_name: (m as any).rule.name } : null,
+              match_metadata: meta,
             }).eq("id", b.id);
             auto++;
           } else {
@@ -481,6 +486,7 @@ Deno.serve(async (req) => {
               state: "suggested", status: "suggested",
               matched_journal_line_id: target.id,
               match_type: m.type, match_confidence: m.score,
+              match_metadata: meta,
             }).eq("id", b.id);
             suggested++;
           }
