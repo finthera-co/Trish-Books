@@ -882,6 +882,7 @@ export type Database = {
           matched_journal_line_id: string | null
           reconciliation_id: string | null
           reference_number: string | null
+          state: string
           status: string
           tenant_id: string
           transaction_date: string
@@ -902,6 +903,7 @@ export type Database = {
           matched_journal_line_id?: string | null
           reconciliation_id?: string | null
           reference_number?: string | null
+          state?: string
           status?: string
           tenant_id: string
           transaction_date: string
@@ -922,6 +924,7 @@ export type Database = {
           matched_journal_line_id?: string | null
           reconciliation_id?: string | null
           reference_number?: string | null
+          state?: string
           status?: string
           tenant_id?: string
           transaction_date?: string
@@ -973,6 +976,8 @@ export type Database = {
           difference: number
           id: string
           interest_earned: number | null
+          locked_at: string | null
+          locked_by: string | null
           notes: string | null
           reconciled_at: string | null
           reconciled_by: string | null
@@ -991,6 +996,8 @@ export type Database = {
           difference?: number
           id?: string
           interest_earned?: number | null
+          locked_at?: string | null
+          locked_by?: string | null
           notes?: string | null
           reconciled_at?: string | null
           reconciled_by?: string | null
@@ -1009,6 +1016,8 @@ export type Database = {
           difference?: number
           id?: string
           interest_earned?: number | null
+          locked_at?: string | null
+          locked_by?: string | null
           notes?: string | null
           reconciled_at?: string | null
           reconciled_by?: string | null
@@ -1025,6 +1034,13 @@ export type Database = {
             columns: ["bank_account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bank_reconciliations_locked_by_fkey"
+            columns: ["locked_by"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
           {
@@ -4312,6 +4328,60 @@ export type Database = {
           },
         ]
       }
+      reconciliation_invariant_log: {
+        Row: {
+          actual: number | null
+          checked_at: string
+          delta: number | null
+          details: Json | null
+          expected: number | null
+          id: string
+          invariant_name: string
+          passed: boolean
+          reconciliation_id: string
+          tenant_id: string
+        }
+        Insert: {
+          actual?: number | null
+          checked_at?: string
+          delta?: number | null
+          details?: Json | null
+          expected?: number | null
+          id?: string
+          invariant_name: string
+          passed: boolean
+          reconciliation_id: string
+          tenant_id: string
+        }
+        Update: {
+          actual?: number | null
+          checked_at?: string
+          delta?: number | null
+          details?: Json | null
+          expected?: number | null
+          id?: string
+          invariant_name?: string
+          passed?: boolean
+          reconciliation_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reconciliation_invariant_log_reconciliation_id_fkey"
+            columns: ["reconciliation_id"]
+            isOneToOne: false
+            referencedRelation: "bank_reconciliations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_invariant_log_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       reconciliation_logs: {
         Row: {
           action: string
@@ -4419,6 +4489,89 @@ export type Database = {
           },
           {
             foreignKeyName: "reconciliation_rules_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reconciliation_snapshots: {
+        Row: {
+          as_of_date: string
+          bank_account_id: string
+          bank_balance: number
+          bank_txn_count: number
+          cleared_balance: number
+          created_at: string
+          created_by: string | null
+          difference: number
+          id: string
+          ledger_balance: number
+          ledger_line_count: number
+          payload: Json
+          reconciliation_id: string
+          status: string
+          tenant_id: string
+        }
+        Insert: {
+          as_of_date: string
+          bank_account_id: string
+          bank_balance?: number
+          bank_txn_count?: number
+          cleared_balance?: number
+          created_at?: string
+          created_by?: string | null
+          difference?: number
+          id?: string
+          ledger_balance?: number
+          ledger_line_count?: number
+          payload?: Json
+          reconciliation_id: string
+          status?: string
+          tenant_id: string
+        }
+        Update: {
+          as_of_date?: string
+          bank_account_id?: string
+          bank_balance?: number
+          bank_txn_count?: number
+          cleared_balance?: number
+          created_at?: string
+          created_by?: string | null
+          difference?: number
+          id?: string
+          ledger_balance?: number
+          ledger_line_count?: number
+          payload?: Json
+          reconciliation_id?: string
+          status?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reconciliation_snapshots_bank_account_id_fkey"
+            columns: ["bank_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_snapshots_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_snapshots_reconciliation_id_fkey"
+            columns: ["reconciliation_id"]
+            isOneToOne: false
+            referencedRelation: "bank_reconciliations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_snapshots_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
