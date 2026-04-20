@@ -23,7 +23,15 @@ export function useReconcileEngine() {
       qc.invalidateQueries({ queryKey: ["reconciliation_invariant_log", vars.reconciliationId] });
 
       if (vars.action === "snapshot") toast.success("Snapshot captured");
-      if (vars.action === "match") toast.success(`Engine matched ${data.auto || 0} auto, ${data.suggested || 0} suggested, ${data.composite || 0} composite`);
+      if (vars.action === "match") {
+        const ra = data.rule_auto_created || 0;
+        const rl = data.rules_loaded || 0;
+        toast.success(
+          `Engine: ${data.auto || 0} auto · ${data.suggested || 0} suggested · ${data.composite || 0} composite` +
+          (ra ? ` · ${ra} rule-posted` : "") +
+          (rl ? ` (${rl} rules active)` : "")
+        );
+      }
       if (vars.action === "validate") toast[data.ok ? "success" : "error"](data.ok ? "All invariants passed" : "Invariant check failed");
       if (vars.action === "finalize") toast.success("Reconciliation finalized & locked");
     },
