@@ -16,6 +16,7 @@ import { formatCurrency } from "@/lib/currency";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePostInvoice } from "@/hooks/useAccountSettings";
+import { QuickCustomerDialog } from "@/components/invoices/QuickCustomerDialog";
 import type { DesignerComponent, TableSettings, PageSettings } from "@/components/invoice-designer/types";
 
 interface LineItem {
