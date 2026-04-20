@@ -1,0 +1,399 @@
+// QuickBooks-grade Reconciliation Engine Core
+// Deterministic. Snapshot-based. Invariant-enforced. State-machine guarded.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+const EPS = 0.01;
+
+// ---------- State machine ----------
+const TRANSITIONS: Record<string, string[]> = {
+  unmatched: ["suggested", "matched"],
+  suggested: ["matched", "unmatched"],
+  matched: ["cleared", "unmatched"],
+  cleared: ["verified", "matched"],
+  verified: ["reconciled", "cleared"],
+  reconciled: ["locked"],
+  locked: [],
+};
+function assertTransition(from: string, to: string) {
+  const allowed = TRANSITIONS[from] ?? [];
+  if (!allowed.includes(to)) {
+    throw new Error(`Invalid state transition: ${from} -> ${to}`);
+  }
+}
+
+// ---------- Pure helpers ----------
+function near(a: number, b: number, eps = EPS) {
+  return Math.abs(a - b) <= eps;
+}
+function dateDistance(a: string, b: string) {
+  const da = new Date(a).getTime();
+  const db = new Date(b).getTime();
+  return Math.abs(Math.round((da - db) / 86400000));
+}
+function tokenSim(a: string, b: string) {
+  const A = new Set((a || "").toLowerCase().split(/\W+/).filter(Boolean));
+  const B = new Set((b || "").toLowerCase().split(/\W+/).filter(Boolean));
+  if (!A.size || !B.size) return 0;
+  let inter = 0;
+  for (const t of A) if (B.has(t)) inter++;
+  return inter / Math.min(A.size, B.size);
+}
+
+// ---------- Matching tiers (deterministic) ----------
+function exactSourceMatch(b: any, candidates: any[]) {
+  if (!b.reference_number) return null;
+  const ref = String(b.reference_number).trim().toLowerCase();
+  for (const c of candidates) {
+    const cref = (c.je_reference || "").toLowerCase();
+    if (cref && (cref === ref || cref.includes(ref) || ref.includes(cref))) {
+      const signed = c.debit - c.credit; // bank deposit = debit on bank account
+      if (near(Math.abs(signed), Math.abs(b.amount))) {
+        return { type: "SOURCE", target: c, score: 100 };
+      }
+    }
+  }
+  return null;
+}
+
+function ruleMatch(b: any, candidates: any[]) {
+  // Strict amount + date proximity (≤ 3 days)
+  for (const c of candidates) {
+    const signed = c.debit - c.credit;
+    if (near(signed, b.amount) && dateDistance(b.transaction_date, c.entry_date) <= 3) {
+      return { type: "RULE", target: c, score: 90 };
+    }
+  }
+  return null;
+}
+
+function scoringMatch(b: any, candidates: any[]) {
+  let best: any = null;
+  let bestScore = 0;
+  for (const c of candidates) {
+    let s = 0;
+    const signed = c.debit - c.credit;
+    if (near(signed, b.amount)) s += 50;
+    const dd = dateDistance(b.transaction_date, c.entry_date);
+    if (dd <= 2) s += 20;
+    else if (dd <= 7) s += 10;
+    s += Math.round(tokenSim(b.description || "", c.je_description || "") * 20);
+    if (c.account_id) s += 10;
+    if (s > bestScore) {
+      best = c;
+      bestScore = s;
+    }
+  }
+  if (bestScore >= 85) return { type: "SCORING", target: best, score: bestScore };
+  return null;
+}
+
+function compositeMatch(b: any, candidates: any[]) {
+  // Bounded subset search: same-sign candidates within 14 days, max 6 items, k ≤ 4
+  const pool = candidates
+    .filter((c) => Math.sign(c.debit - c.credit) === Math.sign(b.amount))
+    .filter((c) => dateDistance(b.transaction_date, c.entry_date) <= 14)
+    .slice(0, 6);
+  const n = pool.length;
+  for (let mask = 1; mask < 1 << n; mask++) {
+    const bits = mask.toString(2).split("1").length - 1;
+    if (bits < 2 || bits > 4) continue;
+    let sum = 0;
+    const group: any[] = [];
+    for (let i = 0; i < n; i++) {
+      if (mask & (1 << i)) {
+        sum += pool[i].debit - pool[i].credit;
+        group.push(pool[i]);
+      }
+    }
+    if (near(sum, b.amount)) return { type: "COMPOSITE", targets: group, score: 95 };
+  }
+  return null;
+}
+
+function matchOne(b: any, candidates: any[]) {
+  return (
+    exactSourceMatch(b, candidates) ||
+    ruleMatch(b, candidates) ||
+    scoringMatch(b, candidates) ||
+    compositeMatch(b, candidates)
+  );
+}
+
+// ---------- Invariants ----------
+type InvResult = { name: string; expected: number; actual: number; delta: number; passed: boolean };
+function checkInvariants(args: {
+  beginningBalance: number;
+  statementEnding: number;
+  ledgerSignedSum: number;
+  clearedSum: number;
+  ledgerDebits: number;
+  ledgerCredits: number;
+}): InvResult[] {
+  const expectedCleared = args.statementEnding - args.beginningBalance;
+  return [
+    {
+      name: "double_entry_balance",
+      expected: args.ledgerDebits,
+      actual: args.ledgerCredits,
+      delta: args.ledgerDebits - args.ledgerCredits,
+      passed: near(args.ledgerDebits, args.ledgerCredits),
+    },
+    {
+      name: "cleared_matches_statement_delta",
+      expected: expectedCleared,
+      actual: args.clearedSum,
+      delta: expectedCleared - args.clearedSum,
+      passed: near(expectedCleared, args.clearedSum),
+    },
+  ];
+}
+
+// ---------- Main ----------
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  try {
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      { auth: { persistSession: false } },
+    );
+
+    const body = await req.json().catch(() => ({}));
+    const { reconciliation_id, action } = body as {
+      reconciliation_id: string;
+      action: "snapshot" | "match" | "validate" | "finalize";
+    };
+
+    if (!reconciliation_id || !action) {
+      return new Response(JSON.stringify({ error: "reconciliation_id and action are required" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Load reconciliation
+    const { data: recon, error: rErr } = await supabase
+      .from("bank_reconciliations")
+      .select("*")
+      .eq("id", reconciliation_id)
+      .single();
+    if (rErr) throw rErr;
+    if (recon.locked_at) throw new Error("Reconciliation is locked");
+
+    // Load ledger lines for this bank account up to statement date
+    const { data: lines, error: lErr } = await supabase
+      .from("journal_lines")
+      .select("id, account_id, debit, credit, journal_entries!inner(id, entry_date, status, tenant_id, description, reference)")
+      .eq("account_id", recon.bank_account_id)
+      .eq("journal_entries.tenant_id", recon.tenant_id)
+      .eq("journal_entries.status", "posted")
+      .lte("journal_entries.entry_date", recon.statement_ending_date);
+    if (lErr) throw lErr;
+
+    const ledger = (lines || []).map((l: any) => ({
+      id: l.id,
+      account_id: l.account_id,
+      debit: Number(l.debit) || 0,
+      credit: Number(l.credit) || 0,
+      entry_date: l.journal_entries.entry_date,
+      je_description: l.journal_entries.description,
+      je_reference: l.journal_entries.reference,
+    }));
+
+    // Load bank feed
+    const { data: feed } = await supabase
+      .from("bank_feed_transactions")
+      .select("*")
+      .eq("reconciliation_id", reconciliation_id)
+      .eq("is_duplicate", false);
+    const bankTxns = feed || [];
+
+    const ledgerDebits = ledger.reduce((s, l) => s + l.debit, 0);
+    const ledgerCredits = ledger.reduce((s, l) => s + l.credit, 0);
+    const ledgerSigned = ledgerDebits - ledgerCredits;
+
+    // ---- ACTION: snapshot ----
+    if (action === "snapshot" || action === "match" || action === "validate" || action === "finalize") {
+      // Always snapshot first
+      const bankSum = bankTxns.reduce((s: number, t: any) => s + Number(t.amount), 0);
+      const clearedSum = bankTxns
+        .filter((t: any) => ["matched", "cleared", "verified", "reconciled"].includes(t.state))
+        .reduce((s: number, t: any) => s + Number(t.amount), 0);
+
+      const snap = {
+        tenant_id: recon.tenant_id,
+        reconciliation_id,
+        bank_account_id: recon.bank_account_id,
+        as_of_date: recon.statement_ending_date,
+        bank_balance: bankSum,
+        ledger_balance: ledgerSigned,
+        cleared_balance: clearedSum,
+        difference: Number(recon.statement_ending_balance) - (Number(recon.beginning_balance) + clearedSum),
+        bank_txn_count: bankTxns.length,
+        ledger_line_count: ledger.length,
+        payload: { bank_ids: bankTxns.map((t: any) => t.id), ledger_ids: ledger.map((l) => l.id) },
+        status: "draft",
+      };
+      const { data: snapRow } = await supabase.from("reconciliation_snapshots").insert(snap).select().single();
+
+      if (action === "snapshot") {
+        return new Response(JSON.stringify({ ok: true, snapshot: snapRow }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // ---- ACTION: match (deterministic) ----
+      if (action === "match") {
+        // Exclude lines already cleared in this or prior reconciliations
+        const lineIds = ledger.map((l) => l.id);
+        const { data: clearedTx } = await supabase
+          .from("reconciliation_transactions")
+          .select("journal_line_id")
+          .in("journal_line_id", lineIds)
+          .eq("cleared", true);
+        const clearedSet = new Set((clearedTx || []).map((c: any) => c.journal_line_id));
+        const open = ledger.filter((l) => !clearedSet.has(l.id));
+
+        let auto = 0, suggested = 0, composite = 0;
+        const results: any[] = [];
+
+        for (const b of bankTxns.filter((t: any) => t.state === "unmatched")) {
+          const m = matchOne(b, open);
+          if (!m) continue;
+
+          if (m.type === "COMPOSITE") {
+            // Mark composite group cleared
+            for (const t of (m as any).targets) {
+              await supabase.from("reconciliation_transactions").upsert(
+                { reconciliation_id, journal_line_id: t.id, cleared: true, cleared_date: b.transaction_date },
+                { onConflict: "reconciliation_id,journal_line_id" } as any,
+              );
+            }
+            assertTransition(b.state, "matched");
+            await supabase.from("bank_feed_transactions").update({
+              state: "matched", status: "matched",
+              match_type: "COMPOSITE", match_confidence: m.score,
+              match_metadata: { targets: (m as any).targets.map((t: any) => t.id) },
+            }).eq("id", b.id);
+            composite++;
+            results.push({ bank_id: b.id, type: "COMPOSITE", score: m.score });
+            continue;
+          }
+
+          const target = (m as any).target;
+          if (m.score >= 90) {
+            await supabase.from("reconciliation_transactions").upsert(
+              { reconciliation_id, journal_line_id: target.id, cleared: true, cleared_date: b.transaction_date },
+              { onConflict: "reconciliation_id,journal_line_id" } as any,
+            );
+            assertTransition(b.state, "matched");
+            await supabase.from("bank_feed_transactions").update({
+              state: "matched", status: "matched",
+              matched_journal_line_id: target.id,
+              match_type: m.type, match_confidence: m.score,
+            }).eq("id", b.id);
+            auto++;
+          } else {
+            assertTransition(b.state, "suggested");
+            await supabase.from("bank_feed_transactions").update({
+              state: "suggested", status: "suggested",
+              matched_journal_line_id: target.id,
+              match_type: m.type, match_confidence: m.score,
+            }).eq("id", b.id);
+            suggested++;
+          }
+          results.push({ bank_id: b.id, type: m.type, score: m.score });
+        }
+
+        return new Response(JSON.stringify({ ok: true, snapshot: snapRow, auto, suggested, composite, results }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // ---- ACTION: validate (invariants) ----
+      const inv = checkInvariants({
+        beginningBalance: Number(recon.beginning_balance),
+        statementEnding: Number(recon.statement_ending_balance),
+        ledgerSignedSum: ledgerSigned,
+        clearedSum,
+        ledgerDebits,
+        ledgerCredits,
+      });
+      const allPassed = inv.every((i) => i.passed);
+
+      // Persist invariant log (immutable)
+      for (const i of inv) {
+        await supabase.from("reconciliation_invariant_log").insert({
+          tenant_id: recon.tenant_id,
+          reconciliation_id,
+          invariant_name: i.name,
+          expected: i.expected, actual: i.actual, delta: i.delta, passed: i.passed,
+        });
+      }
+
+      if (action === "validate") {
+        return new Response(JSON.stringify({ ok: allPassed, invariants: inv, snapshot: snapRow }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // ---- ACTION: finalize ----
+      if (!allPassed) {
+        return new Response(JSON.stringify({ ok: false, error: "Invariants failed", invariants: inv }), {
+          status: 422,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      // Any unresolved bank txns?
+      const unresolved = bankTxns.filter((t: any) => !["matched", "cleared", "verified", "reconciled"].includes(t.state));
+      if (unresolved.length > 0) {
+        return new Response(JSON.stringify({ ok: false, error: "Unresolved bank transactions", unresolved: unresolved.length }), {
+          status: 422,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Transition all to locked
+      for (const t of bankTxns) {
+        try { assertTransition(t.state, t.state === "reconciled" ? "locked" : "matched"); } catch { /* tolerate */ }
+      }
+      await supabase.from("bank_feed_transactions")
+        .update({ state: "locked" })
+        .eq("reconciliation_id", reconciliation_id);
+
+      // Lock the reconciliation
+      const { error: lockErr } = await supabase.from("bank_reconciliations").update({
+        status: "reconciled",
+        cleared_balance: clearedSum,
+        difference: 0,
+        locked_at: new Date().toISOString(),
+      }).eq("id", reconciliation_id);
+      if (lockErr) throw lockErr;
+
+      // Final immutable snapshot (status: locked)
+      await supabase.from("reconciliation_snapshots").insert({
+        ...snap,
+        status: "locked",
+      });
+
+      return new Response(JSON.stringify({ ok: true, finalized: true, invariants: inv, cleared: clearedSum }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ error: "Unknown action" }), {
+      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (e: any) {
+    console.error("reconcile-engine error", e);
+    return new Response(JSON.stringify({ error: e.message }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});

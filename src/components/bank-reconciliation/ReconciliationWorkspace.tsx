@@ -19,6 +19,7 @@ import {
   useCreateReconciliationAdjustment,
 } from "@/hooks/useBankReconciliation";
 import { useBankFeedTransactions, useApproveMatch, useRejectMatch, useDeleteBankFeed, useRunAIMatching } from "@/hooks/useBankFeeds";
+import { useReconcileEngine, useReconciliationSnapshots, useInvariantLog } from "@/hooks/useReconciliationEngine";
 import { useAccounts } from "@/hooks/useData";
 import { formatCurrency } from "@/lib/currency";
 import {
@@ -65,6 +66,9 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
   const rejectMatch = useRejectMatch();
   const deleteBankFeed = useDeleteBankFeed();
   const runMatching = useRunAIMatching();
+  const engine = useReconcileEngine();
+  const { data: snapshots } = useReconciliationSnapshots(reconciliationId);
+  const { data: invariants } = useInvariantLog(reconciliationId);
 
   const [search, setSearch] = useState("");
   const [showAdjDialog, setShowAdjDialog] = useState(false);
@@ -292,6 +296,14 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
                 disabled={runMatching.isPending}
               >
                 <Sparkles className="w-3 h-3 mr-1" /> {runMatching.isPending ? "Matching..." : "AI Match"}
+              </Button>
+              <Button variant="outline" size="sm" disabled={engine.isPending}
+                onClick={() => engine.mutate({ reconciliationId, action: "match" })}>
+                ⚙️ Engine Match
+              </Button>
+              <Button variant="outline" size="sm" disabled={engine.isPending}
+                onClick={() => engine.mutate({ reconciliationId, action: "validate" })}>
+                ✓ Validate
               </Button>
               <Button variant="outline" size="sm" onClick={() => openAdjDialog("charge")}>
                 <Plus className="w-3 h-3 mr-1" /> Bank Charge
@@ -617,7 +629,54 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
             </CardContent>
           </Card>
 
-          {/* AI Match Suggestions */}
+          {/* Engine Snapshots & Invariants */}
+          <Card>
+            <CardHeader className="pb-2 px-4 pt-3 flex flex-row items-center justify-between">
+              <CardTitle className="text-sm">Engine Audit</CardTitle>
+              <div className="flex gap-1">
+                <Button size="sm" variant="ghost" className="h-6 text-xs px-2" disabled={engine.isPending}
+                  onClick={() => engine.mutate({ reconciliationId, action: "snapshot" })}>
+                  📸 Snap
+                </Button>
+                {!isReconciled && (
+                  <Button size="sm" variant="default" className="h-6 text-xs px-2 bg-green-600 hover:bg-green-700"
+                    disabled={engine.isPending}
+                    onClick={() => engine.mutate({ reconciliationId, action: "finalize" })}>
+                    🔒 Lock
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="px-4 pb-3 space-y-2">
+              <div className="text-xs">
+                <p className="font-semibold uppercase text-muted-foreground tracking-wider mb-1">Snapshots ({snapshots?.length || 0})</p>
+                <div className="max-h-24 overflow-auto space-y-0.5">
+                  {(snapshots || []).slice(0, 5).map((s: any) => (
+                    <div key={s.id} className="flex justify-between items-center font-mono text-[11px]">
+                      <span className="text-muted-foreground">{new Date(s.created_at).toLocaleTimeString()}</span>
+                      <Badge variant={s.status === "locked" ? "default" : "outline"} className="h-4 text-[9px]">{s.status}</Badge>
+                      <span>Δ {formatCurrency(Number(s.difference))}</span>
+                    </div>
+                  ))}
+                  {!snapshots?.length && <p className="text-muted-foreground italic">No snapshots yet</p>}
+                </div>
+              </div>
+              <Separator />
+              <div className="text-xs">
+                <p className="font-semibold uppercase text-muted-foreground tracking-wider mb-1">Invariants ({invariants?.length || 0})</p>
+                <div className="max-h-24 overflow-auto space-y-0.5">
+                  {(invariants || []).slice(0, 5).map((i: any) => (
+                    <div key={i.id} className="flex justify-between items-center text-[11px]">
+                      <span>{i.passed ? "✅" : "❌"} {i.invariant_name}</span>
+                      <span className="font-mono text-muted-foreground">Δ {Number(i.delta).toFixed(2)}</span>
+                    </div>
+                  ))}
+                  {!invariants?.length && <p className="text-muted-foreground italic">No checks yet</p>}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {suggestedMatchMap.size > 0 && (
             <Card className="border-amber-300 dark:border-amber-700">
               <CardHeader className="pb-2 px-4 pt-3">
