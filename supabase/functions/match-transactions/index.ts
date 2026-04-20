@@ -662,6 +662,252 @@ async function arInferenceMatch(
   return { matches: results, suggestions, auto };
 }
 
+// ─── Step 6b: AR Allocation Engine (one bank deposit → multiple invoices, FIFO) ───
+// Tries to allocate a single inflow across multiple open invoices for the same/inferred customer.
+// FIFO by oldest issue_date. Last invoice may receive a partial payment.
+async function arAllocationMatch(
+  supabase: any,
+  tenantId: string,
+  bankAccountId: string,
+  bankFeeds: BankFeed[],
+  usedBank: Set<string>,
+  reconciliationId: string
+): Promise<{ matches: MatchResult[]; auto: number; suggestions: number }> {
+  const results: MatchResult[] = [];
+  let auto = 0;
+  let suggestions = 0;
+
+  const candidates = bankFeeds.filter((bf) => !usedBank.has(bf.id) && detectPaymentIntent(bf.description, bf.amount));
+  if (candidates.length === 0) return { matches: results, auto, suggestions };
+
+  const { data: settings } = await supabase
+    .from("account_settings")
+    .select("ar_account_id")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  const defaultArAccountId = settings?.ar_account_id || null;
+
+  const openInvoices = await fetchOpenInvoices(supabase, tenantId);
+  if (openInvoices.length === 0) return { matches: results, auto, suggestions };
+
+  // Group invoices by customer, sorted FIFO (oldest first)
+  const byCustomer = new Map<string, OpenInvoice[]>();
+  for (const inv of openInvoices) {
+    if (!byCustomer.has(inv.customer_id)) byCustomer.set(inv.customer_id, []);
+    byCustomer.get(inv.customer_id)!.push(inv);
+  }
+  for (const arr of byCustomer.values()) {
+    arr.sort((a, b) => new Date(a.issue_date).getTime() - new Date(b.issue_date).getTime());
+  }
+
+  for (const bf of candidates) {
+    const bankAmt = Math.abs(bf.amount);
+    const desc = (bf.description || "").toLowerCase();
+
+    // Identify candidate customer(s) by name token in description
+    const customerCandidates: string[] = [];
+    for (const [cid, invs] of byCustomer.entries()) {
+      const name = invs[0].customer_name || "";
+      const tokens = name.toLowerCase().split(/\s+/).filter((t) => t.length >= 3);
+      if (tokens.length && tokens.some((t) => desc.includes(t))) customerCandidates.push(cid);
+    }
+    if (customerCandidates.length === 0) continue; // need a customer signal for allocation
+
+    // Try each candidate customer; pick the one whose FIFO sum best fits bankAmt
+    let chosen: { cid: string; allocations: { inv: OpenInvoice; amount: number; partial: boolean }[]; totalAllocated: number } | null = null;
+
+    for (const cid of customerCandidates) {
+      const invs = byCustomer.get(cid)!;
+      let remaining = bankAmt;
+      const allocations: { inv: OpenInvoice; amount: number; partial: boolean }[] = [];
+      for (const inv of invs) {
+        if (remaining < 0.01) break;
+        if (remaining + 0.01 >= inv.balance_due) {
+          allocations.push({ inv, amount: inv.balance_due, partial: false });
+          remaining -= inv.balance_due;
+        } else {
+          // Partial on the last invoice
+          if (remaining >= inv.balance_due * 0.05) {
+            allocations.push({ inv, amount: remaining, partial: true });
+            remaining = 0;
+          }
+          break;
+        }
+      }
+      const totalAllocated = allocations.reduce((s, a) => s + a.amount, 0);
+      // Require >= 2 invoices (otherwise 1:1 engine handles it) and near-full consumption
+      if (allocations.length >= 2 && Math.abs(totalAllocated - bankAmt) < Math.max(0.01, bankAmt * 0.001)) {
+        if (!chosen || totalAllocated > chosen.totalAllocated) {
+          chosen = { cid, allocations, totalAllocated };
+        }
+      }
+    }
+
+    if (!chosen) continue;
+
+    const firstInv = chosen.allocations[0].inv;
+    const arAccountId = firstInv.ar_account_id || defaultArAccountId;
+    const reasonsBase = [
+      `One-to-many allocation across ${chosen.allocations.length} invoices`,
+      `Customer: ${firstInv.customer_name}`,
+      `FIFO: ${chosen.allocations.map((a) => `${a.inv.invoice_number}(${a.amount}${a.partial ? " partial" : ""})`).join(", ")}`,
+    ];
+
+    if (!arAccountId) {
+      await supabase.from("bank_feed_transactions").update({
+        status: "suggested",
+        match_type: "AR_ALLOCATION",
+        match_confidence: 90,
+        match_metadata: {
+          method: "ar_allocation",
+          confidence: 90,
+          reasons: [...reasonsBase, "⚠ AR account not configured — cannot auto-create payments"],
+          allocations: chosen.allocations.map((a) => ({ invoice_id: a.inv.id, invoice_number: a.inv.invoice_number, amount: a.amount, partial: a.partial })),
+          timestamp: new Date().toISOString(),
+        },
+      }).eq("id", bf.id);
+      usedBank.add(bf.id);
+      suggestions++;
+      results.push({ bank_feed_id: bf.id, recon_txn_ids: [], journal_line_ids: [], confidence: 90, method: "ar_allocation", match_type: "AR_SUGGESTED", reasons: reasonsBase });
+      continue;
+    }
+
+    // Auto-post: one JE with one Bank Dr line + N AR Cr lines, plus N payments_received rows
+    try {
+      const totalAmt = chosen.totalAllocated;
+      const { data: je, error: jeErr } = await supabase
+        .from("journal_entries")
+        .insert({
+          tenant_id: tenantId,
+          entry_date: bf.transaction_date,
+          description: `Bank deposit allocated to ${chosen.allocations.length} invoices for ${firstInv.customer_name}`,
+          reference: bf.reference_number || `ALLOC-${bf.id.slice(0, 8)}`,
+          source_type: "bank_allocation",
+          source_id: bf.id,
+          status: "posted",
+        })
+        .select()
+        .single();
+      if (jeErr) throw jeErr;
+
+      const linePayload: any[] = [
+        { journal_entry_id: je.id, account_id: bankAccountId, debit: totalAmt, credit: 0 },
+      ];
+      for (const a of chosen.allocations) {
+        linePayload.push({
+          journal_entry_id: je.id,
+          account_id: a.inv.ar_account_id || arAccountId,
+          debit: 0,
+          credit: a.amount,
+          customer_id: a.inv.customer_id,
+        });
+      }
+      const { data: jLines, error: jlErr } = await supabase.from("journal_lines").insert(linePayload).select();
+      if (jlErr) throw jlErr;
+
+      const bankLine = jLines!.find((l: any) => l.account_id === bankAccountId && Number(l.debit) > 0);
+
+      // Per-invoice: payment row + AR subledger + status update
+      for (const a of chosen.allocations) {
+        const arLine = jLines!.find(
+          (l: any) =>
+            l.account_id === (a.inv.ar_account_id || arAccountId) &&
+            Number(l.credit) === a.amount &&
+            l.customer_id === a.inv.customer_id
+        );
+
+        const { data: pmt } = await supabase
+          .from("payments_received")
+          .insert({
+            invoice_id: a.inv.id,
+            amount: a.amount,
+            payment_date: bf.transaction_date,
+            payment_method: "bank_transfer",
+            reference: bf.reference_number || `ALLOC-${a.inv.invoice_number}`,
+            bank_account_id: bankAccountId,
+            ar_account_id: a.inv.ar_account_id || arAccountId,
+            journal_entry_id: je.id,
+          })
+          .select()
+          .single();
+
+        if (arLine) {
+          await supabase.from("ar_subledger").insert({
+            tenant_id: tenantId,
+            customer_id: a.inv.customer_id,
+            journal_line_id: arLine.id,
+            journal_id: je.id,
+            document_type: "payment_received",
+            document_id: pmt?.id,
+            debit: 0,
+            credit: a.amount,
+            amount: a.amount,
+          });
+        }
+
+        await supabase.from("invoices").update({ status: a.partial ? "partial" : "paid" }).eq("id", a.inv.id);
+      }
+
+      // Add bank line as cleared recon transaction
+      const { data: newReconTxn } = await supabase
+        .from("reconciliation_transactions")
+        .insert({
+          reconciliation_id: reconciliationId,
+          journal_line_id: bankLine!.id,
+          cleared: true,
+          cleared_date: bf.transaction_date,
+        })
+        .select()
+        .single();
+
+      await supabase.from("bank_feed_transactions").update({
+        status: "matched",
+        matched_journal_line_id: bankLine!.id,
+        match_type: "AR_ALLOCATION",
+        match_confidence: 96,
+        match_metadata: {
+          method: "ar_allocation",
+          confidence: 96,
+          reasons: reasonsBase,
+          allocations: chosen.allocations.map((a) => ({ invoice_id: a.inv.id, invoice_number: a.inv.invoice_number, amount: a.amount, partial: a.partial })),
+          journal_entry_id: je.id,
+          timestamp: new Date().toISOString(),
+        },
+      }).eq("id", bf.id);
+
+      usedBank.add(bf.id);
+      auto++;
+      results.push({
+        bank_feed_id: bf.id,
+        recon_txn_ids: newReconTxn ? [newReconTxn.id] : [],
+        journal_line_ids: [bankLine!.id],
+        confidence: 96,
+        method: "ar_allocation",
+        match_type: "AR_AUTO_ALLOCATED",
+        reasons: [...reasonsBase, `✓ Allocated ${totalAmt} across ${chosen.allocations.length} invoices`],
+      });
+    } catch (e) {
+      console.error("AR allocation auto-post failed", bf.id, e);
+      await supabase.from("bank_feed_transactions").update({
+        status: "suggested",
+        match_type: "AR_ALLOCATION",
+        match_confidence: 85,
+        match_metadata: {
+          method: "ar_allocation",
+          confidence: 85,
+          reasons: [...reasonsBase, `⚠ Auto-post failed: ${e instanceof Error ? e.message : "unknown"}`],
+          allocations: chosen.allocations.map((a) => ({ invoice_id: a.inv.id, invoice_number: a.inv.invoice_number, amount: a.amount, partial: a.partial })),
+          timestamp: new Date().toISOString(),
+        },
+      }).eq("id", bf.id);
+      usedBank.add(bf.id);
+      suggestions++;
+    }
+  }
+
+  return { matches: results, auto, suggestions };
+}
+
 // ─── Step 7: Standard Scoring Engine (Fallback) ───
 function scoringMatch(
   bankFeeds: BankFeed[],
@@ -868,16 +1114,27 @@ serve(async (req) => {
     );
     allMatches.push(...arResult.matches);
 
+    // ─── STEP 6b: AR Allocation (one bank deposit → many invoices, FIFO) ───
+    const allocResult = await arAllocationMatch(
+      supabase,
+      recon.tenant_id,
+      bank_account_id,
+      bankFeeds || [],
+      usedBank,
+      reconciliation_id
+    );
+    allMatches.push(...allocResult.matches);
+
     // ─── STEP 7: Standard Scoring (final fallback) ───
     const scoringMatches = scoringMatch(bankFeeds || [], ledgerEntries, usedBank, usedLedger);
     allMatches.push(...scoringMatches);
 
-    // ─── Persist all matches (skip ar_inference — already persisted) ───
-    let autoMatched = arResult.auto;
-    let suggested = arResult.suggestions;
+    // ─── Persist all matches (skip ar_inference & ar_allocation — already persisted) ───
+    let autoMatched = arResult.auto + allocResult.auto;
+    let suggested = arResult.suggestions + allocResult.suggestions;
 
     for (const m of allMatches) {
-      if (m.method === "ar_inference") continue; // already written by arInferenceMatch
+      if (m.method === "ar_inference" || m.method === "ar_allocation") continue; // already persisted
       const isAuto = m.match_type === "AUTO_MATCHED" || m.match_type === "GROUP_MATCHED";
       const metadata = {
         method: m.method,
@@ -938,6 +1195,8 @@ serve(async (req) => {
         combo: comboMatches.length,
         ar_inference: arResult.matches.length,
         ar_auto_posted: arResult.auto,
+        ar_allocation: allocResult.matches.length,
+        ar_allocation_auto: allocResult.auto,
         scoring: scoringMatches.length,
       },
       match_details: allMatches.map(m => ({
