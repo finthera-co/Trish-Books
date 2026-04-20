@@ -872,11 +872,12 @@ serve(async (req) => {
     const scoringMatches = scoringMatch(bankFeeds || [], ledgerEntries, usedBank, usedLedger);
     allMatches.push(...scoringMatches);
 
-    // ─── Persist all matches ───
-    let autoMatched = 0;
-    let suggested = 0;
+    // ─── Persist all matches (skip ar_inference — already persisted) ───
+    let autoMatched = arResult.auto;
+    let suggested = arResult.suggestions;
 
     for (const m of allMatches) {
+      if (m.method === "ar_inference") continue; // already written by arInferenceMatch
       const isAuto = m.match_type === "AUTO_MATCHED" || m.match_type === "GROUP_MATCHED";
       const metadata = {
         method: m.method,
@@ -886,7 +887,6 @@ serve(async (req) => {
         matched_entries: m.journal_line_ids,
       };
 
-      // Update bank feed
       await supabase
         .from("bank_feed_transactions")
         .update({
@@ -898,7 +898,6 @@ serve(async (req) => {
         })
         .eq("id", m.bank_feed_id);
 
-      // Auto-clear for high confidence matches
       if (isAuto) {
         for (const rtId of m.recon_txn_ids) {
           await supabase
@@ -913,14 +912,13 @@ serve(async (req) => {
     }
 
     // ─── Update reconciliation cleared balance ───
-    // Recalculate cleared balance after auto-matches
     const { data: clearedTxns } = await supabase
       .from("reconciliation_transactions")
       .select("journal_lines(debit, credit)")
       .eq("reconciliation_id", reconciliation_id)
       .eq("cleared", true);
 
-    let clearedBalance = Number(recon.statement_ending_date ? 0 : 0);
+    let clearedBalance = 0;
     if (clearedTxns) {
       for (const ct of clearedTxns) {
         const d = Number((ct as any).journal_lines?.debit) || 0;
@@ -938,6 +936,8 @@ serve(async (req) => {
         source: sourceMatches.length,
         module: moduleMatches.length,
         combo: comboMatches.length,
+        ar_inference: arResult.matches.length,
+        ar_auto_posted: arResult.auto,
         scoring: scoringMatches.length,
       },
       match_details: allMatches.map(m => ({
