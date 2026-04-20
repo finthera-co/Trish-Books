@@ -857,7 +857,18 @@ serve(async (req) => {
     const comboMatches = comboMatch(bankFeeds || [], ledgerEntries, usedBank, usedLedger);
     allMatches.push(...comboMatches);
 
-    // ─── STEP 6: Standard Scoring ───
+    // ─── STEP 6: AR Inference (QuickBooks-style payment intent → invoice) ───
+    const arResult = await arInferenceMatch(
+      supabase,
+      recon.tenant_id,
+      bank_account_id,
+      bankFeeds || [],
+      usedBank,
+      reconciliation_id
+    );
+    allMatches.push(...arResult.matches);
+
+    // ─── STEP 7: Standard Scoring (final fallback) ───
     const scoringMatches = scoringMatch(bankFeeds || [], ledgerEntries, usedBank, usedLedger);
     allMatches.push(...scoringMatches);
 
