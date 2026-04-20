@@ -60,8 +60,55 @@ function exactSourceMatch(b: any, candidates: any[]) {
   return null;
 }
 
-function ruleMatch(b: any, candidates: any[]) {
-  // Strict amount + date proximity (≤ 3 days)
+// User-defined reconciliation_rules condition matcher (pure)
+function ruleConditionMatches(rule: any, b: any): boolean {
+  const desc = (b.description || "").toLowerCase();
+  const val = (rule.condition_value || "").toLowerCase();
+  const amt = Math.abs(Number(b.amount) || 0);
+
+  if (rule.condition_field === "description") {
+    if (rule.condition_operator === "contains" && val && desc.includes(val)) return true;
+    if (rule.condition_operator === "equals" && desc === val) return true;
+    if (rule.condition_operator === "starts_with" && val && desc.startsWith(val)) return true;
+  }
+  if (rule.condition_field === "amount") {
+    if (rule.condition_operator === "range"
+        && rule.condition_amount_min != null
+        && rule.condition_amount_max != null) {
+      return amt >= Number(rule.condition_amount_min) && amt <= Number(rule.condition_amount_max);
+    }
+    if (rule.condition_operator === "equals" && val) {
+      return Math.abs(amt - parseFloat(val)) < EPS;
+    }
+    if (rule.condition_operator === "gt" && val) return amt > parseFloat(val);
+    if (rule.condition_operator === "lt" && val) return amt < parseFloat(val);
+  }
+  if (rule.condition_field === "reference") {
+    const ref = (b.reference_number || "").toLowerCase();
+    if (rule.condition_operator === "contains" && val && ref.includes(val)) return true;
+    if (rule.condition_operator === "equals" && ref === val) return true;
+  }
+  return false;
+}
+
+// Engine RULE tier: prefer user rule that ALSO has a matching ledger candidate.
+// Returns { type: "RULE", target, score: 92, rule } when a rule fires AND a
+// same-amount ledger line exists within 7 days. Pure ledger fallback returns
+// score 90 like before.
+function ruleMatch(b: any, candidates: any[], userRules: any[]) {
+  for (const rule of userRules) {
+    if (!ruleConditionMatches(rule, b)) continue;
+    // Try to bind the rule to a ledger candidate (preferred)
+    for (const c of candidates) {
+      const signed = c.debit - c.credit;
+      if (near(signed, b.amount) && dateDistance(b.transaction_date, c.entry_date) <= 7) {
+        return { type: "RULE", target: c, score: 92, rule };
+      }
+    }
+    // Rule fired but no ledger candidate → return rule-only (engine will create JE if action_account_id set)
+    return { type: "RULE_ONLY", target: null, score: 88, rule };
+  }
+  // Plain deterministic amount+date match
   for (const c of candidates) {
     const signed = c.debit - c.credit;
     if (near(signed, b.amount) && dateDistance(b.transaction_date, c.entry_date) <= 3) {
@@ -70,6 +117,7 @@ function ruleMatch(b: any, candidates: any[]) {
   }
   return null;
 }
+
 
 function scoringMatch(b: any, candidates: any[]) {
   let best: any = null;
