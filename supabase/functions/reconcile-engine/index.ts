@@ -496,7 +496,7 @@ Deno.serve(async (req) => {
 
         return new Response(JSON.stringify({
           ok: true, snapshot: snapRow,
-          auto, suggested, composite, rule_auto_created: ruleAutoCreated,
+          auto, suggested, composite, rule_auto_created: ruleAutoCreated, ap_matched: apMatched,
           rules_loaded: rules.length, results,
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
