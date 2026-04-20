@@ -60,8 +60,55 @@ function exactSourceMatch(b: any, candidates: any[]) {
   return null;
 }
 
-function ruleMatch(b: any, candidates: any[]) {
-  // Strict amount + date proximity (≤ 3 days)
+// User-defined reconciliation_rules condition matcher (pure)
+function ruleConditionMatches(rule: any, b: any): boolean {
+  const desc = (b.description || "").toLowerCase();
+  const val = (rule.condition_value || "").toLowerCase();
+  const amt = Math.abs(Number(b.amount) || 0);
+
+  if (rule.condition_field === "description") {
+    if (rule.condition_operator === "contains" && val && desc.includes(val)) return true;
+    if (rule.condition_operator === "equals" && desc === val) return true;
+    if (rule.condition_operator === "starts_with" && val && desc.startsWith(val)) return true;
+  }
+  if (rule.condition_field === "amount") {
+    if (rule.condition_operator === "range"
+        && rule.condition_amount_min != null
+        && rule.condition_amount_max != null) {
+      return amt >= Number(rule.condition_amount_min) && amt <= Number(rule.condition_amount_max);
+    }
+    if (rule.condition_operator === "equals" && val) {
+      return Math.abs(amt - parseFloat(val)) < EPS;
+    }
+    if (rule.condition_operator === "gt" && val) return amt > parseFloat(val);
+    if (rule.condition_operator === "lt" && val) return amt < parseFloat(val);
+  }
+  if (rule.condition_field === "reference") {
+    const ref = (b.reference_number || "").toLowerCase();
+    if (rule.condition_operator === "contains" && val && ref.includes(val)) return true;
+    if (rule.condition_operator === "equals" && ref === val) return true;
+  }
+  return false;
+}
+
+// Engine RULE tier: prefer user rule that ALSO has a matching ledger candidate.
+// Returns { type: "RULE", target, score: 92, rule } when a rule fires AND a
+// same-amount ledger line exists within 7 days. Pure ledger fallback returns
+// score 90 like before.
+function ruleMatch(b: any, candidates: any[], userRules: any[]) {
+  for (const rule of userRules) {
+    if (!ruleConditionMatches(rule, b)) continue;
+    // Try to bind the rule to a ledger candidate (preferred)
+    for (const c of candidates) {
+      const signed = c.debit - c.credit;
+      if (near(signed, b.amount) && dateDistance(b.transaction_date, c.entry_date) <= 7) {
+        return { type: "RULE", target: c, score: 92, rule };
+      }
+    }
+    // Rule fired but no ledger candidate → return rule-only (engine will create JE if action_account_id set)
+    return { type: "RULE_ONLY", target: null, score: 88, rule };
+  }
+  // Plain deterministic amount+date match
   for (const c of candidates) {
     const signed = c.debit - c.credit;
     if (near(signed, b.amount) && dateDistance(b.transaction_date, c.entry_date) <= 3) {
@@ -70,6 +117,7 @@ function ruleMatch(b: any, candidates: any[]) {
   }
   return null;
 }
+
 
 function scoringMatch(b: any, candidates: any[]) {
   let best: any = null;
@@ -115,10 +163,10 @@ function compositeMatch(b: any, candidates: any[]) {
   return null;
 }
 
-function matchOne(b: any, candidates: any[]) {
+function matchOne(b: any, candidates: any[], userRules: any[]) {
   return (
     exactSourceMatch(b, candidates) ||
-    ruleMatch(b, candidates) ||
+    ruleMatch(b, candidates, userRules) ||
     scoringMatch(b, candidates) ||
     compositeMatch(b, candidates)
   );
@@ -250,6 +298,15 @@ Deno.serve(async (req) => {
 
       // ---- ACTION: match (deterministic) ----
       if (action === "match") {
+        // Load active user-defined rules (priority desc)
+        const { data: userRules } = await supabase
+          .from("reconciliation_rules")
+          .select("*")
+          .eq("tenant_id", recon.tenant_id)
+          .eq("is_active", true)
+          .order("priority", { ascending: false });
+        const rules = userRules || [];
+
         // Exclude lines already cleared in this or prior reconciliations
         const lineIds = ledger.map((l) => l.id);
         const { data: clearedTx } = await supabase
@@ -260,15 +317,14 @@ Deno.serve(async (req) => {
         const clearedSet = new Set((clearedTx || []).map((c: any) => c.journal_line_id));
         const open = ledger.filter((l) => !clearedSet.has(l.id));
 
-        let auto = 0, suggested = 0, composite = 0;
+        let auto = 0, suggested = 0, composite = 0, ruleAutoCreated = 0;
         const results: any[] = [];
 
         for (const b of bankTxns.filter((t: any) => t.state === "unmatched")) {
-          const m = matchOne(b, open);
+          const m = matchOne(b, open, rules);
           if (!m) continue;
 
           if (m.type === "COMPOSITE") {
-            // Mark composite group cleared
             for (const t of (m as any).targets) {
               await supabase.from("reconciliation_transactions").upsert(
                 { reconciliation_id, journal_line_id: t.id, cleared: true, cleared_date: b.transaction_date },
@@ -286,6 +342,65 @@ Deno.serve(async (req) => {
             continue;
           }
 
+          // RULE_ONLY: rule fired but no ledger candidate → auto-create JE if rule has action_account_id
+          if (m.type === "RULE_ONLY") {
+            const rule = (m as any).rule;
+            if (!rule.action_account_id) {
+              // No account to post to → mark suggested for user review
+              assertTransition(b.state, "suggested");
+              await supabase.from("bank_feed_transactions").update({
+                state: "suggested", status: "suggested",
+                match_type: "RULE_ONLY", match_confidence: m.score,
+                match_metadata: { rule_id: rule.id, rule_name: rule.name, reason: "no action_account_id" },
+              }).eq("id", b.id);
+              suggested++;
+              results.push({ bank_id: b.id, type: "RULE_ONLY", score: m.score, rule: rule.name });
+              continue;
+            }
+
+            // Auto-create JE: positive amount = deposit (Dr Bank / Cr action), negative = expense (Dr action / Cr Bank)
+            const amt = Math.abs(Number(b.amount));
+            const isDeposit = Number(b.amount) >= 0;
+            const { data: je, error: jeErr } = await supabase.from("journal_entries").insert({
+              tenant_id: recon.tenant_id,
+              entry_date: b.transaction_date,
+              description: `Auto: ${rule.name} — ${b.description || ""}`.slice(0, 255),
+              reference: `RULE-${rule.id.slice(0, 8)}`,
+              status: "posted",
+              source_type: "reconciliation_rule",
+            }).select().single();
+            if (jeErr) { console.error("JE create failed", jeErr); continue; }
+
+            const lines = isDeposit
+              ? [
+                  { journal_entry_id: je.id, account_id: recon.bank_account_id, debit: amt, credit: 0 },
+                  { journal_entry_id: je.id, account_id: rule.action_account_id, debit: 0, credit: amt },
+                ]
+              : [
+                  { journal_entry_id: je.id, account_id: rule.action_account_id, debit: amt, credit: 0 },
+                  { journal_entry_id: je.id, account_id: recon.bank_account_id, debit: 0, credit: amt },
+                ];
+            const { data: insertedLines } = await supabase.from("journal_lines").insert(lines).select();
+            // Find the bank-side line and clear it
+            const bankLine = (insertedLines || []).find((l: any) => l.account_id === recon.bank_account_id);
+            if (bankLine) {
+              await supabase.from("reconciliation_transactions").upsert(
+                { reconciliation_id, journal_line_id: bankLine.id, cleared: true, cleared_date: b.transaction_date },
+                { onConflict: "reconciliation_id,journal_line_id" } as any,
+              );
+            }
+            assertTransition(b.state, "matched");
+            await supabase.from("bank_feed_transactions").update({
+              state: "matched", status: "matched",
+              matched_journal_line_id: bankLine?.id || null,
+              match_type: "RULE_AUTO", match_confidence: m.score,
+              match_metadata: { rule_id: rule.id, rule_name: rule.name, je_id: je.id },
+            }).eq("id", b.id);
+            ruleAutoCreated++;
+            results.push({ bank_id: b.id, type: "RULE_AUTO", score: m.score, rule: rule.name });
+            continue;
+          }
+
           const target = (m as any).target;
           if (m.score >= 90) {
             await supabase.from("reconciliation_transactions").upsert(
@@ -297,6 +412,7 @@ Deno.serve(async (req) => {
               state: "matched", status: "matched",
               matched_journal_line_id: target.id,
               match_type: m.type, match_confidence: m.score,
+              match_metadata: (m as any).rule ? { rule_id: (m as any).rule.id, rule_name: (m as any).rule.name } : null,
             }).eq("id", b.id);
             auto++;
           } else {
@@ -311,7 +427,11 @@ Deno.serve(async (req) => {
           results.push({ bank_id: b.id, type: m.type, score: m.score });
         }
 
-        return new Response(JSON.stringify({ ok: true, snapshot: snapRow, auto, suggested, composite, results }), {
+        return new Response(JSON.stringify({
+          ok: true, snapshot: snapRow,
+          auto, suggested, composite, rule_auto_created: ruleAutoCreated,
+          rules_loaded: rules.length, results,
+        }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
