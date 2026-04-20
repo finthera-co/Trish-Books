@@ -163,10 +163,10 @@ function compositeMatch(b: any, candidates: any[]) {
   return null;
 }
 
-function matchOne(b: any, candidates: any[]) {
+function matchOne(b: any, candidates: any[], userRules: any[]) {
   return (
     exactSourceMatch(b, candidates) ||
-    ruleMatch(b, candidates) ||
+    ruleMatch(b, candidates, userRules) ||
     scoringMatch(b, candidates) ||
     compositeMatch(b, candidates)
   );
