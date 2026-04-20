@@ -12,10 +12,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useCustomers, useAccounts, useProducts, useTaxes } from "@/hooks/useData";
 import { useInvoiceTemplates } from "@/hooks/useInvoiceTemplates";
 import { supabase } from "@/integrations/supabase/client";
-import { post } from "@/lib/postingEngine";
 import { formatCurrency } from "@/lib/currency";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
+import { usePostInvoice } from "@/hooks/useAccountSettings";
 import type { DesignerComponent, TableSettings, PageSettings } from "@/components/invoice-designer/types";
 
 interface LineItem {
@@ -51,6 +51,7 @@ export default function CreateInvoice() {
   const { data: products } = useProducts();
   const { data: taxes } = useTaxes();
   const { data: templates } = useInvoiceTemplates();
+  const postInvoiceFn = usePostInvoice();
 
   // Form state
   const [templateId, setTemplateId] = useState("");
@@ -176,7 +177,8 @@ export default function CreateInvoice() {
     setter(true);
 
     try {
-      // 1. Create invoice
+      // 1. ALWAYS create as draft. Posting is exclusively done by the post-invoice
+      //    edge function (validates account_settings, idempotent, atomic, balanced).
       const { data: invoice, error: invErr } = await supabase
         .from("invoices")
         .insert({
@@ -192,9 +194,7 @@ export default function CreateInvoice() {
           template_id: templateId || null,
           notes: notes || null,
           terms: terms || null,
-          status: shouldPost ? "sent" : "draft",
-          ar_account_id: arAccount?.id || null,
-          revenue_account_id: revenueAccount?.id || null,
+          status: "draft",
         } as any)
         .select()
         .single();
@@ -219,82 +219,16 @@ export default function CreateInvoice() {
         if (itemErr) throw itemErr;
       }
 
-      // 3. Post journal entries if requested
-      if (shouldPost && arAccount && revenueAccount) {
-        const journalLines: any[] = [];
-        const subledgerEntries: any[] = [];
-
-        // Dr Accounts Receivable (total including tax)
-        journalLines.push({
-          account_id: arAccount.id,
-          debit: total,
-          credit: 0,
-          customer_id: customerId,
-        });
-
-        // Cr Revenue (subtotal - after discount)
-        journalLines.push({
-          account_id: revenueAccount.id,
-          debit: 0,
-          credit: subtotal,
-        });
-
-        // Cr Tax Payable (if tax)
-        if (totalTax > 0 && taxPayableAccount) {
-          journalLines.push({
-            account_id: taxPayableAccount.id,
-            debit: 0,
-            credit: totalTax,
-          });
-        }
-
-        // Dr Discount Allowed (if discount, adjust AR and add discount debit)
-        if (totalDiscount > 0 && discountAccount) {
-          // Adjust: AR should be total (after discount already applied in subtotal calc)
-          // subtotal already has discount subtracted per line
-          // The gross revenue is subtotal + totalDiscount
-          // So: Dr AR = total, Dr Discount = totalDiscount, Cr Revenue = subtotal + totalDiscount
-          journalLines[1].credit = subtotal + totalDiscount; // gross revenue
-          journalLines[0].debit = total; // net AR (subtotal + tax = total)
-          journalLines.push({
-            account_id: discountAccount.id,
-            debit: totalDiscount,
-            credit: 0,
-          });
-        }
-
-        // AR subledger
-        subledgerEntries.push({
-          type: "ar",
-          entity_id: customerId,
-          document_type: "invoice",
-          document_id: invoice.id,
-          debit: journalLines[0].debit,
-          credit: 0,
-          invoice_no: invoiceNumber,
-          due_date: dueDate || null,
-        });
-
-        const postResult = await post({
-          tenant_id: appUser?.tenant_id!,
-          entry_date: issueDate,
-          description: `Invoice ${invoiceNumber}`,
-          source_type: "invoice",
-          source_id: invoice.id,
-          reference: invoiceNumber,
-          lines: journalLines,
-          subledger_entries: subledgerEntries,
-        });
-
-        // Link journal entry back to invoice
-        await supabase
-          .from("invoices")
-          .update({ journal_entry_id: postResult.journal_entry_id } as any)
-          .eq("id", invoice.id);
+      // 3. If user clicked "Save & Post", call the canonical edge function.
+      //    It uses account_settings (AR / Sales / Tax Payable), validates, and
+      //    creates the single source-of-truth journal entry.
+      if (shouldPost) {
+        await postInvoiceFn.mutateAsync({ invoice_id: invoice.id, action: "post" });
+      } else {
+        toast.success("Invoice saved as draft");
       }
 
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
-      toast.success(shouldPost ? "Invoice posted successfully" : "Invoice saved as draft");
       navigate("/sales/invoices");
     } catch (err: any) {
       toast.error(err.message || "Failed to save invoice");
