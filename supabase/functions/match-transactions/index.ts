@@ -1134,7 +1134,7 @@ serve(async (req) => {
     let suggested = arResult.suggestions + allocResult.suggestions;
 
     for (const m of allMatches) {
-      if (m.method === "ar_inference") continue; // already written by arInferenceMatch
+      if (m.method === "ar_inference" || m.method === "ar_allocation") continue; // already persisted
       const isAuto = m.match_type === "AUTO_MATCHED" || m.match_type === "GROUP_MATCHED";
       const metadata = {
         method: m.method,
