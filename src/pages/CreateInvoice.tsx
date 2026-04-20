@@ -303,16 +303,19 @@ export default function CreateInvoice() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Customer *</Label>
-                  <Select value={customerId} onValueChange={setCustomerId}>
-                    <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="Select customer..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {customers?.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex gap-2 mt-1">
+                    <Select value={customerId} onValueChange={setCustomerId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select customer..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {customers?.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <QuickCustomerDialog onCreated={(id) => setCustomerId(id)} />
+                  </div>
                 </div>
                 <div>
                   <Label>Invoice Number *</Label>
