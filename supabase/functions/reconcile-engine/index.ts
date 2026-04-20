@@ -377,7 +377,7 @@ Deno.serve(async (req) => {
         const clearedSet = new Set((clearedTx || []).map((c: any) => c.journal_line_id));
         const open = ledger.filter((l) => !clearedSet.has(l.id));
 
-        let auto = 0, suggested = 0, composite = 0, ruleAutoCreated = 0;
+        let auto = 0, suggested = 0, composite = 0, ruleAutoCreated = 0, apMatched = 0;
         const results: any[] = [];
 
         for (const b of bankTxns.filter((t: any) => t.state === "unmatched")) {
