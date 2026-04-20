@@ -51,12 +51,44 @@ function exactSourceMatch(b: any, candidates: any[]) {
   for (const c of candidates) {
     const cref = (c.je_reference || "").toLowerCase();
     if (cref && (cref === ref || cref.includes(ref) || ref.includes(cref))) {
-      const signed = c.debit - c.credit; // bank deposit = debit on bank account
+      const signed = c.debit - c.credit;
       if (near(Math.abs(signed), Math.abs(b.amount))) {
         return { type: "SOURCE", target: c, score: 100 };
       }
     }
   }
+  return null;
+}
+
+// AP tier: vendor-aware matching for bank outflows against AP payment journal lines.
+// Bank outflow = negative; AP payment on bank account = credit (signed < 0).
+// Boost on (a) bill_no in description, (b) vendor name token similarity.
+function apMatch(b: any, candidates: any[]) {
+  if (Number(b.amount) >= 0) return null;
+  const desc = (b.description || "").toLowerCase();
+  const ref = (b.reference_number || "").toLowerCase();
+  let best: any = null;
+  let bestScore = 0;
+  for (const c of candidates) {
+    if (!c.is_ap_payment) continue;
+    const signed = c.debit - c.credit;
+    if (!near(signed, b.amount)) continue;
+    const dd = dateDistance(b.transaction_date, c.entry_date);
+    if (dd > 14) continue;
+    let s = 70;
+    if (dd <= 2) s += 10;
+    else if (dd <= 7) s += 5;
+    if (c.bill_no) {
+      const bn = String(c.bill_no).toLowerCase();
+      if (bn && (desc.includes(bn) || ref.includes(bn))) s += 15;
+    }
+    if (c.vendor_name) {
+      s += Math.round(tokenSim(b.description || "", c.vendor_name) * 15);
+    }
+    if (s > bestScore) { best = c; bestScore = s; }
+  }
+  if (bestScore >= 90) return { type: "AP_AUTO", target: best, score: bestScore };
+  if (bestScore >= 75) return { type: "AP_SUGGEST", target: best, score: bestScore };
   return null;
 }
 
