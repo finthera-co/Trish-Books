@@ -19,6 +19,7 @@ import {
   useCreateReconciliationAdjustment,
 } from "@/hooks/useBankReconciliation";
 import { useBankFeedTransactions, useApproveMatch, useRejectMatch, useDeleteBankFeed, useRunAIMatching } from "@/hooks/useBankFeeds";
+import { useReconcileEngine, useReconciliationSnapshots, useInvariantLog } from "@/hooks/useReconciliationEngine";
 import { useAccounts } from "@/hooks/useData";
 import { formatCurrency } from "@/lib/currency";
 import {
@@ -65,6 +66,9 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
   const rejectMatch = useRejectMatch();
   const deleteBankFeed = useDeleteBankFeed();
   const runMatching = useRunAIMatching();
+  const engine = useReconcileEngine();
+  const { data: snapshots } = useReconciliationSnapshots(reconciliationId);
+  const { data: invariants } = useInvariantLog(reconciliationId);
 
   const [search, setSearch] = useState("");
   const [showAdjDialog, setShowAdjDialog] = useState(false);
@@ -292,6 +296,14 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
                 disabled={runMatching.isPending}
               >
                 <Sparkles className="w-3 h-3 mr-1" /> {runMatching.isPending ? "Matching..." : "AI Match"}
+              </Button>
+              <Button variant="outline" size="sm" disabled={engine.isPending}
+                onClick={() => engine.mutate({ reconciliationId, action: "match" })}>
+                ⚙️ Engine Match
+              </Button>
+              <Button variant="outline" size="sm" disabled={engine.isPending}
+                onClick={() => engine.mutate({ reconciliationId, action: "validate" })}>
+                ✓ Validate
               </Button>
               <Button variant="outline" size="sm" onClick={() => openAdjDialog("charge")}>
                 <Plus className="w-3 h-3 mr-1" /> Bank Charge
