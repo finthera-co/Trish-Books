@@ -247,12 +247,39 @@ Deno.serve(async (req) => {
     const ledger = (lines || []).map((l: any) => ({
       id: l.id,
       account_id: l.account_id,
+      journal_entry_id: l.journal_entries.id,
       debit: Number(l.debit) || 0,
       credit: Number(l.credit) || 0,
       entry_date: l.journal_entries.entry_date,
       je_description: l.journal_entries.description,
       je_reference: l.journal_entries.reference,
+      vendor_name: null as string | null,
+      vendor_id: null as string | null,
+      bill_no: null as string | null,
+      is_ap_payment: false,
     }));
+
+    // Enrich ledger lines with AP subledger context (vendor-aware AP matching).
+    // For each bank-side line whose JE also touches AP, attach vendor name + bill no.
+    const jeIds = ledger.map((l) => l.journal_entry_id);
+    if (jeIds.length) {
+      const { data: apLinks } = await supabase
+        .from("ap_subledger")
+        .select("journal_id, vendor_id, bill_no, vendors(name)")
+        .in("journal_id", jeIds)
+        .eq("tenant_id", recon.tenant_id);
+      const byJe = new Map<string, any>();
+      for (const a of apLinks || []) byJe.set(a.journal_id, a);
+      for (const l of ledger) {
+        const ap = byJe.get(l.journal_entry_id);
+        if (ap) {
+          l.is_ap_payment = true;
+          l.vendor_id = ap.vendor_id;
+          l.vendor_name = (ap as any).vendors?.name || null;
+          l.bill_no = ap.bill_no;
+        }
+      }
+    }
 
     // Load bank feed
     const { data: feed } = await supabase
