@@ -45,6 +45,8 @@ function tokenSim(a: string, b: string) {
 }
 
 // ---------- Matching tiers (deterministic) ----------
+// Each tier returns a `trace` describing the contributing fields and points,
+// plus a `tier_reason` summary so the UI can explain *why* a match fired.
 function exactSourceMatch(b: any, candidates: any[]) {
   if (!b.reference_number) return null;
   const ref = String(b.reference_number).trim().toLowerCase();
@@ -53,7 +55,15 @@ function exactSourceMatch(b: any, candidates: any[]) {
     if (cref && (cref === ref || cref.includes(ref) || ref.includes(cref))) {
       const signed = c.debit - c.credit;
       if (near(Math.abs(signed), Math.abs(b.amount))) {
-        return { type: "SOURCE", target: c, score: 100 };
+        const trace = [
+          { factor: "reference_number", bank: b.reference_number, ledger: c.je_reference, match: true, points: 60 },
+          { factor: "amount", bank: b.amount, ledger: signed, match: true, points: 40 },
+        ];
+        return {
+          type: "SOURCE", target: c, score: 100,
+          tier_reason: "Exact reference number AND amount match",
+          trace,
+        };
       }
     }
   }
@@ -69,26 +79,42 @@ function apMatch(b: any, candidates: any[]) {
   const ref = (b.reference_number || "").toLowerCase();
   let best: any = null;
   let bestScore = 0;
+  let bestTrace: any[] = [];
   for (const c of candidates) {
     if (!c.is_ap_payment) continue;
     const signed = c.debit - c.credit;
     if (!near(signed, b.amount)) continue;
     const dd = dateDistance(b.transaction_date, c.entry_date);
     if (dd > 14) continue;
+    const trace: any[] = [];
     let s = 70;
+    trace.push({ factor: "ap_payment_amount", bank: b.amount, ledger: signed, match: true, points: 70 });
+    trace.push({ factor: "date_distance", days: dd, points: dd <= 2 ? 10 : dd <= 7 ? 5 : 0 });
     if (dd <= 2) s += 10;
     else if (dd <= 7) s += 5;
     if (c.bill_no) {
       const bn = String(c.bill_no).toLowerCase();
-      if (bn && (desc.includes(bn) || ref.includes(bn))) s += 15;
+      const hit = bn && (desc.includes(bn) || ref.includes(bn));
+      if (hit) { s += 15; trace.push({ factor: "bill_no", value: c.bill_no, found_in: desc.includes(bn) ? "description" : "reference", points: 15 }); }
     }
     if (c.vendor_name) {
-      s += Math.round(tokenSim(b.description || "", c.vendor_name) * 15);
+      const sim = tokenSim(b.description || "", c.vendor_name);
+      const pts = Math.round(sim * 15);
+      s += pts;
+      trace.push({ factor: "vendor_name_similarity", vendor: c.vendor_name, similarity: sim.toFixed(2), points: pts });
     }
-    if (s > bestScore) { best = c; bestScore = s; }
+    if (s > bestScore) { best = c; bestScore = s; bestTrace = trace; }
   }
-  if (bestScore >= 90) return { type: "AP_AUTO", target: best, score: bestScore };
-  if (bestScore >= 75) return { type: "AP_SUGGEST", target: best, score: bestScore };
+  if (bestScore >= 90) return {
+    type: "AP_AUTO", target: best, score: bestScore,
+    tier_reason: `AP payment matched to vendor ${best.vendor_name || "(unknown)"} with high confidence`,
+    trace: bestTrace,
+  };
+  if (bestScore >= 75) return {
+    type: "AP_SUGGEST", target: best, score: bestScore,
+    tier_reason: `AP payment likely matches vendor ${best.vendor_name || "(unknown)"} — needs review`,
+    trace: bestTrace,
+  };
   return null;
 }
 
@@ -130,21 +156,46 @@ function ruleConditionMatches(rule: any, b: any): boolean {
 function ruleMatch(b: any, candidates: any[], userRules: any[]) {
   for (const rule of userRules) {
     if (!ruleConditionMatches(rule, b)) continue;
-    // Try to bind the rule to a ledger candidate (preferred)
+    const ruleTrace = [{
+      factor: "user_rule",
+      rule_name: rule.name,
+      condition: `${rule.condition_field} ${rule.condition_operator} ${rule.condition_value ?? ""}`.trim(),
+      matched: true,
+      points: 60,
+    }];
     for (const c of candidates) {
       const signed = c.debit - c.credit;
-      if (near(signed, b.amount) && dateDistance(b.transaction_date, c.entry_date) <= 7) {
-        return { type: "RULE", target: c, score: 92, rule };
+      const dd = dateDistance(b.transaction_date, c.entry_date);
+      if (near(signed, b.amount) && dd <= 7) {
+        return {
+          type: "RULE", target: c, score: 92, rule,
+          tier_reason: `Rule "${rule.name}" matched and a same-amount ledger line was found within ${dd}d`,
+          trace: [
+            ...ruleTrace,
+            { factor: "amount", bank: b.amount, ledger: signed, match: true, points: 22 },
+            { factor: "date_distance", days: dd, points: 10 },
+          ],
+        };
       }
     }
-    // Rule fired but no ledger candidate → return rule-only (engine will create JE if action_account_id set)
-    return { type: "RULE_ONLY", target: null, score: 88, rule };
+    return {
+      type: "RULE_ONLY", target: null, score: 88, rule,
+      tier_reason: `Rule "${rule.name}" matched but no ledger candidate exists${rule.action_account_id ? " — engine will auto-create JE" : " — needs manual review"}`,
+      trace: ruleTrace,
+    };
   }
-  // Plain deterministic amount+date match
   for (const c of candidates) {
     const signed = c.debit - c.credit;
-    if (near(signed, b.amount) && dateDistance(b.transaction_date, c.entry_date) <= 3) {
-      return { type: "RULE", target: c, score: 90 };
+    const dd = dateDistance(b.transaction_date, c.entry_date);
+    if (near(signed, b.amount) && dd <= 3) {
+      return {
+        type: "RULE", target: c, score: 90,
+        tier_reason: `Deterministic amount + date match (within ${dd}d, no user rule)`,
+        trace: [
+          { factor: "amount", bank: b.amount, ledger: signed, match: true, points: 60 },
+          { factor: "date_distance", days: dd, points: 30 },
+        ],
+      };
     }
   }
   return null;
@@ -154,26 +205,30 @@ function ruleMatch(b: any, candidates: any[], userRules: any[]) {
 function scoringMatch(b: any, candidates: any[]) {
   let best: any = null;
   let bestScore = 0;
+  let bestTrace: any[] = [];
   for (const c of candidates) {
+    const trace: any[] = [];
     let s = 0;
     const signed = c.debit - c.credit;
-    if (near(signed, b.amount)) s += 50;
+    if (near(signed, b.amount)) { s += 50; trace.push({ factor: "amount", bank: b.amount, ledger: signed, match: true, points: 50 }); }
     const dd = dateDistance(b.transaction_date, c.entry_date);
-    if (dd <= 2) s += 20;
-    else if (dd <= 7) s += 10;
-    s += Math.round(tokenSim(b.description || "", c.je_description || "") * 20);
-    if (c.account_id) s += 10;
-    if (s > bestScore) {
-      best = c;
-      bestScore = s;
-    }
+    const dPts = dd <= 2 ? 20 : dd <= 7 ? 10 : 0;
+    if (dPts) { s += dPts; trace.push({ factor: "date_distance", days: dd, points: dPts }); }
+    const sim = tokenSim(b.description || "", c.je_description || "");
+    const tPts = Math.round(sim * 20);
+    if (tPts) { s += tPts; trace.push({ factor: "description_similarity", similarity: sim.toFixed(2), points: tPts }); }
+    if (c.account_id) { s += 10; trace.push({ factor: "account_present", points: 10 }); }
+    if (s > bestScore) { best = c; bestScore = s; bestTrace = trace; }
   }
-  if (bestScore >= 85) return { type: "SCORING", target: best, score: bestScore };
+  if (bestScore >= 85) return {
+    type: "SCORING", target: best, score: bestScore,
+    tier_reason: `Heuristic scoring match (amount + date + description similarity)`,
+    trace: bestTrace,
+  };
   return null;
 }
 
 function compositeMatch(b: any, candidates: any[]) {
-  // Bounded subset search: same-sign candidates within 14 days, max 6 items, k ≤ 4
   const pool = candidates
     .filter((c) => Math.sign(c.debit - c.credit) === Math.sign(b.amount))
     .filter((c) => dateDistance(b.transaction_date, c.entry_date) <= 14)
@@ -190,7 +245,14 @@ function compositeMatch(b: any, candidates: any[]) {
         group.push(pool[i]);
       }
     }
-    if (near(sum, b.amount)) return { type: "COMPOSITE", targets: group, score: 95 };
+    if (near(sum, b.amount)) return {
+      type: "COMPOSITE", targets: group, score: 95,
+      tier_reason: `Composite: ${group.length} ledger lines sum to bank amount ${b.amount}`,
+      trace: [
+        { factor: "amount_sum", bank: b.amount, ledger_sum: sum, match: true, points: 60 },
+        { factor: "components", count: group.length, points: 35 },
+      ],
+    };
   }
   return null;
 }
@@ -395,7 +457,12 @@ Deno.serve(async (req) => {
             await supabase.from("bank_feed_transactions").update({
               state: "matched", status: "matched",
               match_type: "COMPOSITE", match_confidence: m.score,
-              match_metadata: { targets: (m as any).targets.map((t: any) => t.id) },
+              match_metadata: {
+                tier: "COMPOSITE",
+                tier_reason: (m as any).tier_reason,
+                trace: (m as any).trace,
+                targets: (m as any).targets.map((t: any) => t.id),
+              },
             }).eq("id", b.id);
             composite++;
             results.push({ bank_id: b.id, type: "COMPOSITE", score: m.score });
@@ -406,12 +473,16 @@ Deno.serve(async (req) => {
           if (m.type === "RULE_ONLY") {
             const rule = (m as any).rule;
             if (!rule.action_account_id) {
-              // No account to post to → mark suggested for user review
               assertTransition(b.state, "suggested");
               await supabase.from("bank_feed_transactions").update({
                 state: "suggested", status: "suggested",
                 match_type: "RULE_ONLY", match_confidence: m.score,
-                match_metadata: { rule_id: rule.id, rule_name: rule.name, reason: "no action_account_id" },
+                match_metadata: {
+                  tier: "RULE_ONLY",
+                  tier_reason: (m as any).tier_reason,
+                  trace: (m as any).trace,
+                  rule_id: rule.id, rule_name: rule.name, reason: "no action_account_id",
+                },
               }).eq("id", b.id);
               suggested++;
               results.push({ bank_id: b.id, type: "RULE_ONLY", score: m.score, rule: rule.name });
@@ -454,7 +525,12 @@ Deno.serve(async (req) => {
               state: "matched", status: "matched",
               matched_journal_line_id: bankLine?.id || null,
               match_type: "RULE_AUTO", match_confidence: m.score,
-              match_metadata: { rule_id: rule.id, rule_name: rule.name, je_id: je.id },
+              match_metadata: {
+                tier: "RULE_AUTO",
+                tier_reason: (m as any).tier_reason,
+                trace: (m as any).trace,
+                rule_id: rule.id, rule_name: rule.name, je_id: je.id,
+              },
             }).eq("id", b.id);
             ruleAutoCreated++;
             results.push({ bank_id: b.id, type: "RULE_AUTO", score: m.score, rule: rule.name });
@@ -464,9 +540,19 @@ Deno.serve(async (req) => {
           const target = (m as any).target;
           const apMeta = target?.is_ap_payment
             ? { vendor_id: target.vendor_id, vendor_name: target.vendor_name, bill_no: target.bill_no, ap_payment: true }
-            : null;
-          const ruleMeta = (m as any).rule ? { rule_id: (m as any).rule.id, rule_name: (m as any).rule.name } : null;
-          const meta = apMeta || ruleMeta;
+            : {};
+          const ruleMeta = (m as any).rule ? { rule_id: (m as any).rule.id, rule_name: (m as any).rule.name } : {};
+          const meta = {
+            tier: m.type,
+            tier_reason: (m as any).tier_reason,
+            trace: (m as any).trace,
+            ledger_line_id: target?.id,
+            ledger_entry_date: target?.entry_date,
+            ledger_reference: target?.je_reference,
+            ledger_description: target?.je_description,
+            ...apMeta,
+            ...ruleMeta,
+          };
           if (m.score >= 90) {
             await supabase.from("reconciliation_transactions").upsert(
               { reconciliation_id, journal_line_id: target.id, cleared: true, cleared_date: b.transaction_date },

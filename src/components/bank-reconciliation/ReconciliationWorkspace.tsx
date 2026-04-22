@@ -29,6 +29,7 @@ import {
 import ReconciliationReport from "./ReconciliationReport";
 import BankFeedImport from "./BankFeedImport";
 import ReconciliationRulesManager from "./ReconciliationRulesManager";
+import MatchExplanation from "./MatchExplanation";
 
 interface Props {
   reconciliationId: string;
@@ -417,6 +418,13 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
                               <Badge className="text-[9px] px-1 py-0 bg-purple-600">
                                 Rule Match
                               </Badge>
+                            )}
+                            {(f.status === "matched" || f.status === "suggested" || f.status === "rule_matched") && f.match_type && (
+                              <MatchExplanation
+                                matchType={f.match_type}
+                                matchConfidence={f.match_confidence}
+                                metadata={f.match_metadata}
+                              />
                             )}
                           </div>
                           {!isReconciled && f.status !== "matched" && (
