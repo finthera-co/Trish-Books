@@ -525,7 +525,12 @@ Deno.serve(async (req) => {
               state: "matched", status: "matched",
               matched_journal_line_id: bankLine?.id || null,
               match_type: "RULE_AUTO", match_confidence: m.score,
-              match_metadata: { rule_id: rule.id, rule_name: rule.name, je_id: je.id },
+              match_metadata: {
+                tier: "RULE_AUTO",
+                tier_reason: (m as any).tier_reason,
+                trace: (m as any).trace,
+                rule_id: rule.id, rule_name: rule.name, je_id: je.id,
+              },
             }).eq("id", b.id);
             ruleAutoCreated++;
             results.push({ bank_id: b.id, type: "RULE_AUTO", score: m.score, rule: rule.name });
@@ -535,9 +540,19 @@ Deno.serve(async (req) => {
           const target = (m as any).target;
           const apMeta = target?.is_ap_payment
             ? { vendor_id: target.vendor_id, vendor_name: target.vendor_name, bill_no: target.bill_no, ap_payment: true }
-            : null;
-          const ruleMeta = (m as any).rule ? { rule_id: (m as any).rule.id, rule_name: (m as any).rule.name } : null;
-          const meta = apMeta || ruleMeta;
+            : {};
+          const ruleMeta = (m as any).rule ? { rule_id: (m as any).rule.id, rule_name: (m as any).rule.name } : {};
+          const meta = {
+            tier: m.type,
+            tier_reason: (m as any).tier_reason,
+            trace: (m as any).trace,
+            ledger_line_id: target?.id,
+            ledger_entry_date: target?.entry_date,
+            ledger_reference: target?.je_reference,
+            ledger_description: target?.je_description,
+            ...apMeta,
+            ...ruleMeta,
+          };
           if (m.score >= 90) {
             await supabase.from("reconciliation_transactions").upsert(
               { reconciliation_id, journal_line_id: target.id, cleared: true, cleared_date: b.transaction_date },
