@@ -473,12 +473,16 @@ Deno.serve(async (req) => {
           if (m.type === "RULE_ONLY") {
             const rule = (m as any).rule;
             if (!rule.action_account_id) {
-              // No account to post to → mark suggested for user review
               assertTransition(b.state, "suggested");
               await supabase.from("bank_feed_transactions").update({
                 state: "suggested", status: "suggested",
                 match_type: "RULE_ONLY", match_confidence: m.score,
-                match_metadata: { rule_id: rule.id, rule_name: rule.name, reason: "no action_account_id" },
+                match_metadata: {
+                  tier: "RULE_ONLY",
+                  tier_reason: (m as any).tier_reason,
+                  trace: (m as any).trace,
+                  rule_id: rule.id, rule_name: rule.name, reason: "no action_account_id",
+                },
               }).eq("id", b.id);
               suggested++;
               results.push({ bank_id: b.id, type: "RULE_ONLY", score: m.score, rule: rule.name });
