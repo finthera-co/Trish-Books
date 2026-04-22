@@ -1,5 +1,6 @@
 import { Plus, Search, RotateCcw, Ban, ChevronDown, ChevronRight, Filter, AlertTriangle, CheckCircle2, XCircle, Info, FileText, Copy } from "lucide-react";
 import BudgetWarningBanner from "@/components/budgets/BudgetWarningBanner";
+import AccountSelector from "@/components/shared/AccountSelector";
 import { Button } from "@/components/ui/button";
 import { useState, Fragment, useMemo, useCallback, useEffect, useRef } from "react";
 import { useJournalEntries, useAccounts } from "@/hooks/useData";
