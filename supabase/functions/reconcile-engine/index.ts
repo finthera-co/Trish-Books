@@ -457,7 +457,12 @@ Deno.serve(async (req) => {
             await supabase.from("bank_feed_transactions").update({
               state: "matched", status: "matched",
               match_type: "COMPOSITE", match_confidence: m.score,
-              match_metadata: { targets: (m as any).targets.map((t: any) => t.id) },
+              match_metadata: {
+                tier: "COMPOSITE",
+                tier_reason: (m as any).tier_reason,
+                trace: (m as any).trace,
+                targets: (m as any).targets.map((t: any) => t.id),
+              },
             }).eq("id", b.id);
             composite++;
             results.push({ bank_id: b.id, type: "COMPOSITE", score: m.score });
