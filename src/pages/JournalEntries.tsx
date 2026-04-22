@@ -1,5 +1,6 @@
 import { Plus, Search, RotateCcw, Ban, ChevronDown, ChevronRight, Filter, AlertTriangle, CheckCircle2, XCircle, Info, FileText, Copy } from "lucide-react";
 import BudgetWarningBanner from "@/components/budgets/BudgetWarningBanner";
+import AccountSelector from "@/components/shared/AccountSelector";
 import { Button } from "@/components/ui/button";
 import { useState, Fragment, useMemo, useCallback, useEffect, useRef } from "react";
 import { useJournalEntries, useAccounts } from "@/hooks/useData";
@@ -419,24 +420,12 @@ export default function JournalEntries() {
                       return (
                         <div key={i} className="px-3 py-2 space-y-1">
                           <div className="grid grid-cols-[1fr_7rem_7rem_2.5rem] gap-2 items-center">
-                            <select
+                            <AccountSelector
                               value={line.account_id}
-                              onChange={(e) => updateLine(i, "account_id", e.target.value)}
-                              className={`text-sm border rounded-md px-2.5 py-1.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors ${
-                                lineWarning ? "border-warning" : "border-input"
-                              }`}
-                            >
-                              <option value="">Select account…</option>
-                              {Object.entries(groupedAccounts).map(([type, accs]) => (
-                                <optgroup key={type} label={getTypeLabel(type)}>
-                                  {accs.map((a) => (
-                                    <option key={a.id} value={a.id}>
-                                      {a.account_code} – {a.account_name}
-                                    </option>
-                                  ))}
-                                </optgroup>
-                              ))}
-                            </select>
+                              onChange={(v) => updateLine(i, "account_id", v)}
+                              placeholder="Search account…"
+                              className={lineWarning ? "border-warning" : ""}
+                            />
                             <input
                               type="number"
                               min="0"
