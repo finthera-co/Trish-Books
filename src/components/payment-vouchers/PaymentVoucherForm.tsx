@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { useAccounts, useCustomers } from "@/hooks/useData";
 import { useCreatePaymentVoucher, useUpdatePaymentVoucher, usePaymentVoucher, VoucherLine } from "@/hooks/usePaymentVouchers";
+import AccountSelector from "@/components/shared/AccountSelector";
 import { formatCurrency } from "@/lib/currency";
 import { toast } from "sonner";
 
@@ -146,14 +147,12 @@ export default function PaymentVoucherForm({ editId, onClose }: Props) {
         </div>
         <div>
           <Label>Payment Account *</Label>
-          <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
-            <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
-            <SelectContent>
-              {paymentAccounts.map((a) => (
-                <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <AccountSelector
+            value={paymentAccountId}
+            onChange={(v) => setPaymentAccountId(v)}
+            types={["Asset"]}
+            placeholder="Search cash / bank account…"
+          />
         </div>
         <div>
           <Label>Payment Method</Label>
@@ -222,14 +221,11 @@ export default function PaymentVoucherForm({ editId, onClose }: Props) {
             {lines.map((line, idx) => (
               <TableRow key={idx}>
                 <TableCell>
-                  <Select value={line.account_id} onValueChange={(v) => updateLine(idx, "account_id", v)}>
-                    <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
-                    <SelectContent>
-                      {lineAccounts.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <AccountSelector
+                    value={line.account_id}
+                    onChange={(v) => updateLine(idx, "account_id", v)}
+                    placeholder="Search account…"
+                  />
                 </TableCell>
                 <TableCell>
                   <Input value={line.description} onChange={(e) => updateLine(idx, "description", e.target.value)} placeholder="Description" />

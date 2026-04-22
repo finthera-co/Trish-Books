@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useCreateBudgetLine, useDepartments } from "@/hooks/useBudgets";
-import { useAccounts } from "@/hooks/useData";
+import AccountSelector from "@/components/shared/AccountSelector";
 
 interface Props {
   budgets: any[];
@@ -21,13 +21,7 @@ export default function BudgetLineDialog({ budgets }: Props) {
   const [departmentId, setDepartmentId] = useState("");
 
   const createLine = useCreateBudgetLine();
-  const { data: accounts } = useAccounts();
   const { data: departments } = useDepartments();
-
-  // Only show expense accounts for budget lines
-  const expenseAccounts = accounts?.filter(
-    (a) => a.account_type === "Expense" || a.account_type === "Cost of Goods Sold"
-  );
 
   const handleAdd = async () => {
     await createLine.mutateAsync({
@@ -71,16 +65,12 @@ export default function BudgetLineDialog({ budgets }: Props) {
           </div>
           <div>
             <Label>Expense Account</Label>
-            <Select value={accountId} onValueChange={setAccountId}>
-              <SelectTrigger><SelectValue placeholder="Select account..." /></SelectTrigger>
-              <SelectContent>
-                {expenseAccounts?.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.account_code} – {a.account_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <AccountSelector
+              value={accountId}
+              onChange={(v) => setAccountId(v)}
+              types={["Expense", "Cost of Goods Sold"]}
+              placeholder="Search expense account…"
+            />
           </div>
           {departments && departments.length > 0 && (
             <div>

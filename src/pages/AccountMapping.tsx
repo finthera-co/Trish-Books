@@ -3,12 +3,11 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useAccountSettings, useUpsertAccountSettings } from "@/hooks/useAccountSettings";
-import { useAccounts } from "@/hooks/useData";
+import AccountSelector from "@/components/shared/AccountSelector";
 import { Settings, Save } from "lucide-react";
 
 export default function AccountMapping() {
   const { data: settings, isLoading } = useAccountSettings();
-  const { data: accounts } = useAccounts();
   const upsert = useUpsertAccountSettings();
 
   const [form, setForm] = useState({
@@ -31,11 +30,6 @@ export default function AccountMapping() {
     }
   }, [settings]);
 
-  const accountsByType = (type: string | string[]) => {
-    const types = Array.isArray(type) ? type : [type];
-    return (accounts || []).filter((a: any) => types.includes(a.account_type) && a.is_active);
-  };
-
   const handleSave = () => {
     upsert.mutate({
       ar_account_id: form.ar_account_id || null,
@@ -48,12 +42,12 @@ export default function AccountMapping() {
 
   if (isLoading) return <div className="p-6 text-muted-foreground">Loading…</div>;
 
-  const fields: { key: keyof typeof form; label: string; types: string | string[]; hint: string }[] = [
-    { key: "ar_account_id", label: "Accounts Receivable", types: "Asset", hint: "Default AR control account for invoices" },
+  const fields: { key: keyof typeof form; label: string; types: string[]; hint: string }[] = [
+    { key: "ar_account_id", label: "Accounts Receivable", types: ["Asset"], hint: "Default AR control account for invoices" },
     { key: "sales_account_id", label: "Default Sales Revenue", types: ["Revenue", "Income"], hint: "Used when an invoice line has no specific account" },
-    { key: "tax_payable_account_id", label: "Tax Payable", types: "Liability", hint: "Required when invoices have tax" },
-    { key: "ap_account_id", label: "Accounts Payable", types: "Liability", hint: "Default AP control for bills" },
-    { key: "bank_account_id", label: "Default Bank", types: "Asset", hint: "Default cash/bank for payments received" },
+    { key: "tax_payable_account_id", label: "Tax Payable", types: ["Liability"], hint: "Required when invoices have tax" },
+    { key: "ap_account_id", label: "Accounts Payable", types: ["Liability"], hint: "Default AP control for bills" },
+    { key: "bank_account_id", label: "Default Bank", types: ["Asset"], hint: "Default cash/bank for payments received" },
   ];
 
   return (
@@ -72,18 +66,12 @@ export default function AccountMapping() {
         {fields.map((f) => (
           <div key={f.key} className="space-y-1.5">
             <Label className="text-sm font-medium">{f.label}</Label>
-            <select
+            <AccountSelector
               value={form[f.key]}
-              onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
-              className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground"
-            >
-              <option value="">— Not set —</option>
-              {accountsByType(f.types).map((a: any) => (
-                <option key={a.id} value={a.id}>
-                  {a.account_code} — {a.account_name}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setForm({ ...form, [f.key]: v })}
+              types={f.types}
+              placeholder="Search account…"
+            />
             <p className="text-xs text-muted-foreground">{f.hint}</p>
           </div>
         ))}
