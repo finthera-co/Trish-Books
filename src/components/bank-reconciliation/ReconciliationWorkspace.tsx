@@ -29,6 +29,7 @@ import {
 import ReconciliationReport from "./ReconciliationReport";
 import BankFeedImport from "./BankFeedImport";
 import ReconciliationRulesManager from "./ReconciliationRulesManager";
+import MatchExplanation from "./MatchExplanation";
 
 interface Props {
   reconciliationId: string;
