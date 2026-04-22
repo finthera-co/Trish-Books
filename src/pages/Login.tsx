@@ -116,38 +116,6 @@ export default function Login() {
         </div>
       </div>
 
-      {/* Right panel — product showcase */}
-      <div className="hidden lg:flex flex-1 flex-col p-10 overflow-hidden bg-accent/30">
-        {/* What's new header */}
-        <div className="flex items-start justify-between mb-6 animate-fade-in">
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <span className="w-2 h-2 rounded-full bg-primary animate-pulse-soft" />
-              <span className="text-sm font-semibold text-primary">What's new?</span>
-            </div>
-            <h2 className="text-xl font-bold text-foreground tracking-tight">Latest Release</h2>
-            <p className="text-sm text-muted-foreground mt-1.5 max-w-md leading-relaxed">
-              Track revenue, journals, and financial health in real-time.
-              Your data — clean, clear, and ready for action.
-            </p>
-          </div>
-          <button className="text-sm font-medium text-primary hover:text-primary/80 transition-colors whitespace-nowrap">
-            View All Changes →
-          </button>
-        </div>
-
-        {/* Dashboard preview card */}
-        <div className="flex-1 bg-card rounded-2xl border border-border shadow-lg overflow-hidden p-6 animate-slide-up">
-          {/* Mini header */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center shadow-sm">
-                <BookOpen className="w-3.5 h-3.5 text-primary-foreground" />
-              </div>
-              <span className="text-sm font-bold text-foreground">Finthera</span>
-            </div>
-          </div>
-
           <h3 className="text-lg font-bold text-foreground mb-4 tracking-tight">Overview</h3>
 
           {/* KPI cards */}
