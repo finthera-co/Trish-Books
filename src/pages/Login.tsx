@@ -28,8 +28,8 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex bg-background">
-      {/* Left panel — form */}
-      <div className="w-full lg:w-[520px] xl:w-[560px] flex flex-col border-r border-border">
+      {/* Form panel */}
+      <div className="w-full flex flex-col">
         {/* Logo */}
         <div className="px-8 pt-8">
           <div className="flex items-center gap-2.5">
