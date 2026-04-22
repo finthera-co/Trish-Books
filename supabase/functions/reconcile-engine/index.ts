@@ -156,21 +156,46 @@ function ruleConditionMatches(rule: any, b: any): boolean {
 function ruleMatch(b: any, candidates: any[], userRules: any[]) {
   for (const rule of userRules) {
     if (!ruleConditionMatches(rule, b)) continue;
-    // Try to bind the rule to a ledger candidate (preferred)
+    const ruleTrace = [{
+      factor: "user_rule",
+      rule_name: rule.name,
+      condition: `${rule.condition_field} ${rule.condition_operator} ${rule.condition_value ?? ""}`.trim(),
+      matched: true,
+      points: 60,
+    }];
     for (const c of candidates) {
       const signed = c.debit - c.credit;
-      if (near(signed, b.amount) && dateDistance(b.transaction_date, c.entry_date) <= 7) {
-        return { type: "RULE", target: c, score: 92, rule };
+      const dd = dateDistance(b.transaction_date, c.entry_date);
+      if (near(signed, b.amount) && dd <= 7) {
+        return {
+          type: "RULE", target: c, score: 92, rule,
+          tier_reason: `Rule "${rule.name}" matched and a same-amount ledger line was found within ${dd}d`,
+          trace: [
+            ...ruleTrace,
+            { factor: "amount", bank: b.amount, ledger: signed, match: true, points: 22 },
+            { factor: "date_distance", days: dd, points: 10 },
+          ],
+        };
       }
     }
-    // Rule fired but no ledger candidate → return rule-only (engine will create JE if action_account_id set)
-    return { type: "RULE_ONLY", target: null, score: 88, rule };
+    return {
+      type: "RULE_ONLY", target: null, score: 88, rule,
+      tier_reason: `Rule "${rule.name}" matched but no ledger candidate exists${rule.action_account_id ? " — engine will auto-create JE" : " — needs manual review"}`,
+      trace: ruleTrace,
+    };
   }
-  // Plain deterministic amount+date match
   for (const c of candidates) {
     const signed = c.debit - c.credit;
-    if (near(signed, b.amount) && dateDistance(b.transaction_date, c.entry_date) <= 3) {
-      return { type: "RULE", target: c, score: 90 };
+    const dd = dateDistance(b.transaction_date, c.entry_date);
+    if (near(signed, b.amount) && dd <= 3) {
+      return {
+        type: "RULE", target: c, score: 90,
+        tier_reason: `Deterministic amount + date match (within ${dd}d, no user rule)`,
+        trace: [
+          { factor: "amount", bank: b.amount, ledger: signed, match: true, points: 60 },
+          { factor: "date_distance", days: dd, points: 30 },
+        ],
+      };
     }
   }
   return null;
@@ -180,26 +205,30 @@ function ruleMatch(b: any, candidates: any[], userRules: any[]) {
 function scoringMatch(b: any, candidates: any[]) {
   let best: any = null;
   let bestScore = 0;
+  let bestTrace: any[] = [];
   for (const c of candidates) {
+    const trace: any[] = [];
     let s = 0;
     const signed = c.debit - c.credit;
-    if (near(signed, b.amount)) s += 50;
+    if (near(signed, b.amount)) { s += 50; trace.push({ factor: "amount", bank: b.amount, ledger: signed, match: true, points: 50 }); }
     const dd = dateDistance(b.transaction_date, c.entry_date);
-    if (dd <= 2) s += 20;
-    else if (dd <= 7) s += 10;
-    s += Math.round(tokenSim(b.description || "", c.je_description || "") * 20);
-    if (c.account_id) s += 10;
-    if (s > bestScore) {
-      best = c;
-      bestScore = s;
-    }
+    const dPts = dd <= 2 ? 20 : dd <= 7 ? 10 : 0;
+    if (dPts) { s += dPts; trace.push({ factor: "date_distance", days: dd, points: dPts }); }
+    const sim = tokenSim(b.description || "", c.je_description || "");
+    const tPts = Math.round(sim * 20);
+    if (tPts) { s += tPts; trace.push({ factor: "description_similarity", similarity: sim.toFixed(2), points: tPts }); }
+    if (c.account_id) { s += 10; trace.push({ factor: "account_present", points: 10 }); }
+    if (s > bestScore) { best = c; bestScore = s; bestTrace = trace; }
   }
-  if (bestScore >= 85) return { type: "SCORING", target: best, score: bestScore };
+  if (bestScore >= 85) return {
+    type: "SCORING", target: best, score: bestScore,
+    tier_reason: `Heuristic scoring match (amount + date + description similarity)`,
+    trace: bestTrace,
+  };
   return null;
 }
 
 function compositeMatch(b: any, candidates: any[]) {
-  // Bounded subset search: same-sign candidates within 14 days, max 6 items, k ≤ 4
   const pool = candidates
     .filter((c) => Math.sign(c.debit - c.credit) === Math.sign(b.amount))
     .filter((c) => dateDistance(b.transaction_date, c.entry_date) <= 14)
@@ -216,7 +245,14 @@ function compositeMatch(b: any, candidates: any[]) {
         group.push(pool[i]);
       }
     }
-    if (near(sum, b.amount)) return { type: "COMPOSITE", targets: group, score: 95 };
+    if (near(sum, b.amount)) return {
+      type: "COMPOSITE", targets: group, score: 95,
+      tier_reason: `Composite: ${group.length} ledger lines sum to bank amount ${b.amount}`,
+      trace: [
+        { factor: "amount_sum", bank: b.amount, ledger_sum: sum, match: true, points: 60 },
+        { factor: "components", count: group.length, points: 35 },
+      ],
+    };
   }
   return null;
 }
