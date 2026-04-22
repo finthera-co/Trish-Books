@@ -79,26 +79,42 @@ function apMatch(b: any, candidates: any[]) {
   const ref = (b.reference_number || "").toLowerCase();
   let best: any = null;
   let bestScore = 0;
+  let bestTrace: any[] = [];
   for (const c of candidates) {
     if (!c.is_ap_payment) continue;
     const signed = c.debit - c.credit;
     if (!near(signed, b.amount)) continue;
     const dd = dateDistance(b.transaction_date, c.entry_date);
     if (dd > 14) continue;
+    const trace: any[] = [];
     let s = 70;
+    trace.push({ factor: "ap_payment_amount", bank: b.amount, ledger: signed, match: true, points: 70 });
+    trace.push({ factor: "date_distance", days: dd, points: dd <= 2 ? 10 : dd <= 7 ? 5 : 0 });
     if (dd <= 2) s += 10;
     else if (dd <= 7) s += 5;
     if (c.bill_no) {
       const bn = String(c.bill_no).toLowerCase();
-      if (bn && (desc.includes(bn) || ref.includes(bn))) s += 15;
+      const hit = bn && (desc.includes(bn) || ref.includes(bn));
+      if (hit) { s += 15; trace.push({ factor: "bill_no", value: c.bill_no, found_in: desc.includes(bn) ? "description" : "reference", points: 15 }); }
     }
     if (c.vendor_name) {
-      s += Math.round(tokenSim(b.description || "", c.vendor_name) * 15);
+      const sim = tokenSim(b.description || "", c.vendor_name);
+      const pts = Math.round(sim * 15);
+      s += pts;
+      trace.push({ factor: "vendor_name_similarity", vendor: c.vendor_name, similarity: sim.toFixed(2), points: pts });
     }
-    if (s > bestScore) { best = c; bestScore = s; }
+    if (s > bestScore) { best = c; bestScore = s; bestTrace = trace; }
   }
-  if (bestScore >= 90) return { type: "AP_AUTO", target: best, score: bestScore };
-  if (bestScore >= 75) return { type: "AP_SUGGEST", target: best, score: bestScore };
+  if (bestScore >= 90) return {
+    type: "AP_AUTO", target: best, score: bestScore,
+    tier_reason: `AP payment matched to vendor ${best.vendor_name || "(unknown)"} with high confidence`,
+    trace: bestTrace,
+  };
+  if (bestScore >= 75) return {
+    type: "AP_SUGGEST", target: best, score: bestScore,
+    tier_reason: `AP payment likely matches vendor ${best.vendor_name || "(unknown)"} — needs review`,
+    trace: bestTrace,
+  };
   return null;
 }
 
