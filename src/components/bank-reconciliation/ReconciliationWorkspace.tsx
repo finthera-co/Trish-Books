@@ -419,6 +419,13 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
                                 Rule Match
                               </Badge>
                             )}
+                            {(f.status === "matched" || f.status === "suggested" || f.status === "rule_matched") && f.match_type && (
+                              <MatchExplanation
+                                matchType={f.match_type}
+                                matchConfidence={f.match_confidence}
+                                metadata={f.match_metadata}
+                              />
+                            )}
                           </div>
                           {!isReconciled && f.status !== "matched" && (
                             <div className="flex gap-0.5">
