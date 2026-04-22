@@ -45,6 +45,8 @@ function tokenSim(a: string, b: string) {
 }
 
 // ---------- Matching tiers (deterministic) ----------
+// Each tier returns a `trace` describing the contributing fields and points,
+// plus a `tier_reason` summary so the UI can explain *why* a match fired.
 function exactSourceMatch(b: any, candidates: any[]) {
   if (!b.reference_number) return null;
   const ref = String(b.reference_number).trim().toLowerCase();
@@ -53,7 +55,15 @@ function exactSourceMatch(b: any, candidates: any[]) {
     if (cref && (cref === ref || cref.includes(ref) || ref.includes(cref))) {
       const signed = c.debit - c.credit;
       if (near(Math.abs(signed), Math.abs(b.amount))) {
-        return { type: "SOURCE", target: c, score: 100 };
+        const trace = [
+          { factor: "reference_number", bank: b.reference_number, ledger: c.je_reference, match: true, points: 60 },
+          { factor: "amount", bank: b.amount, ledger: signed, match: true, points: 40 },
+        ];
+        return {
+          type: "SOURCE", target: c, score: 100,
+          tier_reason: "Exact reference number AND amount match",
+          trace,
+        };
       }
     }
   }
