@@ -45,7 +45,7 @@ export default function AppLayout() {
         <Outlet />
       </div>
       <IdleWarningModal open={isIdle && countdown > 0} countdown={countdown} onStayLoggedIn={resetIdle} />
-      {isSwitching && <FullScreenLoader />}
+      {(isSwitching || needsHydration) && <FullScreenLoader />}
     </div>
   );
 }
