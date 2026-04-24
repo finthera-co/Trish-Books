@@ -7,19 +7,28 @@ import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import IdleWarningModal from "@/components/IdleWarningModal";
 import NetworkStatusOverlay from "@/components/NetworkStatusOverlay";
 import FullScreenLoader from "@/components/FullScreenLoader";
-import { useAppStore, useIsSwitching } from "@/stores/useAppStore";
+import { useAppStore, useIsSwitching, useTenantId } from "@/stores/useAppStore";
+import { useQueryClient } from "@tanstack/react-query";
 
 export default function AppLayout() {
   const { user, appUser, signOut } = useAuth();
   const { isIdle, countdown, resetIdle } = useIdleTimer(!!user);
   const { isOffline, isSlow } = useNetworkStatus();
   const isSwitching = useIsSwitching();
+  const tenantId = useTenantId();
   const setTenantId = useAppStore((s) => s.setTenantId);
+  const queryClient = useQueryClient();
 
   // Keep global tenant store in sync with the authenticated user's tenant.
+  // Passing queryClient triggers blocking prefetch of CRITICAL_QUERIES so
+  // the first render after login is fully hydrated (zero flicker).
   useEffect(() => {
-    setTenantId(appUser?.tenant_id ?? null);
-  }, [appUser?.tenant_id, setTenantId]);
+    setTenantId(appUser?.tenant_id ?? null, queryClient);
+  }, [appUser?.tenant_id, setTenantId, queryClient]);
+
+  // Block render until the tenant's critical data is hydrated.
+  // Without this gate, child pages would render against an empty cache.
+  const needsHydration = !!appUser?.tenant_id && tenantId !== appUser.tenant_id;
 
   // Auto-logout when countdown hits 0
   useEffect(() => {
