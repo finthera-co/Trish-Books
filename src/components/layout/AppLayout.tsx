@@ -6,11 +6,20 @@ import { useIdleTimer } from "@/hooks/useIdleTimer";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import IdleWarningModal from "@/components/IdleWarningModal";
 import NetworkStatusOverlay from "@/components/NetworkStatusOverlay";
+import FullScreenLoader from "@/components/FullScreenLoader";
+import { useAppStore, useIsSwitching } from "@/stores/useAppStore";
 
 export default function AppLayout() {
-  const { user, signOut } = useAuth();
+  const { user, appUser, signOut } = useAuth();
   const { isIdle, countdown, resetIdle } = useIdleTimer(!!user);
   const { isOffline, isSlow } = useNetworkStatus();
+  const isSwitching = useIsSwitching();
+  const setTenantId = useAppStore((s) => s.setTenantId);
+
+  // Keep global tenant store in sync with the authenticated user's tenant.
+  useEffect(() => {
+    setTenantId(appUser?.tenant_id ?? null);
+  }, [appUser?.tenant_id, setTenantId]);
 
   // Auto-logout when countdown hits 0
   useEffect(() => {
@@ -27,6 +36,7 @@ export default function AppLayout() {
         <Outlet />
       </div>
       <IdleWarningModal open={isIdle && countdown > 0} countdown={countdown} onStayLoggedIn={resetIdle} />
+      {isSwitching && <FullScreenLoader />}
     </div>
   );
 }
