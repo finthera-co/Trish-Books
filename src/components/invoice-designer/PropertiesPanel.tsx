@@ -83,7 +83,7 @@ export default function PropertiesPanel({ component, tableSettings, onUpdate, on
             <Input value={component.label} onChange={e => onUpdate(component.id, { label: e.target.value })} className="h-8 text-xs" />
           </div>
 
-          {component.type !== 'table' && component.type !== 'divider' && (
+          {component.type !== 'table' && component.type !== 'divider' && component.type !== 'image' && (
             <>
               <div className="space-y-2">
                 <Label className="text-xs">Default Value</Label>
@@ -100,6 +100,64 @@ export default function PropertiesPanel({ component, tableSettings, onUpdate, on
                 </Select>
               </div>
             </>
+          )}
+
+          {/* Image Upload */}
+          {component.type === 'image' && (
+            <div className="space-y-3">
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase">Image</h4>
+              {style.imageUrl ? (
+                <div className="space-y-2">
+                  <div className="relative border border-border rounded overflow-hidden bg-muted/20" style={{ height: 80 }}>
+                    <img src={style.imageUrl} alt="Logo" className="w-full h-full object-contain" />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute top-1 right-1 h-6 w-6 bg-background/80 hover:bg-background"
+                      onClick={() => updateStyle({ imageUrl: undefined })}
+                    >
+                      <X className="w-3 h-3" />
+                    </Button>
+                  </div>
+                  <Button variant="outline" size="sm" className="w-full h-7 text-xs" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+                    {uploading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Upload className="w-3 h-3 mr-1" />}
+                    Replace
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="outline" size="sm" className="w-full h-9 text-xs" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+                  {uploading ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Upload className="w-3.5 h-3.5 mr-1.5" />}
+                  Upload Logo
+                </Button>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) handleUploadImage(f);
+                  e.target.value = '';
+                }}
+              />
+              <div className="space-y-1">
+                <Label className="text-[10px]">Fit Mode</Label>
+                <Select value={style.imageFit || 'contain'} onValueChange={v => updateStyle({ imageFit: v as any })}>
+                  <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="contain">Contain (no crop)</SelectItem>
+                    <SelectItem value="cover">Cover (crop to fill)</SelectItem>
+                    <SelectItem value="fill">Fill (stretch)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px]">Border Radius</Label>
+                <Input type="number" value={style.borderRadius || 0} onChange={e => updateStyle({ borderRadius: Number(e.target.value) })} className="h-7 text-xs" />
+              </div>
+              <p className="text-[10px] text-muted-foreground">PNG, JPG, SVG · Max 5MB</p>
+            </div>
           )}
 
           <Separator />
