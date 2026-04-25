@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "Invoice assets are publicly readable" ON storage.objects;
