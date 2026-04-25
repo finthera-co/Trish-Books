@@ -26,6 +26,8 @@ export interface ComponentStyle {
   borderStyle?: 'none' | 'solid' | 'dashed' | 'dotted';
   padding?: number;
   borderRadius?: number;
+  imageUrl?: string;
+  imageFit?: 'contain' | 'cover' | 'fill';
 }
 
 export interface TableColumn {
