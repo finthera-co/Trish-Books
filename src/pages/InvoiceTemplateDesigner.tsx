@@ -70,9 +70,9 @@ export default function InvoiceTemplateDesigner() {
       defaultValue: def.defaultValue,
       x: 0,
       y: maxY,
-      w: def.type === 'table' ? 12 : def.type === 'divider' ? 12 : 6,
-      h: def.type === 'table' ? 6 : def.type === 'divider' ? 1 : 2,
-      style: def.type === 'divider' ? { borderColor: '#e5e7eb', borderWidth: 1 } : { fontSize: 12, color: '#000000', textAlign: 'left' },
+      w: def.type === 'table' ? 12 : def.type === 'divider' ? 12 : def.type === 'image' ? 4 : 6,
+      h: def.type === 'table' ? 6 : def.type === 'divider' ? 1 : def.type === 'image' ? 3 : 2,
+      style: def.type === 'divider' ? { borderColor: '#e5e7eb', borderWidth: 1 } : def.type === 'image' ? { imageFit: 'contain', borderRadius: 0 } : { fontSize: 12, color: '#000000', textAlign: 'left' },
     };
     const updated = [...components, newComp];
     setComponents(updated);
