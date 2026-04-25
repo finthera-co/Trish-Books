@@ -23,6 +23,10 @@ interface Props {
 }
 
 export default function PropertiesPanel({ component, tableSettings, onUpdate, onDelete, onDuplicate, onUpdateTableSettings }: Props) {
+  const { appUser } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
   if (!component) {
     return (
       <div className="w-60 border-l border-border bg-card flex items-center justify-center p-4">
@@ -34,6 +38,26 @@ export default function PropertiesPanel({ component, tableSettings, onUpdate, on
   const style = component.style || {};
   const updateStyle = (updates: Record<string, any>) => {
     onUpdate(component.id, { style: { ...style, ...updates } });
+  };
+
+  const handleUploadImage = async (file: File) => {
+    if (!appUser?.tenant_id) { toast.error("No tenant"); return; }
+    if (!file.type.startsWith("image/")) { toast.error("Please select an image file"); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error("Image must be under 5MB"); return; }
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop() || "png";
+      const path = `${appUser.tenant_id}/${component.id}-${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from("invoice-assets").upload(path, file, { upsert: true, contentType: file.type });
+      if (error) throw error;
+      const { data: pub } = supabase.storage.from("invoice-assets").getPublicUrl(path);
+      updateStyle({ imageUrl: pub.publicUrl });
+      toast.success("Logo uploaded");
+    } catch (e: any) {
+      toast.error("Upload failed: " + (e.message || "Unknown error"));
+    } finally {
+      setUploading(false);
+    }
   };
 
   const allBindings = Object.values(BINDING_VARIABLES).flat();
