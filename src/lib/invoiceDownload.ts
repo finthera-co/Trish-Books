@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { templateDefaults } from "@/components/invoice-designer/templateDefaults";
+import { DEFAULT_TABLE_SETTINGS, DEFAULT_PAGE_SETTINGS } from "@/components/invoice-designer/templateDefaults";
 import { formatCurrency } from "@/lib/currency";
 import type {
   DesignerComponent,
@@ -53,9 +53,9 @@ export async function loadInvoiceForDownload(invoiceId: string, tenantId: string
     template = data;
   }
 
-  const components = (template?.layout_json as DesignerComponent[]) || templateDefaults.components;
-  const tableSettings = (template?.table_settings as TableSettings) || templateDefaults.tableSettings;
-  const pageSettings = (template?.page_settings as PageSettings) || templateDefaults.pageSettings;
+  const components = (template?.layout_json as DesignerComponent[]) || [];
+  const tableSettings = (template?.table_settings as TableSettings) || DEFAULT_TABLE_SETTINGS;
+  const pageSettings = (template?.page_settings as PageSettings) || DEFAULT_PAGE_SETTINGS;
 
   // Tenant info
   const { data: tenant } = await supabase
