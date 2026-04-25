@@ -236,6 +236,18 @@ export async function downloadInvoicePdf(invoiceId: string, tenantId: string) {
   node.style.top = "0";
   document.body.appendChild(node);
   try {
+    // Wait for any <img> to finish loading so html2canvas captures them
+    const images = Array.from(node.querySelectorAll("img"));
+    await Promise.all(
+      images.map(
+        (img) =>
+          new Promise<void>((resolve) => {
+            if (img.complete && img.naturalWidth > 0) return resolve();
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+          })
+      )
+    );
     const canvas = await html2canvas(node, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
     const imgData = canvas.toDataURL("image/png");
     const isA4 = loaded.pageSettings.size === "A4";
