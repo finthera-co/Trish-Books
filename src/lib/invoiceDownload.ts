@@ -164,6 +164,17 @@ function renderInvoiceHtml({ components, tableSettings, pageSettings, data }: Lo
     }
     if (comp.type === "spacer") continue;
 
+    if (comp.type === "image") {
+      const url = comp.style.imageUrl;
+      if (!url) continue;
+      const img = document.createElement("img");
+      img.src = url;
+      img.crossOrigin = "anonymous";
+      img.style.cssText = `position:absolute;left:${left}px;top:${top}px;width:${width}px;height:${height}px;object-fit:${comp.style.imageFit || "contain"};border-radius:${comp.style.borderRadius || 0}px;`;
+      root.appendChild(img);
+      continue;
+    }
+
     if (comp.type === "table") {
       // Table always spans full inner width for predictable alignment
       const wrap = document.createElement("div");
@@ -225,6 +236,18 @@ export async function downloadInvoicePdf(invoiceId: string, tenantId: string) {
   node.style.top = "0";
   document.body.appendChild(node);
   try {
+    // Wait for any <img> to finish loading so html2canvas captures them
+    const images = Array.from(node.querySelectorAll("img"));
+    await Promise.all(
+      images.map(
+        (img) =>
+          new Promise<void>((resolve) => {
+            if (img.complete && img.naturalWidth > 0) return resolve();
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+          })
+      )
+    );
     const canvas = await html2canvas(node, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
     const imgData = canvas.toDataURL("image/png");
     const isA4 = loaded.pageSettings.size === "A4";
