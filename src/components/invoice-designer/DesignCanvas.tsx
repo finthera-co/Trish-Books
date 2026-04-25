@@ -66,6 +66,22 @@ export default function DesignCanvas({ components, tableSettings, selectedId, sa
       );
     }
 
+    if (comp.type === 'image') {
+      const url = comp.style.imageUrl;
+      const fit = comp.style.imageFit || 'contain';
+      return (
+        <div key={comp.id} className={baseClasses} onClick={(e) => { e.stopPropagation(); onSelect(comp.id); }}>
+          {url ? (
+            <img src={url} alt={comp.label} style={{ width: '100%', height: '100%', objectFit: fit, borderRadius: comp.style.borderRadius || 0 }} />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-[9px] text-muted-foreground bg-muted/20 border border-dashed border-muted-foreground/30 rounded text-center px-1">
+              Select &amp; upload logo →
+            </div>
+          )}
+        </div>
+      );
+    }
+
     if (comp.type === 'table') {
       const visibleCols = tableSettings.columns.filter(c => c.visible);
       return (
