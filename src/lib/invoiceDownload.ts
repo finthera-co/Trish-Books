@@ -125,37 +125,53 @@ function resolveBinding(comp: DesignerComponent, data: InvoiceData): string {
   return String(val);
 }
 
-function renderInvoiceHtml({ components, tableSettings, data }: LoadResult): HTMLDivElement {
+function renderInvoiceHtml({ components, tableSettings, pageSettings, data }: LoadResult): HTMLDivElement {
+  // Match designer canvas: 595x842 (A4 in CSS px). Designer uses these exact dims with no padding,
+  // so children x/y are page-absolute. We translate them by pageSettings.margins to respect printable area.
+  const CANVAS_W = 595;
+  const CANVAS_H = 842;
   const COL_W = 45;
   const ROW_H = 24;
+  const m = pageSettings.margins || { top: 0, right: 0, bottom: 0, left: 0 };
+  // Convert margin "points" (designer units) to CSS px 1:1 — designer stores px-equivalent.
+  // Cap to keep content on page.
+  const mLeft = Math.max(0, Math.min(m.left || 0, 80));
+  const mTop = Math.max(0, Math.min(m.top || 0, 80));
+  const mRight = Math.max(0, Math.min(m.right || 0, 80));
+  const innerW = CANVAS_W - mLeft - mRight;
+
   const sorted = [...components].sort((a, b) => a.y - b.y || a.x - b.x);
   const visibleCols = tableSettings.columns.filter((c) => c.visible);
 
   const root = document.createElement("div");
-  root.style.cssText = `width:595px;min-height:842px;position:relative;background:#fff;padding:32px;font-family:sans-serif;`;
+  root.style.cssText = `width:${CANVAS_W}px;min-height:${CANVAS_H}px;position:relative;background:#fff;font-family:sans-serif;`;
 
   for (const comp of sorted) {
-    const left = comp.x * COL_W;
-    const top = comp.y * ROW_H;
-    const width = comp.w * COL_W;
+    // Translate by margin so content respects printable area
+    const left = mLeft + comp.x * COL_W;
+    const top = mTop + comp.y * ROW_H;
+    let width = comp.w * COL_W;
     const height = comp.h * ROW_H;
+    // Clamp width so it doesn't overflow right margin
+    if (left + width > CANVAS_W - mRight) width = Math.max(20, CANVAS_W - mRight - left);
 
     if (comp.type === "divider") {
       const d = document.createElement("div");
       d.style.cssText = `position:absolute;left:${left}px;top:${top + height / 2}px;width:${width}px;`;
-      d.innerHTML = `<hr style="border-color:${comp.style.borderColor || "#e5e7eb"};border-width:${comp.style.borderWidth || 1}px;" />`;
+      d.innerHTML = `<hr style="border-color:${comp.style.borderColor || "#e5e7eb"};border-width:${comp.style.borderWidth || 1}px;margin:0;" />`;
       root.appendChild(d);
       continue;
     }
     if (comp.type === "spacer") continue;
 
     if (comp.type === "table") {
+      // Table always spans full inner width for predictable alignment
       const wrap = document.createElement("div");
-      wrap.style.cssText = `position:absolute;left:${left}px;top:${top}px;width:${12 * COL_W}px;`;
+      wrap.style.cssText = `position:absolute;left:${mLeft}px;top:${top}px;width:${innerW}px;`;
       const headCells = visibleCols
         .map(
           (c) =>
-            `<th style="padding:8px 10px;text-align:${c.align};font-size:${tableSettings.headerFontSize}px;font-weight:600;">${c.label}</th>`
+            `<th style="padding:8px 10px;text-align:${c.align};font-size:${tableSettings.headerFontSize}px;font-weight:600;width:${c.width}%;">${c.label}</th>`
         )
         .join("");
       const bodyRows = data.items
@@ -175,7 +191,7 @@ function renderInvoiceHtml({ components, tableSettings, data }: LoadResult): HTM
           return `<tr style="background:${bg};border-bottom:1px ${tableSettings.borderStyle} ${tableSettings.borderColor};">${cells}</tr>`;
         })
         .join("");
-      wrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:${tableSettings.rowFontSize}px;">
+      wrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:${tableSettings.rowFontSize}px;table-layout:fixed;">
         <thead><tr style="background:${tableSettings.headerBg};color:${tableSettings.headerColor};">${headCells}</tr></thead>
         <tbody>${bodyRows}</tbody></table>`;
       root.appendChild(wrap);
@@ -193,8 +209,8 @@ function renderInvoiceHtml({ components, tableSettings, data }: LoadResult): HTM
     div.style.cssText = `position:absolute;left:${left}px;top:${top}px;width:${width}px;height:${height}px;
       font-size:${s.fontSize || 12}px;font-weight:${s.fontWeight || "normal"};font-style:${s.fontStyle || "normal"};
       color:${s.color || "#000"};background:${s.backgroundColor || "transparent"};text-align:${s.textAlign || "left"};
-      padding:${s.padding || 0}px;border-radius:${s.borderRadius || 0}px;display:flex;align-items:center;line-height:1.3;overflow:hidden;`;
-    div.innerHTML = `<span style="width:100%;text-align:${s.textAlign || "left"};">${display}</span>`;
+      padding:${s.padding || 0}px;border-radius:${s.borderRadius || 0}px;display:flex;align-items:center;line-height:1.3;overflow:hidden;box-sizing:border-box;`;
+    div.innerHTML = `<span style="width:100%;text-align:${s.textAlign || "left"};display:block;">${display}</span>`;
     root.appendChild(div);
   }
   return root;
@@ -220,7 +236,20 @@ export async function downloadInvoicePdf(invoiceId: string, tenantId: string) {
     });
     const pdfW = pdf.internal.pageSize.getWidth();
     const pdfH = pdf.internal.pageSize.getHeight();
-    pdf.addImage(imgData, "PNG", 0, 0, pdfW, pdfH);
+    // Preserve aspect ratio of the rendered canvas to avoid stretching
+    const canvasRatio = canvas.width / canvas.height;
+    const pageRatio = pdfW / pdfH;
+    let drawW = pdfW;
+    let drawH = pdfH;
+    if (canvasRatio > pageRatio) {
+      // canvas is wider — fit to width
+      drawH = pdfW / canvasRatio;
+    } else {
+      drawW = pdfH * canvasRatio;
+    }
+    const offsetX = (pdfW - drawW) / 2;
+    const offsetY = 0;
+    pdf.addImage(imgData, "PNG", offsetX, offsetY, drawW, drawH);
     pdf.save(`invoice-${loaded.data.invoice_number || invoiceId}.pdf`);
   } finally {
     document.body.removeChild(node);
