@@ -95,6 +95,15 @@ export default function InvoicePreview({ open, onOpenChange, components, tableSe
 
             if (comp.type === 'spacer') return <div key={comp.id} />;
 
+            if (comp.type === 'image') {
+              const url = comp.style.imageUrl;
+              if (!url) return <div key={comp.id} />;
+              return (
+                <img key={comp.id} src={url} alt={comp.label} crossOrigin="anonymous"
+                  style={{ position: 'absolute', left, top, width, height, objectFit: comp.style.imageFit || 'contain', borderRadius: comp.style.borderRadius || 0 }} />
+              );
+            }
+
             if (comp.type === 'table') {
               return (
                 <div key={comp.id} style={{ position: 'absolute', left, top, width: 12 * COL_W }}>
