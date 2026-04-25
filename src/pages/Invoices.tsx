@@ -180,6 +180,9 @@ export default function Invoices() {
                           <Button variant="ghost" size="sm" onClick={() => { setSelectedInvoice(inv); setDetailsOpen(true); }}>
                             <Eye className="w-4 h-4" />
                           </Button>
+                          <Button variant="ghost" size="sm" title="Download PDF" onClick={() => handleDownload(inv)} disabled={processing}>
+                            <Download className="w-4 h-4" />
+                          </Button>
                           {isDraft && (
                             <Button variant="ghost" size="sm" title="Post Invoice" onClick={() => handlePostDraft(inv)} disabled={processing}>
                               <Send className="w-4 h-4 text-primary" />
@@ -190,6 +193,9 @@ export default function Invoices() {
                               <button className="p-1 rounded hover:bg-accent"><MoreHorizontal className="w-4 h-4 text-muted-foreground" /></button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent>
+                              <DropdownMenuItem onClick={() => handleDownload(inv)} disabled={processing}>
+                                <Download className="w-4 h-4 mr-2" /> Download PDF
+                              </DropdownMenuItem>
                               {isDraft && (
                                 <DropdownMenuItem onClick={() => handlePostDraft(inv)} disabled={processing}>
                                   <Send className="w-4 h-4 mr-2" /> Post & Create Journal
