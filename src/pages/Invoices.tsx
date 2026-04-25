@@ -1,4 +1,4 @@
-import { Plus, Search, MoreHorizontal, Eye, Send, Ban } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Eye, Send, Ban, Download } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -12,6 +12,7 @@ import { useMyPermissions } from "@/hooks/usePermissions";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { downloadInvoicePdf } from "@/lib/invoiceDownload";
 
 const statusColors: Record<string, string> = {
   paid: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
@@ -74,6 +75,19 @@ export default function Invoices() {
       setVoidReason("");
     } catch (e) {
       // toast handled by mutation
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleDownload = async (inv: any) => {
+    if (!appUser?.tenant_id) return;
+    setProcessing(true);
+    try {
+      await downloadInvoicePdf(inv.id, appUser.tenant_id);
+      toast.success("Invoice downloaded");
+    } catch (e: any) {
+      toast.error("Failed to download: " + (e?.message || "unknown error"));
     } finally {
       setProcessing(false);
     }
