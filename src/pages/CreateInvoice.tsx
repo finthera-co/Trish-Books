@@ -77,12 +77,14 @@ export default function CreateInvoice() {
     return selectedTemplate.table_settings as unknown as TableSettings;
   }, [selectedTemplate]);
 
-  // Auto-select default template
+  // Auto-select default template once templates load.
+  // Also re-applies if the currently selected templateId no longer exists in the list.
   useEffect(() => {
-    if (templates && templates.length > 0 && !templateId) {
-      const def = templates.find((t: any) => t.is_default);
-      setTemplateId(def ? def.id : templates[0].id);
-    }
+    if (!templates || templates.length === 0) return;
+    const stillExists = templateId && templates.some((t: any) => t.id === templateId);
+    if (stillExists) return;
+    const def = templates.find((t: any) => t.is_default);
+    setTemplateId(def ? def.id : templates[0].id);
   }, [templates, templateId]);
 
   // Auto-generate invoice number
