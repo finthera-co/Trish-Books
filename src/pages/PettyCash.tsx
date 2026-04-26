@@ -57,6 +57,7 @@ export default function PettyCash() {
         <div className="flex gap-2">
           {canEdit("banking") && (
             <>
+              <PCTransferDialog />
               <Button variant="outline" onClick={() => navigate("/banking/petty-cash/replenishments")}>
                 <RefreshCw className="w-4 h-4 mr-1" /> Replenishments
               </Button>
