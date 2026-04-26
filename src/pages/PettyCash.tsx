@@ -129,9 +129,10 @@ export default function PettyCash() {
 function PCAccountCard({ account }: { account: any }) {
   const { data: balance } = usePCBalance(account.id);
   const navigate = useNavigate();
+  const replenishNeeded = Math.max(0, Number(account.float_amount || 0) - Number(balance?.remaining || 0));
 
   return (
-    <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/banking/petty-cash/voucher/new?account=${account.id}`)}>
+    <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/banking/petty-cash/${account.id}/ledger`)}>
       <CardHeader className="pb-2">
         <CardTitle className="text-base">{account.account_name}</CardTitle>
         <p className="text-xs text-muted-foreground">
@@ -151,6 +152,12 @@ function PCAccountCard({ account }: { account: any }) {
           <span className="text-muted-foreground">Remaining:</span>
           <span className="font-semibold text-success">{formatCurrency(balance?.remaining || 0)}</span>
         </div>
+        {replenishNeeded > 0 && (
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Replenish:</span>
+            <span className="font-medium text-warning">{formatCurrency(replenishNeeded)}</span>
+          </div>
+        )}
         <Badge variant={account.is_active ? "default" : "secondary"} className="mt-1">
           {account.is_active ? "Active" : "Inactive"}
         </Badge>
