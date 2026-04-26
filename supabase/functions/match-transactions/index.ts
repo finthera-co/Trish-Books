@@ -375,7 +375,7 @@ async function fetchOpenInvoices(supabase: any, tenantId: string): Promise<OpenI
         status: i.status,
       } as OpenInvoice;
     })
-    .filter((i) => i.balance_due > 0.01);
+    .filter((i: OpenInvoice) => i.balance_due > 0.01);
 }
 
 function scoreInvoiceMatch(bf: BankFeed, inv: OpenInvoice): { score: number; reasons: string[]; partial: boolean } {

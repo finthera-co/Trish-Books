@@ -66,7 +66,8 @@ Deno.serve(async (req) => {
     }
   } catch (e) {
     console.error("post-asset-transaction error:", e);
-    return errorResponse(e.message || "Internal error", 500);
+    const message = e instanceof Error ? e.message : String(e);
+    return errorResponse(message || "Internal error", 500);
   }
 });
 
@@ -629,7 +630,7 @@ async function handleDepreciationPosted(db: any, tenantId: string, body: any, us
     } catch (err) {
       // FAILURE HANDLING: Reset row to 'pending' so it can be retried
       await db.from("asset_depreciation").update({ status: "pending" }).eq("id", row.id);
-      const msg = `Asset ${asset.asset_name}: ${err.message}`;
+      const msg = `Asset ${asset.asset_name}: ${err instanceof Error ? err.message : String(err)}`;
       errors.push(msg);
       console.error(`[DEPRECIATION] ERROR: ${msg}`);
       skipped++;
@@ -907,7 +908,7 @@ async function handleBulkImport(db: any, tenantId: string, body: any, userId: st
         errors.push({ row: i + 1, error: resultBody.error || "Unknown error" });
       }
     } catch (err) {
-      errors.push({ row: i + 1, error: err.message });
+      errors.push({ row: i + 1, error: err instanceof Error ? err.message : String(err) });
     }
   }
 

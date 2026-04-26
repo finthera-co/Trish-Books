@@ -11,6 +11,7 @@ import { usePettyCashAccounts, useCreatePCAccount, useCashAccounts, usePCBalance
 import { useMyPermissions } from "@/hooks/usePermissions";
 import { formatCurrency } from "@/lib/currency";
 import { useNavigate } from "react-router-dom";
+import { PCTransferDialog } from "@/components/petty-cash/PCTransferDialog";
 
 const statusColor: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -56,6 +57,7 @@ export default function PettyCash() {
         <div className="flex gap-2">
           {canEdit("banking") && (
             <>
+              <PCTransferDialog />
               <Button variant="outline" onClick={() => navigate("/banking/petty-cash/replenishments")}>
                 <RefreshCw className="w-4 h-4 mr-1" /> Replenishments
               </Button>
@@ -127,9 +129,10 @@ export default function PettyCash() {
 function PCAccountCard({ account }: { account: any }) {
   const { data: balance } = usePCBalance(account.id);
   const navigate = useNavigate();
+  const replenishNeeded = Math.max(0, Number(account.float_amount || 0) - Number(balance?.remaining || 0));
 
   return (
-    <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/banking/petty-cash/voucher/new?account=${account.id}`)}>
+    <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/banking/petty-cash/${account.id}/ledger`)}>
       <CardHeader className="pb-2">
         <CardTitle className="text-base">{account.account_name}</CardTitle>
         <p className="text-xs text-muted-foreground">
@@ -149,6 +152,12 @@ function PCAccountCard({ account }: { account: any }) {
           <span className="text-muted-foreground">Remaining:</span>
           <span className="font-semibold text-success">{formatCurrency(balance?.remaining || 0)}</span>
         </div>
+        {replenishNeeded > 0 && (
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Replenish:</span>
+            <span className="font-medium text-warning">{formatCurrency(replenishNeeded)}</span>
+          </div>
+        )}
         <Badge variant={account.is_active ? "default" : "secondary"} className="mt-1">
           {account.is_active ? "Active" : "Inactive"}
         </Badge>

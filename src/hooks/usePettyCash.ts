@@ -386,31 +386,30 @@ export function useUpdateVoucherReceipts() {
   });
 }
 
-// ─── Balance Helpers ───
+// ─── Balance Helpers (LEDGER-DRIVEN: single source of truth) ───
+// Reads journal_lines on the underlying COA account. Petty cash balance
+// is derived as SUM(debit - credit) across all posted journal lines.
+async function getLedgerBalance(coaAccountId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from("journal_lines")
+    .select("debit, credit, journal_entries!inner(status)")
+    .eq("account_id", coaAccountId)
+    .eq("journal_entries.status", "posted");
+  if (error) throw error;
+  return (data || []).reduce(
+    (sum, line: any) => sum + Number(line.debit || 0) - Number(line.credit || 0),
+    0,
+  );
+}
+
 async function getRemainingCash(pcAccountId: string): Promise<number> {
   const { data: account } = await supabase
     .from("petty_cash_accounts")
-    .select("float_amount")
+    .select("account_id")
     .eq("id", pcAccountId)
     .single();
-
-  const { data: spent } = await supabase
-    .from("petty_cash_vouchers")
-    .select("total_amount")
-    .eq("petty_cash_account_id", pcAccountId)
-    .in("status", ["approved"]);
-
-  const { data: replenished } = await supabase
-    .from("petty_cash_replenishments")
-    .select("amount")
-    .eq("petty_cash_account_id", pcAccountId)
-    .eq("status", "approved");
-
-  const totalFloat = Number(account?.float_amount || 0);
-  const totalSpent = (spent || []).reduce((s, v) => s + Number(v.total_amount), 0);
-  const totalReplenished = (replenished || []).reduce((s, r) => s + Number(r.amount), 0);
-
-  return totalFloat + totalReplenished - totalSpent;
+  if (!account?.account_id) return 0;
+  return getLedgerBalance(account.account_id);
 }
 
 export function usePCBalance(pcAccountId?: string) {
@@ -418,37 +417,165 @@ export function usePCBalance(pcAccountId?: string) {
     queryKey: ["pc_balance", pcAccountId],
     queryFn: async () => {
       if (!pcAccountId) return null;
-      const remaining = await getRemainingCash(pcAccountId);
 
       const { data: account } = await supabase
         .from("petty_cash_accounts")
-        .select("float_amount")
+        .select("float_amount, account_id")
         .eq("id", pcAccountId)
         .single();
 
-      const { data: spent } = await supabase
-        .from("petty_cash_vouchers")
-        .select("total_amount")
-        .eq("petty_cash_account_id", pcAccountId)
-        .in("status", ["approved"]);
+      if (!account?.account_id) {
+        return { float_amount: 0, total_spent: 0, total_replenished: 0, remaining: 0 };
+      }
 
-      const { data: replenished } = await supabase
-        .from("petty_cash_replenishments")
-        .select("amount")
-        .eq("petty_cash_account_id", pcAccountId)
-        .eq("status", "approved");
+      // Pull all posted journal lines for this COA account
+      const { data: lines } = await supabase
+        .from("journal_lines")
+        .select("debit, credit, journal_entries!inner(status, entry_type)")
+        .eq("account_id", account.account_id)
+        .eq("journal_entries.status", "posted");
 
-      const totalSpent = (spent || []).reduce((s, v) => s + Number(v.total_amount), 0);
-      const totalReplenished = (replenished || []).reduce((s, r) => s + Number(r.amount), 0);
+      let totalSpent = 0;       // credits from voucher postings (Cr Petty Cash)
+      let totalReplenished = 0; // debits from replenishments / transfers in
+      let remaining = 0;
+
+      for (const l of (lines || []) as any[]) {
+        const debit = Number(l.debit || 0);
+        const credit = Number(l.credit || 0);
+        remaining += debit - credit;
+        if (credit > 0) totalSpent += credit;
+        if (debit > 0) totalReplenished += debit;
+      }
 
       return {
-        float_amount: Number(account?.float_amount || 0),
+        float_amount: Number(account.float_amount || 0),
         total_spent: totalSpent,
         total_replenished: totalReplenished,
         remaining,
       };
     },
     enabled: !!pcAccountId,
+  });
+}
+
+// ─── Per-PC-Account Ledger (chronological with running balance) ───
+export function usePCLedger(pcAccountId?: string) {
+  return useQuery({
+    queryKey: ["pc_ledger", pcAccountId],
+    queryFn: async () => {
+      if (!pcAccountId) return [];
+      const { data: account } = await supabase
+        .from("petty_cash_accounts")
+        .select("account_id")
+        .eq("id", pcAccountId)
+        .single();
+      if (!account?.account_id) return [];
+
+      const { data, error } = await supabase
+        .from("journal_lines")
+        .select(`
+          id, debit, credit,
+          journal_entries!inner(id, entry_date, description, reference, entry_type, status)
+        `)
+        .eq("account_id", account.account_id)
+        .eq("journal_entries.status", "posted")
+        .order("entry_date", { foreignTable: "journal_entries", ascending: true });
+      if (error) throw error;
+
+      let running = 0;
+      return (data || []).map((l: any) => {
+        const debit = Number(l.debit || 0);
+        const credit = Number(l.credit || 0);
+        running += debit - credit;
+        return {
+          id: l.id,
+          date: l.journal_entries.entry_date,
+          description: l.journal_entries.description,
+          reference: l.journal_entries.reference,
+          entry_type: l.journal_entries.entry_type,
+          journal_entry_id: l.journal_entries.id,
+          debit,
+          credit,
+          running_balance: running,
+        };
+      });
+    },
+    enabled: !!pcAccountId,
+  });
+}
+
+// ─── PC → PC Transfer (Dr Target / Cr Source) ───
+export function useTransferPettyCash() {
+  const qc = useQueryClient();
+  const { appUser } = useAuth();
+  return useMutation({
+    mutationFn: async (input: {
+      from_pc_account_id: string;
+      to_pc_account_id: string;
+      amount: number;
+      date: string;
+      memo?: string;
+    }) => {
+      if (input.from_pc_account_id === input.to_pc_account_id) {
+        throw new Error("Source and target petty cash accounts must differ");
+      }
+      if (!input.amount || input.amount <= 0) {
+        throw new Error("Transfer amount must be greater than zero");
+      }
+
+      // Resolve underlying COA accounts
+      const { data: pcAccounts, error: pcErr } = await supabase
+        .from("petty_cash_accounts")
+        .select("id, account_id, account_name, float_amount")
+        .in("id", [input.from_pc_account_id, input.to_pc_account_id]);
+      if (pcErr) throw pcErr;
+
+      const fromPC = pcAccounts?.find((a) => a.id === input.from_pc_account_id);
+      const toPC = pcAccounts?.find((a) => a.id === input.to_pc_account_id);
+      if (!fromPC?.account_id || !toPC?.account_id) {
+        throw new Error("Petty cash accounts not properly linked to COA");
+      }
+
+      // Insufficient-funds guard against ledger balance
+      const sourceBalance = await getLedgerBalance(fromPC.account_id);
+      if (sourceBalance < input.amount) {
+        throw new Error(
+          `Insufficient funds in ${fromPC.account_name}. Available: ${sourceBalance.toFixed(2)}`,
+        );
+      }
+
+      // Create posted journal entry
+      const { data: je, error: jeErr } = await supabase
+        .from("journal_entries")
+        .insert({
+          tenant_id: appUser!.tenant_id,
+          description: input.memo || `Petty Cash Transfer: ${fromPC.account_name} → ${toPC.account_name}`,
+          entry_date: input.date,
+          status: "posted",
+          is_system_generated: true,
+          entry_type: "petty_cash_transfer",
+          reference: `PCT-${Date.now()}`,
+          cash_flow_category: "internal_transfer",
+        })
+        .select()
+        .single();
+      if (jeErr) throw jeErr;
+
+      const { error: jlErr } = await supabase.from("journal_lines").insert([
+        { journal_entry_id: je.id, account_id: toPC.account_id, debit: input.amount, credit: 0 },
+        { journal_entry_id: je.id, account_id: fromPC.account_id, debit: 0, credit: input.amount },
+      ]);
+      if (jlErr) throw jlErr;
+
+      return je;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pc_balance"] });
+      qc.invalidateQueries({ queryKey: ["pc_ledger"] });
+      qc.invalidateQueries({ queryKey: ["journal_entries"] });
+      toast.success("Petty cash transfer posted");
+    },
+    onError: (e: Error) => toast.error(e.message),
   });
 }
 
