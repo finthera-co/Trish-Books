@@ -266,7 +266,7 @@ function validateForecasts(rows: Array<Record<string, unknown>>): ValidationChec
 }
 
 async function checkAccountingIntegrity(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   tenantId: string,
 ): Promise<ValidationCheck[]> {
   const checks: ValidationCheck[] = [];
