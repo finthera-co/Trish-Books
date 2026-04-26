@@ -11,6 +11,7 @@ import { usePettyCashAccounts, useCreatePCAccount, useCashAccounts, usePCBalance
 import { useMyPermissions } from "@/hooks/usePermissions";
 import { formatCurrency } from "@/lib/currency";
 import { useNavigate } from "react-router-dom";
+import { PCTransferDialog } from "@/components/petty-cash/PCTransferDialog";
 
 const statusColor: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
