@@ -160,3 +160,32 @@ export function useUpdatePaymentVoucher() {
     onError: (e: Error) => toast.error(e.message),
   });
 }
+
+export function useDeletePaymentVoucher() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      // Posted vouchers cannot be deleted (trigger enforces, UI fails fast).
+      const { data: existing, error: fetchErr } = await supabase
+        .from("payment_vouchers")
+        .select("status, voucher_number")
+        .eq("id", id)
+        .single();
+      if (fetchErr) throw fetchErr;
+      if (existing?.status === "posted") {
+        throw new Error(
+          `Cannot delete posted voucher ${existing.voucher_number}. Create a reversal instead.`
+        );
+      }
+
+      const { error } = await supabase.from("payment_vouchers").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["payment_vouchers"] });
+      toast.success("Payment voucher deleted");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
