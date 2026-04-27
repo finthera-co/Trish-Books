@@ -5440,6 +5440,25 @@ export type Database = {
           warning_threshold: number
         }[]
       }
+      create_payment_voucher: {
+        Args: {
+          p_account_number?: string
+          p_accountant?: string
+          p_approved_by?: string
+          p_bills_attached?: number
+          p_checked_by?: string
+          p_cheque_number?: string
+          p_lines: Json
+          p_made_by?: string
+          p_memo?: string
+          p_payee_id?: string
+          p_payment_account_id: string
+          p_payment_date: string
+          p_payment_method: string
+          p_reference_number?: string
+        }
+        Returns: string
+      }
       generate_pcr_number: { Args: { p_tenant_id: string }; Returns: string }
       generate_pcv_number: { Args: { p_tenant_id: string }; Returns: string }
       generate_voucher_number: {
@@ -5467,6 +5486,10 @@ export type Database = {
       }
       get_user_role_name: { Args: never; Returns: string }
       get_user_tenant_id: { Args: never; Returns: string }
+      is_cash_or_bank_account: {
+        Args: { p_account_id: string }
+        Returns: boolean
+      }
       is_primary_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
       recalculate_daily_balance: {
