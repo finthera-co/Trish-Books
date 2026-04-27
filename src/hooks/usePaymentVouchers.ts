@@ -66,89 +66,36 @@ export function useCreatePaymentVoucher() {
     mutationFn: async (formData: PaymentVoucherFormData) => {
       if (!appUser) throw new Error("Not authenticated");
 
-      const totalAmount = formData.lines.reduce((sum, l) => sum + l.amount, 0);
-      if (totalAmount <= 0) throw new Error("Total amount must be greater than zero");
-
-      // Generate voucher number
-      const { data: voucherNum } = await supabase.rpc("generate_voucher_number", { p_tenant_id: appUser.tenant_id });
-
-      // Create payment voucher
-      const { data: voucher, error } = await supabase
-        .from("payment_vouchers")
-        .insert({
-          voucher_number: voucherNum,
-          account_number: formData.account_number || null,
-          cheque_number: formData.cheque_number || null,
-          payee_id: formData.payee_id || null,
-          payment_account_id: formData.payment_account_id,
-          payment_method: formData.payment_method,
-          reference_number: formData.reference_number || null,
-          payment_date: formData.payment_date,
-          memo: formData.memo || null,
-          bills_attached: formData.bills_attached || 0,
-          approved_by: formData.approved_by || null,
-          accountant: formData.accountant || null,
-          checked_by: formData.checked_by || null,
-          made_by: formData.made_by || null,
-          total_amount: totalAmount,
-          status: "posted",
-          tenant_id: appUser.tenant_id,
-        })
-        .select()
-        .single();
-      if (error) throw error;
-
-      // Insert lines
-      const lines = formData.lines.map((l) => ({
-        voucher_id: voucher.id,
-        account_id: l.account_id,
-        description: l.description || null,
-        amount: l.amount,
-      }));
-      const { error: linesError } = await supabase.from("payment_voucher_lines").insert(lines);
-      if (linesError) throw linesError;
-
-      // Create double-entry journal
-      const journalLines = [
-        ...formData.lines.map((l) => ({
+      // Server validates everything (cash/bank account, expense/liability lines,
+      // duplicate references, balanced JE, precision, account ownership, etc.)
+      // and runs voucher + lines + journal entry in a single transaction.
+      const { data, error } = await supabase.rpc("create_payment_voucher", {
+        p_payment_account_id: formData.payment_account_id,
+        p_payment_method: formData.payment_method,
+        p_payment_date: formData.payment_date,
+        p_lines: formData.lines.map((l) => ({
           account_id: l.account_id,
-          debit: l.amount,
-          credit: 0,
+          description: l.description ?? null,
+          amount: Number(l.amount),
         })),
-        {
-          account_id: formData.payment_account_id,
-          debit: 0,
-          credit: totalAmount,
-        },
-      ];
-
-      const { data: je, error: jeError } = await supabase
-        .from("journal_entries")
-        .insert({
-          tenant_id: appUser.tenant_id,
-          description: `Payment Voucher ${voucherNum}`,
-          entry_date: formData.payment_date,
-          reference: voucherNum,
-          created_by: appUser.id,
-          status: "posted",
-        })
-        .select()
-        .single();
-      if (jeError) throw jeError;
-
-      const { error: jlError } = await supabase
-        .from("journal_lines")
-        .insert(journalLines.map((jl) => ({ ...jl, journal_entry_id: je.id })));
-      if (jlError) throw jlError;
-
-      // Link journal entry to voucher
-      await supabase.from("payment_vouchers").update({ journal_entry_id: je.id }).eq("id", voucher.id);
-
-      return voucher;
+        p_payee_id: formData.payee_id || null,
+        p_account_number: formData.account_number || null,
+        p_cheque_number: formData.cheque_number || null,
+        p_reference_number: formData.reference_number || null,
+        p_memo: formData.memo || null,
+        p_bills_attached: formData.bills_attached ?? 0,
+        p_approved_by: formData.approved_by || null,
+        p_accountant: formData.accountant || null,
+        p_checked_by: formData.checked_by || null,
+        p_made_by: formData.made_by || null,
+      });
+      if (error) throw error;
+      return data as string;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["payment_vouchers"] });
       queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
       toast.success("Payment voucher created");
     },
     onError: (e: Error) => toast.error(e.message),
