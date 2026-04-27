@@ -107,6 +107,17 @@ export function useUpdatePaymentVoucher() {
 
   return useMutation({
     mutationFn: async ({ id, ...formData }: PaymentVoucherFormData & { id: string }) => {
+      // Posted vouchers are immutable — UI guard (server trigger also blocks).
+      const { data: existing, error: fetchErr } = await supabase
+        .from("payment_vouchers")
+        .select("status")
+        .eq("id", id)
+        .single();
+      if (fetchErr) throw fetchErr;
+      if (existing?.status === "posted") {
+        throw new Error("Posted payment vouchers are immutable. Create a reversal instead.");
+      }
+
       const totalAmount = formData.lines.reduce((sum, l) => sum + l.amount, 0);
       if (totalAmount <= 0) throw new Error("Total amount must be greater than zero");
 
@@ -131,7 +142,6 @@ export function useUpdatePaymentVoucher() {
         .eq("id", id);
       if (error) throw error;
 
-      // Delete old lines and insert new
       await supabase.from("payment_voucher_lines").delete().eq("voucher_id", id);
       const lines = formData.lines.map((l) => ({
         voucher_id: id,
@@ -146,22 +156,6 @@ export function useUpdatePaymentVoucher() {
       queryClient.invalidateQueries({ queryKey: ["payment_vouchers"] });
       queryClient.invalidateQueries({ queryKey: ["payment_voucher"] });
       toast.success("Payment voucher updated");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-}
-
-export function useDeletePaymentVoucher() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("payment_vouchers").delete().eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["payment_vouchers"] });
-      toast.success("Payment voucher deleted");
     },
     onError: (e: Error) => toast.error(e.message),
   });
