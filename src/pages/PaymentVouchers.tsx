@@ -1,47 +1,150 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
 import { usePaymentVouchers, useDeletePaymentVoucher } from "@/hooks/usePaymentVouchers";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Search, Trash2, Eye, Edit, FileText } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { cn } from "@/lib/utils";
+import { Plus, Search, Trash2, Eye, Edit, FileText, CalendarIcon, X, SlidersHorizontal } from "lucide-react";
 import { useMyPermissions } from "@/hooks/usePermissions";
 import PaymentVoucherForm from "@/components/payment-vouchers/PaymentVoucherForm";
 import PaymentVoucherDetails from "@/components/payment-vouchers/PaymentVoucherDetails";
 import { formatCurrency } from "@/lib/currency";
 import { useSearchParams } from "react-router-dom";
 
+const STATUS_OPTIONS = ["all", "draft", "posted", "reversed", "voided"] as const;
+
 export default function PaymentVouchers() {
   const { data: vouchers, isLoading } = usePaymentVouchers();
   const deleteMutation = useDeletePaymentVoucher();
   const { canEdit: canEditBanking, canDelete: canDeleteBanking } = useMyPermissions();
+  const { isSuperAdmin } = useAuth();
   const [searchParams] = useSearchParams();
   const highlightId = searchParams.get("highlight");
+
+  // Search + filter state
   const [search, setSearch] = useState("");
+  const [referenceFilter, setReferenceFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [paymentAccountFilter, setPaymentAccountFilter] = useState<string>("all");
+  const [tenantFilter, setTenantFilter] = useState<string>("all");
+  const [fromDate, setFromDate] = useState<Date | undefined>();
+  const [toDate, setToDate] = useState<Date | undefined>();
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Modal state
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [viewId, setViewId] = useState<string | null>(highlightId);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  // Auto-open highlighted voucher
   useEffect(() => {
-    if (highlightId && vouchers?.some(v => v.id === highlightId)) {
+    if (highlightId && vouchers?.some((v) => v.id === highlightId)) {
       setViewId(highlightId);
     }
   }, [highlightId, vouchers]);
 
-  const filtered = vouchers?.filter((v) => {
-    const q = search.toLowerCase();
-    return (
-      v.voucher_number?.toLowerCase().includes(q) ||
-      (v.customers as any)?.name?.toLowerCase().includes(q) ||
-      v.cheque_number?.toLowerCase().includes(q) ||
-      v.reference_number?.toLowerCase().includes(q)
-    );
+  // Distinct payment accounts present in current voucher set (for the dropdown)
+  const paymentAccountOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    vouchers?.forEach((v: any) => {
+      const id = v.payment_account_id;
+      const acc = v.accounts;
+      if (id && acc) {
+        const label = `${acc.account_code} — ${acc.account_name}`;
+        map.set(id, label);
+      }
+    });
+    return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
+  }, [vouchers]);
+
+  // Tenants list — only for Super Admin
+  const { data: tenants } = useQuery({
+    queryKey: ["tenants-for-filter"],
+    enabled: isSuperAdmin,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("tenants")
+        .select("id, company_name")
+        .order("company_name");
+      if (error) throw error;
+      return data;
+    },
   });
+
+  const filtered = useMemo(() => {
+    if (!vouchers) return [];
+    const q = search.trim().toLowerCase();
+    const refQ = referenceFilter.trim().toLowerCase();
+    const fromTs = fromDate ? new Date(fromDate).setHours(0, 0, 0, 0) : null;
+    const toTs = toDate ? new Date(toDate).setHours(23, 59, 59, 999) : null;
+
+    return vouchers.filter((v: any) => {
+      // Generic search
+      if (q) {
+        const hay = [
+          v.voucher_number,
+          v.cheque_number,
+          v.reference_number,
+          v.memo,
+          v.customers?.name,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+
+      // Reference number (exact-substring)
+      if (refQ && !(v.reference_number || "").toLowerCase().includes(refQ)) return false;
+
+      // Status
+      if (statusFilter !== "all" && v.status !== statusFilter) return false;
+
+      // Payment account
+      if (paymentAccountFilter !== "all" && v.payment_account_id !== paymentAccountFilter) return false;
+
+      // Tenant (super admin only)
+      if (isSuperAdmin && tenantFilter !== "all" && v.tenant_id !== tenantFilter) return false;
+
+      // Date range (payment_date)
+      if (fromTs || toTs) {
+        if (!v.payment_date) return false;
+        const ts = new Date(v.payment_date).getTime();
+        if (fromTs && ts < fromTs) return false;
+        if (toTs && ts > toTs) return false;
+      }
+
+      return true;
+    });
+  }, [vouchers, search, referenceFilter, statusFilter, paymentAccountFilter, tenantFilter, fromDate, toDate, isSuperAdmin]);
+
+  const activeFilterCount =
+    (referenceFilter ? 1 : 0) +
+    (statusFilter !== "all" ? 1 : 0) +
+    (paymentAccountFilter !== "all" ? 1 : 0) +
+    (isSuperAdmin && tenantFilter !== "all" ? 1 : 0) +
+    (fromDate ? 1 : 0) +
+    (toDate ? 1 : 0);
+
+  const clearFilters = () => {
+    setReferenceFilter("");
+    setStatusFilter("all");
+    setPaymentAccountFilter("all");
+    setTenantFilter("all");
+    setFromDate(undefined);
+    setToDate(undefined);
+  };
 
   return (
     <div className="space-y-6">
@@ -50,24 +153,161 @@ export default function PaymentVouchers() {
           <h1 className="text-2xl font-bold text-foreground">Payment Vouchers</h1>
           <p className="text-sm text-muted-foreground">Manage payment vouchers and track disbursements</p>
         </div>
-        {canEditBanking("banking") && <Button onClick={() => { setEditId(null); setShowForm(true); }}>
-          <Plus className="w-4 h-4 mr-2" /> New Voucher
-        </Button>}
+        {canEditBanking("banking") && (
+          <Button onClick={() => { setEditId(null); setShowForm(true); }}>
+            <Plus className="w-4 h-4 mr-2" /> New Voucher
+          </Button>
+        )}
       </div>
 
       <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1 max-w-sm">
+        <CardHeader className="pb-3 space-y-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[220px] max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search vouchers..."
+                placeholder="Search vouchers, payee, memo…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9"
               />
             </div>
+
+            <Button
+              variant={showFilters ? "default" : "outline"}
+              size="sm"
+              onClick={() => setShowFilters((s) => !s)}
+              className="gap-2"
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              Filters
+              {activeFilterCount > 0 && (
+                <Badge variant="secondary" className="ml-1 h-5 px-1.5">
+                  {activeFilterCount}
+                </Badge>
+              )}
+            </Button>
+
+            {activeFilterCount > 0 && (
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1.5 text-muted-foreground">
+                <X className="w-3.5 h-3.5" /> Clear
+              </Button>
+            )}
+
+            <div className="ml-auto text-xs text-muted-foreground">
+              {filtered.length} of {vouchers?.length ?? 0} vouchers
+            </div>
           </div>
+
+          {showFilters && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2 border-t">
+              {/* Reference */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Reference number</label>
+                <Input
+                  placeholder="e.g. INV-2024-001"
+                  value={referenceFilter}
+                  onChange={(e) => setReferenceFilter(e.target.value)}
+                />
+              </div>
+
+              {/* Status */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Status</label>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {STATUS_OPTIONS.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s === "all" ? "All statuses" : s.charAt(0).toUpperCase() + s.slice(1)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Payment account */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Payment account</label>
+                <Select value={paymentAccountFilter} onValueChange={setPaymentAccountFilter}>
+                  <SelectTrigger><SelectValue placeholder="All accounts" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All accounts</SelectItem>
+                    {paymentAccountOptions.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>{a.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Tenant (Super Admin only) */}
+              {isSuperAdmin && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Tenant</label>
+                  <Select value={tenantFilter} onValueChange={setTenantFilter}>
+                    <SelectTrigger><SelectValue placeholder="All tenants" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All tenants</SelectItem>
+                      {tenants?.map((t: any) => (
+                        <SelectItem key={t.id} value={t.id}>{t.company_name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* From date */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">From date</label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn("w-full justify-start text-left font-normal", !fromDate && "text-muted-foreground")}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {fromDate ? format(fromDate, "PPP") : "Pick a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={fromDate}
+                      onSelect={setFromDate}
+                      initialFocus
+                      className={cn("p-3 pointer-events-auto")}
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* To date */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">To date</label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn("w-full justify-start text-left font-normal", !toDate && "text-muted-foreground")}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {toDate ? format(toDate, "PPP") : "Pick a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={toDate}
+                      onSelect={setToDate}
+                      initialFocus
+                      disabled={(date) => (fromDate ? date < fromDate : false)}
+                      className={cn("p-3 pointer-events-auto")}
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -81,6 +321,7 @@ export default function PaymentVouchers() {
                   <TableHead>Date</TableHead>
                   <TableHead>Payment Account</TableHead>
                   <TableHead>Cheque #</TableHead>
+                  <TableHead>Reference</TableHead>
                   <TableHead>Method</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead>Status</TableHead>
@@ -88,21 +329,24 @@ export default function PaymentVouchers() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered?.length === 0 && (
+                {filtered.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                       <FileText className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                      No payment vouchers found
+                      {activeFilterCount > 0 || search
+                        ? "No vouchers match your filters"
+                        : "No payment vouchers found"}
                     </TableCell>
                   </TableRow>
                 )}
-                {filtered?.map((v) => (
-                  <TableRow key={v.id}>
+                {filtered.map((v: any) => (
+                  <TableRow key={v.id} className={highlightId === v.id ? "bg-accent/40" : ""}>
                     <TableCell className="font-mono font-medium">{v.voucher_number}</TableCell>
-                    <TableCell>{(v.customers as any)?.name || "—"}</TableCell>
+                    <TableCell>{v.customers?.name || "—"}</TableCell>
                     <TableCell>{v.payment_date}</TableCell>
-                    <TableCell>{(v.accounts as any)?.account_name || "—"}</TableCell>
+                    <TableCell>{v.accounts?.account_name || "—"}</TableCell>
                     <TableCell>{v.cheque_number || "—"}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{v.reference_number || "—"}</TableCell>
                     <TableCell><Badge variant="outline">{v.payment_method}</Badge></TableCell>
                     <TableCell className="text-right font-mono">{formatCurrency(Number(v.total_amount))}</TableCell>
                     <TableCell>
@@ -113,12 +357,16 @@ export default function PaymentVouchers() {
                         <Button variant="ghost" size="icon" onClick={() => setViewId(v.id)}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        {canEditBanking("banking") && <Button variant="ghost" size="icon" onClick={() => { setEditId(v.id); setShowForm(true); }}>
-                          <Edit className="w-4 h-4" />
-                        </Button>}
-                        {canDeleteBanking("banking") && <Button variant="ghost" size="icon" onClick={() => setDeleteId(v.id)}>
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>}
+                        {canEditBanking("banking") && (
+                          <Button variant="ghost" size="icon" onClick={() => { setEditId(v.id); setShowForm(true); }}>
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                        )}
+                        {canDeleteBanking("banking") && (
+                          <Button variant="ghost" size="icon" onClick={() => setDeleteId(v.id)}>
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
