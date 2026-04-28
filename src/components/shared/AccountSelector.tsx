@@ -5,9 +5,12 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { useAccountById, useAccountSearch, AccountSearchResult } from "@/hooks/useAccountSearch";
+import { useAuth } from "@/contexts/AuthContext";
 
-const RECENTS_KEY = "account-selector:recent-v1";
+const RECENTS_KEY_PREFIX = "account-selector:recent-v2";
 const RECENTS_MAX = 5;
+const recentsKeyFor = (tenantId: string | null | undefined) =>
+  `${RECENTS_KEY_PREFIX}:${tenantId || "anon"}`;
 
 interface Props {
   value: string | null | undefined;
