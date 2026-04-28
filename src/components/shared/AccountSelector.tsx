@@ -5,9 +5,12 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { useAccountById, useAccountSearch, AccountSearchResult } from "@/hooks/useAccountSearch";
+import { useAuth } from "@/contexts/AuthContext";
 
-const RECENTS_KEY = "account-selector:recent-v1";
+const RECENTS_KEY_PREFIX = "account-selector:recent-v2";
 const RECENTS_MAX = 5;
+const recentsKeyFor = (tenantId: string | null | undefined) =>
+  `${RECENTS_KEY_PREFIX}:${tenantId || "anon"}`;
 
 interface Props {
   value: string | null | undefined;
@@ -24,9 +27,9 @@ interface Props {
   id?: string;
 }
 
-function loadRecents(): AccountSearchResult[] {
+function loadRecents(tenantId: string | null | undefined): AccountSearchResult[] {
   try {
-    const raw = localStorage.getItem(RECENTS_KEY);
+    const raw = localStorage.getItem(recentsKeyFor(tenantId));
     if (!raw) return [];
     const arr = JSON.parse(raw);
     return Array.isArray(arr) ? arr.slice(0, RECENTS_MAX) : [];
@@ -35,11 +38,11 @@ function loadRecents(): AccountSearchResult[] {
   }
 }
 
-function saveRecent(acc: AccountSearchResult) {
+function saveRecent(tenantId: string | null | undefined, acc: AccountSearchResult) {
   try {
-    const current = loadRecents().filter((a) => a.id !== acc.id);
+    const current = loadRecents(tenantId).filter((a) => a.id !== acc.id);
     const next = [acc, ...current].slice(0, RECENTS_MAX);
-    localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
+    localStorage.setItem(recentsKeyFor(tenantId), JSON.stringify(next));
   } catch {
     // ignore quota / privacy mode errors
   }
@@ -71,6 +74,8 @@ export default function AccountSelector({
   fullWidth = true,
   id,
 }: Props) {
+  const { appUser } = useAuth();
+  const tenantId = appUser?.tenant_id || null;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -94,11 +99,11 @@ export default function AccountSelector({
     enabled: open && debounced.trim().length >= 2,
   });
 
-  // Recent accounts (filtered by `types` if provided)
+  // Recent accounts (filtered by `types` if provided, scoped to current tenant)
   const recents = useMemo(() => {
-    const all = loadRecents();
+    const all = loadRecents(tenantId);
     return types && types.length > 0 ? all.filter((a) => types.includes(a.account_type)) : all;
-  }, [types, open]);
+  }, [types, open, tenantId]);
 
   // What to show: search results when typing, recents when idle
   const showRecents = debounced.trim().length < 2;
@@ -118,7 +123,7 @@ export default function AccountSelector({
   }, [open]);
 
   const handleSelect = (acc: AccountSearchResult) => {
-    saveRecent(acc);
+    saveRecent(tenantId, acc);
     onChange(acc.id, acc);
     setOpen(false);
     setQuery("");
