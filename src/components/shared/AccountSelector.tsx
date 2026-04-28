@@ -123,7 +123,7 @@ export default function AccountSelector({
   }, [open]);
 
   const handleSelect = (acc: AccountSearchResult) => {
-    saveRecent(acc);
+    saveRecent(tenantId, acc);
     onChange(acc.id, acc);
     setOpen(false);
     setQuery("");
