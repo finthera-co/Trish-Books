@@ -185,6 +185,7 @@ export function useCreateNewVersion() {
 
 export function useCreateBudgetLine() {
   const qc = useQueryClient();
+  const { appUser } = useAuth();
   return useMutation({
     mutationFn: async (item: {
       budget_id: string;
@@ -192,13 +193,25 @@ export function useCreateBudgetLine() {
       allocated_amount: number;
       warning_threshold?: number;
       department_id?: string;
+      period?: string;
+      period_type?: "monthly" | "quarterly" | "yearly";
+      class_id?: string;
+      project_id?: string;
     }) => {
       const { data, error } = await supabase
         .from("budget_items")
-        .insert({
-          ...item,
+        .insert([{
+          budget_id: item.budget_id,
+          tenant_id: appUser!.tenant_id,
+          account_id: item.account_id,
+          allocated_amount: item.allocated_amount,
           warning_threshold: item.warning_threshold ?? 0.8,
-        })
+          department_id: item.department_id,
+          period: item.period,
+          period_type: item.period_type ?? "yearly",
+          class_id: item.class_id,
+          project_id: item.project_id,
+        }])
         .select()
         .single();
       if (error) throw error;
