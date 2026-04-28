@@ -27,9 +27,9 @@ interface Props {
   id?: string;
 }
 
-function loadRecents(): AccountSearchResult[] {
+function loadRecents(tenantId: string | null | undefined): AccountSearchResult[] {
   try {
-    const raw = localStorage.getItem(RECENTS_KEY);
+    const raw = localStorage.getItem(recentsKeyFor(tenantId));
     if (!raw) return [];
     const arr = JSON.parse(raw);
     return Array.isArray(arr) ? arr.slice(0, RECENTS_MAX) : [];
@@ -38,11 +38,11 @@ function loadRecents(): AccountSearchResult[] {
   }
 }
 
-function saveRecent(acc: AccountSearchResult) {
+function saveRecent(tenantId: string | null | undefined, acc: AccountSearchResult) {
   try {
-    const current = loadRecents().filter((a) => a.id !== acc.id);
+    const current = loadRecents(tenantId).filter((a) => a.id !== acc.id);
     const next = [acc, ...current].slice(0, RECENTS_MAX);
-    localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
+    localStorage.setItem(recentsKeyFor(tenantId), JSON.stringify(next));
   } catch {
     // ignore quota / privacy mode errors
   }
