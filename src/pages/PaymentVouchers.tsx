@@ -357,8 +357,13 @@ export default function PaymentVouchers() {
                         <Button variant="ghost" size="icon" onClick={() => setViewId(v.id)}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        {canEditBanking("banking") && (
-                          <Button variant="ghost" size="icon" onClick={() => { setEditId(v.id); setShowForm(true); }}>
+                        {canEditBanking("banking") && v.status === "draft" && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => { setEditId(v.id); setShowForm(true); }}
+                            title="Edit draft voucher"
+                          >
                             <Edit className="w-4 h-4" />
                           </Button>
                         )}
