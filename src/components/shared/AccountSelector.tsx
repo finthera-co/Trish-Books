@@ -99,11 +99,11 @@ export default function AccountSelector({
     enabled: open && debounced.trim().length >= 2,
   });
 
-  // Recent accounts (filtered by `types` if provided)
+  // Recent accounts (filtered by `types` if provided, scoped to current tenant)
   const recents = useMemo(() => {
-    const all = loadRecents();
+    const all = loadRecents(tenantId);
     return types && types.length > 0 ? all.filter((a) => types.includes(a.account_type)) : all;
-  }, [types, open]);
+  }, [types, open, tenantId]);
 
   // What to show: search results when typing, recents when idle
   const showRecents = debounced.trim().length < 2;
