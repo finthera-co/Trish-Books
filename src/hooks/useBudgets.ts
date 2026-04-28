@@ -150,10 +150,15 @@ export function useCreateNewVersion() {
       if (items.length > 0) {
         const newItems = items.map((item: any) => ({
           budget_id: newBudget.id,
+          tenant_id: appUser!.tenant_id,
           account_id: item.account_id,
           allocated_amount: item.allocated_amount,
           warning_threshold: item.warning_threshold || 0.8,
           department_id: item.department_id,
+          period: item.period,
+          period_type: item.period_type || "yearly",
+          class_id: item.class_id,
+          project_id: item.project_id,
         }));
         const { error: itemsError } = await supabase
           .from("budget_items")
