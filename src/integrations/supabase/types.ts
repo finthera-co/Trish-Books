@@ -1059,29 +1059,121 @@ export type Database = {
           },
         ]
       }
+      budget_consumptions: {
+        Row: {
+          account_id: string
+          class_id: string | null
+          consumed_amount: number
+          department_id: string | null
+          id: string
+          period: string
+          project_id: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          class_id?: string | null
+          consumed_amount?: number
+          department_id?: string | null
+          id?: string
+          period: string
+          project_id?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          class_id?: string | null
+          consumed_amount?: number
+          department_id?: string | null
+          id?: string
+          period?: string
+          project_id?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_consumptions_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      budget_controls: {
+        Row: {
+          apply_to_accounts: string
+          created_at: string
+          dimension_strict_mode: boolean
+          enforcement_mode: string
+          missing_budget_behavior: string
+          tenant_id: string
+          tolerance_percentage: number
+          updated_at: string
+        }
+        Insert: {
+          apply_to_accounts?: string
+          created_at?: string
+          dimension_strict_mode?: boolean
+          enforcement_mode?: string
+          missing_budget_behavior?: string
+          tenant_id: string
+          tolerance_percentage?: number
+          updated_at?: string
+        }
+        Update: {
+          apply_to_accounts?: string
+          created_at?: string
+          dimension_strict_mode?: boolean
+          enforcement_mode?: string
+          missing_budget_behavior?: string
+          tenant_id?: string
+          tolerance_percentage?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       budget_items: {
         Row: {
           account_id: string
           allocated_amount: number
           budget_id: string
+          class_id: string | null
           department_id: string | null
           id: string
+          period: string | null
+          period_type: string
+          project_id: string | null
+          tenant_id: string
           warning_threshold: number
         }
         Insert: {
           account_id: string
           allocated_amount?: number
           budget_id: string
+          class_id?: string | null
           department_id?: string | null
           id?: string
+          period?: string | null
+          period_type?: string
+          project_id?: string | null
+          tenant_id: string
           warning_threshold?: number
         }
         Update: {
           account_id?: string
           allocated_amount?: number
           budget_id?: string
+          class_id?: string | null
           department_id?: string | null
           id?: string
+          period?: string | null
+          period_type?: string
+          project_id?: string | null
+          tenant_id?: string
           warning_threshold?: number
         }
         Relationships: [
@@ -5424,6 +5516,29 @@ export type Database = {
       }
     }
     Functions: {
+      budget_vs_actual: {
+        Args: {
+          p_account_type?: string
+          p_department_id?: string
+          p_fiscal_year?: number
+          p_tenant_id: string
+        }
+        Returns: {
+          account_code: string
+          account_id: string
+          account_name: string
+          account_type: string
+          actual: number
+          allocated: number
+          budget_id: string
+          budget_name: string
+          department_id: string
+          period: string
+          period_type: string
+          variance: number
+          variance_pct: number
+        }[]
+      }
       calculate_budget_usage: {
         Args: {
           p_account_id: string
@@ -5459,6 +5574,10 @@ export type Database = {
         }
         Returns: string
       }
+      derive_period: {
+        Args: { p_date: string; p_period_type: string }
+        Returns: string
+      }
       generate_pcr_number: { Args: { p_tenant_id: string }; Returns: string }
       generate_pcv_number: { Args: { p_tenant_id: string }; Returns: string }
       generate_voucher_number: {
@@ -5492,6 +5611,18 @@ export type Database = {
       }
       is_primary_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
+      recalc_budget_consumption: {
+        Args: {
+          p_account_id: string
+          p_class_id: string
+          p_department_id: string
+          p_period: string
+          p_period_type: string
+          p_project_id: string
+          p_tenant_id: string
+        }
+        Returns: number
+      }
       recalculate_daily_balance: {
         Args: { p_date: string; p_tenant_id: string }
         Returns: undefined
@@ -5502,6 +5633,18 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      validate_voucher_budget: {
+        Args: {
+          p_account_id: string
+          p_amount: number
+          p_class_id?: string
+          p_date: string
+          p_department_id?: string
+          p_project_id?: string
+          p_tenant_id: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never

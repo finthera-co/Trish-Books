@@ -44,6 +44,7 @@ import PayrollGLMapping from "./pages/PayrollGLMapping";
 import Employees from "./pages/Employees";
 import Reports from "./pages/Reports";
 import Budgets from "./pages/Budgets";
+import BudgetVsActual from "./pages/BudgetVsActual";
 import DataExports from "./pages/DataExports";
 import AssetRegister from "./pages/AssetRegister";
 import AssetForm from "./pages/AssetForm";
@@ -177,6 +178,7 @@ const App = () => (
                     <Route path="/reports" element={<ModuleDashboard config={MODULE_CONFIGS.reports} />} />
                     <Route path="/reports/financial" element={<Reports />} />
                     <Route path="/reports/budgets" element={<Budgets />} />
+                    <Route path="/reports/budget-vs-actual" element={<BudgetVsActual />} />
                     <Route path="/reports/exports" element={<DataExports />} />
                     <Route path="/reports/anomalies" element={<AnomalyDashboard />} />
                     <Route path="/reports/intelligence" element={<TransactionsLedger />} />
