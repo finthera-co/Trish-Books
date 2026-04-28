@@ -74,6 +74,8 @@ export default function AccountSelector({
   fullWidth = true,
   id,
 }: Props) {
+  const { appUser } = useAuth();
+  const tenantId = appUser?.tenant_id || null;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
