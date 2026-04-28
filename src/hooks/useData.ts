@@ -534,9 +534,14 @@ export function useCreateBudget() {
 
 export function useCreateBudgetItem() {
   const queryClient = useQueryClient();
+  const { appUser } = useAuth();
   return useMutation({
     mutationFn: async (item: { budget_id: string; account_id: string; allocated_amount: number }) => {
-      const { data, error } = await supabase.from("budget_items").insert(item).select().single();
+      const { data, error } = await supabase
+        .from("budget_items")
+        .insert([{ ...item, tenant_id: appUser!.tenant_id }])
+        .select()
+        .single();
       if (error) throw error;
       return data;
     },
