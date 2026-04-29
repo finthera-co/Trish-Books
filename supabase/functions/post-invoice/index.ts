@@ -52,10 +52,10 @@ Deno.serve(async (req) => {
     const { invoice_id, action } = body as { invoice_id: string; action: "post" | "void" };
     if (!invoice_id) return json({ ok: false, error: "invoice_id is required" }, 200);
 
-    // ── Fetch invoice + lines ─────────────────────────────────────────
+    // ── Fetch invoice + lines (with product inventory linkage) ────────
     const { data: invoice, error: invErr } = await admin
       .from("invoices")
-      .select("*, invoice_items(*)")
+      .select("*, invoice_items(*, products(id, is_tracked, inventory_item_id, expense_account_id, asset_account_id, name))")
       .eq("id", invoice_id)
       .eq("tenant_id", appUser.tenant_id)
       .single();
