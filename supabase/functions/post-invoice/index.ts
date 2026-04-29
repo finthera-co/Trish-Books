@@ -259,6 +259,57 @@ Deno.serve(async (req) => {
 
     const taxAmount = Number(invoice.tax_amount || 0);
 
+    // ── COGS / Inventory validation for tracked products ────────────
+    type CogsItem = { item_id: string; qty: number; avg_cost: number; cogs_acct: string; asset_acct: string; line_total: number; name: string };
+    const cogsItems: CogsItem[] = [];
+    for (const item of items) {
+      const product = (item as any).products;
+      const invItemId = item.inventory_item_id || product?.inventory_item_id;
+      if (!product?.is_tracked || !invItemId) continue;
+
+      // Resolve avg cost + asset account from inventory_items
+      const { data: invRow, error: invRowErr } = await admin
+        .from("inventory_items")
+        .select("id, item_name, unit_cost, account_id, quantity_on_hand")
+        .eq("id", invItemId)
+        .eq("tenant_id", appUser.tenant_id)
+        .single();
+      if (invRowErr || !invRow) {
+        errors.push(`Inventory item ${invItemId} not found for product "${product?.name}"`);
+        continue;
+      }
+
+      const cogsAcct = product.expense_account_id;
+      const assetAcct = product.asset_account_id || invRow.account_id;
+      if (!cogsAcct) errors.push(`Product "${product.name}" missing COGS (expense) account`);
+      if (!assetAcct) errors.push(`Product "${product.name}" missing Inventory (asset) account`);
+
+      // Stock availability check (default: block negative)
+      const qty = Number(item.quantity) || 0;
+      const onHand = Number(invRow.quantity_on_hand) || 0;
+      if (qty > onHand) {
+        errors.push(`Insufficient stock for "${invRow.item_name}": on hand ${onHand}, required ${qty}`);
+      }
+
+      const avgCost = Number(invRow.unit_cost) || 0;
+      const lineTotal = Math.round(qty * avgCost * 100) / 100;
+      if (cogsAcct && assetAcct && lineTotal > 0) {
+        cogsItems.push({
+          item_id: invItemId,
+          qty,
+          avg_cost: avgCost,
+          cogs_acct: cogsAcct,
+          asset_acct: assetAcct,
+          line_total: lineTotal,
+          name: invRow.item_name,
+        });
+      }
+    }
+
+    if (errors.length > 0) {
+      return json({ ok: false, error: "Cannot post invoice. Issues found:\n• " + errors.join("\n• "), errors }, 200);
+    }
+
     const journalLines: { account_id: string; debit: number; credit: number }[] = [];
 
     // Dr AR (single line, customer-tagged via subledger)
@@ -273,6 +324,16 @@ Deno.serve(async (req) => {
     if (taxAmount > 0 && taxPayableId) {
       journalLines.push({ account_id: taxPayableId, debit: 0, credit: taxAmount });
     }
+
+    // Dr COGS / Cr Inventory (grouped by accounts)
+    const cogsByAcct = new Map<string, number>();
+    const invByAcct = new Map<string, number>();
+    for (const c of cogsItems) {
+      cogsByAcct.set(c.cogs_acct, (cogsByAcct.get(c.cogs_acct) || 0) + c.line_total);
+      invByAcct.set(c.asset_acct, (invByAcct.get(c.asset_acct) || 0) + c.line_total);
+    }
+    for (const [acct, amt] of cogsByAcct) journalLines.push({ account_id: acct, debit: amt, credit: 0 });
+    for (const [acct, amt] of invByAcct) journalLines.push({ account_id: acct, debit: 0, credit: amt });
 
     // ── Balance check ───────────────────────────────────────────────
     const totalDr = journalLines.reduce((s, l) => s + l.debit, 0);
