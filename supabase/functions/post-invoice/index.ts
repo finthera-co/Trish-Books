@@ -411,7 +411,25 @@ Deno.serve(async (req) => {
       due_date: invoice.due_date,
     });
 
-    // Update invoice
+    // ── Stock movements for tracked products (issue / sale) ─────────
+    if (cogsItems.length > 0) {
+      const movements = cogsItems.map((c) => ({
+        tenant_id: appUser.tenant_id,
+        item_id: c.item_id,
+        movement_type: "sale",
+        quantity: -c.qty, // negative = issue
+        unit_cost: c.avg_cost,
+        reference_type: "invoice",
+        reference_id: invoice_id,
+        notes: `Sold via invoice ${invoice.invoice_number}`,
+        movement_date: invoice.issue_date,
+      }));
+      const { error: smErr } = await admin.from("stock_movements").insert(movements);
+      if (smErr) {
+        // Best-effort: surface the error but JE is already posted; admin can reconcile.
+        console.error("Stock movement insert failed:", smErr.message);
+      }
+    }
     await admin
       .from("invoices")
       .update({
