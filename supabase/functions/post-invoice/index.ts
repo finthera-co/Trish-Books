@@ -120,6 +120,27 @@ Deno.serve(async (req) => {
       }));
       await admin.from("journal_lines").insert(revLines);
 
+      // Reverse stock movements (re-add stock that was issued on sale)
+      const { data: salesMovements } = await admin
+        .from("stock_movements")
+        .select("id, item_id, quantity, unit_cost")
+        .eq("reference_type", "invoice")
+        .eq("reference_id", invoice_id);
+      if (salesMovements && salesMovements.length > 0) {
+        const reversals = salesMovements.map((m: any) => ({
+          tenant_id: appUser.tenant_id,
+          item_id: m.item_id,
+          movement_type: "return",
+          quantity: -Number(m.quantity), // original was negative (issue) → reversal positive
+          unit_cost: Number(m.unit_cost),
+          reference_type: "invoice_reversal",
+          reference_id: invoice_id,
+          notes: `Reversal of sale movement ${m.id}`,
+          movement_date: new Date().toISOString().slice(0, 10),
+        }));
+        await admin.from("stock_movements").insert(reversals);
+      }
+
       await admin
         .from("invoices")
         .update({
