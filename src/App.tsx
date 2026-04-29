@@ -59,7 +59,7 @@ import Subscriptions from "./pages/Subscriptions";
 import AuditLogs from "./pages/AuditLogs";
 import NotFound from "./pages/NotFound";
 import AnomalyDashboard from "./pages/AnomalyDashboard";
-import TransactionsLedger from "./pages/TransactionsLedger";
+
 import ForecastDashboard from "./pages/ForecastDashboard";
 import AccountReport from "./pages/AccountReport";
 import GLVerification from "./pages/GLVerification";
@@ -181,7 +181,6 @@ const App = () => (
                     <Route path="/reports/budget-vs-actual" element={<BudgetVsActual />} />
                     <Route path="/reports/exports" element={<DataExports />} />
                     <Route path="/reports/anomalies" element={<AnomalyDashboard />} />
-                    <Route path="/reports/intelligence" element={<TransactionsLedger />} />
                     <Route path="/reports/forecasting" element={<ForecastDashboard />} />
                   </Route>
 

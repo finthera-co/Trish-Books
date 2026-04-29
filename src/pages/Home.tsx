@@ -10,8 +10,7 @@ import DashboardCharts from "@/components/dashboard/DashboardCharts";
 import KPICards from "@/components/dashboard/KPICards";
 import SystemHealthCheck from "@/components/dashboard/SystemHealthCheck";
 import RecentTransactions from "@/components/dashboard/RecentTransactions";
-import InsightsPanel from "@/components/dashboard/InsightsPanel";
-import CashFlowChart from "@/components/dashboard/CashFlowChart";
+import CashBalanceForecastChart from "@/components/dashboard/CashBalanceForecastChart";
 import { Loader2, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -97,11 +96,8 @@ function TenantDashboard() {
         </>
       )}
 
-      {/* Cash Flow Forecast */}
-      <CashFlowChart />
-
-      {/* Insights Panel */}
-      <InsightsPanel />
+      {/* Cash Balance Forecast with Confidence Bands */}
+      <CashBalanceForecastChart />
 
       {/* System Health & Recent Transactions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
