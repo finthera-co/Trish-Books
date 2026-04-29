@@ -2397,6 +2397,7 @@ export type Database = {
           account_id: string | null
           description: string | null
           id: string
+          inventory_item_id: string | null
           invoice_id: string
           product_id: string | null
           quantity: number
@@ -2408,6 +2409,7 @@ export type Database = {
           account_id?: string | null
           description?: string | null
           id?: string
+          inventory_item_id?: string | null
           invoice_id: string
           product_id?: string | null
           quantity?: number
@@ -2419,6 +2421,7 @@ export type Database = {
           account_id?: string | null
           description?: string | null
           id?: string
+          inventory_item_id?: string | null
           invoice_id?: string
           product_id?: string | null
           quantity?: number
@@ -2432,6 +2435,13 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_items_inventory_item_id_fkey"
+            columns: ["inventory_item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
             referencedColumns: ["id"]
           },
           {
@@ -4322,41 +4332,77 @@ export type Database = {
       }
       products: {
         Row: {
+          asset_account_id: string | null
           created_at: string
           description: string | null
+          expense_account_id: string | null
           id: string
           income_account_id: string | null
+          inventory_item_id: string | null
+          is_tracked: boolean
           name: string
           price: number
           tax_id: string | null
           tenant_id: string
+          type: string
         }
         Insert: {
+          asset_account_id?: string | null
           created_at?: string
           description?: string | null
+          expense_account_id?: string | null
           id?: string
           income_account_id?: string | null
+          inventory_item_id?: string | null
+          is_tracked?: boolean
           name: string
           price?: number
           tax_id?: string | null
           tenant_id: string
+          type?: string
         }
         Update: {
+          asset_account_id?: string | null
           created_at?: string
           description?: string | null
+          expense_account_id?: string | null
           id?: string
           income_account_id?: string | null
+          inventory_item_id?: string | null
+          is_tracked?: boolean
           name?: string
           price?: number
           tax_id?: string | null
           tenant_id?: string
+          type?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "products_asset_account_id_fkey"
+            columns: ["asset_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "products_expense_account_id_fkey"
+            columns: ["expense_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "products_income_account_id_fkey"
             columns: ["income_account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "products_inventory_item_id_fkey"
+            columns: ["inventory_item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
             referencedColumns: ["id"]
           },
           {
@@ -5626,6 +5672,18 @@ export type Database = {
       recalculate_daily_balance: {
         Args: { p_date: string; p_tenant_id: string }
         Returns: undefined
+      }
+      receive_inventory: {
+        Args: {
+          p_inventory_item_id: string
+          p_notes?: string
+          p_payment_account_id: string
+          p_quantity: number
+          p_receipt_date?: string
+          p_reference?: string
+          p_unit_cost: number
+        }
+        Returns: Json
       }
       seed_default_payroll_engine: {
         Args: { p_tenant_id: string }
