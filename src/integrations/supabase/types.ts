@@ -2230,6 +2230,140 @@ export type Database = {
           },
         ]
       }
+      goods_receipt_notes: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          grn_number: string
+          id: string
+          journal_entry_id: string | null
+          notes: string | null
+          po_id: string | null
+          posted_at: string | null
+          receipt_date: string
+          status: string
+          tenant_id: string
+          total_value: number
+          updated_at: string
+          vendor_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          grn_number: string
+          id?: string
+          journal_entry_id?: string | null
+          notes?: string | null
+          po_id?: string | null
+          posted_at?: string | null
+          receipt_date?: string
+          status?: string
+          tenant_id: string
+          total_value?: number
+          updated_at?: string
+          vendor_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          grn_number?: string
+          id?: string
+          journal_entry_id?: string | null
+          notes?: string | null
+          po_id?: string | null
+          posted_at?: string | null
+          receipt_date?: string
+          status?: string
+          tenant_id?: string
+          total_value?: number
+          updated_at?: string
+          vendor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "goods_receipt_notes_journal_entry_id_fkey"
+            columns: ["journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "goods_receipt_notes_po_id_fkey"
+            columns: ["po_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "goods_receipt_notes_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      grn_lines: {
+        Row: {
+          created_at: string
+          grn_id: string
+          id: string
+          item_id: string
+          line_total: number
+          po_line_id: string | null
+          qty_billed: number
+          qty_received: number
+          tenant_id: string
+          unit_cost: number
+        }
+        Insert: {
+          created_at?: string
+          grn_id: string
+          id?: string
+          item_id: string
+          line_total?: number
+          po_line_id?: string | null
+          qty_billed?: number
+          qty_received: number
+          tenant_id: string
+          unit_cost: number
+        }
+        Update: {
+          created_at?: string
+          grn_id?: string
+          id?: string
+          item_id?: string
+          line_total?: number
+          po_line_id?: string | null
+          qty_billed?: number
+          qty_received?: number
+          tenant_id?: string
+          unit_cost?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "grn_lines_grn_id_fkey"
+            columns: ["grn_id"]
+            isOneToOne: false
+            referencedRelation: "goods_receipt_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "grn_lines_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "grn_lines_po_line_id_fkey"
+            columns: ["po_line_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_order_lines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       insights: {
         Row: {
           created_at: string
@@ -2268,44 +2402,142 @@ export type Database = {
       inventory_items: {
         Row: {
           account_id: string | null
+          adjustment_account_id: string | null
+          category: string | null
+          cogs_account_id: string | null
           created_at: string
           description: string | null
           id: string
+          is_active: boolean
+          item_code: string | null
           item_name: string
+          last_purchase_price: number | null
+          max_stock_level: number | null
+          notes: string | null
+          purchase_account_id: string | null
+          purchase_return_account_id: string | null
           quantity_on_hand: number
+          reorder_level: number | null
+          reorder_quantity: number | null
+          sales_return_account_id: string | null
+          selling_price: number | null
           sku: string | null
+          standard_cost: number | null
+          sub_category: string | null
+          tax_id: string | null
           tenant_id: string
           unit_cost: number
+          uom_conversion_factor: number | null
+          uom_primary: string | null
+          uom_secondary: string | null
           updated_at: string
+          valuation_method: string
         }
         Insert: {
           account_id?: string | null
+          adjustment_account_id?: string | null
+          category?: string | null
+          cogs_account_id?: string | null
           created_at?: string
           description?: string | null
           id?: string
+          is_active?: boolean
+          item_code?: string | null
           item_name: string
+          last_purchase_price?: number | null
+          max_stock_level?: number | null
+          notes?: string | null
+          purchase_account_id?: string | null
+          purchase_return_account_id?: string | null
           quantity_on_hand?: number
+          reorder_level?: number | null
+          reorder_quantity?: number | null
+          sales_return_account_id?: string | null
+          selling_price?: number | null
           sku?: string | null
+          standard_cost?: number | null
+          sub_category?: string | null
+          tax_id?: string | null
           tenant_id: string
           unit_cost?: number
+          uom_conversion_factor?: number | null
+          uom_primary?: string | null
+          uom_secondary?: string | null
           updated_at?: string
+          valuation_method?: string
         }
         Update: {
           account_id?: string | null
+          adjustment_account_id?: string | null
+          category?: string | null
+          cogs_account_id?: string | null
           created_at?: string
           description?: string | null
           id?: string
+          is_active?: boolean
+          item_code?: string | null
           item_name?: string
+          last_purchase_price?: number | null
+          max_stock_level?: number | null
+          notes?: string | null
+          purchase_account_id?: string | null
+          purchase_return_account_id?: string | null
           quantity_on_hand?: number
+          reorder_level?: number | null
+          reorder_quantity?: number | null
+          sales_return_account_id?: string | null
+          selling_price?: number | null
           sku?: string | null
+          standard_cost?: number | null
+          sub_category?: string | null
+          tax_id?: string | null
           tenant_id?: string
           unit_cost?: number
+          uom_conversion_factor?: number | null
+          uom_primary?: string | null
+          uom_secondary?: string | null
           updated_at?: string
+          valuation_method?: string
         }
         Relationships: [
           {
             foreignKeyName: "inventory_items_account_id_fkey"
             columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_items_adjustment_account_id_fkey"
+            columns: ["adjustment_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_items_cogs_account_id_fkey"
+            columns: ["cogs_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_items_purchase_account_id_fkey"
+            columns: ["purchase_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_items_purchase_return_account_id_fkey"
+            columns: ["purchase_return_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_items_sales_return_account_id_fkey"
+            columns: ["sales_return_account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
             referencedColumns: ["id"]
@@ -4421,6 +4653,125 @@ export type Database = {
           },
         ]
       }
+      purchase_order_lines: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          item_id: string
+          line_total: number
+          po_id: string
+          qty_ordered: number
+          qty_received: number
+          tax_id: string | null
+          tenant_id: string
+          unit_cost: number
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          item_id: string
+          line_total?: number
+          po_id: string
+          qty_ordered: number
+          qty_received?: number
+          tax_id?: string | null
+          tenant_id: string
+          unit_cost: number
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          item_id?: string
+          line_total?: number
+          po_id?: string
+          qty_ordered?: number
+          qty_received?: number
+          tax_id?: string | null
+          tenant_id?: string
+          unit_cost?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_order_lines_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_order_lines_po_id_fkey"
+            columns: ["po_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      purchase_orders: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          currency: string
+          expected_date: string | null
+          id: string
+          notes: string | null
+          order_date: string
+          po_number: string
+          status: string
+          subtotal: number
+          tax_amount: number
+          tenant_id: string
+          total_amount: number
+          updated_at: string
+          vendor_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          expected_date?: string | null
+          id?: string
+          notes?: string | null
+          order_date?: string
+          po_number: string
+          status?: string
+          subtotal?: number
+          tax_amount?: number
+          tenant_id: string
+          total_amount?: number
+          updated_at?: string
+          vendor_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          expected_date?: string | null
+          id?: string
+          notes?: string | null
+          order_date?: string
+          po_number?: string
+          status?: string
+          subtotal?: number
+          tax_amount?: number
+          tenant_id?: string
+          total_amount?: number
+          updated_at?: string
+          vendor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_orders_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       reconciliation_adjustments: {
         Row: {
           adjustment_type: string
@@ -5085,6 +5436,155 @@ export type Database = {
           },
         ]
       }
+      supplier_bill_lines: {
+        Row: {
+          account_id: string | null
+          bill_id: string
+          created_at: string
+          description: string | null
+          grn_line_id: string | null
+          id: string
+          item_id: string | null
+          line_total: number
+          qty: number
+          tenant_id: string
+          unit_cost: number
+        }
+        Insert: {
+          account_id?: string | null
+          bill_id: string
+          created_at?: string
+          description?: string | null
+          grn_line_id?: string | null
+          id?: string
+          item_id?: string | null
+          line_total?: number
+          qty?: number
+          tenant_id: string
+          unit_cost: number
+        }
+        Update: {
+          account_id?: string | null
+          bill_id?: string
+          created_at?: string
+          description?: string | null
+          grn_line_id?: string | null
+          id?: string
+          item_id?: string | null
+          line_total?: number
+          qty?: number
+          tenant_id?: string
+          unit_cost?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_bill_lines_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_bill_lines_bill_id_fkey"
+            columns: ["bill_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_bills"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_bill_lines_grn_line_id_fkey"
+            columns: ["grn_line_id"]
+            isOneToOne: false
+            referencedRelation: "grn_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_bill_lines_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      supplier_bills: {
+        Row: {
+          amount_paid: number
+          bill_date: string
+          bill_number: string
+          created_at: string
+          created_by: string | null
+          due_date: string | null
+          id: string
+          journal_entry_id: string | null
+          notes: string | null
+          posted_at: string | null
+          status: string
+          subtotal: number
+          tax_amount: number
+          tenant_id: string
+          total_amount: number
+          updated_at: string
+          vendor_id: string
+          vendor_ref: string | null
+        }
+        Insert: {
+          amount_paid?: number
+          bill_date?: string
+          bill_number: string
+          created_at?: string
+          created_by?: string | null
+          due_date?: string | null
+          id?: string
+          journal_entry_id?: string | null
+          notes?: string | null
+          posted_at?: string | null
+          status?: string
+          subtotal?: number
+          tax_amount?: number
+          tenant_id: string
+          total_amount?: number
+          updated_at?: string
+          vendor_id: string
+          vendor_ref?: string | null
+        }
+        Update: {
+          amount_paid?: number
+          bill_date?: string
+          bill_number?: string
+          created_at?: string
+          created_by?: string | null
+          due_date?: string | null
+          id?: string
+          journal_entry_id?: string | null
+          notes?: string | null
+          posted_at?: string | null
+          status?: string
+          subtotal?: number
+          tax_amount?: number
+          tenant_id?: string
+          total_amount?: number
+          updated_at?: string
+          vendor_id?: string
+          vendor_ref?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_bills_journal_entry_id_fkey"
+            columns: ["journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_bills_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       system_error_logs: {
         Row: {
           created_at: string
@@ -5624,8 +6124,12 @@ export type Database = {
         Args: { p_date: string; p_period_type: string }
         Returns: string
       }
+      generate_bill_number: { Args: { p_tenant_id: string }; Returns: string }
+      generate_grn_number: { Args: { p_tenant_id: string }; Returns: string }
+      generate_item_code: { Args: { p_tenant_id: string }; Returns: string }
       generate_pcr_number: { Args: { p_tenant_id: string }; Returns: string }
       generate_pcv_number: { Args: { p_tenant_id: string }; Returns: string }
+      generate_po_number: { Args: { p_tenant_id: string }; Returns: string }
       generate_voucher_number: {
         Args: { p_tenant_id: string }
         Returns: string
@@ -5655,8 +6159,14 @@ export type Database = {
         Args: { p_account_id: string }
         Returns: boolean
       }
+      is_period_closed: {
+        Args: { p_date: string; p_tenant_id: string }
+        Returns: boolean
+      }
       is_primary_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
+      post_grn: { Args: { p_grn_id: string }; Returns: Json }
+      post_supplier_bill: { Args: { p_bill_id: string }; Returns: Json }
       recalc_budget_consumption: {
         Args: {
           p_account_id: string
@@ -5686,6 +6196,10 @@ export type Database = {
         Returns: Json
       }
       seed_default_payroll_engine: {
+        Args: { p_tenant_id: string }
+        Returns: undefined
+      }
+      seed_inventory_coa_accounts: {
         Args: { p_tenant_id: string }
         Returns: undefined
       }
