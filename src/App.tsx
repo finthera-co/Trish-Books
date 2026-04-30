@@ -70,6 +70,7 @@ import CreditNotePage from "./pages/CreditNotePage";
 import ARAgingReport from "./pages/ARAgingReport";
 import VendorsPage from "./pages/VendorsPage";
 import InventoryPage from "./pages/InventoryPage";
+import Procurement from "./pages/Procurement";
 import BankAccountsPage from "./pages/BankAccountsPage";
 
 // Super Admin pages
