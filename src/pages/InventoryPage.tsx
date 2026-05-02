@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/currency";
@@ -17,10 +18,10 @@ export default function InventoryPage() {
   const deleteMutation = useDeleteInventoryItem();
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [form, setForm] = useState({ item_name: "", sku: "", description: "", unit_cost: "", quantity_on_hand: "" });
+  const [form, setForm] = useState({ item_name: "", sku: "", description: "", unit_cost: "", quantity_on_hand: "", valuation_method: "wac" as "wac" | "fifo" });
 
   const resetForm = () => {
-    setForm({ item_name: "", sku: "", description: "", unit_cost: "", quantity_on_hand: "" });
+    setForm({ item_name: "", sku: "", description: "", unit_cost: "", quantity_on_hand: "", valuation_method: "wac" });
     setEditId(null);
   };
 
@@ -31,6 +32,7 @@ export default function InventoryPage() {
       description: form.description || undefined,
       unit_cost: parseFloat(form.unit_cost) || 0,
       quantity_on_hand: parseFloat(form.quantity_on_hand) || 0,
+      valuation_method: form.valuation_method,
     };
     if (editId) {
       updateMutation.mutate({ id: editId, ...payload }, { onSuccess: () => { setOpen(false); resetForm(); } });
@@ -47,6 +49,7 @@ export default function InventoryPage() {
       description: item.description || "",
       unit_cost: String(item.unit_cost || ""),
       quantity_on_hand: String(item.quantity_on_hand || ""),
+      valuation_method: (item.valuation_method as "wac" | "fifo") || "wac",
     });
     setOpen(true);
   };
