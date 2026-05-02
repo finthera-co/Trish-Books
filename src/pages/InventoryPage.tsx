@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/currency";
@@ -17,10 +18,10 @@ export default function InventoryPage() {
   const deleteMutation = useDeleteInventoryItem();
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [form, setForm] = useState({ item_name: "", sku: "", description: "", unit_cost: "", quantity_on_hand: "" });
+  const [form, setForm] = useState({ item_name: "", sku: "", description: "", unit_cost: "", quantity_on_hand: "", valuation_method: "wac" as "wac" | "fifo" });
 
   const resetForm = () => {
-    setForm({ item_name: "", sku: "", description: "", unit_cost: "", quantity_on_hand: "" });
+    setForm({ item_name: "", sku: "", description: "", unit_cost: "", quantity_on_hand: "", valuation_method: "wac" });
     setEditId(null);
   };
 
@@ -31,6 +32,7 @@ export default function InventoryPage() {
       description: form.description || undefined,
       unit_cost: parseFloat(form.unit_cost) || 0,
       quantity_on_hand: parseFloat(form.quantity_on_hand) || 0,
+      valuation_method: form.valuation_method,
     };
     if (editId) {
       updateMutation.mutate({ id: editId, ...payload }, { onSuccess: () => { setOpen(false); resetForm(); } });
@@ -47,6 +49,7 @@ export default function InventoryPage() {
       description: item.description || "",
       unit_cost: String(item.unit_cost || ""),
       quantity_on_hand: String(item.quantity_on_hand || ""),
+      valuation_method: (item.valuation_method as "wac" | "fifo") || "wac",
     });
     setOpen(true);
   };
@@ -75,7 +78,19 @@ export default function InventoryPage() {
                 <div><Label>SKU</Label><Input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} /></div>
                 <div><Label>Unit Cost</Label><Input type="number" step="0.01" value={form.unit_cost} onChange={(e) => setForm({ ...form, unit_cost: e.target.value })} /></div>
               </div>
-              <div><Label>Qty On Hand</Label><Input type="number" value={form.quantity_on_hand} onChange={(e) => setForm({ ...form, quantity_on_hand: e.target.value })} /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><Label>Qty On Hand</Label><Input type="number" value={form.quantity_on_hand} onChange={(e) => setForm({ ...form, quantity_on_hand: e.target.value })} /></div>
+                <div>
+                  <Label>Valuation Method</Label>
+                  <Select value={form.valuation_method} onValueChange={(v) => setForm({ ...form, valuation_method: v as "wac" | "fifo" })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="wac">Weighted Average (WAC)</SelectItem>
+                      <SelectItem value="fifo">FIFO (First-In, First-Out)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
               <div><Label>Description</Label><Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
               <Button className="w-full" onClick={handleSubmit} disabled={!form.item_name || createMutation.isPending || updateMutation.isPending}>
                 {editId ? "Update" : "Create"} Item
