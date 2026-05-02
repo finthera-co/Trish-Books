@@ -5298,6 +5298,143 @@ export type Database = {
           },
         ]
       }
+      stock_lot_consumptions: {
+        Row: {
+          consumption_date: string
+          created_at: string
+          id: string
+          item_id: string
+          lot_id: string
+          movement_id: string | null
+          qty_consumed: number
+          reference_id: string | null
+          reference_type: string | null
+          tenant_id: string
+          unit_cost: number
+        }
+        Insert: {
+          consumption_date?: string
+          created_at?: string
+          id?: string
+          item_id: string
+          lot_id: string
+          movement_id?: string | null
+          qty_consumed: number
+          reference_id?: string | null
+          reference_type?: string | null
+          tenant_id: string
+          unit_cost: number
+        }
+        Update: {
+          consumption_date?: string
+          created_at?: string
+          id?: string
+          item_id?: string
+          lot_id?: string
+          movement_id?: string | null
+          qty_consumed?: number
+          reference_id?: string | null
+          reference_type?: string | null
+          tenant_id?: string
+          unit_cost?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_lot_consumptions_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_lot_consumptions_lot_id_fkey"
+            columns: ["lot_id"]
+            isOneToOne: false
+            referencedRelation: "stock_lots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_lot_consumptions_movement_id_fkey"
+            columns: ["movement_id"]
+            isOneToOne: false
+            referencedRelation: "stock_movements"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_lot_consumptions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stock_lots: {
+        Row: {
+          created_at: string
+          id: string
+          is_exhausted: boolean | null
+          item_id: string
+          lot_number: string
+          notes: string | null
+          qty_received: number
+          qty_remaining: number
+          receipt_date: string
+          source_id: string | null
+          source_type: string
+          tenant_id: string
+          unit_cost: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_exhausted?: boolean | null
+          item_id: string
+          lot_number: string
+          notes?: string | null
+          qty_received: number
+          qty_remaining: number
+          receipt_date: string
+          source_id?: string | null
+          source_type?: string
+          tenant_id: string
+          unit_cost: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_exhausted?: boolean | null
+          item_id?: string
+          lot_number?: string
+          notes?: string | null
+          qty_received?: number
+          qty_remaining?: number
+          receipt_date?: string
+          source_id?: string | null
+          source_type?: string
+          tenant_id?: string
+          unit_cost?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_lots_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_lots_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stock_movements: {
         Row: {
           created_at: string
@@ -6101,6 +6238,17 @@ export type Database = {
           warning_threshold: number
         }[]
       }
+      consume_inventory_fifo: {
+        Args: {
+          p_consumption_date?: string
+          p_item_id: string
+          p_movement_id: string
+          p_quantity: number
+          p_reference_id?: string
+          p_reference_type?: string
+        }
+        Returns: Json
+      }
       create_payment_voucher: {
         Args: {
           p_account_number?: string
@@ -6127,6 +6275,10 @@ export type Database = {
       generate_bill_number: { Args: { p_tenant_id: string }; Returns: string }
       generate_grn_number: { Args: { p_tenant_id: string }; Returns: string }
       generate_item_code: { Args: { p_tenant_id: string }; Returns: string }
+      generate_lot_number: {
+        Args: { p_item_id: string; p_tenant_id: string }
+        Returns: string
+      }
       generate_pcr_number: { Args: { p_tenant_id: string }; Returns: string }
       generate_pcv_number: { Args: { p_tenant_id: string }; Returns: string }
       generate_po_number: { Args: { p_tenant_id: string }; Returns: string }
@@ -6155,6 +6307,20 @@ export type Database = {
       }
       get_user_role_name: { Args: never; Returns: string }
       get_user_tenant_id: { Args: never; Returns: string }
+      inventory_valuation_report: {
+        Args: { p_tenant_id?: string }
+        Returns: {
+          fifo_value: number
+          item_code: string
+          item_id: string
+          item_name: string
+          qty_on_hand: number
+          reported_value: number
+          unit_cost: number
+          valuation_method: string
+          wac_value: number
+        }[]
+      }
       is_cash_or_bank_account: {
         Args: { p_account_id: string }
         Returns: boolean
