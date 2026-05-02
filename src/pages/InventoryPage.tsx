@@ -78,7 +78,19 @@ export default function InventoryPage() {
                 <div><Label>SKU</Label><Input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} /></div>
                 <div><Label>Unit Cost</Label><Input type="number" step="0.01" value={form.unit_cost} onChange={(e) => setForm({ ...form, unit_cost: e.target.value })} /></div>
               </div>
-              <div><Label>Qty On Hand</Label><Input type="number" value={form.quantity_on_hand} onChange={(e) => setForm({ ...form, quantity_on_hand: e.target.value })} /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><Label>Qty On Hand</Label><Input type="number" value={form.quantity_on_hand} onChange={(e) => setForm({ ...form, quantity_on_hand: e.target.value })} /></div>
+                <div>
+                  <Label>Valuation Method</Label>
+                  <Select value={form.valuation_method} onValueChange={(v) => setForm({ ...form, valuation_method: v as "wac" | "fifo" })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="wac">Weighted Average (WAC)</SelectItem>
+                      <SelectItem value="fifo">FIFO (First-In, First-Out)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
               <div><Label>Description</Label><Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
               <Button className="w-full" onClick={handleSubmit} disabled={!form.item_name || createMutation.isPending || updateMutation.isPending}>
                 {editId ? "Update" : "Create"} Item
