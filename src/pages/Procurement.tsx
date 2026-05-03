@@ -9,8 +9,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Send, ShoppingCart, PackageCheck, Receipt as ReceiptIcon, FileCheck2, Layers } from "lucide-react";
+import { Plus, Trash2, Send, ShoppingCart, PackageCheck, Receipt as ReceiptIcon, FileCheck2, Layers, Warehouse as WarehouseIcon, ArrowRightLeft } from "lucide-react";
 import { InventoryValuationReport } from "@/components/inventory/InventoryValuationReport";
+import { WarehousesTab, TransfersTab } from "@/components/inventory/WarehousesAndTransfers";
 import { format } from "date-fns";
 import { formatCurrency } from "@/lib/currency";
 import { useVendors } from "@/hooks/useSubledger";
