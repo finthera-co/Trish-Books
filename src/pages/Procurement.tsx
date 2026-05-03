@@ -9,8 +9,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Send, ShoppingCart, PackageCheck, Receipt as ReceiptIcon, FileCheck2, Layers } from "lucide-react";
+import { Plus, Trash2, Send, ShoppingCart, PackageCheck, Receipt as ReceiptIcon, FileCheck2, Layers, Warehouse as WarehouseIcon, ArrowRightLeft } from "lucide-react";
 import { InventoryValuationReport } from "@/components/inventory/InventoryValuationReport";
+import { WarehousesTab, TransfersTab } from "@/components/inventory/WarehousesAndTransfers";
 import { format } from "date-fns";
 import { formatCurrency } from "@/lib/currency";
 import { useVendors } from "@/hooks/useSubledger";
@@ -56,12 +57,16 @@ export default function Procurement() {
           <TabsTrigger value="po"><ShoppingCart className="w-4 h-4 mr-2" />Purchase Orders</TabsTrigger>
           <TabsTrigger value="grn"><PackageCheck className="w-4 h-4 mr-2" />Goods Receipts</TabsTrigger>
           <TabsTrigger value="bills"><ReceiptIcon className="w-4 h-4 mr-2" />Supplier Bills</TabsTrigger>
+          <TabsTrigger value="warehouses"><WarehouseIcon className="w-4 h-4 mr-2" />Warehouses</TabsTrigger>
+          <TabsTrigger value="transfers"><ArrowRightLeft className="w-4 h-4 mr-2" />Transfers</TabsTrigger>
           <TabsTrigger value="valuation"><Layers className="w-4 h-4 mr-2" />Valuation</TabsTrigger>
         </TabsList>
 
         <TabsContent value="po"><POTab /></TabsContent>
         <TabsContent value="grn"><GRNTab /></TabsContent>
         <TabsContent value="bills"><BillTab /></TabsContent>
+        <TabsContent value="warehouses"><WarehousesTab /></TabsContent>
+        <TabsContent value="transfers"><TransfersTab /></TabsContent>
         <TabsContent value="valuation"><InventoryValuationReport /></TabsContent>
       </Tabs>
     </div>

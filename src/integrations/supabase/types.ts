@@ -2315,6 +2315,7 @@ export type Database = {
           qty_received: number
           tenant_id: string
           unit_cost: number
+          warehouse_id: string | null
         }
         Insert: {
           created_at?: string
@@ -2327,6 +2328,7 @@ export type Database = {
           qty_received: number
           tenant_id: string
           unit_cost: number
+          warehouse_id?: string | null
         }
         Update: {
           created_at?: string
@@ -2339,6 +2341,7 @@ export type Database = {
           qty_received?: number
           tenant_id?: string
           unit_cost?: number
+          warehouse_id?: string | null
         }
         Relationships: [
           {
@@ -2360,6 +2363,13 @@ export type Database = {
             columns: ["po_line_id"]
             isOneToOne: false
             referencedRelation: "purchase_order_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "grn_lines_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
             referencedColumns: ["id"]
           },
         ]
@@ -5385,6 +5395,7 @@ export type Database = {
           tenant_id: string
           unit_cost: number
           updated_at: string
+          warehouse_id: string | null
         }
         Insert: {
           created_at?: string
@@ -5401,6 +5412,7 @@ export type Database = {
           tenant_id: string
           unit_cost: number
           updated_at?: string
+          warehouse_id?: string | null
         }
         Update: {
           created_at?: string
@@ -5417,6 +5429,7 @@ export type Database = {
           tenant_id?: string
           unit_cost?: number
           updated_at?: string
+          warehouse_id?: string | null
         }
         Relationships: [
           {
@@ -5431,6 +5444,13 @@ export type Database = {
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_lots_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
             referencedColumns: ["id"]
           },
         ]
@@ -5449,6 +5469,7 @@ export type Database = {
           tenant_id: string
           total_cost: number | null
           unit_cost: number
+          warehouse_id: string | null
         }
         Insert: {
           created_at?: string
@@ -5463,6 +5484,7 @@ export type Database = {
           tenant_id: string
           total_cost?: number | null
           unit_cost?: number
+          warehouse_id?: string | null
         }
         Update: {
           created_at?: string
@@ -5477,6 +5499,7 @@ export type Database = {
           tenant_id?: string
           total_cost?: number | null
           unit_cost?: number
+          warehouse_id?: string | null
         }
         Relationships: [
           {
@@ -5491,6 +5514,138 @@ export type Database = {
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_movements_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stock_transfer_lines: {
+        Row: {
+          created_at: string
+          id: string
+          item_id: string
+          quantity: number
+          total_cost: number
+          transfer_id: string
+          unit_cost: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_id: string
+          quantity: number
+          total_cost?: number
+          transfer_id: string
+          unit_cost?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_id?: string
+          quantity?: number
+          total_cost?: number
+          transfer_id?: string
+          unit_cost?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_transfer_lines_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_transfer_lines_transfer_id_fkey"
+            columns: ["transfer_id"]
+            isOneToOne: false
+            referencedRelation: "stock_transfers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stock_transfers: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          from_warehouse_id: string
+          id: string
+          in_journal_entry_id: string | null
+          notes: string | null
+          out_journal_entry_id: string | null
+          posted_at: string | null
+          status: string
+          tenant_id: string
+          to_warehouse_id: string
+          transfer_date: string
+          transfer_number: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          from_warehouse_id: string
+          id?: string
+          in_journal_entry_id?: string | null
+          notes?: string | null
+          out_journal_entry_id?: string | null
+          posted_at?: string | null
+          status?: string
+          tenant_id: string
+          to_warehouse_id: string
+          transfer_date?: string
+          transfer_number: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          from_warehouse_id?: string
+          id?: string
+          in_journal_entry_id?: string | null
+          notes?: string | null
+          out_journal_entry_id?: string | null
+          posted_at?: string | null
+          status?: string
+          tenant_id?: string
+          to_warehouse_id?: string
+          transfer_date?: string
+          transfer_number?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_transfers_from_warehouse_id_fkey"
+            columns: ["from_warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_transfers_in_journal_entry_id_fkey"
+            columns: ["in_journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_transfers_out_journal_entry_id_fkey"
+            columns: ["out_journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_transfers_to_warehouse_id_fkey"
+            columns: ["to_warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
             referencedColumns: ["id"]
           },
         ]
@@ -6139,6 +6294,42 @@ export type Database = {
           },
         ]
       }
+      warehouses: {
+        Row: {
+          address: string | null
+          code: string
+          created_at: string
+          id: string
+          is_active: boolean
+          is_default: boolean
+          name: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          code: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          is_default?: boolean
+          name: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          code?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          is_default?: boolean
+          name?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       cashflow_forecast: {
@@ -6332,6 +6523,7 @@ export type Database = {
       is_primary_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
       post_grn: { Args: { p_grn_id: string }; Returns: Json }
+      post_stock_transfer: { Args: { p_transfer_id: string }; Returns: string }
       post_supplier_bill: { Args: { p_bill_id: string }; Returns: Json }
       recalc_budget_consumption: {
         Args: {
