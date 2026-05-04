@@ -56,6 +56,7 @@ export type Database = {
           bank_account_id: string | null
           created_at: string
           id: string
+          inventory_adjustment_approval_threshold: number
           sales_account_id: string | null
           tax_payable_account_id: string | null
           tenant_id: string
@@ -67,6 +68,7 @@ export type Database = {
           bank_account_id?: string | null
           created_at?: string
           id?: string
+          inventory_adjustment_approval_threshold?: number
           sales_account_id?: string | null
           tax_payable_account_id?: string | null
           tenant_id: string
@@ -78,6 +80,7 @@ export type Database = {
           bank_account_id?: string | null
           created_at?: string
           id?: string
+          inventory_adjustment_approval_threshold?: number
           sales_account_id?: string | null
           tax_payable_account_id?: string | null
           tenant_id?: string
@@ -5308,6 +5311,183 @@ export type Database = {
           },
         ]
       }
+      stock_adjustment_lines: {
+        Row: {
+          adjustment_id: string
+          created_at: string
+          id: string
+          item_id: string
+          line_value: number
+          notes: string | null
+          qty_delta: number
+          tenant_id: string
+          unit_cost: number
+          warehouse_id: string | null
+        }
+        Insert: {
+          adjustment_id: string
+          created_at?: string
+          id?: string
+          item_id: string
+          line_value?: number
+          notes?: string | null
+          qty_delta: number
+          tenant_id: string
+          unit_cost?: number
+          warehouse_id?: string | null
+        }
+        Update: {
+          adjustment_id?: string
+          created_at?: string
+          id?: string
+          item_id?: string
+          line_value?: number
+          notes?: string | null
+          qty_delta?: number
+          tenant_id?: string
+          unit_cost?: number
+          warehouse_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_adjustment_lines_adjustment_id_fkey"
+            columns: ["adjustment_id"]
+            isOneToOne: false
+            referencedRelation: "stock_adjustments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_adjustment_lines_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_adjustment_lines_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_adjustment_lines_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stock_adjustments: {
+        Row: {
+          adjustment_date: string
+          adjustment_number: string | null
+          adjustment_type: string
+          approved_at: string | null
+          approved_by: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          journal_entry_id: string | null
+          notes: string | null
+          reason: string | null
+          rejection_reason: string | null
+          status: string
+          submitted_at: string | null
+          submitted_by: string | null
+          tenant_id: string
+          total_value: number
+          updated_at: string
+          warehouse_id: string | null
+        }
+        Insert: {
+          adjustment_date?: string
+          adjustment_number?: string | null
+          adjustment_type: string
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          journal_entry_id?: string | null
+          notes?: string | null
+          reason?: string | null
+          rejection_reason?: string | null
+          status?: string
+          submitted_at?: string | null
+          submitted_by?: string | null
+          tenant_id: string
+          total_value?: number
+          updated_at?: string
+          warehouse_id?: string | null
+        }
+        Update: {
+          adjustment_date?: string
+          adjustment_number?: string | null
+          adjustment_type?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          journal_entry_id?: string | null
+          notes?: string | null
+          reason?: string | null
+          rejection_reason?: string | null
+          status?: string
+          submitted_at?: string | null
+          submitted_by?: string | null
+          tenant_id?: string
+          total_value?: number
+          updated_at?: string
+          warehouse_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_adjustments_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_adjustments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_adjustments_journal_entry_id_fkey"
+            columns: ["journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_adjustments_submitted_by_fkey"
+            columns: ["submitted_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_adjustments_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_adjustments_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stock_lot_consumptions: {
         Row: {
           consumption_date: string
@@ -6390,6 +6570,10 @@ export type Database = {
       }
     }
     Functions: {
+      approve_stock_adjustment: {
+        Args: { p_adjustment_id: string }
+        Returns: Json
+      }
       budget_vs_actual: {
         Args: {
           p_account_type?: string
@@ -6523,6 +6707,10 @@ export type Database = {
       is_primary_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
       post_grn: { Args: { p_grn_id: string }; Returns: Json }
+      post_stock_adjustment: {
+        Args: { p_adjustment_id: string }
+        Returns: Json
+      }
       post_stock_transfer: { Args: { p_transfer_id: string }; Returns: string }
       post_supplier_bill: { Args: { p_bill_id: string }; Returns: Json }
       recalc_budget_consumption: {
@@ -6553,6 +6741,10 @@ export type Database = {
         }
         Returns: Json
       }
+      reject_stock_adjustment: {
+        Args: { p_adjustment_id: string; p_reason: string }
+        Returns: Json
+      }
       seed_default_payroll_engine: {
         Args: { p_tenant_id: string }
         Returns: undefined
@@ -6563,6 +6755,10 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      submit_stock_adjustment: {
+        Args: { p_adjustment_id: string }
+        Returns: Json
+      }
       validate_voucher_budget: {
         Args: {
           p_account_id: string
