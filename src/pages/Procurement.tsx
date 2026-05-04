@@ -60,6 +60,7 @@ export default function Procurement() {
           <TabsTrigger value="bills"><ReceiptIcon className="w-4 h-4 mr-2" />Supplier Bills</TabsTrigger>
           <TabsTrigger value="warehouses"><WarehouseIcon className="w-4 h-4 mr-2" />Warehouses</TabsTrigger>
           <TabsTrigger value="transfers"><ArrowRightLeft className="w-4 h-4 mr-2" />Transfers</TabsTrigger>
+          <TabsTrigger value="adjustments"><ClipboardEdit className="w-4 h-4 mr-2" />Adjustments</TabsTrigger>
           <TabsTrigger value="valuation"><Layers className="w-4 h-4 mr-2" />Valuation</TabsTrigger>
         </TabsList>
 
@@ -68,6 +69,7 @@ export default function Procurement() {
         <TabsContent value="bills"><BillTab /></TabsContent>
         <TabsContent value="warehouses"><WarehousesTab /></TabsContent>
         <TabsContent value="transfers"><TransfersTab /></TabsContent>
+        <TabsContent value="adjustments"><StockAdjustmentsTab /></TabsContent>
         <TabsContent value="valuation"><InventoryValuationReport /></TabsContent>
       </Tabs>
     </div>
