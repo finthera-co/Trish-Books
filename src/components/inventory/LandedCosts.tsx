@@ -228,11 +228,6 @@ function NewLandedCostDialog() {
     { description: "Freight", amount: 0, offset_account_id: "" },
   ]);
 
-  // Eligible offset accounts: Liability (AP, Clearing) or Asset (Cash/Bank)
-  const offsetAccounts = useMemo(
-    () => (accounts || []).filter((a: any) => ["Liability", "Asset"].includes(a.account_type)),
-    [accounts],
-  );
 
   const totalCharges = charges.reduce((s, c) => s + (Number(c.amount) || 0), 0);
   const valid =
