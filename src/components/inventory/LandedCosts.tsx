@@ -217,7 +217,7 @@ function ViewLandedCostDialog({ id, onClose }: { id: string; onClose: () => void
 function NewLandedCostDialog() {
   const [open, setOpen] = useState(false);
   const { data: grns = [] } = usePostedGRNs();
-  const { data: accounts = [] } = useAccountSearch("");
+  const { data: offsetAccounts = [] } = useOffsetAccounts();
   const create = useCreateLandedCostVoucher();
 
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
