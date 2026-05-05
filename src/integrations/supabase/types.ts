@@ -2445,6 +2445,7 @@ export type Database = {
           uom_secondary: string | null
           updated_at: string
           valuation_method: string
+          weight: number | null
         }
         Insert: {
           account_id?: string | null
@@ -2478,6 +2479,7 @@ export type Database = {
           uom_secondary?: string | null
           updated_at?: string
           valuation_method?: string
+          weight?: number | null
         }
         Update: {
           account_id?: string | null
@@ -2511,6 +2513,7 @@ export type Database = {
           uom_secondary?: string | null
           updated_at?: string
           valuation_method?: string
+          weight?: number | null
         }
         Relationships: [
           {
@@ -3059,6 +3062,198 @@ export type Database = {
           },
           {
             foreignKeyName: "journal_lines_journal_entry_id_fkey"
+            columns: ["journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      landed_cost_allocations: {
+        Row: {
+          allocated_amount: number
+          basis_value: number
+          created_at: string
+          grn_line_id: string
+          id: string
+          item_id: string
+          tenant_id: string
+          voucher_id: string
+        }
+        Insert: {
+          allocated_amount: number
+          basis_value: number
+          created_at?: string
+          grn_line_id: string
+          id?: string
+          item_id: string
+          tenant_id: string
+          voucher_id: string
+        }
+        Update: {
+          allocated_amount?: number
+          basis_value?: number
+          created_at?: string
+          grn_line_id?: string
+          id?: string
+          item_id?: string
+          tenant_id?: string
+          voucher_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "landed_cost_allocations_grn_line_id_fkey"
+            columns: ["grn_line_id"]
+            isOneToOne: false
+            referencedRelation: "grn_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "landed_cost_allocations_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "landed_cost_allocations_voucher_id_fkey"
+            columns: ["voucher_id"]
+            isOneToOne: false
+            referencedRelation: "landed_cost_vouchers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      landed_cost_charges: {
+        Row: {
+          amount: number
+          created_at: string
+          description: string
+          id: string
+          offset_account_id: string
+          tenant_id: string
+          voucher_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          description: string
+          id?: string
+          offset_account_id: string
+          tenant_id: string
+          voucher_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          description?: string
+          id?: string
+          offset_account_id?: string
+          tenant_id?: string
+          voucher_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "landed_cost_charges_offset_account_id_fkey"
+            columns: ["offset_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "landed_cost_charges_voucher_id_fkey"
+            columns: ["voucher_id"]
+            isOneToOne: false
+            referencedRelation: "landed_cost_vouchers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      landed_cost_voucher_grns: {
+        Row: {
+          grn_id: string
+          id: string
+          tenant_id: string
+          voucher_id: string
+        }
+        Insert: {
+          grn_id: string
+          id?: string
+          tenant_id: string
+          voucher_id: string
+        }
+        Update: {
+          grn_id?: string
+          id?: string
+          tenant_id?: string
+          voucher_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "landed_cost_voucher_grns_grn_id_fkey"
+            columns: ["grn_id"]
+            isOneToOne: false
+            referencedRelation: "goods_receipt_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "landed_cost_voucher_grns_voucher_id_fkey"
+            columns: ["voucher_id"]
+            isOneToOne: false
+            referencedRelation: "landed_cost_vouchers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      landed_cost_vouchers: {
+        Row: {
+          allocation_method: string
+          created_at: string
+          created_by: string | null
+          id: string
+          journal_entry_id: string | null
+          notes: string | null
+          posted_at: string | null
+          status: string
+          tenant_id: string
+          total_charges: number
+          updated_at: string
+          voucher_date: string
+          voucher_number: string
+        }
+        Insert: {
+          allocation_method?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          journal_entry_id?: string | null
+          notes?: string | null
+          posted_at?: string | null
+          status?: string
+          tenant_id: string
+          total_charges?: number
+          updated_at?: string
+          voucher_date?: string
+          voucher_number: string
+        }
+        Update: {
+          allocation_method?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          journal_entry_id?: string | null
+          notes?: string | null
+          posted_at?: string | null
+          status?: string
+          tenant_id?: string
+          total_charges?: number
+          updated_at?: string
+          voucher_date?: string
+          voucher_number?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "landed_cost_vouchers_journal_entry_id_fkey"
             columns: ["journal_entry_id"]
             isOneToOne: false
             referencedRelation: "journal_entries"
@@ -6707,6 +6902,10 @@ export type Database = {
       is_primary_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
       post_grn: { Args: { p_grn_id: string }; Returns: Json }
+      post_landed_cost_voucher: {
+        Args: { p_voucher_id: string }
+        Returns: Json
+      }
       post_stock_adjustment: {
         Args: { p_adjustment_id: string }
         Returns: Json
