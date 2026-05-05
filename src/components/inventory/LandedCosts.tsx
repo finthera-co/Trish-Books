@@ -23,7 +23,28 @@ import {
   useDeleteLandedCostVoucher, useLandedCostVoucher, usePostedGRNs,
   type AllocationMethod, type LandedCostChargeInput,
 } from "@/hooks/useLandedCosts";
-import { useAccountSearch } from "@/hooks/useAccountSearch";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+
+function useOffsetAccounts() {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["landed_cost_offset_accounts", appUser?.tenant_id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("accounts")
+        .select("id, account_code, account_name, account_type")
+        .eq("tenant_id", appUser!.tenant_id)
+        .eq("is_active", true)
+        .in("account_type", ["Liability", "Asset"])
+        .order("account_code");
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!appUser?.tenant_id,
+  });
+}
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
