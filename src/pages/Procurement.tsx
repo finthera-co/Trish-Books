@@ -9,11 +9,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Send, ShoppingCart, PackageCheck, Receipt as ReceiptIcon, FileCheck2, Layers, Warehouse as WarehouseIcon, ArrowRightLeft, ClipboardEdit, Truck } from "lucide-react";
+import { Plus, Trash2, Send, ShoppingCart, PackageCheck, Receipt as ReceiptIcon, FileCheck2, Layers, Warehouse as WarehouseIcon, ArrowRightLeft, ClipboardEdit, Truck, RotateCcw, PackageX } from "lucide-react";
 import { InventoryValuationReport } from "@/components/inventory/InventoryValuationReport";
 import { WarehousesTab, TransfersTab } from "@/components/inventory/WarehousesAndTransfers";
 import { StockAdjustmentsTab } from "@/components/inventory/StockAdjustments";
 import { LandedCostsTab } from "@/components/inventory/LandedCosts";
+import { DeliveryNotesTab, SalesReturnsTab, PurchaseReturnsTab } from "@/components/inventory/SalesAndReturns";
 import { format } from "date-fns";
 import { formatCurrency } from "@/lib/currency";
 import { useVendors } from "@/hooks/useSubledger";
@@ -55,7 +56,7 @@ export default function Procurement() {
       </div>
 
       <Tabs defaultValue="po" className="w-full">
-        <TabsList>
+        <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="po"><ShoppingCart className="w-4 h-4 mr-2" />Purchase Orders</TabsTrigger>
           <TabsTrigger value="grn"><PackageCheck className="w-4 h-4 mr-2" />Goods Receipts</TabsTrigger>
           <TabsTrigger value="bills"><ReceiptIcon className="w-4 h-4 mr-2" />Supplier Bills</TabsTrigger>
@@ -63,6 +64,9 @@ export default function Procurement() {
           <TabsTrigger value="transfers"><ArrowRightLeft className="w-4 h-4 mr-2" />Transfers</TabsTrigger>
           <TabsTrigger value="adjustments"><ClipboardEdit className="w-4 h-4 mr-2" />Adjustments</TabsTrigger>
           <TabsTrigger value="landed"><Truck className="w-4 h-4 mr-2" />Landed Costs</TabsTrigger>
+          <TabsTrigger value="delivery"><Truck className="w-4 h-4 mr-2" />Delivery Notes</TabsTrigger>
+          <TabsTrigger value="sreturns"><RotateCcw className="w-4 h-4 mr-2" />Sales Returns</TabsTrigger>
+          <TabsTrigger value="preturns"><PackageX className="w-4 h-4 mr-2" />Purchase Returns</TabsTrigger>
           <TabsTrigger value="valuation"><Layers className="w-4 h-4 mr-2" />Valuation</TabsTrigger>
         </TabsList>
 
@@ -73,6 +77,9 @@ export default function Procurement() {
         <TabsContent value="transfers"><TransfersTab /></TabsContent>
         <TabsContent value="adjustments"><StockAdjustmentsTab /></TabsContent>
         <TabsContent value="landed"><LandedCostsTab /></TabsContent>
+        <TabsContent value="delivery"><DeliveryNotesTab /></TabsContent>
+        <TabsContent value="sreturns"><SalesReturnsTab /></TabsContent>
+        <TabsContent value="preturns"><PurchaseReturnsTab /></TabsContent>
         <TabsContent value="valuation"><InventoryValuationReport /></TabsContent>
       </Tabs>
     </div>
