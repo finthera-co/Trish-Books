@@ -1517,6 +1517,150 @@ export type Database = {
           },
         ]
       }
+      delivery_note_lines: {
+        Row: {
+          created_at: string
+          dn_id: string
+          id: string
+          invoice_item_id: string | null
+          item_id: string
+          line_cost: number
+          qty: number
+          tenant_id: string
+          unit_cost: number
+          warehouse_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          dn_id: string
+          id?: string
+          invoice_item_id?: string | null
+          item_id: string
+          line_cost?: number
+          qty: number
+          tenant_id: string
+          unit_cost?: number
+          warehouse_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          dn_id?: string
+          id?: string
+          invoice_item_id?: string | null
+          item_id?: string
+          line_cost?: number
+          qty?: number
+          tenant_id?: string
+          unit_cost?: number
+          warehouse_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_note_lines_dn_id_fkey"
+            columns: ["dn_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_note_lines_invoice_item_id_fkey"
+            columns: ["invoice_item_id"]
+            isOneToOne: false
+            referencedRelation: "invoice_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_note_lines_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_note_lines_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      delivery_notes: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          customer_id: string | null
+          dispatch_date: string
+          dn_number: string
+          id: string
+          invoice_id: string | null
+          journal_entry_id: string | null
+          notes: string | null
+          posted_at: string | null
+          status: string
+          tenant_id: string
+          total_cogs: number
+          updated_at: string
+          warehouse_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          customer_id?: string | null
+          dispatch_date?: string
+          dn_number: string
+          id?: string
+          invoice_id?: string | null
+          journal_entry_id?: string | null
+          notes?: string | null
+          posted_at?: string | null
+          status?: string
+          tenant_id: string
+          total_cogs?: number
+          updated_at?: string
+          warehouse_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          customer_id?: string | null
+          dispatch_date?: string
+          dn_number?: string
+          id?: string
+          invoice_id?: string | null
+          journal_entry_id?: string | null
+          notes?: string | null
+          posted_at?: string | null
+          status?: string
+          tenant_id?: string
+          total_cogs?: number
+          updated_at?: string
+          warehouse_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_notes_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_notes_journal_entry_id_fkey"
+            columns: ["journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_notes_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       departments: {
         Row: {
           created_at: string
@@ -4980,6 +5124,157 @@ export type Database = {
           },
         ]
       }
+      purchase_return_lines: {
+        Row: {
+          created_at: string
+          id: string
+          item_id: string
+          line_total: number
+          pr_id: string
+          qty: number
+          tenant_id: string
+          unit_cost: number
+          warehouse_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_id: string
+          line_total?: number
+          pr_id: string
+          qty: number
+          tenant_id: string
+          unit_cost?: number
+          warehouse_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_id?: string
+          line_total?: number
+          pr_id?: string
+          qty?: number
+          tenant_id?: string
+          unit_cost?: number
+          warehouse_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_return_lines_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_return_lines_pr_id_fkey"
+            columns: ["pr_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_returns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_return_lines_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      purchase_returns: {
+        Row: {
+          bill_id: string | null
+          created_at: string
+          created_by: string | null
+          grn_id: string | null
+          id: string
+          journal_entry_id: string | null
+          posted_at: string | null
+          pr_number: string
+          reason: string | null
+          return_date: string
+          status: string
+          tenant_id: string
+          total_amount: number
+          updated_at: string
+          vendor_id: string | null
+          warehouse_id: string | null
+        }
+        Insert: {
+          bill_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          grn_id?: string | null
+          id?: string
+          journal_entry_id?: string | null
+          posted_at?: string | null
+          pr_number: string
+          reason?: string | null
+          return_date?: string
+          status?: string
+          tenant_id: string
+          total_amount?: number
+          updated_at?: string
+          vendor_id?: string | null
+          warehouse_id?: string | null
+        }
+        Update: {
+          bill_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          grn_id?: string | null
+          id?: string
+          journal_entry_id?: string | null
+          posted_at?: string | null
+          pr_number?: string
+          reason?: string | null
+          return_date?: string
+          status?: string
+          tenant_id?: string
+          total_amount?: number
+          updated_at?: string
+          vendor_id?: string | null
+          warehouse_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_returns_bill_id_fkey"
+            columns: ["bill_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_bills"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_returns_grn_id_fkey"
+            columns: ["grn_id"]
+            isOneToOne: false
+            referencedRelation: "goods_receipt_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_returns_journal_entry_id_fkey"
+            columns: ["journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_returns_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_returns_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       reconciliation_adjustments: {
         Row: {
           adjustment_type: string
@@ -5397,6 +5692,149 @@ export type Database = {
           role_name?: string
         }
         Relationships: []
+      }
+      sales_return_lines: {
+        Row: {
+          created_at: string
+          id: string
+          item_id: string
+          line_cost: number
+          line_total: number
+          qty: number
+          sr_id: string
+          tenant_id: string
+          unit_cost: number
+          unit_price: number
+          warehouse_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_id: string
+          line_cost?: number
+          line_total?: number
+          qty: number
+          sr_id: string
+          tenant_id: string
+          unit_cost?: number
+          unit_price?: number
+          warehouse_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_id?: string
+          line_cost?: number
+          line_total?: number
+          qty?: number
+          sr_id?: string
+          tenant_id?: string
+          unit_cost?: number
+          unit_price?: number
+          warehouse_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_return_lines_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_return_lines_sr_id_fkey"
+            columns: ["sr_id"]
+            isOneToOne: false
+            referencedRelation: "sales_returns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_return_lines_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sales_returns: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          customer_id: string | null
+          id: string
+          invoice_id: string | null
+          journal_entry_id: string | null
+          posted_at: string | null
+          reason: string | null
+          return_date: string
+          sr_number: string
+          status: string
+          tenant_id: string
+          total_amount: number
+          total_cogs: number
+          updated_at: string
+          warehouse_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          customer_id?: string | null
+          id?: string
+          invoice_id?: string | null
+          journal_entry_id?: string | null
+          posted_at?: string | null
+          reason?: string | null
+          return_date?: string
+          sr_number: string
+          status?: string
+          tenant_id: string
+          total_amount?: number
+          total_cogs?: number
+          updated_at?: string
+          warehouse_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          customer_id?: string | null
+          id?: string
+          invoice_id?: string | null
+          journal_entry_id?: string | null
+          posted_at?: string | null
+          reason?: string | null
+          return_date?: string
+          sr_number?: string
+          status?: string
+          tenant_id?: string
+          total_amount?: number
+          total_cogs?: number
+          updated_at?: string
+          warehouse_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_returns_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_returns_journal_entry_id_fkey"
+            columns: ["journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_returns_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       scenario_models: {
         Row: {
@@ -6901,11 +7339,14 @@ export type Database = {
       }
       is_primary_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
+      post_delivery_note: { Args: { p_id: string }; Returns: Json }
       post_grn: { Args: { p_grn_id: string }; Returns: Json }
       post_landed_cost_voucher: {
         Args: { p_voucher_id: string }
         Returns: Json
       }
+      post_purchase_return: { Args: { p_id: string }; Returns: Json }
+      post_sales_return: { Args: { p_id: string }; Returns: Json }
       post_stock_adjustment: {
         Args: { p_adjustment_id: string }
         Returns: Json
