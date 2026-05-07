@@ -83,7 +83,7 @@ export default function Procurement() {
         <TabsContent value="sreturns"><SalesReturnsTab /></TabsContent>
         <TabsContent value="preturns"><PurchaseReturnsTab /></TabsContent>
         <TabsContent value="counts"><PhysicalCountsTab /></TabsContent>
-        <TabsContent value="valuation"><InventoryValuationReport /></TabsContent>
+        <TabsContent value="valuation"><InventoryReportsHub /></TabsContent>
       </Tabs>
     </div>
   );
