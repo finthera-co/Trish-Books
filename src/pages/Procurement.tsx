@@ -69,7 +69,7 @@ export default function Procurement() {
           <TabsTrigger value="sreturns"><RotateCcw className="w-4 h-4 mr-2" />Sales Returns</TabsTrigger>
           <TabsTrigger value="preturns"><PackageX className="w-4 h-4 mr-2" />Purchase Returns</TabsTrigger>
           <TabsTrigger value="counts"><ClipboardList className="w-4 h-4 mr-2" />Physical Counts</TabsTrigger>
-          <TabsTrigger value="valuation"><Layers className="w-4 h-4 mr-2" />Valuation</TabsTrigger>
+          <TabsTrigger value="valuation"><BarChart3 className="w-4 h-4 mr-2" />Reports</TabsTrigger>
         </TabsList>
 
         <TabsContent value="po"><POTab /></TabsContent>
