@@ -6121,6 +6121,176 @@ export type Database = {
           },
         ]
       }
+      stock_count_lines: {
+        Row: {
+          count_id: string
+          counted_qty: number | null
+          created_at: string
+          id: string
+          item_id: string
+          notes: string | null
+          system_qty: number
+          tenant_id: string
+          unit_cost: number
+          variance_qty: number
+          variance_value: number
+          warehouse_id: string | null
+        }
+        Insert: {
+          count_id: string
+          counted_qty?: number | null
+          created_at?: string
+          id?: string
+          item_id: string
+          notes?: string | null
+          system_qty?: number
+          tenant_id: string
+          unit_cost?: number
+          variance_qty?: number
+          variance_value?: number
+          warehouse_id?: string | null
+        }
+        Update: {
+          count_id?: string
+          counted_qty?: number | null
+          created_at?: string
+          id?: string
+          item_id?: string
+          notes?: string | null
+          system_qty?: number
+          tenant_id?: string
+          unit_cost?: number
+          variance_qty?: number
+          variance_value?: number
+          warehouse_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_count_lines_count_id_fkey"
+            columns: ["count_id"]
+            isOneToOne: false
+            referencedRelation: "stock_counts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_count_lines_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_count_lines_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_count_lines_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stock_counts: {
+        Row: {
+          adjustment_id: string | null
+          count_date: string
+          count_number: string
+          created_at: string
+          created_by: string | null
+          freeze_stock: boolean
+          id: string
+          journal_entry_id: string | null
+          notes: string | null
+          posted_at: string | null
+          reason: string | null
+          status: string
+          tenant_id: string
+          total_variance_qty: number
+          total_variance_value: number
+          updated_at: string
+          warehouse_id: string | null
+        }
+        Insert: {
+          adjustment_id?: string | null
+          count_date?: string
+          count_number: string
+          created_at?: string
+          created_by?: string | null
+          freeze_stock?: boolean
+          id?: string
+          journal_entry_id?: string | null
+          notes?: string | null
+          posted_at?: string | null
+          reason?: string | null
+          status?: string
+          tenant_id: string
+          total_variance_qty?: number
+          total_variance_value?: number
+          updated_at?: string
+          warehouse_id?: string | null
+        }
+        Update: {
+          adjustment_id?: string | null
+          count_date?: string
+          count_number?: string
+          created_at?: string
+          created_by?: string | null
+          freeze_stock?: boolean
+          id?: string
+          journal_entry_id?: string | null
+          notes?: string | null
+          posted_at?: string | null
+          reason?: string | null
+          status?: string
+          tenant_id?: string
+          total_variance_qty?: number
+          total_variance_value?: number
+          updated_at?: string
+          warehouse_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_counts_adjustment_id_fkey"
+            columns: ["adjustment_id"]
+            isOneToOne: false
+            referencedRelation: "stock_adjustments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_counts_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_counts_journal_entry_id_fkey"
+            columns: ["journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_counts_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_counts_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stock_lot_consumptions: {
         Row: {
           consumption_date: string
@@ -7246,6 +7416,7 @@ export type Database = {
           warning_threshold: number
         }[]
       }
+      cancel_stock_count: { Args: { p_count_id: string }; Returns: Json }
       consume_inventory_fifo: {
         Args: {
           p_consumption_date?: string
@@ -7351,6 +7522,7 @@ export type Database = {
         Args: { p_adjustment_id: string }
         Returns: Json
       }
+      post_stock_count: { Args: { p_count_id: string }; Returns: Json }
       post_stock_transfer: { Args: { p_transfer_id: string }; Returns: string }
       post_supplier_bill: { Args: { p_bill_id: string }; Returns: Json }
       recalc_budget_consumption: {
@@ -7395,6 +7567,10 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      start_stock_count: {
+        Args: { p_count_id: string; p_item_ids?: string[] }
+        Returns: Json
+      }
       submit_stock_adjustment: {
         Args: { p_adjustment_id: string }
         Returns: Json
