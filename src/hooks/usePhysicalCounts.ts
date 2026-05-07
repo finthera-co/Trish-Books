@@ -97,7 +97,7 @@ export function useCreateStockCount() {
   });
 }
 
-function rpcMutation(rpc: string, success: string) {
+function useRpcMutation(rpc: string, success: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (args: any) => {
@@ -117,9 +117,9 @@ function rpcMutation(rpc: string, success: string) {
   });
 }
 
-export function useStartCount() { return rpcMutation("start_stock_count", "Snapshot generated"); }
-export function usePostCount()  { return rpcMutation("post_stock_count",  "Count posted to GL"); }
-export function useCancelCount(){ return rpcMutation("cancel_stock_count","Count cancelled"); }
+export function useStartCount() { return useRpcMutation("start_stock_count", "Snapshot generated"); }
+export function usePostCount()  { return useRpcMutation("post_stock_count",  "Count posted to GL"); }
+export function useCancelCount(){ return useRpcMutation("cancel_stock_count","Count cancelled"); }
 
 export function useUpdateCountedQty() {
   const qc = useQueryClient();
