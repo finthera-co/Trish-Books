@@ -9,8 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Send, ShoppingCart, PackageCheck, Receipt as ReceiptIcon, FileCheck2, Layers, Warehouse as WarehouseIcon, ArrowRightLeft, ClipboardEdit, Truck, RotateCcw, PackageX, ClipboardList } from "lucide-react";
-import { InventoryValuationReport } from "@/components/inventory/InventoryValuationReport";
+import { Plus, Trash2, Send, ShoppingCart, PackageCheck, Receipt as ReceiptIcon, FileCheck2, BarChart3, Warehouse as WarehouseIcon, ArrowRightLeft, ClipboardEdit, Truck, RotateCcw, PackageX, ClipboardList } from "lucide-react";
+import { InventoryReportsHub } from "@/components/inventory/InventoryReportsHub";
 import { WarehousesTab, TransfersTab } from "@/components/inventory/WarehousesAndTransfers";
 import { StockAdjustmentsTab } from "@/components/inventory/StockAdjustments";
 import { LandedCostsTab } from "@/components/inventory/LandedCosts";
