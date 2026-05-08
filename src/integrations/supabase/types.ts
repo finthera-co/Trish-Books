@@ -528,6 +528,159 @@ export type Database = {
           },
         ]
       }
+      assembly_order_lines: {
+        Row: {
+          assembly_order_id: string
+          component_item_id: string
+          created_at: string
+          id: string
+          qty_required: number
+          tenant_id: string
+          total_cost: number
+          unit_cost: number
+        }
+        Insert: {
+          assembly_order_id: string
+          component_item_id: string
+          created_at?: string
+          id?: string
+          qty_required: number
+          tenant_id: string
+          total_cost?: number
+          unit_cost?: number
+        }
+        Update: {
+          assembly_order_id?: string
+          component_item_id?: string
+          created_at?: string
+          id?: string
+          qty_required?: number
+          tenant_id?: string
+          total_cost?: number
+          unit_cost?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assembly_order_lines_assembly_order_id_fkey"
+            columns: ["assembly_order_id"]
+            isOneToOne: false
+            referencedRelation: "assembly_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assembly_order_lines_component_item_id_fkey"
+            columns: ["component_item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assembly_order_lines_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assembly_orders: {
+        Row: {
+          ao_date: string
+          ao_number: string
+          bom_id: string
+          component_cost: number
+          created_at: string
+          fg_item_id: string
+          id: string
+          journal_entry_id: string | null
+          labor_cost: number
+          notes: string | null
+          output_qty: number
+          overhead_cost: number
+          posted_at: string | null
+          posted_by: string | null
+          status: string
+          tenant_id: string
+          total_cost: number
+          unit_cost: number
+          updated_at: string
+          warehouse_id: string | null
+        }
+        Insert: {
+          ao_date?: string
+          ao_number: string
+          bom_id: string
+          component_cost?: number
+          created_at?: string
+          fg_item_id: string
+          id?: string
+          journal_entry_id?: string | null
+          labor_cost?: number
+          notes?: string | null
+          output_qty: number
+          overhead_cost?: number
+          posted_at?: string | null
+          posted_by?: string | null
+          status?: string
+          tenant_id: string
+          total_cost?: number
+          unit_cost?: number
+          updated_at?: string
+          warehouse_id?: string | null
+        }
+        Update: {
+          ao_date?: string
+          ao_number?: string
+          bom_id?: string
+          component_cost?: number
+          created_at?: string
+          fg_item_id?: string
+          id?: string
+          journal_entry_id?: string | null
+          labor_cost?: number
+          notes?: string | null
+          output_qty?: number
+          overhead_cost?: number
+          posted_at?: string | null
+          posted_by?: string | null
+          status?: string
+          tenant_id?: string
+          total_cost?: number
+          unit_cost?: number
+          updated_at?: string
+          warehouse_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assembly_orders_bom_id_fkey"
+            columns: ["bom_id"]
+            isOneToOne: false
+            referencedRelation: "boms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assembly_orders_fg_item_id_fkey"
+            columns: ["fg_item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assembly_orders_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assembly_orders_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       asset_categories: {
         Row: {
           accumulated_depreciation_account_id: string | null
@@ -1055,6 +1208,121 @@ export type Database = {
           },
           {
             foreignKeyName: "bank_reconciliations_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bom_components: {
+        Row: {
+          bom_id: string
+          component_item_id: string
+          created_at: string
+          id: string
+          notes: string | null
+          qty_per_output: number
+          scrap_pct: number
+          tenant_id: string
+        }
+        Insert: {
+          bom_id: string
+          component_item_id: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          qty_per_output: number
+          scrap_pct?: number
+          tenant_id: string
+        }
+        Update: {
+          bom_id?: string
+          component_item_id?: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          qty_per_output?: number
+          scrap_pct?: number
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bom_components_bom_id_fkey"
+            columns: ["bom_id"]
+            isOneToOne: false
+            referencedRelation: "boms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bom_components_component_item_id_fkey"
+            columns: ["component_item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bom_components_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      boms: {
+        Row: {
+          bom_code: string
+          created_at: string
+          fg_item_id: string
+          id: string
+          is_active: boolean
+          labor_cost_per_unit: number
+          notes: string | null
+          output_qty: number
+          overhead_cost_per_unit: number
+          tenant_id: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          bom_code: string
+          created_at?: string
+          fg_item_id: string
+          id?: string
+          is_active?: boolean
+          labor_cost_per_unit?: number
+          notes?: string | null
+          output_qty?: number
+          overhead_cost_per_unit?: number
+          tenant_id: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          bom_code?: string
+          created_at?: string
+          fg_item_id?: string
+          id?: string
+          is_active?: boolean
+          labor_cost_per_unit?: number
+          notes?: string | null
+          output_qty?: number
+          overhead_cost_per_unit?: number
+          tenant_id?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "boms_fg_item_id_fkey"
+            columns: ["fg_item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "boms_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -7510,6 +7778,7 @@ export type Database = {
       }
       is_primary_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
+      post_assembly_order: { Args: { p_ao_id: string }; Returns: Json }
       post_delivery_note: { Args: { p_id: string }; Returns: Json }
       post_grn: { Args: { p_grn_id: string }; Returns: Json }
       post_landed_cost_voucher: {
