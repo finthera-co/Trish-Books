@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertTriangle, Download, RefreshCw, Activity, CheckCircle2, XCircle,
-  TrendingDown, BookOpen, Layers,
+  TrendingDown, BookOpen, Layers, BarChart3, Bell,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { exportToCsv } from "@/lib/csvExport";
@@ -13,6 +13,7 @@ import { format } from "date-fns";
 import {
   useReorderReport, useStockAgingReport, useMovementAnalysis, useInventoryGLReconciliation,
 } from "@/hooks/useInventoryReports";
+import { useAbcAnalysis, useInventoryAlerts } from "@/hooks/useInventoryAnalytics";
 import { InventoryValuationReport } from "./InventoryValuationReport";
 
 export function InventoryReportsHub() {
@@ -34,6 +35,8 @@ export function InventoryReportsHub() {
           <TabsTrigger value="reorder"><AlertTriangle className="w-4 h-4 mr-2" />Reorder</TabsTrigger>
           <TabsTrigger value="aging"><TrendingDown className="w-4 h-4 mr-2" />Aging</TabsTrigger>
           <TabsTrigger value="movement"><Activity className="w-4 h-4 mr-2" />Movement</TabsTrigger>
+          <TabsTrigger value="abc"><BarChart3 className="w-4 h-4 mr-2" />ABC Analysis</TabsTrigger>
+          <TabsTrigger value="alerts"><Bell className="w-4 h-4 mr-2" />Alerts</TabsTrigger>
         </TabsList>
 
         <TabsContent value="valuation"><InventoryValuationReport /></TabsContent>
@@ -41,6 +44,8 @@ export function InventoryReportsHub() {
         <TabsContent value="reorder"><ReorderReportCard /></TabsContent>
         <TabsContent value="aging"><AgingReportCard /></TabsContent>
         <TabsContent value="movement"><MovementAnalysisCard /></TabsContent>
+        <TabsContent value="abc"><AbcAnalysisCard /></TabsContent>
+        <TabsContent value="alerts"><AlertsCard /></TabsContent>
       </Tabs>
     </div>
   );
