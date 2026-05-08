@@ -9,13 +9,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Send, ShoppingCart, PackageCheck, Receipt as ReceiptIcon, FileCheck2, BarChart3, Warehouse as WarehouseIcon, ArrowRightLeft, ClipboardEdit, Truck, RotateCcw, PackageX, ClipboardList } from "lucide-react";
+import { Plus, Trash2, Send, ShoppingCart, PackageCheck, Receipt as ReceiptIcon, FileCheck2, BarChart3, Warehouse as WarehouseIcon, ArrowRightLeft, ClipboardEdit, Truck, RotateCcw, PackageX, ClipboardList, Wrench } from "lucide-react";
 import { InventoryReportsHub } from "@/components/inventory/InventoryReportsHub";
 import { WarehousesTab, TransfersTab } from "@/components/inventory/WarehousesAndTransfers";
 import { StockAdjustmentsTab } from "@/components/inventory/StockAdjustments";
 import { LandedCostsTab } from "@/components/inventory/LandedCosts";
 import { DeliveryNotesTab, SalesReturnsTab, PurchaseReturnsTab } from "@/components/inventory/SalesAndReturns";
 import { PhysicalCountsTab } from "@/components/inventory/PhysicalCounts";
+import { AssemblyTab } from "@/components/inventory/Assembly";
 import { format } from "date-fns";
 import { formatCurrency } from "@/lib/currency";
 import { useVendors } from "@/hooks/useSubledger";
@@ -69,6 +70,7 @@ export default function Procurement() {
           <TabsTrigger value="sreturns"><RotateCcw className="w-4 h-4 mr-2" />Sales Returns</TabsTrigger>
           <TabsTrigger value="preturns"><PackageX className="w-4 h-4 mr-2" />Purchase Returns</TabsTrigger>
           <TabsTrigger value="counts"><ClipboardList className="w-4 h-4 mr-2" />Physical Counts</TabsTrigger>
+          <TabsTrigger value="assembly"><Wrench className="w-4 h-4 mr-2" />Assembly / BOM</TabsTrigger>
           <TabsTrigger value="valuation"><BarChart3 className="w-4 h-4 mr-2" />Reports</TabsTrigger>
         </TabsList>
 
@@ -83,6 +85,7 @@ export default function Procurement() {
         <TabsContent value="sreturns"><SalesReturnsTab /></TabsContent>
         <TabsContent value="preturns"><PurchaseReturnsTab /></TabsContent>
         <TabsContent value="counts"><PhysicalCountsTab /></TabsContent>
+        <TabsContent value="assembly"><AssemblyTab /></TabsContent>
         <TabsContent value="valuation"><InventoryReportsHub /></TabsContent>
       </Tabs>
     </div>
