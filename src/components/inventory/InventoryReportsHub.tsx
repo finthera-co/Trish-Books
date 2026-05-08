@@ -436,3 +436,140 @@ function MovementAnalysisCard() {
     </Card>
   );
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// ABC Analysis
+// ────────────────────────────────────────────────────────────────────────────
+function AbcAnalysisCard() {
+  const { data, isLoading } = useAbcAnalysis();
+  const rows = data || [];
+  const counts = rows.reduce(
+    (a, r) => ({ ...a, [r.abc_class]: (a as any)[r.abc_class] + 1 }),
+    { A: 0, B: 0, C: 0 } as any,
+  );
+  const totals = rows.reduce(
+    (a, r) => ({ ...a, [r.abc_class]: (a as any)[r.abc_class] + r.usage_value_90d }),
+    { A: 0, B: 0, C: 0 } as any,
+  );
+  const exportCsv = () =>
+    exportToCsv(
+      `abc-analysis-${format(new Date(), "yyyyMMdd")}.csv`,
+      ["Code", "Item", "Qty 90d", "Usage Value 90d", "Cumulative %", "Class"],
+      rows.map((r) => [r.item_code || "", r.item_name, r.qty_consumed_90d, r.usage_value_90d.toFixed(2), r.cumulative_pct.toFixed(2), r.abc_class]),
+    );
+  const cls = (c: string) => c === "A" ? "bg-emerald-100 text-emerald-700" : c === "B" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700";
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle className="flex items-center gap-2"><BarChart3 className="w-5 h-5" /> ABC Analysis (90-day usage value)</CardTitle>
+        <Button variant="outline" size="sm" onClick={exportCsv} disabled={rows.length === 0}>
+          <Download className="w-4 h-4 mr-1" />Export
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? <p className="text-muted-foreground">Loading…</p> : rows.length === 0 ? (
+          <p className="text-muted-foreground text-center py-8">No usage data in the last 90 days.</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              {(["A", "B", "C"] as const).map((c) => (
+                <div key={c} className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">Class {c} ({c === "A" ? "top 80%" : c === "B" ? "next 15%" : "last 5%"})</p>
+                  <p className="text-base font-bold">{counts[c]} items · {formatCurrency(totals[c])}</p>
+                </div>
+              ))}
+            </div>
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Code</TableHead><TableHead>Item</TableHead>
+                <TableHead className="text-right">Qty 90d</TableHead>
+                <TableHead className="text-right">Usage Value</TableHead>
+                <TableHead className="text-right">Cumulative %</TableHead>
+                <TableHead>Class</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {rows.map((r) => (
+                  <TableRow key={r.item_id}>
+                    <TableCell className="font-mono text-xs">{r.item_code || "—"}</TableCell>
+                    <TableCell>{r.item_name}</TableCell>
+                    <TableCell className="text-right font-mono">{r.qty_consumed_90d.toLocaleString()}</TableCell>
+                    <TableCell className="text-right font-mono">{formatCurrency(r.usage_value_90d)}</TableCell>
+                    <TableCell className="text-right font-mono">{r.cumulative_pct.toFixed(2)}%</TableCell>
+                    <TableCell><Badge className={cls(r.abc_class)}>{r.abc_class}</Badge></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Alerts
+// ────────────────────────────────────────────────────────────────────────────
+function AlertsCard() {
+  const { data, isLoading, refetch, isFetching } = useInventoryAlerts();
+  const rows = data || [];
+  const sevCls = (s: string) =>
+    s === "critical" ? "bg-rose-100 text-rose-700" :
+    s === "warning" ? "bg-amber-100 text-amber-700" :
+    "bg-blue-100 text-blue-700";
+  const counts = rows.reduce(
+    (a, r) => ({ ...a, [r.severity]: (a as any)[r.severity] + 1 }),
+    { critical: 0, warning: 0, info: 0 } as any,
+  );
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle className="flex items-center gap-2"><Bell className="w-5 h-5" /> Inventory Alerts</CardTitle>
+        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
+          <RefreshCw className={`w-4 h-4 mr-1 ${isFetching ? "animate-spin" : ""}`} />Refresh
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? <p className="text-muted-foreground">Loading…</p> : rows.length === 0 ? (
+          <p className="text-muted-foreground text-center py-8">No alerts. Inventory is healthy.</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="rounded-lg border p-3 bg-rose-50 border-rose-200">
+                <p className="text-xs text-muted-foreground">Critical</p>
+                <p className="text-lg font-bold text-rose-700">{counts.critical}</p>
+              </div>
+              <div className="rounded-lg border p-3 bg-amber-50 border-amber-200">
+                <p className="text-xs text-muted-foreground">Warning</p>
+                <p className="text-lg font-bold text-amber-700">{counts.warning}</p>
+              </div>
+              <div className="rounded-lg border p-3 bg-blue-50 border-blue-200">
+                <p className="text-xs text-muted-foreground">Info</p>
+                <p className="text-lg font-bold text-blue-700">{counts.info}</p>
+              </div>
+            </div>
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Severity</TableHead><TableHead>Type</TableHead>
+                <TableHead>Item</TableHead><TableHead>Message</TableHead><TableHead>Detail</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {rows.map((a) => (
+                  <TableRow key={a.id}>
+                    <TableCell><Badge className={sevCls(a.severity)}>{a.severity}</Badge></TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{a.type.replace(/_/g, " ")}</TableCell>
+                    <TableCell>{a.item_code ? <span className="font-mono text-xs">{a.item_code} — </span> : null}{a.item_name}</TableCell>
+                    <TableCell>{a.message}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{a.detail || "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
