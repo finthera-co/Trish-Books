@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Send, ShoppingCart, PackageCheck, Receipt as ReceiptIcon, FileCheck2, BarChart3, Warehouse as WarehouseIcon, ArrowRightLeft, ClipboardEdit, Truck, RotateCcw, PackageX, ClipboardList, Wrench } from "lucide-react";
+import { Plus, Trash2, Send, ShoppingCart, PackageCheck, Receipt as ReceiptIcon, FileCheck2, BarChart3, Warehouse as WarehouseIcon, ArrowRightLeft, ClipboardEdit, Truck, RotateCcw, PackageX, ClipboardList, Wrench, ClipboardCheck, Keyboard } from "lucide-react";
 import { InventoryReportsHub } from "@/components/inventory/InventoryReportsHub";
 import { WarehousesTab, TransfersTab } from "@/components/inventory/WarehousesAndTransfers";
 import { StockAdjustmentsTab } from "@/components/inventory/StockAdjustments";
@@ -17,6 +17,8 @@ import { LandedCostsTab } from "@/components/inventory/LandedCosts";
 import { DeliveryNotesTab, SalesReturnsTab, PurchaseReturnsTab } from "@/components/inventory/SalesAndReturns";
 import { PhysicalCountsTab } from "@/components/inventory/PhysicalCounts";
 import { AssemblyTab } from "@/components/inventory/Assembly";
+import { PeriodClosingChecklist } from "@/components/inventory/PeriodClosingChecklist";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { format } from "date-fns";
 import { formatCurrency } from "@/lib/currency";
 import { useVendors } from "@/hooks/useSubledger";
