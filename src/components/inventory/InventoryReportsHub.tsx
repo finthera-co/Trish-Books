@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { exportToCsv } from "@/lib/csvExport";
+import { exportToPdf } from "@/lib/pdfExport";
+import { FileDown } from "lucide-react";
 import { format } from "date-fns";
 import {
   useReorderReport, useStockAgingReport, useMovementAnalysis, useInventoryGLReconciliation,
