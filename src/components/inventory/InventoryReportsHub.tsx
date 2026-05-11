@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { exportToCsv } from "@/lib/csvExport";
+import { exportToPdf } from "@/lib/pdfExport";
+import { FileDown } from "lucide-react";
 import { format } from "date-fns";
 import {
   useReorderReport, useStockAgingReport, useMovementAnalysis, useInventoryGLReconciliation,
@@ -70,6 +72,21 @@ function GLReconciliationCard() {
       ]
     );
   };
+  const exportPdf = () => {
+    if (!data) return;
+    exportToPdf(
+      `inventory-gl-reconcile-${format(new Date(), "yyyyMMdd")}.pdf`,
+      "Inventory ↔ GL Reconciliation",
+      ["Item", "Reported Value (LKR)"],
+      [
+        ...data.per_item.map((r) => [r.item_name, r.reported_value.toFixed(2)]),
+        ["TOTAL Subledger", data.subledger_value.toFixed(2)],
+        [`GL ${data.inventory_account_code} ${data.inventory_account_name}`, data.gl_balance.toFixed(2)],
+        ["VARIANCE", data.variance.toFixed(2)],
+      ],
+      { subtitle: data.is_reconciled ? "Status: Reconciled" : `Variance ${data.variance.toFixed(2)} LKR` }
+    );
+  };
 
   return (
     <Card>
@@ -82,7 +99,10 @@ function GLReconciliationCard() {
             <RefreshCw className={`w-4 h-4 mr-1 ${isFetching ? "animate-spin" : ""}`} />Refresh
           </Button>
           <Button variant="outline" size="sm" onClick={exportCsv} disabled={!data}>
-            <Download className="w-4 h-4 mr-1" />Export
+            <Download className="w-4 h-4 mr-1" />CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportPdf} disabled={!data}>
+            <FileDown className="w-4 h-4 mr-1" />PDF
           </Button>
         </div>
       </CardHeader>
@@ -169,6 +189,24 @@ function ReorderReportCard() {
       ])
     );
 
+  const reorderRowsForExport = () => rows.map((r: any) => [
+    r.item_code || "", r.item_name,
+    Number(r.quantity_on_hand).toLocaleString(),
+    Number(r.reorder_level).toLocaleString(),
+    Number(r.shortfall).toLocaleString(),
+    Number(r.suggested_qty).toLocaleString(),
+    Number(r.unit_cost || 0).toFixed(2),
+    (Number(r.suggested_qty) * Number(r.unit_cost || 0)).toFixed(2),
+  ]);
+  const exportPdf = () =>
+    exportToPdf(
+      `reorder-${format(new Date(), "yyyyMMdd")}.pdf`,
+      "Reorder Report",
+      ["Code", "Item", "On Hand", "Reorder Lvl", "Shortfall", "Suggested", "Unit Cost", "Est. Value"],
+      reorderRowsForExport(),
+      { subtitle: `${rows.length} item(s) below reorder level` }
+    );
+
   const totalEstPO = rows.reduce(
     (s: number, r: any) => s + Number(r.suggested_qty) * Number(r.unit_cost || 0),
     0
@@ -180,9 +218,14 @@ function ReorderReportCard() {
         <CardTitle className="flex items-center gap-2">
           <AlertTriangle className="w-5 h-5 text-amber-600" /> Reorder Report
         </CardTitle>
-        <Button variant="outline" size="sm" onClick={exportCsv} disabled={rows.length === 0}>
-          <Download className="w-4 h-4 mr-1" />Export
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={rows.length === 0}>
+            <Download className="w-4 h-4 mr-1" />CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportPdf} disabled={rows.length === 0}>
+            <FileDown className="w-4 h-4 mr-1" />PDF
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -261,15 +304,34 @@ function AgingReportCard() {
       ])
     );
 
+  const exportPdf = () =>
+    exportToPdf(
+      `inventory-aging-${format(new Date(), "yyyyMMdd")}.pdf`,
+      "Inventory Aging Report",
+      ["Code", "Item", "Qty", "0-30", "31-60", "61-90", "90+", "Total"],
+      rows.map((r) => [
+        r.item_code || "", r.item_name, r.qty_on_hand,
+        r.bucket_0_30.toFixed(2), r.bucket_31_60.toFixed(2),
+        r.bucket_61_90.toFixed(2), r.bucket_90_plus.toFixed(2),
+        r.total_value.toFixed(2),
+      ]),
+      { subtitle: `Total inventory value: ${totals.total.toFixed(2)} LKR` }
+    );
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
           <TrendingDown className="w-5 h-5" /> Inventory Aging
         </CardTitle>
-        <Button variant="outline" size="sm" onClick={exportCsv} disabled={rows.length === 0}>
-          <Download className="w-4 h-4 mr-1" />Export
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={rows.length === 0}>
+            <Download className="w-4 h-4 mr-1" />CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportPdf} disabled={rows.length === 0}>
+            <FileDown className="w-4 h-4 mr-1" />PDF
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -373,15 +435,33 @@ function MovementAnalysisCard() {
     return "bg-rose-100 text-rose-700";
   };
 
+  const exportPdf = () =>
+    exportToPdf(
+      `movement-analysis-${format(new Date(), "yyyyMMdd")}.pdf`,
+      "Movement Velocity (90 days)",
+      ["Code", "Item", "On Hand", "Outbound 90d", "Avg/day", "Days Supply", "Class", "Last Move"],
+      rows.map((r) => [
+        r.item_code || "", r.item_name, r.qty_on_hand, r.outbound_qty_90d,
+        r.avg_daily_consumption.toFixed(2),
+        r.days_of_supply == null ? "∞" : r.days_of_supply.toFixed(0),
+        r.classification, r.last_movement_date || "",
+      ])
+    );
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
           <Activity className="w-5 h-5" /> Movement Velocity (90 days)
         </CardTitle>
-        <Button variant="outline" size="sm" onClick={exportCsv} disabled={rows.length === 0}>
-          <Download className="w-4 h-4 mr-1" />Export
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={rows.length === 0}>
+            <Download className="w-4 h-4 mr-1" />CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportPdf} disabled={rows.length === 0}>
+            <FileDown className="w-4 h-4 mr-1" />PDF
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -457,15 +537,27 @@ function AbcAnalysisCard() {
       ["Code", "Item", "Qty 90d", "Usage Value 90d", "Cumulative %", "Class"],
       rows.map((r) => [r.item_code || "", r.item_name, r.qty_consumed_90d, r.usage_value_90d.toFixed(2), r.cumulative_pct.toFixed(2), r.abc_class]),
     );
+  const exportPdf = () =>
+    exportToPdf(
+      `abc-analysis-${format(new Date(), "yyyyMMdd")}.pdf`,
+      "ABC Analysis (90-day usage value)",
+      ["Code", "Item", "Qty 90d", "Usage Value", "Cumulative %", "Class"],
+      rows.map((r) => [r.item_code || "", r.item_name, r.qty_consumed_90d, r.usage_value_90d.toFixed(2), r.cumulative_pct.toFixed(2) + "%", r.abc_class])
+    );
   const cls = (c: string) => c === "A" ? "bg-emerald-100 text-emerald-700" : c === "B" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700";
 
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2"><BarChart3 className="w-5 h-5" /> ABC Analysis (90-day usage value)</CardTitle>
-        <Button variant="outline" size="sm" onClick={exportCsv} disabled={rows.length === 0}>
-          <Download className="w-4 h-4 mr-1" />Export
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={rows.length === 0}>
+            <Download className="w-4 h-4 mr-1" />CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportPdf} disabled={rows.length === 0}>
+            <FileDown className="w-4 h-4 mr-1" />PDF
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {isLoading ? <p className="text-muted-foreground">Loading…</p> : rows.length === 0 ? (
