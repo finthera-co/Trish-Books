@@ -154,7 +154,7 @@ function POTab() {
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Purchase Orders</CardTitle>
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button><Plus className="w-4 h-4 mr-2" />New PO</Button></DialogTrigger>
+          <DialogTrigger asChild><Button data-procurement-new><Plus className="w-4 h-4 mr-2" />New PO</Button></DialogTrigger>
           <POCreateDialog onClose={() => setOpen(false)} />
         </Dialog>
       </CardHeader>
