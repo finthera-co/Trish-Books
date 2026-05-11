@@ -48,33 +48,80 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function Procurement() {
+  // Keyboard shortcut: F focuses search, ? shows shortcut hint
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable) return;
+      if (e.key === "?" || (e.shiftKey && e.key === "/")) { e.preventDefault(); setShortcutsOpen(true); }
+      if (e.key === "f" || e.key === "F") {
+        const el = document.querySelector<HTMLInputElement>("[data-procurement-search]");
+        if (el) { e.preventDefault(); el.focus(); }
+      }
+      if (e.key === "n" || e.key === "N") {
+        const btn = document.querySelector<HTMLButtonElement>("[data-procurement-new]");
+        if (btn) { e.preventDefault(); btn.click(); }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <ShoppingCart className="w-6 h-6 text-primary" /> Procurement
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Purchase Orders → Goods Receipt → Supplier Bills (3-way matching)
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <ShoppingCart className="w-6 h-6 text-primary" /> Procurement & Inventory
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            POs → GRN → Bills · Warehouses · Adjustments · Returns · Counts · Assembly · Reports
+          </p>
+        </div>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="outline" size="sm" onClick={() => setShortcutsOpen(true)}>
+                <Keyboard className="w-4 h-4 mr-1" />Shortcuts
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Press ? for shortcuts</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
 
+      <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Keyboard Shortcuts</DialogTitle></DialogHeader>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between"><span>New record (current tab)</span><kbd className="px-2 py-0.5 rounded bg-muted">N</kbd></div>
+            <div className="flex justify-between"><span>Focus search</span><kbd className="px-2 py-0.5 rounded bg-muted">F</kbd></div>
+            <div className="flex justify-between"><span>Show this dialog</span><kbd className="px-2 py-0.5 rounded bg-muted">?</kbd></div>
+            <div className="flex justify-between"><span>Save (in form)</span><kbd className="px-2 py-0.5 rounded bg-muted">Ctrl/Cmd + S</kbd></div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Tabs defaultValue="po" className="w-full">
-        <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="po"><ShoppingCart className="w-4 h-4 mr-2" />Purchase Orders</TabsTrigger>
-          <TabsTrigger value="grn"><PackageCheck className="w-4 h-4 mr-2" />Goods Receipts</TabsTrigger>
-          <TabsTrigger value="bills"><ReceiptIcon className="w-4 h-4 mr-2" />Supplier Bills</TabsTrigger>
-          <TabsTrigger value="warehouses"><WarehouseIcon className="w-4 h-4 mr-2" />Warehouses</TabsTrigger>
-          <TabsTrigger value="transfers"><ArrowRightLeft className="w-4 h-4 mr-2" />Transfers</TabsTrigger>
-          <TabsTrigger value="adjustments"><ClipboardEdit className="w-4 h-4 mr-2" />Adjustments</TabsTrigger>
-          <TabsTrigger value="landed"><Truck className="w-4 h-4 mr-2" />Landed Costs</TabsTrigger>
-          <TabsTrigger value="delivery"><Truck className="w-4 h-4 mr-2" />Delivery Notes</TabsTrigger>
-          <TabsTrigger value="sreturns"><RotateCcw className="w-4 h-4 mr-2" />Sales Returns</TabsTrigger>
-          <TabsTrigger value="preturns"><PackageX className="w-4 h-4 mr-2" />Purchase Returns</TabsTrigger>
-          <TabsTrigger value="counts"><ClipboardList className="w-4 h-4 mr-2" />Physical Counts</TabsTrigger>
-          <TabsTrigger value="assembly"><Wrench className="w-4 h-4 mr-2" />Assembly / BOM</TabsTrigger>
-          <TabsTrigger value="valuation"><BarChart3 className="w-4 h-4 mr-2" />Reports</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto -mx-1 px-1">
+          <TabsList className="flex-nowrap inline-flex h-auto min-w-max">
+            <TabsTrigger value="po"><ShoppingCart className="w-4 h-4 mr-2" />Purchase Orders</TabsTrigger>
+            <TabsTrigger value="grn"><PackageCheck className="w-4 h-4 mr-2" />Goods Receipts</TabsTrigger>
+            <TabsTrigger value="bills"><ReceiptIcon className="w-4 h-4 mr-2" />Supplier Bills</TabsTrigger>
+            <TabsTrigger value="warehouses"><WarehouseIcon className="w-4 h-4 mr-2" />Warehouses</TabsTrigger>
+            <TabsTrigger value="transfers"><ArrowRightLeft className="w-4 h-4 mr-2" />Transfers</TabsTrigger>
+            <TabsTrigger value="adjustments"><ClipboardEdit className="w-4 h-4 mr-2" />Adjustments</TabsTrigger>
+            <TabsTrigger value="landed"><Truck className="w-4 h-4 mr-2" />Landed Costs</TabsTrigger>
+            <TabsTrigger value="delivery"><Truck className="w-4 h-4 mr-2" />Delivery Notes</TabsTrigger>
+            <TabsTrigger value="sreturns"><RotateCcw className="w-4 h-4 mr-2" />Sales Returns</TabsTrigger>
+            <TabsTrigger value="preturns"><PackageX className="w-4 h-4 mr-2" />Purchase Returns</TabsTrigger>
+            <TabsTrigger value="counts"><ClipboardList className="w-4 h-4 mr-2" />Physical Counts</TabsTrigger>
+            <TabsTrigger value="assembly"><Wrench className="w-4 h-4 mr-2" />Assembly / BOM</TabsTrigger>
+            <TabsTrigger value="closing"><ClipboardCheck className="w-4 h-4 mr-2" />Period Close</TabsTrigger>
+            <TabsTrigger value="valuation"><BarChart3 className="w-4 h-4 mr-2" />Reports</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="po"><POTab /></TabsContent>
         <TabsContent value="grn"><GRNTab /></TabsContent>
@@ -88,6 +135,7 @@ export default function Procurement() {
         <TabsContent value="preturns"><PurchaseReturnsTab /></TabsContent>
         <TabsContent value="counts"><PhysicalCountsTab /></TabsContent>
         <TabsContent value="assembly"><AssemblyTab /></TabsContent>
+        <TabsContent value="closing"><PeriodClosingChecklist /></TabsContent>
         <TabsContent value="valuation"><InventoryReportsHub /></TabsContent>
       </Tabs>
     </div>
