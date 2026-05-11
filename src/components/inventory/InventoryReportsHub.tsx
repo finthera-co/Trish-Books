@@ -99,7 +99,10 @@ function GLReconciliationCard() {
             <RefreshCw className={`w-4 h-4 mr-1 ${isFetching ? "animate-spin" : ""}`} />Refresh
           </Button>
           <Button variant="outline" size="sm" onClick={exportCsv} disabled={!data}>
-            <Download className="w-4 h-4 mr-1" />Export
+            <Download className="w-4 h-4 mr-1" />CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportPdf} disabled={!data}>
+            <FileDown className="w-4 h-4 mr-1" />PDF
           </Button>
         </div>
       </CardHeader>
