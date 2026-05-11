@@ -304,15 +304,34 @@ function AgingReportCard() {
       ])
     );
 
+  const exportPdf = () =>
+    exportToPdf(
+      `inventory-aging-${format(new Date(), "yyyyMMdd")}.pdf`,
+      "Inventory Aging Report",
+      ["Code", "Item", "Qty", "0-30", "31-60", "61-90", "90+", "Total"],
+      rows.map((r) => [
+        r.item_code || "", r.item_name, r.qty_on_hand,
+        r.bucket_0_30.toFixed(2), r.bucket_31_60.toFixed(2),
+        r.bucket_61_90.toFixed(2), r.bucket_90_plus.toFixed(2),
+        r.total_value.toFixed(2),
+      ]),
+      { subtitle: `Total inventory value: ${totals.total.toFixed(2)} LKR` }
+    );
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
           <TrendingDown className="w-5 h-5" /> Inventory Aging
         </CardTitle>
-        <Button variant="outline" size="sm" onClick={exportCsv} disabled={rows.length === 0}>
-          <Download className="w-4 h-4 mr-1" />Export
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={rows.length === 0}>
+            <Download className="w-4 h-4 mr-1" />CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportPdf} disabled={rows.length === 0}>
+            <FileDown className="w-4 h-4 mr-1" />PDF
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {isLoading ? (
