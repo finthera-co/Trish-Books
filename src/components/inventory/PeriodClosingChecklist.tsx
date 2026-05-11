@@ -61,8 +61,8 @@ function useClosingChecklist(periodStart?: string, periodEnd?: string) {
         const subledger = (rec || []).reduce((s: number, r: any) => s + Number(r.reported_value || 0), 0);
         const { data: lines } = await supabase
           .from("journal_lines")
-          .select("debit, credit, account:accounts!inner(code), journal_entry:journal_entries!inner(status, voided_at)")
-          .eq("tenant_id", tid)
+          .select("debit, credit, account:accounts!inner(code, tenant_id), journal_entry:journal_entries!inner(status, voided_at)")
+          .eq("account.tenant_id", tid)
           .eq("account.code", "1300");
         const gl = (lines || [])
           .filter((l: any) => l.journal_entry?.status === "posted" && !l.journal_entry?.voided_at)
