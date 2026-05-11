@@ -435,15 +435,33 @@ function MovementAnalysisCard() {
     return "bg-rose-100 text-rose-700";
   };
 
+  const exportPdf = () =>
+    exportToPdf(
+      `movement-analysis-${format(new Date(), "yyyyMMdd")}.pdf`,
+      "Movement Velocity (90 days)",
+      ["Code", "Item", "On Hand", "Outbound 90d", "Avg/day", "Days Supply", "Class", "Last Move"],
+      rows.map((r) => [
+        r.item_code || "", r.item_name, r.qty_on_hand, r.outbound_qty_90d,
+        r.avg_daily_consumption.toFixed(2),
+        r.days_of_supply == null ? "∞" : r.days_of_supply.toFixed(0),
+        r.classification, r.last_movement_date || "",
+      ])
+    );
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
           <Activity className="w-5 h-5" /> Movement Velocity (90 days)
         </CardTitle>
-        <Button variant="outline" size="sm" onClick={exportCsv} disabled={rows.length === 0}>
-          <Download className="w-4 h-4 mr-1" />Export
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={rows.length === 0}>
+            <Download className="w-4 h-4 mr-1" />CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportPdf} disabled={rows.length === 0}>
+            <FileDown className="w-4 h-4 mr-1" />PDF
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {isLoading ? (
