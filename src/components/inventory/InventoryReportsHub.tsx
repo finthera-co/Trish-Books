@@ -72,6 +72,21 @@ function GLReconciliationCard() {
       ]
     );
   };
+  const exportPdf = () => {
+    if (!data) return;
+    exportToPdf(
+      `inventory-gl-reconcile-${format(new Date(), "yyyyMMdd")}.pdf`,
+      "Inventory ↔ GL Reconciliation",
+      ["Item", "Reported Value (LKR)"],
+      [
+        ...data.per_item.map((r) => [r.item_name, r.reported_value.toFixed(2)]),
+        ["TOTAL Subledger", data.subledger_value.toFixed(2)],
+        [`GL ${data.inventory_account_code} ${data.inventory_account_name}`, data.gl_balance.toFixed(2)],
+        ["VARIANCE", data.variance.toFixed(2)],
+      ],
+      { subtitle: data.is_reconciled ? "Status: Reconciled" : `Variance ${data.variance.toFixed(2)} LKR` }
+    );
+  };
 
   return (
     <Card>
