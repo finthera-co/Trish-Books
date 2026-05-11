@@ -426,7 +426,7 @@ function BillTab() {
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Supplier Bills</CardTitle>
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button><Plus className="w-4 h-4 mr-2" />New Bill</Button></DialogTrigger>
+          <DialogTrigger asChild><Button data-procurement-new><Plus className="w-4 h-4 mr-2" />New Bill</Button></DialogTrigger>
           <BillCreateDialog onClose={() => setOpen(false)} />
         </Dialog>
       </CardHeader>
