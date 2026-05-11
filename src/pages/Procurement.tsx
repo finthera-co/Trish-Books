@@ -286,7 +286,7 @@ function GRNTab() {
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Goods Receipt Notes</CardTitle>
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button><Plus className="w-4 h-4 mr-2" />New GRN</Button></DialogTrigger>
+          <DialogTrigger asChild><Button data-procurement-new><Plus className="w-4 h-4 mr-2" />New GRN</Button></DialogTrigger>
           <GRNCreateDialog onClose={() => setOpen(false)} />
         </Dialog>
       </CardHeader>
