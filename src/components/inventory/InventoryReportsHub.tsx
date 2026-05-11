@@ -537,15 +537,27 @@ function AbcAnalysisCard() {
       ["Code", "Item", "Qty 90d", "Usage Value 90d", "Cumulative %", "Class"],
       rows.map((r) => [r.item_code || "", r.item_name, r.qty_consumed_90d, r.usage_value_90d.toFixed(2), r.cumulative_pct.toFixed(2), r.abc_class]),
     );
+  const exportPdf = () =>
+    exportToPdf(
+      `abc-analysis-${format(new Date(), "yyyyMMdd")}.pdf`,
+      "ABC Analysis (90-day usage value)",
+      ["Code", "Item", "Qty 90d", "Usage Value", "Cumulative %", "Class"],
+      rows.map((r) => [r.item_code || "", r.item_name, r.qty_consumed_90d, r.usage_value_90d.toFixed(2), r.cumulative_pct.toFixed(2) + "%", r.abc_class])
+    );
   const cls = (c: string) => c === "A" ? "bg-emerald-100 text-emerald-700" : c === "B" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700";
 
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2"><BarChart3 className="w-5 h-5" /> ABC Analysis (90-day usage value)</CardTitle>
-        <Button variant="outline" size="sm" onClick={exportCsv} disabled={rows.length === 0}>
-          <Download className="w-4 h-4 mr-1" />Export
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={rows.length === 0}>
+            <Download className="w-4 h-4 mr-1" />CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportPdf} disabled={rows.length === 0}>
+            <FileDown className="w-4 h-4 mr-1" />PDF
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {isLoading ? <p className="text-muted-foreground">Loading…</p> : rows.length === 0 ? (
