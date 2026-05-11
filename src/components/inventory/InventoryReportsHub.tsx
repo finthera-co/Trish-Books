@@ -189,6 +189,24 @@ function ReorderReportCard() {
       ])
     );
 
+  const reorderRowsForExport = () => rows.map((r: any) => [
+    r.item_code || "", r.item_name,
+    Number(r.quantity_on_hand).toLocaleString(),
+    Number(r.reorder_level).toLocaleString(),
+    Number(r.shortfall).toLocaleString(),
+    Number(r.suggested_qty).toLocaleString(),
+    Number(r.unit_cost || 0).toFixed(2),
+    (Number(r.suggested_qty) * Number(r.unit_cost || 0)).toFixed(2),
+  ]);
+  const exportPdf = () =>
+    exportToPdf(
+      `reorder-${format(new Date(), "yyyyMMdd")}.pdf`,
+      "Reorder Report",
+      ["Code", "Item", "On Hand", "Reorder Lvl", "Shortfall", "Suggested", "Unit Cost", "Est. Value"],
+      reorderRowsForExport(),
+      { subtitle: `${rows.length} item(s) below reorder level` }
+    );
+
   const totalEstPO = rows.reduce(
     (s: number, r: any) => s + Number(r.suggested_qty) * Number(r.unit_cost || 0),
     0
@@ -200,9 +218,14 @@ function ReorderReportCard() {
         <CardTitle className="flex items-center gap-2">
           <AlertTriangle className="w-5 h-5 text-amber-600" /> Reorder Report
         </CardTitle>
-        <Button variant="outline" size="sm" onClick={exportCsv} disabled={rows.length === 0}>
-          <Download className="w-4 h-4 mr-1" />Export
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={rows.length === 0}>
+            <Download className="w-4 h-4 mr-1" />CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportPdf} disabled={rows.length === 0}>
+            <FileDown className="w-4 h-4 mr-1" />PDF
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {isLoading ? (
