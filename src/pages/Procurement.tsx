@@ -24,12 +24,15 @@ import { formatCurrency } from "@/lib/currency";
 import { useVendors } from "@/hooks/useSubledger";
 import { useInventoryMaster } from "@/hooks/useProcurement";
 import {
-  usePurchaseOrders, useCreatePurchaseOrder,
+  usePurchaseOrders, useCreatePurchaseOrder, useUpdatePOStatus,
   useGRNs, useCreateGRN, usePostGRN,
   useSupplierBills, useCreateSupplierBill, usePostSupplierBill,
   useUnbilledGRNLines,
   type POLineInput, type GRNLineInput, type BillLineInput,
 } from "@/hooks/useProcurement";
+import { useAuth } from "@/contexts/AuthContext";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { CheckCircle2, XCircle, Lock } from "lucide-react";
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -167,6 +170,7 @@ function POTab() {
               <TableRow>
                 <TableHead>PO #</TableHead><TableHead>Date</TableHead><TableHead>Vendor</TableHead>
                 <TableHead className="text-right">Total</TableHead><TableHead>Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -177,6 +181,7 @@ function POTab() {
                   <TableCell>{p.vendor?.name}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(p.total_amount)}</TableCell>
                   <TableCell><StatusBadge status={p.status} /></TableCell>
+                  <TableCell className="text-right"><PORowActions po={p} /></TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -184,6 +189,91 @@ function POTab() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function PORowActions({ po }: { po: any }) {
+  const { isCompanyAdmin, loading } = useAuth();
+  const update = useUpdatePOStatus();
+  const [confirm, setConfirm] = useState<null | { action: "approved" | "cancelled" | "closed"; title: string; body: string; needsReason?: boolean }>(null);
+  const [reason, setReason] = useState("");
+
+  if (loading) return <span className="text-xs text-muted-foreground">…</span>;
+
+  const status = po.status as string;
+  const terminal = ["received", "closed", "cancelled"].includes(status);
+
+  if (!isCompanyAdmin) {
+    return (
+      <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+        <Lock className="w-3 h-3" /> Admin approval required
+      </span>
+    );
+  }
+
+  if (terminal) return <span className="text-xs text-muted-foreground">—</span>;
+
+  const ask = (action: "approved" | "cancelled" | "closed") => {
+    if (action === "approved") setConfirm({ action, title: `Approve ${po.po_number}?`, body: `Approving commits the order to vendor ${po.vendor?.name ?? ""} for ${formatCurrency(po.total_amount)}. No journal entry is created at PO stage (commitments are not liabilities under GAAP/IFRS). The financial impact posts when the GRN and Supplier Bill are posted.` });
+    if (action === "cancelled") setConfirm({ action, title: `Cancel ${po.po_number}?`, body: `This marks the PO as cancelled. It cannot be received against. A reason is required for the audit trail.`, needsReason: true });
+    if (action === "closed") setConfirm({ action, title: `Close ${po.po_number}?`, body: `Closes the PO. Any unreceived quantity will not be receivable. Use this when the order is complete or partial deliveries are accepted as final.` });
+    setReason("");
+  };
+
+  return (
+    <>
+      <div className="inline-flex gap-1 justify-end">
+        {status === "draft" && (
+          <>
+            <Button size="sm" onClick={() => ask("approved")}>
+              <CheckCircle2 className="w-3.5 h-3.5 mr-1" />Approve
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => ask("cancelled")}>
+              <XCircle className="w-3.5 h-3.5 mr-1" />Cancel
+            </Button>
+          </>
+        )}
+        {(status === "approved" || status === "partial") && (
+          <>
+            <Button size="sm" variant="outline" onClick={() => ask("closed")}>Close</Button>
+            <Button size="sm" variant="outline" onClick={() => ask("cancelled")}>
+              <XCircle className="w-3.5 h-3.5 mr-1" />Cancel
+            </Button>
+          </>
+        )}
+      </div>
+
+      <AlertDialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirm?.title}</AlertDialogTitle>
+            <AlertDialogDescription>{confirm?.body}</AlertDialogDescription>
+          </AlertDialogHeader>
+          {confirm?.needsReason && (
+            <Textarea
+              placeholder="Reason (required)"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel>Back</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={update.isPending || (confirm?.needsReason && !reason.trim())}
+              onClick={() => {
+                if (!confirm) return;
+                update.mutate(
+                  { id: po.id, status: confirm.action, reason: confirm.needsReason ? reason.trim() : undefined },
+                  { onSuccess: () => setConfirm(null) },
+                );
+              }}
+            >
+              Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
