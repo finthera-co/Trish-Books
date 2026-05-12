@@ -183,15 +183,22 @@ export function useCreatePurchaseOrder() {
 
 export function useUpdatePOStatus() {
   const qc = useQueryClient();
+  const { appUser } = useAuth();
   return useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      const { error } = await supabase.from("purchase_orders" as any).update({ status } as any).eq("id", id);
+    mutationFn: async ({ id, status, reason }: { id: string; status: string; reason?: string }) => {
+      const patch: any = { status };
+      const now = new Date().toISOString();
+      if (status === "approved") { patch.approved_by = appUser?.id ?? null; patch.approved_at = now; }
+      if (status === "cancelled") { patch.cancelled_by = appUser?.id ?? null; patch.cancelled_at = now; patch.cancel_reason = reason ?? null; }
+      if (status === "closed") { patch.closed_by = appUser?.id ?? null; patch.closed_at = now; }
+      const { error } = await supabase.from("purchase_orders" as any).update(patch).eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: ["purchase_orders"] });
       qc.invalidateQueries({ queryKey: ["purchase_order"] });
-      toast.success("Status updated");
+      const verb = vars.status === "approved" ? "approved" : vars.status === "cancelled" ? "cancelled" : vars.status === "closed" ? "closed" : "updated";
+      toast.success(`Purchase order ${verb}`);
     },
     onError: (e: Error) => toast.error(e.message),
   });
