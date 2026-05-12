@@ -24,12 +24,15 @@ import { formatCurrency } from "@/lib/currency";
 import { useVendors } from "@/hooks/useSubledger";
 import { useInventoryMaster } from "@/hooks/useProcurement";
 import {
-  usePurchaseOrders, useCreatePurchaseOrder,
+  usePurchaseOrders, useCreatePurchaseOrder, useUpdatePOStatus,
   useGRNs, useCreateGRN, usePostGRN,
   useSupplierBills, useCreateSupplierBill, usePostSupplierBill,
   useUnbilledGRNLines,
   type POLineInput, type GRNLineInput, type BillLineInput,
 } from "@/hooks/useProcurement";
+import { useAuth } from "@/contexts/AuthContext";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { CheckCircle2, XCircle, Lock } from "lucide-react";
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
