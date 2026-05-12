@@ -5332,6 +5332,13 @@ export type Database = {
       }
       purchase_orders: {
         Row: {
+          approved_at: string | null
+          approved_by: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          closed_at: string | null
+          closed_by: string | null
           created_at: string
           created_by: string | null
           currency: string
@@ -5349,6 +5356,13 @@ export type Database = {
           vendor_id: string
         }
         Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          closed_at?: string | null
+          closed_by?: string | null
           created_at?: string
           created_by?: string | null
           currency?: string
@@ -5366,6 +5380,13 @@ export type Database = {
           vendor_id: string
         }
         Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          closed_at?: string | null
+          closed_by?: string | null
           created_at?: string
           created_by?: string | null
           currency?: string
@@ -5383,6 +5404,27 @@ export type Database = {
           vendor_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "purchase_orders_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_closed_by_fkey"
+            columns: ["closed_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "purchase_orders_vendor_id_fkey"
             columns: ["vendor_id"]
