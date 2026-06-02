@@ -252,26 +252,49 @@ export default function AccountForm({
             )}
           </div>
 
-          {/* Detail Type (Subtype) */}
+          {/* Detail Type (Subtype) — REQUIRED */}
           <div>
-            <label className="text-sm font-medium">Detail Type</label>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">
+                Detail Type <span className="text-destructive">*</span>
+              </label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs gap-1"
+                onClick={() => {
+                  const suggestion = suggestSubtypeFromCode(accountCode, accountType);
+                  if (suggestion) setAccountSubtype(suggestion);
+                }}
+                title="Auto-assign based on account number range"
+              >
+                <Sparkles className="h-3 w-3" /> Quick Setup
+              </Button>
+            </div>
             <select
               value={accountSubtype}
               onChange={(e) => setAccountSubtype(e.target.value)}
-              className={inputClass}
+              className={`${inputClass} ${!accountSubtype ? "!border-destructive/40" : ""}`}
             >
               <option value="">— Select detail type —</option>
               {subtypes.map(st => (
                 <option key={st} value={st}>{st}</option>
               ))}
             </select>
-            {accountSubtype && deriveAccountFlags(accountSubtype).is_control_account && (
+            {!accountSubtype ? (
+              <p className="text-[10px] text-destructive mt-1 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                Required — drives statement classification, subledger routing & validations. Use Quick Setup to auto-assign.
+              </p>
+            ) : deriveAccountFlags(accountSubtype).is_control_account && (
               <p className="text-[10px] text-warning mt-1 flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
                 This detail type creates a control account managed by subledger. Manual posting will be restricted.
               </p>
             )}
           </div>
+
 
           <div className="grid grid-cols-2 gap-4">
             {/* Account Code */}
