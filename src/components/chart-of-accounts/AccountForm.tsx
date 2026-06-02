@@ -395,7 +395,7 @@ export default function AccountForm({
 
           <Button
             onClick={handleSubmit}
-            disabled={!accountName || !accountCode || isCodeDuplicate || isPending}
+            disabled={!accountName || !accountCode || !accountSubtype || isCodeDuplicate || isPending}
             className="w-full"
           >
             {isPending ? "Saving..." : editAccount ? "Update Account" : "Create Account"}
