@@ -100,6 +100,8 @@ export default function AccountForm({
     if (!open) return;
     const code = generateAccountCode(accountType, parentId || null, accounts);
     setAccountCode(code);
+    // Auto-suggest a detail type based on the new code so new accounts are never uncategorized
+    setAccountSubtype(prev => prev || suggestSubtypeFromCode(code, accountType) || "");
   }, [accountType, parentId, accounts, editAccount, open]);
 
   const filteredCategories = categories.filter(c => c.account_type === accountType);
