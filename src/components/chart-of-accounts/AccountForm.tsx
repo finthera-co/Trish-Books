@@ -143,6 +143,7 @@ export default function AccountForm({
 
   const handleSubmit = async () => {
     if (isCodeDuplicate) return;
+    if (!accountSubtype) return;
     await onSubmit({
       account_name: accountName,
       account_code: accountCode,
