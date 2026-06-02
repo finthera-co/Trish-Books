@@ -11,7 +11,9 @@ import {
   getStatementPlacement,
   isContraSubtype,
   getAccountTypeLabel,
+  suggestSubtypeFromCode,
 } from "@/lib/accountTypes";
+import { Sparkles } from "lucide-react";
 import { generateAccountCode } from "@/lib/accountCodeGenerator";
 import {
   buildAccountsMap,
