@@ -237,6 +237,118 @@ export const ACCOUNT_NUMBER_RANGES: Record<string, { min: number; max: number }>
   "Other Expense": { min: 9000, max: 9999 },
 };
 
+/**
+ * Suggest a sensible default detail type (subtype) based on the account
+ * number range and account type. Used by the "Quick Setup" action in the
+ * Chart of Accounts form so users never end up with uncategorized accounts.
+ * Returns null when no confident suggestion can be made — caller should
+ * fall back to the first available subtype for the account type.
+ */
+export function suggestSubtypeFromCode(
+  accountCode: string | number | null | undefined,
+  accountType: string,
+): string | null {
+  const code = parseInt(String(accountCode ?? ""), 10);
+  const subs = ACCOUNT_SUBTYPES[accountType] || [];
+  const pick = (name: string): string | null =>
+    subs.find(s => s.toLowerCase() === name.toLowerCase()) || null;
+
+  if (!Number.isFinite(code)) return subs[0] || null;
+
+  // Asset 1000–1999
+  if (accountType === "Asset") {
+    if (code >= 1000 && code <= 1099) return pick("Cash on Hand");
+    if (code >= 1100 && code <= 1149) return pick("Checking");
+    if (code >= 1150 && code <= 1199) return pick("Savings");
+    if (code >= 1200 && code <= 1299) return pick("Accounts Receivable");
+    if (code >= 1300 && code <= 1399) return pick("Inventory");
+    if (code >= 1400 && code <= 1499) return pick("Prepaid Expenses");
+    if (code >= 1500 && code <= 1599) return pick("Furniture & Equipment");
+    if (code >= 1600 && code <= 1699) return pick("Vehicles");
+    if (code >= 1700 && code <= 1799) return pick("Buildings");
+    if (code >= 1800 && code <= 1899) return pick("Accumulated Depreciation");
+    if (code >= 1900 && code <= 1999) return pick("Intangible Assets");
+    return pick("Other Current Assets");
+  }
+
+  // Liability 2000–2999
+  if (accountType === "Liability") {
+    if (code >= 2000 && code <= 2099) return pick("Accounts Payable");
+    if (code >= 2100 && code <= 2199) return pick("Credit Card");
+    if (code >= 2200 && code <= 2399) return pick("Other Current Liability");
+    if (code >= 2400 && code <= 2599) return pick("Payroll Liability");
+    if (code >= 2600 && code <= 2699) return pick("Sales Tax Payable");
+    if (code >= 2700 && code <= 2899) return pick("Long-term Liability");
+    if (code >= 2900 && code <= 2999) return pick("Long-Term Loan");
+    return pick("Other Current Liability");
+  }
+
+  // Equity 3000–3999
+  if (accountType === "Equity") {
+    if (code === 3900) return pick("Opening Balance Equity");
+    if (code >= 3000 && code <= 3099) return pick("Owner's Equity");
+    if (code >= 3100 && code <= 3199) return pick("Retained Earnings");
+    if (code >= 3200 && code <= 3299) return pick("Partner's Equity");
+    if (code >= 3300 && code <= 3399) return pick("Dividends");
+    return pick("Owner's Equity");
+  }
+
+  // Income 4000–4999
+  if (accountType === "Income") {
+    if (code >= 4000 && code <= 4399) return pick("Sales Revenue");
+    if (code >= 4400 && code <= 4499) return pick("Sales of Product");
+    if (code >= 4500 && code <= 4799) return pick("Service Revenue");
+    if (code >= 4800 && code <= 4899) return pick("Discount");
+    if (code >= 4900 && code <= 4999) return pick("Other Revenue");
+    return pick("Sales Revenue");
+  }
+
+  // COGS 5000–5999
+  if (accountType === "Cost of Goods Sold") {
+    if (code >= 5000 && code <= 5299) return pick("Cost of Materials");
+    if (code >= 5300 && code <= 5499) return pick("Cost of Labour");
+    if (code >= 5500 && code <= 5699) return pick("Shipping & Delivery");
+    return pick("Other COGS");
+  }
+
+  // Expense 6000–7999
+  if (accountType === "Expense") {
+    if (code >= 6000 && code <= 6099) return pick("Advertising");
+    if (code >= 6100 && code <= 6199) return pick("Bank Charges");
+    if (code >= 6200 && code <= 6299) return pick("Rent");
+    if (code >= 6300 && code <= 6399) return pick("Utilities");
+    if (code >= 6400 && code <= 6499) return pick("Supplies");
+    if (code >= 6500 && code <= 6599) return pick("Insurance");
+    if (code >= 6600 && code <= 6699) return pick("Payroll Expenses");
+    if (code >= 6700 && code <= 6799) return pick("Office Supplies");
+    if (code >= 6800 && code <= 6899) return pick("Professional Fees");
+    if (code >= 6900 && code <= 6999) return pick("Travel & Transport");
+    if (code >= 7000 && code <= 7099) return pick("Depreciation");
+    if (code >= 7100 && code <= 7199) return pick("Repairs & Maintenance");
+    if (code >= 7200 && code <= 7299) return pick("Taxes & Licences");
+    if (code >= 7300 && code <= 7399) return pick("Meals & Entertainment");
+    return pick("Other Expense");
+  }
+
+  // Other Income 8000–8999
+  if (accountType === "Other Income") {
+    if (code >= 8000 && code <= 8199) return pick("Interest Earned");
+    if (code >= 8200 && code <= 8399) return pick("Dividend Income");
+    if (code >= 8400 && code <= 8599) return pick("Gain on Sale of Assets");
+    return pick("Miscellaneous Income");
+  }
+
+  // Other Expense 9000–9999
+  if (accountType === "Other Expense") {
+    if (code >= 9000 && code <= 9199) return pick("Interest Expense");
+    if (code >= 9200 && code <= 9399) return pick("Loss on Sale of Assets");
+    if (code >= 9400 && code <= 9599) return pick("Penalties & Fines");
+    return pick("Miscellaneous Expense");
+  }
+
+  return subs[0] || null;
+}
+
 // Control accounts that cannot be posted to directly
 export const CONTROL_ACCOUNT_SUBTYPES = [
   "Accounts Receivable",
