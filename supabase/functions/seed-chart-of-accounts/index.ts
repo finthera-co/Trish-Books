@@ -76,6 +76,12 @@ const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   { account_code: "5010", account_name: "Cost of Goods Sold", account_type: "Cost of Goods Sold", account_subtype: "Cost of Materials", category_name: "Cost of Materials" },
   { account_code: "5020", account_name: "Cost of Labour", account_type: "Cost of Goods Sold", account_subtype: "Cost of Labour", category_name: "Cost of Materials" },
   { account_code: "5030", account_name: "Shipping & Delivery", account_type: "Cost of Goods Sold", account_subtype: "Shipping & Delivery", category_name: "Cost of Materials" },
+  { account_code: "5100", account_name: "Purchase Price Variance", account_type: "Cost of Goods Sold", account_subtype: "Other COGS", category_name: "Cost of Materials", is_system: true },
+  { account_code: "5110", account_name: "Direct Labor Applied", account_type: "Cost of Goods Sold", account_subtype: "Cost of Labour", category_name: "Cost of Materials", is_system: true },
+  { account_code: "5120", account_name: "Manufacturing Overhead Applied", account_type: "Cost of Goods Sold", account_subtype: "Other COGS", category_name: "Cost of Materials", is_system: true },
+  { account_code: "5200", account_name: "Inventory Write-Down", account_type: "Expense", account_subtype: "Other Expense", category_name: "Operating Expenses", is_system: true },
+  { account_code: "5210", account_name: "Inventory Write-Off", account_type: "Expense", account_subtype: "Other Expense", category_name: "Operating Expenses", is_system: true },
+  { account_code: "5300", account_name: "Purchase Returns", account_type: "Cost of Goods Sold", account_subtype: "Other COGS", category_name: "Cost of Materials", is_system: true },
   // Expenses
   { account_code: "6100", account_name: "Salaries & Wages", account_type: "Expense", account_subtype: "Payroll Expenses", category_name: "Payroll Expenses" },
   { account_code: "6110", account_name: "Employer EPF Contribution", account_type: "Expense", account_subtype: "Payroll Expenses", category_name: "Payroll Expenses" },
