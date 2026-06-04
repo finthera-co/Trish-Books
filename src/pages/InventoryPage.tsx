@@ -10,8 +10,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/currency";
 import { useInventoryItemsEnhanced, useCreateInventoryItemEnhanced, useUpdateInventoryItem, useDeleteInventoryItem } from "@/hooks/useSubledgerData";
+import { useInventoryRealtime } from "@/hooks/useInventoryRealtime";
 
 export default function InventoryPage() {
+  useInventoryRealtime();
   const { data: items, isLoading } = useInventoryItemsEnhanced();
   const createMutation = useCreateInventoryItemEnhanced();
   const updateMutation = useUpdateInventoryItem();
