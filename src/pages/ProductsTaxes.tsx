@@ -2,10 +2,12 @@ import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useProducts, useCreateProduct, useTaxes, useCreateTax, useAccounts } from "@/hooks/useData";
+import { useInventoryRealtime } from "@/hooks/useInventoryRealtime";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function ProductsTaxes() {
+  useInventoryRealtime();
   // Product form
   const [productOpen, setProductOpen] = useState(false);
   const [productName, setProductName] = useState("");
