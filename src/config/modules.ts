@@ -105,7 +105,6 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
     sidebarItems: [
       { label: "Invoices", path: "/sales/invoices", icon: Wallet },
       { label: "Invoice Templates", path: "/sales/invoices/templates", icon: Layout },
-      { label: "Products & Taxes", path: "/sales/products-taxes", icon: Package },
     ],
   },
   expenses: {
