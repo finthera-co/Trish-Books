@@ -81,7 +81,6 @@ const navGroups: NavGroup[] = [
     label: "Billing",
     items: [
       { label: "Invoices", path: "/invoices", icon: Wallet },
-      { label: "Products & Taxes", path: "/products-taxes", icon: Package },
       { label: "Expenses", path: "/expenses", icon: Banknote },
       { label: "Payment Vouchers", path: "/payment-vouchers", icon: FileText },
       { label: "Petty Cash", path: "/petty-cash", icon: Coins },
