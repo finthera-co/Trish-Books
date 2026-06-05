@@ -7886,6 +7886,14 @@ export type Database = {
         Args: { p_adjustment_id: string }
         Returns: Json
       }
+      validate_pcv_line_account: {
+        Args: {
+          p_account_id: string
+          p_petty_cash_account_id: string
+          p_voucher_date: string
+        }
+        Returns: Json
+      }
       validate_voucher_budget: {
         Args: {
           p_account_id: string
