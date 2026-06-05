@@ -775,3 +775,33 @@ export function useBankAccounts() {
     },
   });
 }
+
+// ─── Petty Cash line account candidates ───
+// Asset / Expense / Other Expense / COGS accounts, excluding any GL account
+// that is registered as a petty cash fund for this tenant. Inactive accounts
+// are kept but flagged so the UI can show a soft warning.
+export function usePettyCashLineAccounts() {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["pcv_line_accounts", appUser?.tenant_id],
+    enabled: !!appUser?.tenant_id,
+    queryFn: async () => {
+      const [{ data: accounts, error: aErr }, { data: pcAccounts, error: pErr }] = await Promise.all([
+        supabase
+          .from("accounts")
+          .select("id, account_name, account_code, account_type, is_active")
+          .eq("tenant_id", appUser!.tenant_id)
+          .in("account_type", ["Asset", "Expense", "Other Expense", "Cost of Goods Sold"])
+          .order("account_code"),
+        supabase
+          .from("petty_cash_accounts")
+          .select("account_id")
+          .eq("tenant_id", appUser!.tenant_id),
+      ]);
+      if (aErr) throw aErr;
+      if (pErr) throw pErr;
+      const blocked = new Set((pcAccounts ?? []).map((p: any) => p.account_id));
+      return (accounts ?? []).filter((a: any) => !blocked.has(a.id));
+    },
+  });
+}
