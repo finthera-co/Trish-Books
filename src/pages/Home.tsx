@@ -51,17 +51,29 @@ function TenantDashboard() {
   const { metrics, isLoading } = useDashboardMetrics(period);
 
   return (
-    <div className="w-full px-4 sm:px-5 py-5 space-y-5 overflow-y-auto flex-1">
-      {/* Header */}
-      <div className="animate-fade-in">
-        <div>
-          <p className="text-xs font-medium text-primary mb-1">Dashboard → Overview</p>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">
-            Financial Dashboard
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Welcome back, {appUser?.first_name || "User"}. {format(new Date(), "EEEE, MMMM d, yyyy")}
-          </p>
+    <div className="w-full px-4 sm:px-6 py-6 space-y-6 overflow-y-auto flex-1">
+      {/* Premium Header */}
+      <div className="premium-hero rounded-3xl border border-border/60 px-6 sm:px-8 py-7 animate-fade-in relative overflow-hidden">
+        <div className="absolute inset-0 pointer-events-none opacity-[0.04] bg-[radial-gradient(circle_at_1px_1px,_hsl(var(--foreground))_1px,_transparent_0)] [background-size:24px_24px]" />
+        <div className="relative flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+          <div>
+            <p className="premium-label mb-2 flex items-center gap-2">
+              <span className="inline-block w-6 h-px bg-primary" />
+              Dashboard · Overview
+            </p>
+            <h1 className="text-3xl sm:text-4xl font-bold text-foreground tracking-tight premium-number">
+              Financial Dashboard
+            </h1>
+            <p className="text-sm text-muted-foreground mt-2">
+              Welcome back, <span className="text-foreground font-medium">{appUser?.first_name || "User"}</span>. {format(new Date(), "EEEE, MMMM d, yyyy")}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <PeriodFilter from={fromDate} to={toDate} onFromChange={setFromDate} onToChange={setToDate} />
+            <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5 rounded-xl bg-card/60 backdrop-blur">
+              <Filter className="w-3.5 h-3.5" /> Filter
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -71,13 +83,6 @@ function TenantDashboard() {
       {/* Module Navigation */}
       <ModuleCards />
 
-      {/* Period Filter */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <PeriodFilter from={fromDate} to={toDate} onFromChange={setFromDate} onToChange={setToDate} />
-        <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5">
-          <Filter className="w-3.5 h-3.5" /> Filter
-        </Button>
-      </div>
 
       {isLoading ? (
         <div className="flex items-center justify-center py-20">

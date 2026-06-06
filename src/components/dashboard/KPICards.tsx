@@ -209,51 +209,80 @@ export default function KPICards({ metrics }: Props) {
           if (items.length === 0) return null;
           return (
             <div key={cat}>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">{cat}</h3>
+              <div className="flex items-center gap-3 mb-4">
+                <h3 className="premium-label">{cat}</h3>
+                <div className="flex-1 premium-divider" />
+                <span className="text-[10px] text-muted-foreground font-mono">{items.length}</span>
+              </div>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {items.map((kpi, i) => (
+                {items.map((kpi, i) => {
+                  const isPinned = pinnedKeys.includes(kpi.key);
+                  return (
                   <Tooltip key={kpi.key}>
                     <TooltipTrigger asChild>
                       <div
                         className={cn(
-                          "group relative bg-card rounded-xl border p-5 hover:shadow-md transition-all duration-300 hover:-translate-y-0.5 cursor-default",
-                          pinnedKeys.includes(kpi.key) ? "border-primary/30 shadow-sm" : "border-border"
+                          "premium-card group p-5 cursor-default",
+                          isPinned && "premium-card-accent ring-1 ring-primary/20"
                         )}
                         style={{ animationDelay: `${i * 0.05}s` }}
                       >
                         {/* Quick actions */}
-                        <div className="absolute top-2 right-2 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-200">
+                        <div className="absolute top-2.5 right-2.5 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-200 z-10">
                           <button onClick={(e) => { e.stopPropagation(); handleTogglePin(kpi.key); }} className="p-1 rounded-md hover:bg-muted transition-colors">
-                            {pinnedKeys.includes(kpi.key) ? <PinOff className="w-3 h-3 text-primary" /> : <Pin className="w-3 h-3 text-muted-foreground" />}
+                            {isPinned ? <PinOff className="w-3 h-3 text-primary" /> : <Pin className="w-3 h-3 text-muted-foreground" />}
                           </button>
                           <button onClick={(e) => { e.stopPropagation(); handleRemoveKpi(kpi.key); }} className="p-1 rounded-md hover:bg-destructive/10 transition-colors">
                             <X className="w-3 h-3 text-muted-foreground hover:text-destructive" />
                           </button>
                         </div>
 
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${kpi.color}15` }}>
-                            <kpi.icon className="w-4.5 h-4.5" style={{ color: kpi.color }} />
+                        <div className="flex items-center justify-between mb-4 relative">
+                          <div
+                            className="w-10 h-10 rounded-xl flex items-center justify-center ring-1 ring-inset"
+                            style={{
+                              backgroundColor: `${kpi.color}12`,
+                              boxShadow: `0 6px 16px -8px ${kpi.color}55`,
+                              // @ts-ignore custom var for ring color
+                              "--tw-ring-color": `${kpi.color}25`,
+                            } as React.CSSProperties}
+                          >
+                            <kpi.icon className="w-[18px] h-[18px]" style={{ color: kpi.color }} />
                           </div>
-                          {kpi.positive
-                            ? <ArrowUpRight className="w-4 h-4 text-[hsl(var(--success))]" />
-                            : <ArrowDownRight className="w-4 h-4 text-destructive" />
-                          }
+                          <div className={cn(
+                            "flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold",
+                            kpi.positive
+                              ? "bg-[hsl(var(--success))]/10 text-[hsl(var(--success))]"
+                              : "bg-destructive/10 text-destructive"
+                          )}>
+                            {kpi.positive
+                              ? <ArrowUpRight className="w-3 h-3" />
+                              : <ArrowDownRight className="w-3 h-3" />}
+                            <span className="tracking-wide">{kpi.category}</span>
+                          </div>
                         </div>
-                        <p className={cn("text-xl font-bold tabular-nums leading-none", kpi.positive ? "text-foreground" : "text-destructive")}>
+
+                        <p className="premium-label mb-2">{kpi.label}</p>
+                        <p className={cn(
+                          "premium-number text-[26px] font-semibold tabular-nums leading-none",
+                          kpi.positive ? "text-foreground" : "text-destructive"
+                        )}>
                           {kpi.value}
                         </p>
-                        <p className="text-xs text-muted-foreground mt-2 leading-tight">{kpi.label}</p>
+                        <div className="mt-4 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
+                        <p className="text-[10px] text-muted-foreground mt-2 truncate font-mono">{kpi.formula}</p>
                       </div>
                     </TooltipTrigger>
-                    <TooltipContent side="bottom" className="max-w-[200px] text-xs">
+                    <TooltipContent side="bottom" className="max-w-[220px] text-xs">
                       <p className="font-semibold">{kpi.label}</p>
                       <p className="text-muted-foreground mt-0.5">Formula: {kpi.formula}</p>
                     </TooltipContent>
                   </Tooltip>
-                ))}
+                  );
+                })}
               </div>
             </div>
+
           );
         })
       )}
