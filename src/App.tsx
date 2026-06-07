@@ -90,6 +90,7 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route element={<ProtectedRoute />}>
+              <Route path="/onboarding" element={<Onboarding />} />
               <Route element={<AppLayout />}>
                 {/* Home — renders different dashboard based on role */}
                 <Route path="/" element={<Home />} />
