@@ -71,6 +71,20 @@ export default function Signup() {
     setLoading(false);
   };
 
+  const handleGoogle = async () => {
+    setLoading(true);
+    const result = await lovable.auth.signInWithOAuth("google", {
+      redirect_uri: window.location.origin,
+    });
+    if (result.error) {
+      toast.error(result.error.message ?? "Google sign-in failed");
+      setLoading(false);
+      return;
+    }
+    if (result.redirected) return;
+    navigate("/");
+  };
+
   const inputClass = "mt-1.5 w-full text-sm border border-input rounded-xl px-4 py-3 bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200";
 
   return (
