@@ -1,8 +1,9 @@
-import { Navigate, Outlet } from "react-router-dom";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function ProtectedRoute() {
-  const { user, loading } = useAuth();
+  const { user, appUser, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -19,5 +20,11 @@ export default function ProtectedRoute() {
     return <Navigate to="/login" replace />;
   }
 
+  // Authenticated via OAuth but no tenant/profile yet — finish onboarding
+  if (!appUser && location.pathname !== "/onboarding") {
+    return <Navigate to="/onboarding" replace />;
+  }
+
   return <Outlet />;
 }
+
