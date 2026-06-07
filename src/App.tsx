@@ -17,6 +17,7 @@ import ModuleDashboard from "./pages/ModuleDashboard";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
+import Onboarding from "./pages/Onboarding";
 import ChartOfAccounts from "./pages/ChartOfAccounts";
 import JournalEntries from "./pages/JournalEntries";
 import JournalEntryView from "./pages/JournalEntryView";
