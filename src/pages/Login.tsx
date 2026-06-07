@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { BookOpen, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
+import { lovable } from "@/integrations/lovable";
 
 export default function Login() {
   const [email, setEmail] = useState("");
