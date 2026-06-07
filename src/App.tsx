@@ -17,6 +17,7 @@ import ModuleDashboard from "./pages/ModuleDashboard";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
+import Onboarding from "./pages/Onboarding";
 import ChartOfAccounts from "./pages/ChartOfAccounts";
 import JournalEntries from "./pages/JournalEntries";
 import JournalEntryView from "./pages/JournalEntryView";
@@ -90,6 +91,7 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route element={<ProtectedRoute />}>
+              <Route path="/onboarding" element={<Onboarding />} />
               <Route element={<AppLayout />}>
                 {/* Home — renders different dashboard based on role */}
                 <Route path="/" element={<Home />} />
