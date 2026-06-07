@@ -27,6 +27,20 @@ export default function Login() {
     setLoading(false);
   };
 
+  const handleGoogle = async () => {
+    setLoading(true);
+    const result = await lovable.auth.signInWithOAuth("google", {
+      redirect_uri: window.location.origin,
+    });
+    if (result.error) {
+      toast.error(result.error.message ?? "Google sign-in failed");
+      setLoading(false);
+      return;
+    }
+    if (result.redirected) return;
+    navigate("/");
+  };
+
   return (
     <div className="min-h-screen flex bg-background">
       {/* Form panel */}
