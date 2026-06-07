@@ -61,6 +61,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role_name: (data.roles as any)?.role_name || "Staff",
         is_primary: (data as any).is_primary || false,
       });
+    } else {
+      setAppUser(null);
     }
   };
 
@@ -70,25 +72,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          setTimeout(() => fetchAppUser(session.user.id), 0);
+          setLoading(true);
+          setTimeout(async () => {
+            await fetchAppUser(session.user.id);
+            setLoading(false);
+          }, 0);
         } else {
           setAppUser(null);
+          setLoading(false);
         }
-        setLoading(false);
       }
     );
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchAppUser(session.user.id);
+        await fetchAppUser(session.user.id);
       }
       setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
