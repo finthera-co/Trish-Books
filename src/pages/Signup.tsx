@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { BookOpen } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { lovable } from "@/integrations/lovable";
 
 export default function Signup() {
   const [email, setEmail] = useState("");
