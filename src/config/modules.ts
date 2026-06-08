@@ -31,6 +31,7 @@ import {
   Layout,
   Activity,
   AlertTriangle,
+  Zap,
 } from "lucide-react";
 import type { ModuleConfig } from "@/components/layout/ModuleLayout";
 
@@ -164,6 +165,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
     sidebarItems: [
       { label: "General Settings", path: "/settings/general", icon: Settings },
       { label: "Account Mapping", path: "/settings/account-mapping", icon: Settings },
+      { label: "Posting Profiles", path: "/settings/posting-profiles", icon: Zap },
       { label: "Users", path: "/settings/users", icon: Users },
     ],
   },

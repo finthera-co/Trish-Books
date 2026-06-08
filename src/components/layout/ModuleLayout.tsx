@@ -3,6 +3,7 @@ import { ChevronRight, Home, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { NavLink } from "@/components/NavLink";
 import { cn } from "@/lib/utils";
+import { useHideSidebar } from "@/stores/useAppStore";
 
 export interface ModuleConfig {
   id: string;
@@ -20,6 +21,7 @@ interface ModuleLayoutProps {
 export default function ModuleLayout({ config }: ModuleLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
+  const hideSidebar = useHideSidebar();
 
   const currentItem = config.sidebarItems.find(i => location.pathname === i.path);
   const isModuleRoot = location.pathname === config.basePath;
@@ -27,7 +29,10 @@ export default function ModuleLayout({ config }: ModuleLayoutProps) {
   return (
     <div className="flex h-full overflow-hidden">
       {/* Dark contextual sidebar */}
-      <aside className="w-60 shrink-0 bg-sidebar hidden md:flex flex-col border-r border-sidebar-border">
+      <aside className={cn(
+        "shrink-0 bg-sidebar hidden md:flex flex-col border-r border-sidebar-border transition-all duration-300 overflow-hidden",
+        hideSidebar ? "w-0 border-r-0" : "w-60"
+      )}>
         <div className="p-4 border-b border-sidebar-border">
           <button
             onClick={() => navigate("/")}

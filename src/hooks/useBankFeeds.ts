@@ -163,6 +163,109 @@ export function useDeleteBankFeed() {
   });
 }
 
+export function useBulkDeleteBankFeed() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ ids, reconciliationId }: { ids: string[]; reconciliationId: string }) => {
+      const { error } = await supabase.from("bank_feed_transactions").delete().in("id", ids);
+      if (error) throw error;
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["bank_feed_transactions", vars.reconciliationId] });
+      toast.success(`Deleted ${vars.ids.length} transaction${vars.ids.length > 1 ? "s" : ""}`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useBulkRejectMatches() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ ids, reconciliationId }: { ids: string[]; reconciliationId: string }) => {
+      const { error } = await supabase
+        .from("bank_feed_transactions")
+        .update({ status: "unmatched", matched_journal_line_id: null, match_confidence: null })
+        .in("id", ids);
+      if (error) throw error;
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["bank_feed_transactions", vars.reconciliationId] });
+      toast.success(`Rejected ${vars.ids.length} match${vars.ids.length > 1 ? "es" : ""}`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useBulkApproveMatches() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      matches,
+      reconciliationId,
+    }: {
+      matches: Array<{ bankFeedId: string; reconTxnId: string }>;
+      reconciliationId: string;
+    }) => {
+      if (!matches.length) return;
+      const today = new Date().toISOString().split("T")[0];
+      const { error: bfErr } = await supabase
+        .from("bank_feed_transactions")
+        .update({ status: "matched" })
+        .in("id", matches.map((m) => m.bankFeedId));
+      if (bfErr) throw bfErr;
+      const { error: rtErr } = await supabase
+        .from("reconciliation_transactions")
+        .update({ cleared: true, cleared_date: today })
+        .in("id", matches.map((m) => m.reconTxnId));
+      if (rtErr) throw rtErr;
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["bank_feed_transactions", vars.reconciliationId] });
+      queryClient.invalidateQueries({ queryKey: ["reconciliation_transactions", vars.reconciliationId] });
+      toast.success(`Approved ${vars.matches.length} match${vars.matches.length > 1 ? "es" : ""}`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useApproveSplitMatch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      bankFeedId,
+      reconTxnIds,
+      reconciliationId,
+    }: {
+      bankFeedId: string;
+      reconTxnIds: string[];
+      reconciliationId: string;
+    }) => {
+      const { error: bfErr } = await supabase
+        .from("bank_feed_transactions")
+        .update({
+          status: "matched",
+          match_type: "SPLIT",
+          match_metadata: { split_txn_ids: reconTxnIds, split_count: reconTxnIds.length },
+        })
+        .eq("id", bankFeedId);
+      if (bfErr) throw bfErr;
+
+      const today = new Date().toISOString().split("T")[0];
+      const { error: rtErr } = await supabase
+        .from("reconciliation_transactions")
+        .update({ cleared: true, cleared_date: today })
+        .in("id", reconTxnIds);
+      if (rtErr) throw rtErr;
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["bank_feed_transactions", vars.reconciliationId] });
+      queryClient.invalidateQueries({ queryKey: ["reconciliation_transactions", vars.reconciliationId] });
+      toast.success("Split match confirmed");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
 export function useRunAIMatching() {
   const queryClient = useQueryClient();
   return useMutation({

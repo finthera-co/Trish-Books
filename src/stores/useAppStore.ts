@@ -18,15 +18,19 @@ interface AppState {
   tenantId: string | null;
   isSwitching: boolean;
   isDataReady: boolean;
+  hideSidebar: boolean;
 
   setTenantId: (id: string | null, queryClient?: QueryClient) => Promise<void>;
   switchTenant: (newTenantId: string, queryClient: QueryClient) => Promise<void>;
+  setHideSidebar: (hidden: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
   tenantId: null,
   isSwitching: false,
   isDataReady: false,
+  hideSidebar: false,
+  setHideSidebar: (hidden) => set({ hideSidebar: hidden }),
 
   /**
    * Used on initial login / auth sync. Also runs the prefetch gate so the
@@ -87,3 +91,5 @@ export const useAppStore = create<AppState>((set, get) => ({
 export const useTenantId = () => useAppStore((s) => s.tenantId);
 export const useIsSwitching = () => useAppStore((s) => s.isSwitching);
 export const useIsDataReady = () => useAppStore((s) => s.isDataReady);
+export const useHideSidebar = () => useAppStore((s) => s.hideSidebar);
+export const useSetHideSidebar = () => useAppStore((s) => s.setHideSidebar);

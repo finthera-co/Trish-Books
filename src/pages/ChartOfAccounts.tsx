@@ -65,6 +65,10 @@ interface Account {
   parent_account_id: string | null;
   category_id: string | null;
   is_active: boolean;
+  is_postable?: boolean;
+  account_level?: number;
+  account_path?: string | null;
+  control_account_type?: string;
   opening_balance?: number;
   opening_balance_type?: string;
   account_categories?: { name: string } | null;
@@ -121,6 +125,27 @@ function getAccountDisplayBalance(
   };
 }
 
+// Recursively sum all leaf-descendant balances for parent (non-postable) accounts.
+function computeRollupBalance(
+  account: Account,
+  periodOBMap?: Map<string, { debit: number; credit: number }>,
+  computedBalanceMap?: Map<string, number>
+): { balance: number; type: string } {
+  const children = account.children;
+  if (!children || children.length === 0) {
+    return getAccountDisplayBalance(account, periodOBMap, computedBalanceMap);
+  }
+  let netDebit = 0;
+  let netCredit = 0;
+  for (const child of children) {
+    const { balance, type } = computeRollupBalance(child, periodOBMap, computedBalanceMap);
+    if (type === "debit") netDebit += balance;
+    else netCredit += balance;
+  }
+  const net = netDebit - netCredit;
+  return { balance: Math.abs(net), type: net >= 0 ? "debit" : "credit" };
+}
+
 function AccountRow({
   account,
   depth = 0,
@@ -161,6 +186,10 @@ function AccountRow({
   const subledgerModule = getModuleLabel(account, accountsMap);
   const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap, computedBalanceMap);
   const isComputedBalance = computedBalanceMap?.has(account.id) ?? false;
+
+  // Parent (non-postable) accounts show a rolled-up sum of all leaf descendants
+  const isParentAccount = account.is_postable === false && (account.children?.length ?? 0) > 0;
+  const rollupResult = isParentAccount ? computeRollupBalance(account, periodOBMap, computedBalanceMap) : null;
 
   // Determine if this account inherits control status from parent
   const isInheritedControl = !controlAcct && parentIsControl;
@@ -206,6 +235,12 @@ function AccountRow({
                 {account.account_subtype && (
                   <span className="text-[10px] bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded">
                     {account.account_subtype}
+                  </span>
+                )}
+                {/* Summary badge for non-postable parent accounts */}
+                {isParentAccount && (
+                  <span className="text-[10px] bg-blue-50 text-blue-600 border border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-900 px-1.5 py-0.5 rounded">
+                    Summary
                   </span>
                 )}
                 {/* Control account badge */}
@@ -270,6 +305,20 @@ function AccountRow({
                     </TooltipTrigger>
                     <TooltipContent>
                       <p className="text-xs">Click to view {subledgerModule?.toLowerCase()} breakdown</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ) : isParentAccount && rollupResult ? (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="text-sm font-mono text-muted-foreground inline-flex items-center gap-1 cursor-default">
+                        {formatCurrency(rollupResult.balance)}
+                        <span className="text-[9px] font-sans bg-muted px-1 py-0.5 rounded">Σ</span>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="left" className="text-xs max-w-[220px]">
+                      Sum of all child-account balances. Post to a child account to change this value.
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>

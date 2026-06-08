@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,7 @@ import ReconciliationSetup from "@/components/bank-reconciliation/Reconciliation
 import ReconciliationWorkspace from "@/components/bank-reconciliation/ReconciliationWorkspace";
 import { Landmark, Plus, RotateCcw, Eye, Search, CheckCircle2, Clock } from "lucide-react";
 import { useMyPermissions } from "@/hooks/usePermissions";
+import { useSetHideSidebar } from "@/stores/useAppStore";
 
 type View = "list" | "setup" | "workspace";
 type StatusFilter = "all" | "in_progress" | "reconciled";
@@ -29,6 +30,13 @@ export default function BankReconciliation() {
   const { data: reconciliations, isLoading } = useBankReconciliations();
   const undoRecon = useUndoReconciliation();
   const { canEdit: canEditBanking } = useMyPermissions();
+  const setHideSidebar = useSetHideSidebar();
+
+  useEffect(() => {
+    const inWorkspace = view === "workspace";
+    setHideSidebar(inWorkspace);
+    return () => setHideSidebar(false);
+  }, [view, setHideSidebar]);
 
   const list = reconciliations || [];
 

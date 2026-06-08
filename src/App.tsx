@@ -54,6 +54,7 @@ import DepreciationRun from "./pages/DepreciationRun";
 import AssetCategories from "./pages/AssetCategories";
 import SettingsPage from "./pages/SettingsPage";
 import AccountMapping from "./pages/AccountMapping";
+import PostingProfiles from "./pages/PostingProfiles";
 import UsersPage from "./pages/UsersPage";
 import Tenants from "./pages/Tenants";
 import Subscriptions from "./pages/Subscriptions";
@@ -205,6 +206,7 @@ const App = () => (
                     <Route path="/settings/general" element={<SettingsPage />} />
                     <Route path="/settings/users" element={<UsersPage />} />
                     <Route path="/settings/account-mapping" element={<AccountMapping />} />
+                    <Route path="/settings/posting-profiles" element={<PostingProfiles />} />
                   </Route>
                 </Route>
               </Route>

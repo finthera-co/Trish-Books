@@ -10,7 +10,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   useBankReconciliation,
   useReconciliationTransactions,
@@ -18,18 +17,23 @@ import {
   useCompleteReconciliation,
   useCreateReconciliationAdjustment,
 } from "@/hooks/useBankReconciliation";
-import { useBankFeedTransactions, useApproveMatch, useRejectMatch, useDeleteBankFeed, useRunAIMatching } from "@/hooks/useBankFeeds";
+import {
+  useBankFeedTransactions, useApproveMatch, useRejectMatch, useDeleteBankFeed, useRunAIMatching,
+  useBulkDeleteBankFeed, useBulkRejectMatches, useBulkApproveMatches,
+} from "@/hooks/useBankFeeds";
 import { useReconcileEngine, useReconciliationSnapshots, useInvariantLog } from "@/hooks/useReconciliationEngine";
 import { useAccounts } from "@/hooks/useData";
 import { formatCurrency } from "@/lib/currency";
 import {
   CheckCircle, XCircle, Plus, ArrowLeft, ChevronDown, ChevronRight,
-  Printer, Sparkles, AlertTriangle, Check, X, Trash2, Link2
+  Printer, Sparkles, AlertTriangle, Check, X, Trash2, Link2, GitBranch,
+  SlidersHorizontal, Search
 } from "lucide-react";
 import ReconciliationReport from "./ReconciliationReport";
 import BankFeedImport from "./BankFeedImport";
 import ReconciliationRulesManager from "./ReconciliationRulesManager";
 import MatchExplanation from "./MatchExplanation";
+import SplitMatchDialog from "./SplitMatchDialog";
 
 interface Props {
   reconciliationId: string;
@@ -66,12 +70,22 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
   const approveMatch = useApproveMatch();
   const rejectMatch = useRejectMatch();
   const deleteBankFeed = useDeleteBankFeed();
+  const bulkDelete = useBulkDeleteBankFeed();
+  const bulkReject = useBulkRejectMatches();
+  const bulkApprove = useBulkApproveMatches();
   const runMatching = useRunAIMatching();
   const engine = useReconcileEngine();
   const { data: snapshots } = useReconciliationSnapshots(reconciliationId);
   const { data: invariants } = useInvariantLog(reconciliationId);
 
   const [search, setSearch] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [amountMin, setAmountMin] = useState("");
+  const [amountMax, setAmountMax] = useState("");
+  const [clearedFilter, setClearedFilter] = useState<"all" | "cleared" | "uncleared">("all");
+  const [typeFilter, setTypeFilter] = useState("all");
   const [showAdjDialog, setShowAdjDialog] = useState(false);
   const [adjType, setAdjType] = useState<"charge" | "interest">("charge");
   const [adjAmount, setAdjAmount] = useState("");
@@ -105,20 +119,67 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
   const [paymentsOpen, setPaymentsOpen] = useState(true);
   const [depositsOpen, setDepositsOpen] = useState(true);
   const [showReport, setShowReport] = useState(false);
-  const [activeTab, setActiveTab] = useState("ledger");
+  const [splitFeed, setSplitFeed] = useState<any | null>(null);
+  const [feedSearch, setFeedSearch] = useState("");
+  const [feedStatusFilter, setFeedStatusFilter] = useState("all");
+  const [selectedFeedIds, setSelectedFeedIds] = useState<Set<string>>(new Set());
+
+  const activeFilterCount = [
+    !!dateFrom,
+    !!dateTo,
+    !!amountMin,
+    !!amountMax,
+    clearedFilter !== "all",
+    typeFilter !== "all",
+  ].filter(Boolean).length;
+
+  const hasActiveFilters = !!search || activeFilterCount > 0;
+
+  const clearFilters = () => {
+    setSearch("");
+    setDateFrom("");
+    setDateTo("");
+    setAmountMin("");
+    setAmountMax("");
+    setClearedFilter("all");
+    setTypeFilter("all");
+  };
 
   const filteredTxns = useMemo(() => {
     if (!transactions) return [];
     return transactions.filter((t: any) => {
       const je = t.journal_lines?.journal_entries;
-      if (!search) return true;
-      const s = search.toLowerCase();
-      return (
-        (je?.description || "").toLowerCase().includes(s) ||
-        (je?.reference || "").toLowerCase().includes(s)
-      );
+      const jl = t.journal_lines;
+
+      // Text search
+      if (search) {
+        const s = search.toLowerCase();
+        if (
+          !(je?.description || "").toLowerCase().includes(s) &&
+          !(je?.reference || "").toLowerCase().includes(s)
+        ) return false;
+      }
+
+      // Date range
+      const date = je?.entry_date || "";
+      if (dateFrom && date < dateFrom) return false;
+      if (dateTo && date > dateTo) return false;
+
+      // Amount range (compare against whichever side is non-zero)
+      const amt = Math.max(Number(jl?.debit) || 0, Number(jl?.credit) || 0);
+      if (amountMin && amt < parseFloat(amountMin)) return false;
+      if (amountMax && amt > parseFloat(amountMax)) return false;
+
+      // Cleared status
+      if (clearedFilter === "cleared" && !t.cleared) return false;
+      if (clearedFilter === "uncleared" && t.cleared) return false;
+
+      // Transaction type
+      if (typeFilter !== "all" && getTransactionType(je, jl) !== typeFilter) return false;
+
+      return true;
     });
-  }, [transactions, search]);
+  }, [transactions, search, dateFrom, dateTo, amountMin, amountMax, clearedFilter, typeFilter]);
 
   const grouped = useMemo(() => {
     const payments: any[] = [];
@@ -185,6 +246,68 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
 
   const isReconciled = recon?.status === "reconciled";
   const canComplete = Math.abs(summary.difference) < 0.005 && !(hasBankFeeds && hasOrphanBankTxns);
+
+  // ── Bank feed search / filter / selection ──────────────────────────────────
+  const filteredFeeds = useMemo(() => {
+    if (!bankFeeds) return [];
+    return (bankFeeds as any[]).filter((f: any) => {
+      if (feedStatusFilter !== "all") {
+        if (feedStatusFilter === "duplicate") { if (!f.is_duplicate) return false; }
+        else if (f.status !== feedStatusFilter) return false;
+      }
+      if (feedSearch) {
+        const s = feedSearch.toLowerCase();
+        if (!(f.description || "").toLowerCase().includes(s) &&
+            !(f.reference_number || "").toLowerCase().includes(s)) return false;
+      }
+      return true;
+    });
+  }, [bankFeeds, feedSearch, feedStatusFilter]);
+
+  const selectableFeeds = useMemo(
+    () => filteredFeeds.filter((f: any) => f.status !== "matched" && f.status !== "rule_matched"),
+    [filteredFeeds]
+  );
+  const allFeedsSelected = selectableFeeds.length > 0 && selectableFeeds.every((f: any) => selectedFeedIds.has(f.id));
+  const someFeedsSelected = !allFeedsSelected && selectableFeeds.some((f: any) => selectedFeedIds.has(f.id));
+
+  const selectedFeedItems = useMemo(
+    () => filteredFeeds.filter((f: any) => selectedFeedIds.has(f.id)),
+    [filteredFeeds, selectedFeedIds]
+  );
+  const bulkSuggestedMatches = useMemo(
+    () => selectedFeedItems
+      .filter((f: any) => f.status === "suggested" && suggestedMatchMap.has(f.id))
+      .map((f: any) => ({ bankFeedId: f.id, reconTxnId: suggestedMatchMap.get(f.id).reconTxn.id })),
+    [selectedFeedItems, suggestedMatchMap]
+  );
+  const canBulkApprove = bulkSuggestedMatches.length > 0;
+  const canBulkReject  = selectedFeedItems.some((f: any) => f.status === "suggested");
+  const canBulkDelete  = selectedFeedItems.some((f: any) => f.status === "unmatched" || f.is_duplicate);
+
+  const toggleFeedSelect = (id: string) =>
+    setSelectedFeedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const toggleSelectAllFeeds = () => {
+    if (allFeedsSelected) {
+      setSelectedFeedIds((prev) => { const n = new Set(prev); selectableFeeds.forEach((f: any) => n.delete(f.id)); return n; });
+    } else {
+      setSelectedFeedIds((prev) => { const n = new Set(prev); selectableFeeds.forEach((f: any) => n.add(f.id)); return n; });
+    }
+  };
+
+  const handleBulkApprove = () => {
+    bulkApprove.mutate({ matches: bulkSuggestedMatches, reconciliationId });
+    setSelectedFeedIds(new Set());
+  };
+  const handleBulkReject = () => {
+    bulkReject.mutate({ ids: selectedFeedItems.filter((f: any) => f.status === "suggested").map((f: any) => f.id), reconciliationId });
+    setSelectedFeedIds(new Set());
+  };
+  const handleBulkDelete = () => {
+    bulkDelete.mutate({ ids: selectedFeedItems.filter((f: any) => f.status === "unmatched" || f.is_duplicate).map((f: any) => f.id), reconciliationId });
+    setSelectedFeedIds(new Set());
+  };
 
   const handleToggle = (txnId: string, currentCleared: boolean) => {
     if (isReconciled) return;
@@ -362,130 +485,347 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
         {/* Left Panel - Bank Feed */}
         <div className="xl:col-span-3">
-          <Card className="h-full">
-            <CardHeader className="py-3 px-4">
-              <CardTitle className="text-sm flex items-center justify-between">
-                <span>Bank Feed</span>
+          <Card className="h-full flex flex-col">
+            {/* Header: title + badges */}
+            <CardHeader className="py-2 px-3 shrink-0 border-b">
+              <div className="flex items-center justify-between mb-2">
+                <CardTitle className="text-sm">Bank Feed</CardTitle>
                 <div className="flex gap-1">
                   {bankFeedSummary.duplicates > 0 && (
                     <Badge variant="destructive" className="text-[10px]">{bankFeedSummary.duplicates} dup</Badge>
                   )}
-                  <Badge variant="outline" className="text-[10px]">{bankFeedSummary.total}</Badge>
+                  <Badge variant="outline" className="text-[10px]">{filteredFeeds.length}/{bankFeedSummary.total}</Badge>
                 </div>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="max-h-[55vh] overflow-auto">
-                {(!bankFeeds || bankFeeds.length === 0) ? (
-                  <div className="p-4 text-center text-muted-foreground text-xs">
-                    <p>No bank feed imported yet.</p>
-                    <p className="mt-1">Click "Import Bank Statement" to upload a CSV.</p>
-                  </div>
-                ) : (
-                  <div className="divide-y">
-                    {bankFeeds.map((f: any) => (
-                      <div key={f.id} className={`px-3 py-2 text-xs ${f.is_duplicate ? "bg-amber-50 dark:bg-amber-950/20" : ""} ${f.status === "matched" ? "bg-green-50 dark:bg-green-950/20 opacity-60" : ""} ${f.status === "suggested" ? "bg-blue-50 dark:bg-blue-950/20" : ""}`}>
-                        <div className="flex justify-between items-start">
-                          <span className="text-muted-foreground">{f.transaction_date}</span>
-                          <span className={`font-mono font-medium ${f.amount > 0 ? "text-green-600" : "text-red-600"}`}>
-                            {formatCurrency(f.amount)}
-                          </span>
-                        </div>
-                        <p className="truncate mt-0.5">{f.description || "—"}</p>
-                        <div className="flex items-center justify-between mt-1">
-                          <div className="flex gap-1">
-                            {f.is_duplicate && (
-                              <Badge variant="destructive" className="text-[9px] px-1 py-0">
-                                <AlertTriangle className="w-2 h-2 mr-0.5" /> Duplicate
-                              </Badge>
-                            )}
-                            {f.status === "suggested" && (
-                              <Badge className="text-[9px] px-1 py-0 bg-amber-500">
-                                <Sparkles className="w-2 h-2 mr-0.5" /> Suggested {f.match_confidence}%
-                              </Badge>
-                            )}
-                            {f.status === "matched" && (
-                              <Badge className="text-[9px] px-1 py-0 bg-green-600">
-                                <Check className="w-2 h-2 mr-0.5" /> {f.match_type === "AUTO_MATCHED" ? "Auto" : f.match_type === "GROUP_MATCHED" ? "Group" : "Matched"}
-                              </Badge>
-                            )}
-                            {f.status === "matched" && f.match_metadata?.method && (
-                              <Badge variant="outline" className="text-[9px] px-1 py-0">
-                                {f.match_metadata.method}
-                              </Badge>
-                            )}
-                            {f.status === "rule_matched" && (
-                              <Badge className="text-[9px] px-1 py-0 bg-purple-600">
-                                Rule Match
-                              </Badge>
-                            )}
-                            {(f.status === "matched" || f.status === "suggested" || f.status === "rule_matched") && f.match_type && (
-                              <MatchExplanation
-                                matchType={f.match_type}
-                                matchConfidence={f.match_confidence}
-                                metadata={f.match_metadata}
-                              />
-                            )}
-                          </div>
-                          {!isReconciled && f.status !== "matched" && (
-                            <div className="flex gap-0.5">
-                              {f.status === "suggested" && suggestedMatchMap.has(f.id) && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-5 w-5 p-0 text-green-600"
-                                  onClick={() => {
-                                    const match = suggestedMatchMap.get(f.id);
-                                    approveMatch.mutate({
-                                      bankFeedId: f.id,
-                                      reconTxnId: match.reconTxn.id,
-                                      reconciliationId,
-                                    });
-                                  }}
-                                >
-                                  <Check className="w-3 h-3" />
-                                </Button>
-                              )}
-                              {f.status === "suggested" && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-5 w-5 p-0 text-red-600"
-                                  onClick={() => rejectMatch.mutate({ bankFeedId: f.id, reconciliationId })}
-                                >
-                                  <X className="w-3 h-3" />
-                                </Button>
-                              )}
-                              {(f.is_duplicate || f.status === "unmatched") && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-5 w-5 p-0 text-muted-foreground"
-                                  onClick={() => deleteBankFeed.mutate({ id: f.id, reconciliationId })}
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </Button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
+
+              {/* Search + status filter */}
+              <div className="flex gap-1.5">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
+                  <Input
+                    placeholder="Search…"
+                    value={feedSearch}
+                    onChange={(e) => setFeedSearch(e.target.value)}
+                    className="h-7 pl-6 text-xs"
+                  />
+                </div>
+                <Select value={feedStatusFilter} onValueChange={setFeedStatusFilter}>
+                  <SelectTrigger className="h-7 text-xs w-28 shrink-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="unmatched">Unmatched</SelectItem>
+                    <SelectItem value="suggested">Suggested</SelectItem>
+                    <SelectItem value="matched">Matched</SelectItem>
+                    <SelectItem value="rule_matched">Rule Matched</SelectItem>
+                    <SelectItem value="duplicate">Duplicates</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardHeader>
+
+            {/* Bulk action bar — visible only when rows are selected */}
+            {!isReconciled && selectedFeedIds.size > 0 && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/5 border-b text-xs shrink-0">
+                <span className="font-medium text-primary mr-1">{selectedFeedIds.size} selected</span>
+                {canBulkApprove && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 px-2 text-[11px] text-green-700 border-green-300 hover:bg-green-50"
+                    disabled={bulkApprove.isPending}
+                    onClick={handleBulkApprove}
+                  >
+                    <Check className="w-3 h-3 mr-1" />
+                    Approve ({bulkSuggestedMatches.length})
+                  </Button>
+                )}
+                {canBulkReject && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 px-2 text-[11px] text-amber-700 border-amber-300 hover:bg-amber-50"
+                    disabled={bulkReject.isPending}
+                    onClick={handleBulkReject}
+                  >
+                    <X className="w-3 h-3 mr-1" />
+                    Reject
+                  </Button>
+                )}
+                {canBulkDelete && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 px-2 text-[11px] text-destructive border-destructive/30 hover:bg-destructive/10"
+                    disabled={bulkDelete.isPending}
+                    onClick={handleBulkDelete}
+                  >
+                    <Trash2 className="w-3 h-3 mr-1" />
+                    Delete
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0 ml-auto text-muted-foreground"
+                  onClick={() => setSelectedFeedIds(new Set())}
+                >
+                  <X className="w-3 h-3" />
+                </Button>
+              </div>
+            )}
+
+            <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
+              {(!bankFeeds || bankFeeds.length === 0) ? (
+                <div className="p-4 text-center text-muted-foreground text-xs">
+                  <p>No bank feed imported yet.</p>
+                  <p className="mt-1">Click "Import Bank Statement" to upload a CSV.</p>
+                </div>
+              ) : filteredFeeds.length === 0 ? (
+                <div className="p-4 text-center text-muted-foreground text-xs">No transactions match the current filter.</div>
+              ) : (
+                <>
+                  {/* Select-all row */}
+                  {!isReconciled && selectableFeeds.length > 0 && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 border-b bg-muted/20 text-xs text-muted-foreground shrink-0">
+                      <Checkbox
+                        checked={allFeedsSelected ? true : someFeedsSelected ? "indeterminate" : false}
+                        onCheckedChange={toggleSelectAllFeeds}
+                      />
+                      <span>
+                        {allFeedsSelected
+                          ? `All ${selectableFeeds.length} selected`
+                          : `Select all ${selectableFeeds.length} actionable`}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Transaction list */}
+                  <div className="overflow-auto flex-1">
+                    <div className="divide-y">
+                      {filteredFeeds.map((f: any) => {
+                        const isSelectable = f.status !== "matched" && f.status !== "rule_matched";
+                        const isSelected = selectedFeedIds.has(f.id);
+                        return (
+                          <div
+                            key={f.id}
+                            className={[
+                              "px-3 py-2 text-xs transition-colors",
+                              isSelected ? "bg-primary/5" : "",
+                              f.is_duplicate ? "bg-amber-50 dark:bg-amber-950/20" : "",
+                              f.status === "matched" ? "bg-green-50 dark:bg-green-950/20 opacity-60" : "",
+                              f.status === "suggested" && !isSelected ? "bg-blue-50 dark:bg-blue-950/20" : "",
+                            ].filter(Boolean).join(" ")}
+                          >
+                            <div className="flex items-start gap-2">
+                              {/* Checkbox column */}
+                              {!isReconciled && (
+                                <div className="mt-0.5 shrink-0">
+                                  {isSelectable ? (
+                                    <Checkbox
+                                      checked={isSelected}
+                                      onCheckedChange={() => toggleFeedSelect(f.id)}
+                                    />
+                                  ) : (
+                                    <div className="w-4" />
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Transaction content */}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex justify-between items-start">
+                                  <span className="text-muted-foreground shrink-0">{f.transaction_date}</span>
+                                  <span className={`font-mono font-medium ml-2 ${f.amount > 0 ? "text-green-600" : "text-red-600"}`}>
+                                    {formatCurrency(f.amount)}
+                                  </span>
+                                </div>
+                                <p className="truncate mt-0.5">{f.description || "—"}</p>
+
+                                {/* Badges + per-row actions */}
+                                <div className="flex items-center justify-between mt-1">
+                                  <div className="flex flex-wrap gap-1">
+                                    {f.is_duplicate && (
+                                      <Badge variant="destructive" className="text-[9px] px-1 py-0">
+                                        <AlertTriangle className="w-2 h-2 mr-0.5" /> Duplicate
+                                      </Badge>
+                                    )}
+                                    {f.status === "suggested" && (
+                                      <Badge className="text-[9px] px-1 py-0 bg-amber-500">
+                                        <Sparkles className="w-2 h-2 mr-0.5" /> {f.match_confidence}%
+                                      </Badge>
+                                    )}
+                                    {f.status === "matched" && (
+                                      <Badge className="text-[9px] px-1 py-0 bg-green-600">
+                                        <Check className="w-2 h-2 mr-0.5" />
+                                        {f.match_type === "AUTO_MATCHED" ? "Auto" : f.match_type === "GROUP_MATCHED" ? "Group" : f.match_type === "SPLIT" ? "Split" : "Matched"}
+                                      </Badge>
+                                    )}
+                                    {f.status === "matched" && f.match_metadata?.method && (
+                                      <Badge variant="outline" className="text-[9px] px-1 py-0">
+                                        {f.match_metadata.method}
+                                      </Badge>
+                                    )}
+                                    {f.status === "rule_matched" && (
+                                      <Badge className="text-[9px] px-1 py-0 bg-purple-600">Rule</Badge>
+                                    )}
+                                    {(f.status === "matched" || f.status === "suggested" || f.status === "rule_matched") && f.match_type && (
+                                      <MatchExplanation matchType={f.match_type} matchConfidence={f.match_confidence} metadata={f.match_metadata} />
+                                    )}
+                                  </div>
+
+                                  {!isReconciled && f.status !== "matched" && f.status !== "rule_matched" && (
+                                    <div className="flex gap-0.5 shrink-0">
+                                      {f.status === "suggested" && suggestedMatchMap.has(f.id) && (
+                                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-green-600"
+                                          onClick={() => { const m = suggestedMatchMap.get(f.id); approveMatch.mutate({ bankFeedId: f.id, reconTxnId: m.reconTxn.id, reconciliationId }); }}>
+                                          <Check className="w-3 h-3" />
+                                        </Button>
+                                      )}
+                                      {f.status === "suggested" && (
+                                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-red-600"
+                                          onClick={() => rejectMatch.mutate({ bankFeedId: f.id, reconciliationId })}>
+                                          <X className="w-3 h-3" />
+                                        </Button>
+                                      )}
+                                      {f.status === "unmatched" && !f.is_duplicate && (
+                                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-primary"
+                                          title="Split match" onClick={() => setSplitFeed(f)}>
+                                          <GitBranch className="w-3 h-3" />
+                                        </Button>
+                                      )}
+                                      {(f.is_duplicate || f.status === "unmatched") && (
+                                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-muted-foreground"
+                                          onClick={() => deleteBankFeed.mutate({ id: f.id, reconciliationId })}>
+                                          <Trash2 className="w-3 h-3" />
+                                        </Button>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
         </div>
 
         {/* Center Panel - Ledger Transactions */}
         <div className="xl:col-span-6 space-y-3">
-          <Input
-            placeholder="Search by payee, reference, or description..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="max-w-md"
-          />
+          {/* Filter bar */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                <Input
+                  placeholder="Search by payee, reference, or description..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-8"
+                />
+              </div>
+              <Button
+                variant={showFilters ? "default" : "outline"}
+                size="sm"
+                onClick={() => setShowFilters((v) => !v)}
+                className="shrink-0 gap-1"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                Filters
+                {activeFilterCount > 0 && (
+                  <Badge className="ml-1 h-4 min-w-4 px-1 text-[10px] flex items-center justify-center">
+                    {activeFilterCount}
+                  </Badge>
+                )}
+              </Button>
+              {hasActiveFilters && (
+                <Button variant="ghost" size="sm" onClick={clearFilters} className="shrink-0 text-muted-foreground gap-1">
+                  <X className="w-3.5 h-3.5" /> Clear
+                </Button>
+              )}
+            </div>
+
+            {showFilters && (
+              <div className="flex flex-wrap gap-3 p-3 bg-muted/30 rounded-lg border text-xs">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Date from</Label>
+                  <Input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="h-8 text-xs w-36"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Date to</Label>
+                  <Input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="h-8 text-xs w-36"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Min amount</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={amountMin}
+                    onChange={(e) => setAmountMin(e.target.value)}
+                    className="h-8 text-xs w-28"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Max amount</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={amountMax}
+                    onChange={(e) => setAmountMax(e.target.value)}
+                    className="h-8 text-xs w-28"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Status</Label>
+                  <Select value={clearedFilter} onValueChange={(v) => setClearedFilter(v as "all" | "cleared" | "uncleared")}>
+                    <SelectTrigger className="h-8 text-xs w-28"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="cleared">Cleared</SelectItem>
+                      <SelectItem value="uncleared">Uncleared</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Type</Label>
+                  <Select value={typeFilter} onValueChange={setTypeFilter}>
+                    <SelectTrigger className="h-8 text-xs w-36"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Types</SelectItem>
+                      <SelectItem value="Check">Check</SelectItem>
+                      <SelectItem value="Bill Payment">Bill Payment</SelectItem>
+                      <SelectItem value="Transfer">Transfer</SelectItem>
+                      <SelectItem value="Bank Fee">Bank Fee</SelectItem>
+                      <SelectItem value="Interest">Interest</SelectItem>
+                      <SelectItem value="Payment">Payment</SelectItem>
+                      <SelectItem value="Deposit">Deposit</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Checks and Payments */}
           <Card>
@@ -763,6 +1103,17 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
           )}
         </div>
       </div>
+
+      {/* Split Match Dialog */}
+      {splitFeed && (
+        <SplitMatchDialog
+          open={!!splitFeed}
+          onClose={() => setSplitFeed(null)}
+          bankFeed={splitFeed}
+          reconciliationId={reconciliationId}
+          transactions={transactions || []}
+        />
+      )}
 
       {/* Adjustment Dialog */}
       <Dialog open={showAdjDialog} onOpenChange={setShowAdjDialog}>

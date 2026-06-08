@@ -149,10 +149,13 @@ export type Database = {
       accounts: {
         Row: {
           account_code: string
+          account_level: number
           account_name: string
+          account_path: string
           account_subtype: string | null
           account_type: string
           category_id: string | null
+          control_account_type: string
           created_at: string
           created_from: string | null
           id: string
@@ -160,6 +163,7 @@ export type Database = {
           is_contra: boolean
           is_control_account: boolean
           is_locked: boolean
+          is_postable: boolean
           is_system: boolean
           normal_balance: string
           opening_balance: number
@@ -173,10 +177,13 @@ export type Database = {
         }
         Insert: {
           account_code: string
+          account_level?: number
           account_name: string
+          account_path?: string | null
           account_subtype?: string | null
           account_type: string
           category_id?: string | null
+          control_account_type?: string
           created_at?: string
           created_from?: string | null
           id?: string
@@ -184,6 +191,7 @@ export type Database = {
           is_contra?: boolean
           is_control_account?: boolean
           is_locked?: boolean
+          is_postable?: boolean
           is_system?: boolean
           normal_balance?: string
           opening_balance?: number
@@ -197,10 +205,13 @@ export type Database = {
         }
         Update: {
           account_code?: string
+          account_level?: number
           account_name?: string
+          account_path?: string | null
           account_subtype?: string | null
           account_type?: string
           category_id?: string | null
+          control_account_type?: string
           created_at?: string
           created_from?: string | null
           id?: string
@@ -208,6 +219,7 @@ export type Database = {
           is_contra?: boolean
           is_control_account?: boolean
           is_locked?: boolean
+          is_postable?: boolean
           is_system?: boolean
           normal_balance?: string
           opening_balance?: number
@@ -5175,6 +5187,72 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "product_categories_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      posting_profiles: {
+        Row: {
+          account_role: string
+          created_at: string
+          description: string | null
+          effective_from: string
+          effective_to: string | null
+          entity_scope: Json | null
+          gl_account_id: string
+          id: string
+          is_active: boolean
+          module: string
+          priority: number
+          tenant_id: string
+          transaction_type: string
+          updated_at: string
+        }
+        Insert: {
+          account_role: string
+          created_at?: string
+          description?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          entity_scope?: Json | null
+          gl_account_id: string
+          id?: string
+          is_active?: boolean
+          module: string
+          priority?: number
+          tenant_id: string
+          transaction_type: string
+          updated_at?: string
+        }
+        Update: {
+          account_role?: string
+          created_at?: string
+          description?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          entity_scope?: Json | null
+          gl_account_id?: string
+          id?: string
+          is_active?: boolean
+          module?: string
+          priority?: number
+          tenant_id?: string
+          transaction_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "posting_profiles_gl_account_id_fkey"
+            columns: ["gl_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "posting_profiles_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
