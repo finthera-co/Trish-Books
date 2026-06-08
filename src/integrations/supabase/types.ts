@@ -467,6 +467,135 @@ export type Database = {
           },
         ]
       }
+      ar_transactions: {
+        Row: {
+          id: string
+          tenant_id: string
+          customer_id: string
+          transaction_type: 'INVOICE' | 'CREDIT_NOTE' | 'PAYMENT' | 'WRITE_OFF' | 'ADJUSTMENT'
+          document_id: string | null
+          document_ref: string | null
+          transaction_date: string
+          due_date: string | null
+          amount: number
+          outstanding_amount: number
+          status: 'OPEN' | 'PARTIALLY_PAID' | 'PAID' | 'WRITTEN_OFF'
+          journal_entry_id: string | null
+          journal_line_id: string | null
+          ar_account_id: string | null
+          related_transaction_id: string | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          customer_id: string
+          transaction_type: 'INVOICE' | 'CREDIT_NOTE' | 'PAYMENT' | 'WRITE_OFF' | 'ADJUSTMENT'
+          document_id?: string | null
+          document_ref?: string | null
+          transaction_date: string
+          due_date?: string | null
+          amount?: number
+          outstanding_amount?: number
+          status?: 'OPEN' | 'PARTIALLY_PAID' | 'PAID' | 'WRITTEN_OFF'
+          journal_entry_id?: string | null
+          journal_line_id?: string | null
+          ar_account_id?: string | null
+          related_transaction_id?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          customer_id?: string
+          transaction_type?: 'INVOICE' | 'CREDIT_NOTE' | 'PAYMENT' | 'WRITE_OFF' | 'ADJUSTMENT'
+          document_id?: string | null
+          document_ref?: string | null
+          transaction_date?: string
+          due_date?: string | null
+          amount?: number
+          outstanding_amount?: number
+          status?: 'OPEN' | 'PARTIALLY_PAID' | 'PAID' | 'WRITTEN_OFF'
+          journal_entry_id?: string | null
+          journal_line_id?: string | null
+          ar_account_id?: string | null
+          related_transaction_id?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ar_transactions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ar_transactions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      customer_accounts: {
+        Row: {
+          id: string
+          tenant_id: string
+          customer_id: string
+          ar_account_id: string | null
+          credit_limit: number
+          credit_terms_days: number
+          current_balance: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          customer_id: string
+          ar_account_id?: string | null
+          credit_limit?: number
+          credit_terms_days?: number
+          current_balance?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          customer_id?: string
+          ar_account_id?: string | null
+          credit_limit?: number
+          credit_terms_days?: number
+          current_balance?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_accounts_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_accounts_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ar_subledger: {
         Row: {
           amount: number
@@ -7761,6 +7890,14 @@ export type Database = {
       }
     }
     Functions: {
+      ar_aging_report: {
+        Args: { p_as_of_date?: string }
+        Returns: Json
+      }
+      ar_reconciliation_check: {
+        Args: { p_as_of_date?: string }
+        Returns: Json
+      }
       approve_stock_adjustment: {
         Args: { p_adjustment_id: string }
         Returns: Json

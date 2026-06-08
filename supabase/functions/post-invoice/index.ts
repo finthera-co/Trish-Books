@@ -390,17 +390,21 @@ Deno.serve(async (req) => {
       .eq("id", je.id);
     if (postErr) return json({ ok: false, error: `Failed to post: ${postErr.message}` }, 200);
 
-    // AR subledger
+    // Fetch the AR journal line id for sub-ledger linking
+    const { data: arJournalLine } = await admin
+      .from("journal_lines")
+      .select("id")
+      .eq("journal_entry_id", je.id)
+      .eq("account_id", arAccountId)
+      .single();
+    const arLineId = arJournalLine?.id ?? null;
+
+    // AR subledger (legacy — backward compat)
     await admin.from("ar_subledger").insert({
       tenant_id: appUser.tenant_id,
       customer_id: invoice.customer_id,
       journal_id: je.id,
-      journal_line_id: (await admin
-        .from("journal_lines")
-        .select("id")
-        .eq("journal_entry_id", je.id)
-        .eq("account_id", arAccountId)
-        .single()).data?.id,
+      journal_line_id: arLineId,
       debit: total,
       credit: 0,
       amount: total,
@@ -409,6 +413,23 @@ Deno.serve(async (req) => {
       document_id: invoice_id,
       invoice_no: invoice.invoice_number,
       due_date: invoice.due_date,
+    });
+
+    // ar_transactions (Phase 3 enriched sub-ledger)
+    await admin.from("ar_transactions").insert({
+      tenant_id:        appUser.tenant_id,
+      customer_id:      invoice.customer_id,
+      transaction_type: "INVOICE",
+      document_id:      invoice_id,
+      document_ref:     invoice.invoice_number,
+      transaction_date: invoice.issue_date,
+      due_date:         invoice.due_date,
+      amount:           total,
+      outstanding_amount: total,
+      status:           "OPEN",
+      journal_entry_id: je.id,
+      journal_line_id:  arLineId,
+      ar_account_id:    arAccountId,
     });
 
     // ── Stock movements for tracked products (issue / sale) ─────────

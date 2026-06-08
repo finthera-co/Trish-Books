@@ -288,90 +288,178 @@ export function useCustomerDetail(customerId: string | undefined) {
   });
 }
 
-// ─── AR Aging Data (from ar_subledger) ───────────────────
-export function useARAging() {
-  const { appUser } = useAuth();
-  return useQuery({
-    queryKey: ["ar_aging", appUser?.tenant_id],
-    queryFn: async () => {
-      const tid = appUser!.tenant_id;
+// ─── AR Aging Data (from ar_aging_report RPC or fallback) ────────────────────
+export type AgingRow = {
+  customer_id: string;
+  customer_name: string;
+  current: number;
+  days_1_30: number;
+  days_31_60: number;
+  days_61_90: number;
+  days_91_120: number;
+  over_120: number;
+  total: number;
+};
 
-      // Get all AR subledger entries with open invoice balances
-      const { data: arEntries, error: arErr } = await supabase
+export type AgingTotals = {
+  current: number;
+  days_1_30: number;
+  days_31_60: number;
+  days_61_90: number;
+  days_91_120: number;
+  over_120: number;
+  grand_total: number;
+};
+
+export type ReconciliationResult = {
+  subledger_balance: number;
+  gl_balance: number;
+  variance: number;
+  status: "RECONCILED" | "VARIANCE_DETECTED";
+  as_of_date: string;
+};
+
+export function useARAging(asOfDate?: string) {
+  const { appUser } = useAuth();
+  const dateParam = asOfDate ?? new Date().toISOString().split("T")[0];
+  return useQuery({
+    queryKey: ["ar_aging", appUser?.tenant_id, dateParam],
+    queryFn: async () => {
+      // Try the DB RPC first (Phase 3 data — ar_transactions)
+      const { data: rpcData, error: rpcErr } = await supabase.rpc("ar_aging_report", {
+        p_as_of_date: dateParam,
+      });
+
+      if (!rpcErr && rpcData) {
+        const result = rpcData as { rows: AgingRow[]; totals: AgingTotals };
+        return { rows: result.rows ?? [], totals: result.totals };
+      }
+
+      // Fallback: client-side from ar_subledger (Phase 1/2 data)
+      const tid = appUser!.tenant_id;
+      const { data: arEntries } = await supabase
         .from("ar_subledger")
         .select("customer_id, document_type, document_id, debit, credit, due_date, created_at")
         .eq("tenant_id", tid);
-      if (arErr) throw arErr;
 
-      // Get customer names
       const { data: customers } = await supabase
         .from("customers")
         .select("id, name")
         .eq("tenant_id", tid);
       const custNameMap = new Map((customers || []).map((c: any) => [c.id, c.name]));
 
-      // Calculate net balance per customer
       const customerBalanceMap = new Map<string, number>();
       for (const e of arEntries || []) {
         const prev = customerBalanceMap.get(e.customer_id) || 0;
         customerBalanceMap.set(e.customer_id, prev + Number(e.debit) - Number(e.credit));
       }
 
-      // For aging buckets, use invoice-type entries with positive open balances
-      // Group by document_id to get per-invoice balance
       const invoiceBalances = new Map<string, { customer_id: string; due_date: string | null; balance: number }>();
       for (const e of arEntries || []) {
         if (e.document_type === "invoice" || e.document_type === "opening_balance") {
           const key = e.document_id || e.customer_id;
           const existing = invoiceBalances.get(key);
-          if (existing) {
-            existing.balance += Number(e.debit) - Number(e.credit);
-          } else {
-            invoiceBalances.set(key, {
-              customer_id: e.customer_id,
-              due_date: e.due_date,
-              balance: Number(e.debit) - Number(e.credit),
-            });
-          }
-        } else {
-          // payments/credits reduce invoices - apply to oldest doc
-          // For simplicity, reduce the overall customer balance (already tracked above)
+          if (existing) existing.balance += Number(e.debit) - Number(e.credit);
+          else invoiceBalances.set(key, { customer_id: e.customer_id, due_date: e.due_date, balance: Number(e.debit) - Number(e.credit) });
         }
       }
 
-      const today = new Date();
-      type AgingRow = { customer_id: string; customer_name: string; current: number; days_1_30: number; days_31_60: number; days_61_90: number; over_90: number; total: number };
-      const customerMap = new Map<string, AgingRow>();
+      const today = new Date(dateParam);
+      const fallbackRows = new Map<string, AgingRow>();
 
-      // Use net customer balance and distribute across aging buckets from invoices
       for (const [custId, totalBalance] of customerBalanceMap) {
         if (totalBalance <= 0) continue;
-
         const custName = custNameMap.get(custId) || "Unknown";
-        if (!customerMap.has(custId)) {
-          customerMap.set(custId, { customer_id: custId, customer_name: custName, current: 0, days_1_30: 0, days_31_60: 0, days_61_90: 0, over_90: 0, total: totalBalance });
+        if (!fallbackRows.has(custId)) {
+          fallbackRows.set(custId, { customer_id: custId, customer_name: custName, current: 0, days_1_30: 0, days_31_60: 0, days_61_90: 0, days_91_120: 0, over_120: 0, total: totalBalance });
         }
       }
 
-      // Distribute into aging buckets based on invoice due dates
       for (const [, inv] of invoiceBalances) {
         if (inv.balance <= 0) continue;
-        const row = customerMap.get(inv.customer_id);
+        const row = fallbackRows.get(inv.customer_id);
         if (!row) continue;
-
-        const dueDate = inv.due_date ? new Date(inv.due_date) : new Date();
+        const dueDate = inv.due_date ? new Date(inv.due_date) : today;
         const daysOverdue = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
-
-        if (daysOverdue <= 0) row.current += inv.balance;
-        else if (daysOverdue <= 30) row.days_1_30 += inv.balance;
-        else if (daysOverdue <= 60) row.days_31_60 += inv.balance;
-        else if (daysOverdue <= 90) row.days_61_90 += inv.balance;
-        else row.over_90 += inv.balance;
+        if (daysOverdue <= 0)         row.current      += inv.balance;
+        else if (daysOverdue <= 30)   row.days_1_30    += inv.balance;
+        else if (daysOverdue <= 60)   row.days_31_60   += inv.balance;
+        else if (daysOverdue <= 90)   row.days_61_90   += inv.balance;
+        else if (daysOverdue <= 120)  row.days_91_120  += inv.balance;
+        else                          row.over_120     += inv.balance;
       }
 
-      return Array.from(customerMap.values()).sort((a, b) => b.total - a.total);
+      const rows = Array.from(fallbackRows.values()).sort((a, b) => b.total - a.total);
+      const totals: AgingTotals = rows.reduce(
+        (acc, r) => ({
+          current:     acc.current     + r.current,
+          days_1_30:   acc.days_1_30   + r.days_1_30,
+          days_31_60:  acc.days_31_60  + r.days_31_60,
+          days_61_90:  acc.days_61_90  + r.days_61_90,
+          days_91_120: acc.days_91_120 + r.days_91_120,
+          over_120:    acc.over_120    + r.over_120,
+          grand_total: acc.grand_total + r.total,
+        }),
+        { current: 0, days_1_30: 0, days_31_60: 0, days_61_90: 0, days_91_120: 0, over_120: 0, grand_total: 0 }
+      );
+      return { rows, totals };
     },
     enabled: !!appUser?.tenant_id,
+  });
+}
+
+// ─── AR Reconciliation ────────────────────────────────────────────────────────
+export function useARReconciliation(asOfDate?: string) {
+  const { appUser } = useAuth();
+  const dateParam = asOfDate ?? new Date().toISOString().split("T")[0];
+  return useQuery({
+    queryKey: ["ar_reconciliation", appUser?.tenant_id, dateParam],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("ar_reconciliation_check", {
+        p_as_of_date: dateParam,
+      });
+      if (error) throw error;
+      return data as ReconciliationResult;
+    },
+    enabled: !!appUser?.tenant_id,
+  });
+}
+
+// ─── Customer Accounts ───────────────────────────────────────────────────────
+export function useCustomerAccount(customerId?: string) {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["customer_accounts", customerId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("customer_accounts")
+        .select("*")
+        .eq("customer_id", customerId!)
+        .eq("tenant_id", appUser!.tenant_id)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!customerId && !!appUser?.tenant_id,
+  });
+}
+
+// ─── AR Transactions for a customer ─────────────────────────────────────────
+export function useARTransactions(customerId?: string) {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["ar_transactions", customerId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("ar_transactions")
+        .select("*")
+        .eq("tenant_id", appUser!.tenant_id)
+        .eq("customer_id", customerId!)
+        .order("transaction_date", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!customerId && !!appUser?.tenant_id,
   });
 }
 

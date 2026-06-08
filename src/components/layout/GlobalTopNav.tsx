@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Search, Plus, Building2, LogOut, ChevronDown } from "lucide-react";
+import { Plus, Building2, LogOut, ChevronDown } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import NotificationBell from "@/components/NotificationBell";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import GlobalSearchBar from "@/components/layout/GlobalSearchBar";
 
 export default function GlobalTopNav() {
   const { appUser, isSuperAdmin, signOut } = useAuth();
@@ -31,14 +32,7 @@ export default function GlobalTopNav() {
           <span className="text-sm font-bold text-foreground hidden sm:inline tracking-tight">Finthera</span>
         </button>
 
-        <div className="hidden sm:flex items-center gap-2 bg-muted/60 border border-border rounded-lg px-3.5 py-2 w-72 transition-all duration-200 focus-within:border-primary/40 focus-within:shadow-sm focus-within:bg-card">
-          <Search className="w-4 h-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search anything here..."
-            className="bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none w-full"
-          />
-        </div>
+        <GlobalSearchBar />
       </div>
 
       {/* Right: Actions */}
