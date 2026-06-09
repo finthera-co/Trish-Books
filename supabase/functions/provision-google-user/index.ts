@@ -104,6 +104,24 @@ Deno.serve(async (req) => {
       .single();
     if (userInsertErr) throw userInsertErr;
 
+    // Seed default Chart of Accounts for the new tenant
+    try {
+      const seedRes = await fetch(`${SUPABASE_URL}/functions/v1/seed-chart-of-accounts`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SERVICE_ROLE}`,
+        },
+        body: JSON.stringify({ tenant_id: tenant.id }),
+      });
+      const seedResult = await seedRes.json();
+      if (!seedResult.success) {
+        console.error("COA seed warning:", seedResult.error);
+      }
+    } catch (seedErr) {
+      console.error("COA seed failed (non-fatal):", seedErr);
+    }
+
     return new Response(
       JSON.stringify({ ok: true, user_id: user.id, tenant_id: tenant.id }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },

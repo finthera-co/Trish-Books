@@ -77,6 +77,17 @@ interface DefaultAccount {
   account_type: string;
   account_subtype: string;
   category_name: string;
+  is_system?: boolean;
+  is_contra?: boolean;
+}
+
+const DEBIT_TYPES = new Set(['Asset', 'Expense', 'Cost of Goods Sold', 'Other Expense']);
+const CREDIT_TYPES = new Set(['Liability', 'Equity', 'Income', 'Other Income']);
+
+function getNormalBalance(accountType: string, isContra = false): string {
+  if (DEBIT_TYPES.has(accountType)) return isContra ? 'credit' : 'debit';
+  if (CREDIT_TYPES.has(accountType)) return isContra ? 'debit' : 'credit';
+  return 'debit';
 }
 
 const DEFAULT_ACCOUNTS: DefaultAccount[] = [
@@ -87,8 +98,8 @@ const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   { account_code: "1040", account_name: "Savings Account", account_type: "Asset", account_subtype: "Savings", category_name: "Current Assets" },
   { account_code: "1100", account_name: "Accounts Receivable", account_type: "Asset", account_subtype: "Accounts Receivable", category_name: "Current Assets" },
   { account_code: "1200", account_name: "Inventory Asset", account_type: "Asset", account_subtype: "Inventory", category_name: "Current Assets" },
-  { account_code: "1300", account_name: "Prepaid Expenses", account_type: "Asset", account_subtype: "Prepaid Expenses", category_name: "Current Assets" },
   { account_code: "1310", account_name: "Employee Advances", account_type: "Asset", account_subtype: "Other Current Assets", category_name: "Current Assets" },
+  { account_code: "1350", account_name: "Prepaid Expenses", account_type: "Asset", account_subtype: "Prepaid Expenses", category_name: "Current Assets" },
   { account_code: "1400", account_name: "VAT Receivable", account_type: "Asset", account_subtype: "Other Current Assets", category_name: "Current Assets" },
   // ─── Assets → Non-Current Assets ──────────────────────────
   { account_code: "1500", account_name: "Land", account_type: "Asset", account_subtype: "Fixed Assets", category_name: "Non-Current Assets" },
@@ -97,8 +108,9 @@ const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   { account_code: "1530", account_name: "Equipment", account_type: "Asset", account_subtype: "Furniture & Equipment", category_name: "Non-Current Assets" },
   { account_code: "1540", account_name: "Vehicles", account_type: "Asset", account_subtype: "Vehicles", category_name: "Non-Current Assets" },
   { account_code: "1550", account_name: "Furniture & Fixtures", account_type: "Asset", account_subtype: "Furniture & Equipment", category_name: "Non-Current Assets" },
-  { account_code: "1600", account_name: "Accumulated Depreciation", account_type: "Asset", account_subtype: "Accumulated Depreciation", category_name: "Non-Current Assets" },
+  { account_code: "1600", account_name: "PP&E — Cost", account_type: "Asset", account_subtype: "Fixed Asset", category_name: "Non-Current Assets" },
   { account_code: "1610", account_name: "Intangible Assets", account_type: "Asset", account_subtype: "Intangible Assets", category_name: "Non-Current Assets" },
+  { account_code: "1650", account_name: "Accumulated Depreciation", account_type: "Asset", account_subtype: "Accumulated Depreciation", category_name: "Non-Current Assets", is_contra: true },
   // ─── Liabilities → Current Liabilities ─────────────────────
   { account_code: "2000", account_name: "Accounts Payable", account_type: "Liability", account_subtype: "Accounts Payable", category_name: "Current Liabilities" },
   { account_code: "2100", account_name: "Salaries Payable", account_type: "Liability", account_subtype: "Payroll Liability", category_name: "Current Liabilities" },
@@ -115,7 +127,7 @@ const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   { account_code: "3010", account_name: "Owner Capital", account_type: "Equity", account_subtype: "Owner's Equity", category_name: "Owner's Equity" },
   { account_code: "3020", account_name: "Retained Earnings", account_type: "Equity", account_subtype: "Retained Earnings", category_name: "Retained Earnings" },
   { account_code: "3030", account_name: "Dividends Paid", account_type: "Equity", account_subtype: "Dividends", category_name: "Owner's Equity" },
-  { account_code: "3900", account_name: "Opening Balance Equity", account_type: "Equity", account_subtype: "Opening Balance Equity", category_name: "Owner's Equity" },
+  { account_code: "3900", account_name: "Opening Balance Equity", account_type: "Equity", account_subtype: "Opening Balance Equity", category_name: "Owner's Equity", is_system: true },
   // ─── Income ────────────────────────────────────────────────
   { account_code: "4010", account_name: "Sales Revenue", account_type: "Income", account_subtype: "Sales Revenue", category_name: "Sales Revenue" },
   { account_code: "4020", account_name: "Service Revenue", account_type: "Income", account_subtype: "Service Revenue", category_name: "Service Revenue" },
@@ -124,6 +136,12 @@ const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   { account_code: "5010", account_name: "Cost of Goods Sold", account_type: "Cost of Goods Sold", account_subtype: "Cost of Materials", category_name: "Cost of Materials" },
   { account_code: "5020", account_name: "Cost of Labour", account_type: "Cost of Goods Sold", account_subtype: "Cost of Labour", category_name: "Cost of Materials" },
   { account_code: "5030", account_name: "Shipping & Delivery", account_type: "Cost of Goods Sold", account_subtype: "Shipping & Delivery", category_name: "Cost of Materials" },
+  { account_code: "5100", account_name: "Purchase Price Variance", account_type: "Cost of Goods Sold", account_subtype: "Other COGS", category_name: "Cost of Materials", is_system: true },
+  { account_code: "5110", account_name: "Direct Labor Applied", account_type: "Cost of Goods Sold", account_subtype: "Cost of Labour", category_name: "Cost of Materials", is_system: true },
+  { account_code: "5120", account_name: "Manufacturing Overhead Applied", account_type: "Cost of Goods Sold", account_subtype: "Other COGS", category_name: "Cost of Materials", is_system: true },
+  { account_code: "5200", account_name: "Inventory Write-Down", account_type: "Expense", account_subtype: "Other Expense", category_name: "Operating Expenses", is_system: true },
+  { account_code: "5210", account_name: "Inventory Write-Off", account_type: "Expense", account_subtype: "Other Expense", category_name: "Operating Expenses", is_system: true },
+  { account_code: "5300", account_name: "Purchase Returns", account_type: "Cost of Goods Sold", account_subtype: "Other COGS", category_name: "Cost of Materials", is_system: true },
   // ─── Expenses ──────────────────────────────────────────────
   { account_code: "6100", account_name: "Salaries & Wages", account_type: "Expense", account_subtype: "Payroll Expenses", category_name: "Payroll Expenses" },
   { account_code: "6110", account_name: "Employer EPF Contribution", account_type: "Expense", account_subtype: "Payroll Expenses", category_name: "Payroll Expenses" },
@@ -161,48 +179,66 @@ export function useSeedDefaultAccounts() {
       if (!appUser?.tenant_id) throw new Error("No tenant");
       const tenantId = appUser.tenant_id;
 
-      // Check if categories already exist
-      const { data: existing } = await supabase
+      // Load existing categories and build a name→id map
+      const { data: existingCats } = await supabase
         .from("account_categories")
-        .select("id")
-        .eq("tenant_id", tenantId)
-        .limit(1);
-      if (existing && existing.length > 0) {
-        throw new Error("Default accounts already seeded for this tenant. Delete existing categories first to re-seed.");
+        .select("id, name")
+        .eq("tenant_id", tenantId);
+
+      const catMap = new Map<string, string>();
+      (existingCats || []).forEach((c: any) => catMap.set(c.name, c.id));
+      const existingCatNames = new Set(catMap.keys());
+
+      // Insert only missing categories
+      const missingCats = DEFAULT_CATEGORIES.filter(c => !existingCatNames.has(c.name));
+      if (missingCats.length > 0) {
+        const { data: newCats, error: catErr } = await supabase
+          .from("account_categories")
+          .insert(missingCats.map(c => ({ ...c, tenant_id: tenantId })))
+          .select();
+        if (catErr) throw catErr;
+        (newCats || []).forEach((c: any) => catMap.set(c.name, c.id));
       }
 
-      // Insert categories
-      const { data: cats, error: catErr } = await supabase
-        .from("account_categories")
-        .insert(DEFAULT_CATEGORIES.map(c => ({ ...c, tenant_id: tenantId })))
-        .select();
-      if (catErr) throw catErr;
+      // Load existing account codes so we only insert what's missing
+      const { data: existingAccounts } = await supabase
+        .from("accounts")
+        .select("account_code")
+        .eq("tenant_id", tenantId);
 
-      // Build category map
-      const catMap = new Map<string, string>();
-      cats.forEach((c: any) => catMap.set(c.name, c.id));
+      const existingCodes = new Set((existingAccounts || []).map((a: any) => a.account_code));
 
-      // Insert accounts with subtypes
-      const accountRows = DEFAULT_ACCOUNTS.map(a => ({
-        account_code: a.account_code,
-        account_name: a.account_name,
-        account_type: a.account_type,
-        account_subtype: a.account_subtype,
-        category_id: catMap.get(a.category_name) || null,
-        tenant_id: tenantId,
-        is_system: a.account_name === "Opening Balance Equity",
-      }));
+      const accountRows = DEFAULT_ACCOUNTS
+        .filter(a => !existingCodes.has(a.account_code))
+        .map(a => ({
+          account_code: a.account_code,
+          account_name: a.account_name,
+          account_type: a.account_type,
+          account_subtype: a.account_subtype,
+          normal_balance: getNormalBalance(a.account_type, a.is_contra ?? false),
+          is_contra: a.is_contra ?? false,
+          category_id: catMap.get(a.category_name) || null,
+          tenant_id: tenantId,
+          is_system: a.is_system ?? false,
+          is_active: true,
+        }));
 
-      const { error: accErr } = await supabase.from("accounts").insert(accountRows);
-      if (accErr) throw accErr;
+      if (accountRows.length > 0) {
+        const { error: accErr } = await supabase.from("accounts").insert(accountRows);
+        if (accErr) throw accErr;
+      }
 
-      return { categories: cats.length, accounts: accountRows.length };
+      return { addedCategories: missingCats.length, addedAccounts: accountRows.length };
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["account_categories"] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["accounts_active"] });
-      toast.success(`Seeded ${result.categories} categories and ${result.accounts} accounts`);
+      if (result.addedAccounts === 0 && result.addedCategories === 0) {
+        toast.success("Chart of accounts is already up to date");
+      } else {
+        toast.success(`Added ${result.addedCategories} categories and ${result.addedAccounts} accounts`);
+      }
     },
     onError: (e: Error) => toast.error(e.message),
   });

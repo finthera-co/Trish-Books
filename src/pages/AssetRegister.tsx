@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
-import { Plus, Eye } from "lucide-react";
+import { Plus, Eye, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -112,9 +112,15 @@ export default function AssetRegister() {
             <p className="text-sm text-muted-foreground">Track and manage company assets</p>
           )}
         </div>
-        <Button onClick={() => navigate("/assets/new")}>
-          <Plus className="w-4 h-4 mr-2" /> Add Asset
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => navigate("/reports/financial?report=fixed-asset-schedule")}>
+            <BarChart3 className="w-4 h-4 mr-2" />
+            Asset Schedule
+          </Button>
+          <Button onClick={() => navigate("/assets/new")}>
+            <Plus className="w-4 h-4 mr-2" /> Add Asset
+          </Button>
+        </div>
       </div>
 
       {/* Summary Cards */}

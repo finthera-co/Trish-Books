@@ -467,6 +467,132 @@ export type Database = {
           },
         ]
       }
+      ap_transactions: {
+        Row: {
+          id: string
+          tenant_id: string
+          vendor_id: string
+          transaction_type: 'INVOICE' | 'DEBIT_NOTE' | 'PAYMENT' | 'PREPAYMENT' | 'ADJUSTMENT'
+          document_id: string | null
+          document_ref: string | null
+          transaction_date: string
+          due_date: string | null
+          amount: number
+          outstanding_amount: number
+          status: 'OPEN' | 'PARTIALLY_PAID' | 'PAID' | 'WRITTEN_OFF'
+          journal_entry_id: string | null
+          journal_line_id: string | null
+          ap_account_id: string | null
+          related_transaction_id: string | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          vendor_id: string
+          transaction_type: 'INVOICE' | 'DEBIT_NOTE' | 'PAYMENT' | 'PREPAYMENT' | 'ADJUSTMENT'
+          document_id?: string | null
+          document_ref?: string | null
+          transaction_date: string
+          due_date?: string | null
+          amount?: number
+          outstanding_amount?: number
+          status?: 'OPEN' | 'PARTIALLY_PAID' | 'PAID' | 'WRITTEN_OFF'
+          journal_entry_id?: string | null
+          journal_line_id?: string | null
+          ap_account_id?: string | null
+          related_transaction_id?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          vendor_id?: string
+          transaction_type?: 'INVOICE' | 'DEBIT_NOTE' | 'PAYMENT' | 'PREPAYMENT' | 'ADJUSTMENT'
+          document_id?: string | null
+          document_ref?: string | null
+          transaction_date?: string
+          due_date?: string | null
+          amount?: number
+          outstanding_amount?: number
+          status?: 'OPEN' | 'PARTIALLY_PAID' | 'PAID' | 'WRITTEN_OFF'
+          journal_entry_id?: string | null
+          journal_line_id?: string | null
+          ap_account_id?: string | null
+          related_transaction_id?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ap_transactions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ap_transactions_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      supplier_accounts: {
+        Row: {
+          id: string
+          tenant_id: string
+          vendor_id: string
+          ap_account_id: string | null
+          payment_terms_days: number
+          current_balance: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          vendor_id: string
+          ap_account_id?: string | null
+          payment_terms_days?: number
+          current_balance?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          vendor_id?: string
+          ap_account_id?: string | null
+          payment_terms_days?: number
+          current_balance?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_accounts_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_accounts_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ar_transactions: {
         Row: {
           id: string
@@ -7890,6 +8016,18 @@ export type Database = {
       }
     }
     Functions: {
+      ap_aging_report: {
+        Args: { p_as_of_date?: string }
+        Returns: Json
+      }
+      ap_reconciliation_check: {
+        Args: { p_as_of_date?: string }
+        Returns: Json
+      }
+      asset_reconciliation_check: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
       ar_aging_report: {
         Args: { p_as_of_date?: string }
         Returns: Json

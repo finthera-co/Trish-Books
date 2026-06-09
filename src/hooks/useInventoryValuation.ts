@@ -14,7 +14,7 @@ export interface ValuationRow {
   reported_value: number;
 }
 
-/** Per-item inventory valuation reconcilable to GL 1300. */
+/** Per-item inventory valuation reconcilable to GL 1200. */
 export function useInventoryValuation() {
   const { appUser } = useAuth();
   return useQuery({

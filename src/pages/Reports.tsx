@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { FileText, TrendingUp, DollarSign, BarChart3, Printer, ArrowLeft, Activity } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { FileText, TrendingUp, DollarSign, BarChart3, Printer, ArrowLeft, Activity, Warehouse } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAccounts, useJournalEntries, useInvoices, useExpenses, useBudgets } from "@/hooks/useData";
 import { useQuery } from "@tanstack/react-query";
@@ -7,19 +7,29 @@ import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 import { format } from "date-fns";
 import { isDebitNormal as checkDebitNormal } from "@/lib/accountTypes";
+import { useSearchParams } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 
-type ReportType = "trial-balance" | "pnl" | "balance-sheet" | "cash-flow" | "expense-summary" | "aged-receivables" | null;
+type ReportType = "trial-balance" | "pnl" | "balance-sheet" | "cash-flow" | "expense-summary" | "aged-receivables" | "fixed-asset-schedule" | null;
 
 const COLORS = ["hsl(215, 60%, 42%)", "hsl(142, 71%, 35%)", "hsl(38, 92%, 50%)", "hsl(199, 89%, 48%)", "hsl(0, 72%, 51%)", "hsl(270, 60%, 50%)"];
 
 export default function Reports() {
+  const { appUser } = useAuth();
+  const [searchParams] = useSearchParams();
+  const reportParam = searchParams.get("report") as ReportType | null;
+
   const [activeReport, setActiveReport] = useState<ReportType>(null);
   const [periodFrom, setPeriodFrom] = useState(() => {
     const d = new Date(); d.setMonth(d.getMonth() - 12); d.setDate(1);
     return d.toISOString().slice(0, 10);
   });
   const [periodTo, setPeriodTo] = useState(() => new Date().toISOString().slice(0, 10));
-  
+
+  useEffect(() => {
+    if (reportParam && !activeReport) setActiveReport(reportParam);
+  }, [reportParam]);
+
   const { data: accounts } = useAccounts();
   const { data: journalEntries } = useJournalEntries();
   const { data: invoices } = useInvoices();
@@ -46,6 +56,72 @@ export default function Reports() {
       const { data, error } = await supabase.from("opening_balances").select("*");
       if (error) throw error;
       return data;
+    },
+  });
+
+  // Fixed Asset Schedule data
+  const { data: assetScheduleData } = useQuery({
+    queryKey: ["fixed_asset_schedule", appUser?.tenant_id, periodTo, periodFrom],
+    enabled: !!appUser?.tenant_id && activeReport === "fixed-asset-schedule",
+    queryFn: async () => {
+      const { data: assets, error: aErr } = await supabase
+        .from("fixed_assets")
+        .select("id, asset_name, category_id, acquisition_date, cost, salvage_value, useful_life_months, status, accumulated_depreciation, asset_account_id")
+        .eq("tenant_id", appUser!.tenant_id)
+        .order("acquisition_date", { ascending: true });
+      if (aErr) throw aErr;
+
+      const periodYYYYMM = periodTo.slice(0, 7);
+      const { data: depRows, error: dErr } = await supabase
+        .from("asset_depreciation")
+        .select("asset_id, period, depreciation_amount, accumulated_depreciation")
+        .eq("tenant_id", appUser!.tenant_id)
+        .eq("status", "posted")
+        .lte("period", periodYYYYMM)
+        .order("period", { ascending: true });
+      if (dErr) throw dErr;
+
+      const { data: categories } = await supabase
+        .from("asset_categories")
+        .select("id, name")
+        .eq("tenant_id", appUser!.tenant_id);
+
+      const categoryMap = new Map((categories ?? []).map((c: any) => [c.id, c.name]));
+
+      // Latest accumulated_depreciation per asset as at period end
+      const depByAsset = new Map<string, number>();
+      (depRows ?? []).forEach((row: any) => {
+        if ((row.accumulated_depreciation ?? 0) > (depByAsset.get(row.asset_id) ?? 0)) {
+          depByAsset.set(row.asset_id, row.accumulated_depreciation);
+        }
+      });
+
+      // Depreciation charge within the selected period window
+      const periodFromYYYYMM = periodFrom.slice(0, 7);
+      const depInPeriodByAsset = new Map<string, number>();
+      (depRows ?? []).forEach((row: any) => {
+        if (row.period >= periodFromYYYYMM && row.period <= periodYYYYMM) {
+          depInPeriodByAsset.set(row.asset_id, (depInPeriodByAsset.get(row.asset_id) ?? 0) + row.depreciation_amount);
+        }
+      });
+
+      return (assets ?? []).map((asset: any) => {
+        const accumDep = depByAsset.get(asset.id) ?? asset.accumulated_depreciation ?? 0;
+        return {
+          id: asset.id,
+          asset_name: asset.asset_name,
+          category: categoryMap.get(asset.category_id) ?? "—",
+          acquisition_date: asset.acquisition_date,
+          cost: asset.cost,
+          salvage_value: asset.salvage_value ?? 0,
+          useful_life_months: asset.useful_life_months ?? 0,
+          accumulated_depreciation: accumDep,
+          depreciation_in_period: depInPeriodByAsset.get(asset.id) ?? 0,
+          net_book_value: asset.cost - accumDep,
+          status: asset.status,
+          depreciation_pct: asset.cost > 0 ? (accumDep / asset.cost) * 100 : 0,
+        };
+      });
     },
   });
 
@@ -80,10 +156,10 @@ export default function Reports() {
 
   // Build account balances from opening balances + filtered journal lines
   const accountBalances = useMemo(() => {
-    const map = new Map<string, { id: string; name: string; code: string; type: string; debit: number; credit: number; openingBalance: number }>();
+    const map = new Map<string, { id: string; name: string; code: string; type: string; subledger_type: string | null; debit: number; credit: number; openingBalance: number }>();
     accounts?.forEach(a => {
       const ob = openingBalanceMap.get(a.id) || 0;
-      map.set(a.id, { id: a.id, name: a.account_name, code: a.account_code, type: a.account_type, debit: 0, credit: 0, openingBalance: ob });
+      map.set(a.id, { id: a.id, name: a.account_name, code: a.account_code, type: a.account_type, subledger_type: (a as any).subledger_type ?? null, debit: 0, credit: 0, openingBalance: ob });
     });
     filteredEntries.forEach(entry => {
       ((entry.journal_lines as any[]) || []).forEach(line => {
@@ -106,6 +182,7 @@ export default function Reports() {
     { id: "cash-flow" as ReportType, name: "Cash Flow Statement", description: "Cash inflows and outflows from operating, investing, and financing", icon: Activity, category: "Financial Statement" },
     { id: "expense-summary" as ReportType, name: "Expense Analysis", description: "Expense breakdown by category, status, and trends", icon: BarChart3, category: "Management" },
     { id: "aged-receivables" as ReportType, name: "Aged Receivables", description: "Outstanding customer invoices analyzed by aging buckets", icon: FileText, category: "Management" },
+    { id: "fixed-asset-schedule" as ReportType, name: "Fixed Asset Schedule", description: "Property, plant & equipment — cost, accumulated depreciation and net book value by asset", icon: Warehouse, category: "Fixed Assets" },
   ];
 
   const fmt = (n: number) => {
@@ -293,10 +370,16 @@ export default function Reports() {
   };
 
   const renderBalanceSheet = () => {
-    const assets = balances.filter(a => a.type === "Asset");
+    const allAssets = balances.filter(a => a.type === "Asset");
+    const ppeAccounts = allAssets.filter(a => a.subledger_type === "fixed_asset");
+    const accumDepAccounts = allAssets.filter(a => a.subledger_type === "asset_depreciation");
+    const currentAssets = allAssets.filter(
+      a => a.subledger_type !== "fixed_asset" && a.subledger_type !== "asset_depreciation"
+    );
+
     const liabilities = balances.filter(a => a.type === "Liability");
     const equity = balances.filter(a => a.type === "Equity");
-    
+
     // Helper to get net balance including opening balance
     const getNetBalance = (a: typeof balances[0]) => {
       const isDebitNormal = checkDebitNormal(a.type);
@@ -309,7 +392,14 @@ export default function Reports() {
     const expenseAccounts = balances.filter(a => a.type === "Expense" || a.type === "Cost of Goods Sold" || a.type === "COGS" || a.type === "Other Expense");
     const retainedEarnings = revenue.reduce((s, a) => s + (a.credit - a.debit), 0) - expenseAccounts.reduce((s, a) => s + (a.debit - a.credit), 0);
 
-    const totalAssets = assets.reduce((s, a) => s + getNetBalance(a), 0);
+    const grossPPE = ppeAccounts.reduce((s, a) => s + getNetBalance(a), 0);
+    // Accumulated depreciation accounts are credit-normal (contra-asset).
+    // getNetBalance returns positive = credit balance, representing the accumulated amount.
+    const totalAccumDep = accumDepAccounts.reduce((s, a) => s + getNetBalance(a), 0);
+    const netPPE = grossPPE - totalAccumDep;
+    const totalCurrentAssets = currentAssets.reduce((s, a) => s + getNetBalance(a), 0);
+    const totalAssets = totalCurrentAssets + netPPE;
+
     const totalLiabilities = liabilities.reduce((s, a) => s + getNetBalance(a), 0);
     const totalEquity = equity.reduce((s, a) => s + getNetBalance(a), 0) + retainedEarnings;
     const totalLiabEquity = totalLiabilities + totalEquity;
@@ -320,7 +410,7 @@ export default function Reports() {
       { name: "Equity", value: Math.abs(totalEquity) },
     ].filter(d => d.value > 0);
 
-    const SectionRows = ({ items, sign }: { items: typeof assets; sign: "debit" | "credit" }) => (
+    const SectionRows = ({ items, sign }: { items: typeof allAssets; sign: "debit" | "credit" }) => (
       <>
         {items.map((a, i) => {
           const bal = getNetBalance(a);
@@ -334,6 +424,8 @@ export default function Reports() {
       </>
     );
 
+    const hasAssetData = allAssets.length > 0;
+
     return (
       <div className="space-y-4">
         <div className="grid grid-cols-3 gap-4">
@@ -345,15 +437,59 @@ export default function Reports() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2 stat-card print:shadow-none">
             <StatementHeader title="Statement of Financial Position" subtitle="Balance Sheet" />
-            {assets.length === 0 && liabilities.length === 0 && equity.length === 0 ? (
+            {!hasAssetData && liabilities.length === 0 && equity.length === 0 ? (
               <p className="text-center py-12 text-muted-foreground">No balance sheet data. Create accounts and post journal entries.</p>
             ) : (
               <table className="data-table">
                 <thead><tr><th>Account</th><th className="text-right w-40">Balance</th></tr></thead>
                 <tbody>
-                  {assets.length > 0 && <tr><td colSpan={2} className="font-semibold text-foreground bg-muted/40 py-2">Assets</td></tr>}
-                  <SectionRows items={assets} sign="debit" />
-                  <tr className="font-bold border-t"><td className="pl-4">Total Assets</td><td className="text-right font-mono">{fmt(totalAssets)}</td></tr>
+                  {hasAssetData && <tr><td colSpan={2} className="font-semibold text-foreground bg-muted/40 py-2">Assets</td></tr>}
+
+                  {/* Current Assets */}
+                  {currentAssets.length > 0 && (
+                    <>
+                      <tr className="bg-muted/30">
+                        <td colSpan={2} className="font-semibold text-foreground text-sm py-1.5 pl-2">Current Assets</td>
+                      </tr>
+                      <SectionRows items={currentAssets} sign="debit" />
+                      <tr className="border-t border-border/50">
+                        <td className="pl-4 text-sm text-muted-foreground italic">Total Current Assets</td>
+                        <td className="text-right font-mono font-semibold">{fmt(totalCurrentAssets)}</td>
+                      </tr>
+                    </>
+                  )}
+
+                  {/* Non-Current Assets — Property, Plant & Equipment */}
+                  {(ppeAccounts.length > 0 || accumDepAccounts.length > 0) && (
+                    <>
+                      <tr className="bg-muted/30">
+                        <td colSpan={2} className="font-semibold text-foreground text-sm py-1.5 pl-2">
+                          Non-Current Assets — Property, Plant &amp; Equipment
+                        </td>
+                      </tr>
+                      <SectionRows items={ppeAccounts} sign="debit" />
+                      {accumDepAccounts.map((a, i) => {
+                        const bal = getNetBalance(a);
+                        return (
+                          <tr key={`accum-${i}`}>
+                            <td className="pl-8 text-foreground italic text-sm">Less: {a.name}</td>
+                            <td className="text-right font-mono text-destructive/80">({fmt(bal)})</td>
+                          </tr>
+                        );
+                      })}
+                      <tr className="border-t border-border/50">
+                        <td className="pl-4 text-sm text-muted-foreground italic">Net Book Value — PPE</td>
+                        <td className={`text-right font-mono font-semibold ${netPPE >= 0 ? "" : "text-destructive"}`}>
+                          {fmt(netPPE)}
+                        </td>
+                      </tr>
+                    </>
+                  )}
+
+                  <tr className="font-bold border-t-2 border-foreground/30">
+                    <td>Total Assets</td>
+                    <td className="text-right font-mono">{fmt(totalAssets)}</td>
+                  </tr>
                   
                   {liabilities.length > 0 && <tr><td colSpan={2} className="font-semibold text-foreground bg-muted/40 py-2">Liabilities</td></tr>}
                   <SectionRows items={liabilities} sign="credit" />
@@ -694,6 +830,134 @@ export default function Reports() {
     );
   };
 
+  const renderFixedAssetSchedule = () => {
+    const rows = assetScheduleData ?? [];
+    const totalCost = rows.reduce((s, r) => s + r.cost, 0);
+    const totalAccumDep = rows.reduce((s, r) => s + r.accumulated_depreciation, 0);
+    const totalDepInPeriod = rows.reduce((s, r) => s + r.depreciation_in_period, 0);
+    const totalNBV = rows.reduce((s, r) => s + r.net_book_value, 0);
+
+    const grouped = new Map<string, typeof rows>();
+    rows.forEach(r => {
+      if (!grouped.has(r.category)) grouped.set(r.category, []);
+      grouped.get(r.category)!.push(r);
+    });
+
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[
+            { label: "Total Cost", value: totalCost, cls: "text-foreground" },
+            { label: "Accum. Depreciation", value: totalAccumDep, cls: "text-destructive" },
+            { label: "Period Charge", value: totalDepInPeriod, cls: "text-muted-foreground" },
+            { label: "Net Book Value", value: totalNBV, cls: "text-primary" },
+          ].map(({ label, value, cls }) => (
+            <div key={label} className="stat-card">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
+              <p className={`text-xl font-bold mt-1 ${cls}`}>{fmt(value)}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="stat-card print:shadow-none">
+          <StatementHeader title="Fixed Asset Schedule" subtitle="Property, Plant & Equipment" />
+
+          {rows.length === 0 ? (
+            <p className="text-center py-12 text-muted-foreground">
+              No assets found. Add assets and run depreciation to populate this report.
+            </p>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Asset Name</th>
+                  <th>Category</th>
+                  <th className="text-right w-28">Acq. Date</th>
+                  <th className="text-right w-32">Cost</th>
+                  <th className="text-right w-36">Accum. Depr.</th>
+                  <th className="text-right w-32">Period Charge</th>
+                  <th className="text-right w-32">Net Book Value</th>
+                  <th className="w-24">% Depr.</th>
+                  <th className="w-24">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from(grouped.entries()).map(([category, assets]) => {
+                  const catCost = assets.reduce((s, a) => s + a.cost, 0);
+                  const catAccum = assets.reduce((s, a) => s + a.accumulated_depreciation, 0);
+                  const catPeriod = assets.reduce((s, a) => s + a.depreciation_in_period, 0);
+                  const catNBV = assets.reduce((s, a) => s + a.net_book_value, 0);
+                  return (
+                    <>
+                      <tr key={`cat-${category}`} className="bg-muted/40">
+                        <td colSpan={9} className="font-semibold text-foreground pl-2 py-1.5 text-sm">
+                          {category}
+                        </td>
+                      </tr>
+                      {assets.map(asset => (
+                        <tr key={asset.id}>
+                          <td className="pl-6 font-medium text-foreground">{asset.asset_name}</td>
+                          <td className="text-muted-foreground text-xs">{asset.category}</td>
+                          <td className="text-right font-mono text-xs text-muted-foreground">
+                            {asset.acquisition_date ? format(new Date(asset.acquisition_date), "dd MMM yyyy") : "—"}
+                          </td>
+                          <td className="text-right font-mono">{fmt(asset.cost)}</td>
+                          <td className="text-right font-mono text-destructive/80">{fmt(asset.accumulated_depreciation)}</td>
+                          <td className="text-right font-mono text-muted-foreground">
+                            {asset.depreciation_in_period > 0 ? fmt(asset.depreciation_in_period) : "—"}
+                          </td>
+                          <td className="text-right font-mono font-semibold">{fmt(asset.net_book_value)}</td>
+                          <td>
+                            <div className="flex items-center gap-1 justify-end">
+                              <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-primary rounded-full"
+                                  style={{ width: `${Math.min(asset.depreciation_pct, 100)}%` }}
+                                />
+                              </div>
+                              <span className="text-xs text-muted-foreground">{asset.depreciation_pct.toFixed(0)}%</span>
+                            </div>
+                          </td>
+                          <td>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                              asset.status === "active"
+                                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                : "bg-muted text-muted-foreground"
+                            }`}>
+                              {asset.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                      <tr key={`subtotal-${category}`} className="border-t border-border/50 bg-muted/20">
+                        <td colSpan={3} className="pl-6 text-sm text-muted-foreground italic">Subtotal — {category}</td>
+                        <td className="text-right font-mono font-semibold">{fmt(catCost)}</td>
+                        <td className="text-right font-mono font-semibold text-destructive/80">{fmt(catAccum)}</td>
+                        <td className="text-right font-mono font-semibold text-muted-foreground">{fmt(catPeriod)}</td>
+                        <td className="text-right font-mono font-semibold">{fmt(catNBV)}</td>
+                        <td colSpan={2} />
+                      </tr>
+                    </>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="font-bold border-t-2 border-foreground/30 bg-primary/5">
+                  <td colSpan={3} className="text-foreground">Grand Total</td>
+                  <td className="text-right font-mono">{fmt(totalCost)}</td>
+                  <td className="text-right font-mono text-destructive">{fmt(totalAccumDep)}</td>
+                  <td className="text-right font-mono text-muted-foreground">{fmt(totalDepInPeriod)}</td>
+                  <td className="text-right font-mono">{fmt(totalNBV)}</td>
+                  <td colSpan={2} />
+                </tr>
+              </tfoot>
+            </table>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderReport = () => {
     switch (activeReport) {
       case "trial-balance": return renderTrialBalance();
@@ -702,6 +966,7 @@ export default function Reports() {
       case "cash-flow": return renderCashFlow();
       case "expense-summary": return renderExpenseSummary();
       case "aged-receivables": return renderAgedReceivables();
+      case "fixed-asset-schedule": return renderFixedAssetSchedule();
       default: return null;
     }
   };

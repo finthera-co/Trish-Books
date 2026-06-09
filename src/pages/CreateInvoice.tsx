@@ -10,14 +10,12 @@ import { Separator } from "@/components/ui/separator";
 import { ArrowLeft, Plus, Trash2, Send, Save } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCustomers, useAccounts, useProducts, useTaxes } from "@/hooks/useData";
-import { useInvoiceTemplates } from "@/hooks/useInvoiceTemplates";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCurrency } from "@/lib/currency";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePostInvoice } from "@/hooks/useAccountSettings";
 import { QuickCustomerDialog } from "@/components/invoices/QuickCustomerDialog";
-import type { DesignerComponent, TableSettings, PageSettings } from "@/components/invoice-designer/types";
 
 interface LineItem {
   id: string;
@@ -51,11 +49,8 @@ export default function CreateInvoice() {
   const { data: accounts } = useAccounts();
   const { data: products } = useProducts();
   const { data: taxes } = useTaxes();
-  const { data: templates } = useInvoiceTemplates();
   const postInvoiceFn = usePostInvoice();
 
-  // Form state
-  const [templateId, setTemplateId] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [issueDate, setIssueDate] = useState(new Date().toISOString().split("T")[0]);
@@ -66,32 +61,10 @@ export default function CreateInvoice() {
   const [saving, setSaving] = useState(false);
   const [posting, setPosting] = useState(false);
 
-  // Template data
-  const selectedTemplate = useMemo(
-    () => templates?.find((t: any) => t.id === templateId),
-    [templates, templateId]
-  );
-
-  const tableSettings: TableSettings | null = useMemo(() => {
-    if (!selectedTemplate?.table_settings) return null;
-    return selectedTemplate.table_settings as unknown as TableSettings;
-  }, [selectedTemplate]);
-
-  // Auto-select default template once templates load.
-  // Also re-applies if the currently selected templateId no longer exists in the list.
-  useEffect(() => {
-    if (!templates || templates.length === 0) return;
-    const stillExists = templateId && templates.some((t: any) => t.id === templateId);
-    if (stillExists) return;
-    const def = templates.find((t: any) => t.is_default);
-    setTemplateId(def ? def.id : templates[0].id);
-  }, [templates, templateId]);
-
   // Auto-generate invoice number
   useEffect(() => {
     if (!invoiceNumber) {
-      const num = `INV-${Date.now().toString().slice(-6)}`;
-      setInvoiceNumber(num);
+      setInvoiceNumber(`INV-${Date.now().toString().slice(-6)}`);
     }
   }, []);
 
@@ -113,7 +86,6 @@ export default function CreateInvoice() {
     [accounts]
   );
 
-  // Calculations
   const recalcLine = useCallback((line: LineItem): LineItem => {
     const gross = line.qty * line.rate;
     const afterDiscount = gross - line.discount;
@@ -126,8 +98,6 @@ export default function CreateInvoice() {
       prev.map((l) => {
         if (l.id !== id) return l;
         const updated = { ...l, [field]: value };
-
-        // If product selected, fill in defaults
         if (field === "product_id" && products) {
           const product = products.find((p: any) => p.id === value);
           if (product) {
@@ -142,13 +112,10 @@ export default function CreateInvoice() {
             }
           }
         }
-
-        // If tax changed, update rate
         if (field === "tax_id" && taxes) {
           const tax = taxes.find((t: any) => t.id === value);
           updated.tax_rate = tax ? Number(tax.tax_rate) : 0;
         }
-
         return recalcLine(updated);
       })
     );
@@ -162,15 +129,6 @@ export default function CreateInvoice() {
   const totalDiscount = lines.reduce((s, l) => s + l.discount, 0);
   const total = subtotal + totalTax;
 
-  // Visible columns from template
-  const visibleColumns = useMemo(() => {
-    if (!tableSettings?.columns) {
-      return ["description", "qty", "rate", "tax", "discount", "amount"];
-    }
-    return tableSettings.columns.filter((c) => c.visible).map((c) => c.key);
-  }, [tableSettings]);
-
-  // Save as draft
   const handleSave = async (shouldPost = false) => {
     if (!customerId) return toast.error("Please select a customer");
     if (!invoiceNumber) return toast.error("Please enter an invoice number");
@@ -180,8 +138,6 @@ export default function CreateInvoice() {
     setter(true);
 
     try {
-      // 1. ALWAYS create as draft. Posting is exclusively done by the post-invoice
-      //    edge function (validates account_settings, idempotent, atomic, balanced).
       const { data: invoice, error: invErr } = await supabase
         .from("invoices")
         .insert({
@@ -194,7 +150,6 @@ export default function CreateInvoice() {
           subtotal,
           tax_amount: totalTax,
           discount_amount: totalDiscount,
-          template_id: templateId || null,
           notes: notes || null,
           terms: terms || null,
           status: "draft",
@@ -204,7 +159,6 @@ export default function CreateInvoice() {
 
       if (invErr) throw invErr;
 
-      // 2. Save line items
       const itemInserts = lines
         .filter((l) => l.rate > 0 || l.description)
         .map((l) => ({
@@ -222,9 +176,6 @@ export default function CreateInvoice() {
         if (itemErr) throw itemErr;
       }
 
-      // 3. If user clicked "Save & Post", call the canonical edge function.
-      //    It uses account_settings (AR / Sales / Tax Payable), validates, and
-      //    creates the single source-of-truth journal entry.
       if (shouldPost) {
         await postInvoiceFn.mutateAsync({ invoice_id: invoice.id, action: "post" });
       } else {
@@ -252,7 +203,7 @@ export default function CreateInvoice() {
           </Button>
           <div>
             <h1 className="text-2xl font-bold text-foreground">Create Invoice</h1>
-            <p className="text-sm text-muted-foreground">Create a new invoice from template</p>
+            <p className="text-sm text-muted-foreground">Fill in the details to create a new invoice</p>
           </div>
         </div>
         <div className="flex gap-2">
@@ -266,35 +217,6 @@ export default function CreateInvoice() {
           </Button>
         </div>
       </div>
-
-      {/* Template Selector */}
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-4">
-            <Label className="whitespace-nowrap">Invoice Template</Label>
-            <Select value={templateId} onValueChange={setTemplateId}>
-              <SelectTrigger className="w-[280px]">
-                <SelectValue placeholder="Select template..." />
-              </SelectTrigger>
-              <SelectContent>
-                {templates?.map((t: any) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.template_name} {t.is_default ? "(Default)" : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {!templates?.length && (
-              <p className="text-sm text-muted-foreground">
-                No templates found.{" "}
-                <Button variant="link" className="p-0 h-auto" onClick={() => navigate("/sales/invoices/templates")}>
-                  Create one
-                </Button>
-              </p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Form */}
@@ -359,113 +281,89 @@ export default function CreateInvoice() {
                 <table className="w-full text-sm">
                   <thead className="bg-muted/50">
                     <tr>
-                      {visibleColumns.includes("description") && (
-                        <th className="px-3 py-2 text-left font-medium text-muted-foreground">Product / Description</th>
-                      )}
-                      {visibleColumns.includes("qty") && (
-                        <th className="px-3 py-2 text-center font-medium text-muted-foreground w-20">Qty</th>
-                      )}
-                      {visibleColumns.includes("rate") && (
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground w-28">Rate</th>
-                      )}
-                      {visibleColumns.includes("tax") && (
-                        <th className="px-3 py-2 text-center font-medium text-muted-foreground w-32">Tax</th>
-                      )}
-                      {visibleColumns.includes("discount") && (
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground w-24">Discount</th>
-                      )}
-                      {visibleColumns.includes("amount") && (
-                        <th className="px-3 py-2 text-right font-medium text-muted-foreground w-28">Amount</th>
-                      )}
+                      <th className="px-3 py-2 text-left font-medium text-muted-foreground">Product / Description</th>
+                      <th className="px-3 py-2 text-center font-medium text-muted-foreground w-20">Qty</th>
+                      <th className="px-3 py-2 text-right font-medium text-muted-foreground w-28">Rate</th>
+                      <th className="px-3 py-2 text-center font-medium text-muted-foreground w-32">Tax</th>
+                      <th className="px-3 py-2 text-right font-medium text-muted-foreground w-24">Discount</th>
+                      <th className="px-3 py-2 text-right font-medium text-muted-foreground w-28">Amount</th>
                       <th className="px-3 py-2 w-10"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {lines.map((line) => (
                       <tr key={line.id} className="border-t border-border">
-                        {visibleColumns.includes("description") && (
-                          <td className="px-3 py-2">
-                            <div className="space-y-1">
-                              <Select
-                                value={line.product_id}
-                                onValueChange={(v) => updateLine(line.id, "product_id", v)}
-                              >
-                                <SelectTrigger className="h-8 text-xs">
-                                  <SelectValue placeholder="Select product..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {products?.map((p: any) => (
-                                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <Input
-                                className="h-8 text-xs"
-                                placeholder="Description"
-                                value={line.description}
-                                onChange={(e) => updateLine(line.id, "description", e.target.value)}
-                              />
-                            </div>
-                          </td>
-                        )}
-                        {visibleColumns.includes("qty") && (
-                          <td className="px-3 py-2">
-                            <Input
-                              type="number"
-                              className="h-8 text-xs text-center"
-                              value={line.qty || ""}
-                              onChange={(e) => updateLine(line.id, "qty", Number(e.target.value))}
-                              min={1}
-                            />
-                          </td>
-                        )}
-                        {visibleColumns.includes("rate") && (
-                          <td className="px-3 py-2">
-                            <Input
-                              type="number"
-                              className="h-8 text-xs text-right"
-                              value={line.rate || ""}
-                              onChange={(e) => updateLine(line.id, "rate", Number(e.target.value))}
-                              min={0}
-                            />
-                          </td>
-                        )}
-                        {visibleColumns.includes("tax") && (
-                          <td className="px-3 py-2">
+                        <td className="px-3 py-2">
+                          <div className="space-y-1">
                             <Select
-                              value={line.tax_id}
-                              onValueChange={(v) => updateLine(line.id, "tax_id", v)}
+                              value={line.product_id}
+                              onValueChange={(v) => updateLine(line.id, "product_id", v)}
                             >
                               <SelectTrigger className="h-8 text-xs">
-                                <SelectValue placeholder="No tax" />
+                                <SelectValue placeholder="Select product..." />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="none">No Tax</SelectItem>
-                                {taxes?.map((t: any) => (
-                                  <SelectItem key={t.id} value={t.id}>
-                                    {t.tax_name} ({t.tax_rate}%)
-                                  </SelectItem>
+                                {products?.map((p: any) => (
+                                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
-                          </td>
-                        )}
-                        {visibleColumns.includes("discount") && (
-                          <td className="px-3 py-2">
                             <Input
-                              type="number"
-                              className="h-8 text-xs text-right"
-                              value={line.discount || ""}
-                              onChange={(e) => updateLine(line.id, "discount", Number(e.target.value))}
-                              min={0}
+                              className="h-8 text-xs"
+                              placeholder="Description"
+                              value={line.description}
+                              onChange={(e) => updateLine(line.id, "description", e.target.value)}
                             />
-                          </td>
-                        )}
-                        {visibleColumns.includes("amount") && (
-                          <td className="px-3 py-2 text-right font-medium text-foreground">
-                            {formatCurrency(line.amount)}
-                          </td>
-                        )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <Input
+                            type="number"
+                            className="h-8 text-xs text-center"
+                            value={line.qty || ""}
+                            onChange={(e) => updateLine(line.id, "qty", Number(e.target.value))}
+                            min={1}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <Input
+                            type="number"
+                            className="h-8 text-xs text-right"
+                            value={line.rate || ""}
+                            onChange={(e) => updateLine(line.id, "rate", Number(e.target.value))}
+                            min={0}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <Select
+                            value={line.tax_id}
+                            onValueChange={(v) => updateLine(line.id, "tax_id", v)}
+                          >
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue placeholder="No tax" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">No Tax</SelectItem>
+                              {taxes?.map((t: any) => (
+                                <SelectItem key={t.id} value={t.id}>
+                                  {t.tax_name} ({t.tax_rate}%)
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="px-3 py-2">
+                          <Input
+                            type="number"
+                            className="h-8 text-xs text-right"
+                            value={line.discount || ""}
+                            onChange={(e) => updateLine(line.id, "discount", Number(e.target.value))}
+                            min={0}
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium text-foreground">
+                          {formatCurrency(line.amount)}
+                        </td>
                         <td className="px-3 py-2">
                           {lines.length > 1 && (
                             <Button variant="ghost" size="sm" onClick={() => removeLine(line.id)}>
@@ -498,7 +396,7 @@ export default function CreateInvoice() {
           </Card>
         </div>
 
-        {/* Sidebar - Totals & Preview */}
+        {/* Sidebar - Totals & Journal Preview */}
         <div className="space-y-6">
           <Card>
             <CardHeader className="pb-3">
@@ -565,19 +463,6 @@ export default function CreateInvoice() {
               )}
             </CardContent>
           </Card>
-
-          {/* Template Info */}
-          {selectedTemplate && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Template</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm font-medium">{(selectedTemplate as any).template_name}</p>
-                <p className="text-xs text-muted-foreground capitalize">{(selectedTemplate as any).template_type} template</p>
-              </CardContent>
-            </Card>
-          )}
         </div>
       </div>
     </div>

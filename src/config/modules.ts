@@ -20,7 +20,6 @@ import {
   FileArchive,
   Landmark,
   ShoppingCart,
-  Briefcase,
   Box,
   Contact,
   Store,
@@ -28,7 +27,6 @@ import {
   Warehouse,
   Calculator,
   ClipboardList,
-  Layout,
   Activity,
   AlertTriangle,
   Zap,
@@ -79,6 +77,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "Credit Notes", path: "/accounting/credit-notes", icon: Receipt },
       { label: "AR Aging", path: "/accounting/ar-aging", icon: Calendar },
       { label: "Vendors", path: "/accounting/vendors", icon: Store },
+      { label: "AP Aging", path: "/accounting/ap-aging", icon: Calendar },
       { label: "Inventory (Items)", path: "/accounting/inventory", icon: Package },
       { label: "Procurement & Inventory", path: "/accounting/procurement", icon: Package },
       { label: "Bank & Cards", path: "/accounting/bank-accounts", icon: Landmark },
@@ -105,7 +104,6 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
     basePath: "/sales",
     sidebarItems: [
       { label: "Invoices", path: "/sales/invoices", icon: Wallet },
-      { label: "Invoice Templates", path: "/sales/invoices/templates", icon: Layout },
     ],
   },
   expenses: {
@@ -127,7 +125,6 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
     sidebarItems: [
       { label: "Payroll Runs", path: "/payroll/runs", icon: DollarSign },
       { label: "Employees", path: "/payroll/employees", icon: UserCheck },
-      { label: "GL Mapping", path: "/payroll/gl-mapping", icon: FileText },
     ],
   },
   reports: {
@@ -138,6 +135,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
     basePath: "/reports",
     sidebarItems: [
       { label: "Financial Reports", path: "/reports/financial", icon: BarChart3 },
+      { label: "Asset Schedule", path: "/reports/financial?report=fixed-asset-schedule", icon: Warehouse },
       { label: "Budgets", path: "/reports/budgets", icon: TrendingUp },
       { label: "Data Exports", path: "/reports/exports", icon: FileArchive },
       { label: "Forecasting", path: "/reports/forecasting", icon: TrendingUp },
@@ -154,6 +152,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "Add Asset", path: "/assets/new", icon: Warehouse },
       { label: "Asset Categories", path: "/assets/categories", icon: Box },
       { label: "Run Depreciation", path: "/assets/depreciation", icon: Calculator },
+      { label: "Asset Reports", path: "/reports/financial?report=fixed-asset-schedule", icon: BarChart3 },
     ],
   },
   tenantAdmin: {
@@ -166,6 +165,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "General Settings", path: "/settings/general", icon: Settings },
       { label: "Account Mapping", path: "/settings/account-mapping", icon: Settings },
       { label: "Posting Profiles", path: "/settings/posting-profiles", icon: Zap },
+      { label: "Payroll GL Mapping", path: "/settings/payroll-gl-mapping", icon: FileText },
       { label: "Users", path: "/settings/users", icon: Users },
     ],
   },

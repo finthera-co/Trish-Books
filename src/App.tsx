@@ -36,8 +36,6 @@ import PettyCashReplenishments from "./pages/PettyCashReplenishments";
 import PettyCashLedger from "./pages/PettyCashLedger";
 import Invoices from "./pages/Invoices";
 import CreateInvoice from "./pages/CreateInvoice";
-import InvoiceTemplates from "./pages/InvoiceTemplates";
-import InvoiceTemplateDesigner from "./pages/InvoiceTemplateDesigner";
 import ProductsTaxes from "./pages/ProductsTaxes";
 import Expenses from "./pages/Expenses";
 import Payroll from "./pages/Payroll";
@@ -70,6 +68,7 @@ import CustomerDetail from "./pages/CustomerDetail";
 import ReceivePayment from "./pages/ReceivePayment";
 import CreditNotePage from "./pages/CreditNotePage";
 import ARAgingReport from "./pages/ARAgingReport";
+import APAgingReport from "./pages/APAgingReport";
 import VendorsPage from "./pages/VendorsPage";
 import InventoryPage from "./pages/InventoryPage";
 import Procurement from "./pages/Procurement";
@@ -137,6 +136,7 @@ const App = () => (
                     <Route path="/accounting/credit-notes" element={<CreditNotePage />} />
                     <Route path="/accounting/ar-aging" element={<ARAgingReport />} />
                     <Route path="/accounting/vendors" element={<VendorsPage />} />
+                    <Route path="/accounting/ap-aging" element={<APAgingReport />} />
                     <Route path="/accounting/inventory" element={<InventoryPage />} />
                     <Route path="/accounting/procurement" element={<Procurement />} />
                     <Route path="/accounting/bank-accounts" element={<BankAccountsPage />} />
@@ -159,8 +159,6 @@ const App = () => (
                     <Route path="/sales" element={<ModuleDashboard config={MODULE_CONFIGS.sales} />} />
                     <Route path="/sales/invoices" element={<Invoices />} />
                     <Route path="/sales/invoices/new" element={<CreateInvoice />} />
-                    <Route path="/sales/invoices/templates" element={<InvoiceTemplates />} />
-                    <Route path="/sales/invoices/designer" element={<InvoiceTemplateDesigner />} />
                     <Route path="/sales/products-taxes" element={<ProductsTaxes />} />
                   </Route>
 
@@ -175,7 +173,6 @@ const App = () => (
                     <Route path="/payroll" element={<ModuleDashboard config={MODULE_CONFIGS.payroll} />} />
                     <Route path="/payroll/runs" element={<Payroll />} />
                     <Route path="/payroll/employees" element={<Employees />} />
-                    <Route path="/payroll/gl-mapping" element={<PayrollGLMapping />} />
                   </Route>
 
                   {/* Reports module */}
@@ -207,6 +204,7 @@ const App = () => (
                     <Route path="/settings/users" element={<UsersPage />} />
                     <Route path="/settings/account-mapping" element={<AccountMapping />} />
                     <Route path="/settings/posting-profiles" element={<PostingProfiles />} />
+                    <Route path="/settings/payroll-gl-mapping" element={<PayrollGLMapping />} />
                   </Route>
                 </Route>
               </Route>

@@ -25,7 +25,7 @@ export function InventoryValuationReport() {
           <CardContent className="pt-4">
             <p className="text-xs text-muted-foreground">Total Reported Value</p>
             <p className="text-2xl font-bold text-primary">{formatCurrency(totalReported)}</p>
-            <p className="text-xs text-muted-foreground mt-1">Reconciles to GL 1300</p>
+            <p className="text-xs text-muted-foreground mt-1">Reconciles to GL 1200</p>
           </CardContent>
         </Card>
         <Card>

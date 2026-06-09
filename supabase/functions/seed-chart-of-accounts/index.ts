@@ -29,6 +29,16 @@ interface DefaultAccount {
   account_subtype: string;
   category_name: string;
   is_system?: boolean;
+  is_contra?: boolean;
+}
+
+const DEBIT_TYPES = new Set(['Asset', 'Expense', 'Cost of Goods Sold', 'Other Expense']);
+const CREDIT_TYPES = new Set(['Liability', 'Equity', 'Income', 'Other Income']);
+
+function getNormalBalance(accountType: string, isContra = false): string {
+  if (DEBIT_TYPES.has(accountType)) return isContra ? 'credit' : 'debit';
+  if (CREDIT_TYPES.has(accountType)) return isContra ? 'debit' : 'credit';
+  return 'debit';
 }
 
 const DEFAULT_ACCOUNTS: DefaultAccount[] = [
@@ -39,7 +49,7 @@ const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   { account_code: "1040", account_name: "Savings Account", account_type: "Asset", account_subtype: "Savings", category_name: "Current Assets" },
   { account_code: "1100", account_name: "Accounts Receivable", account_type: "Asset", account_subtype: "Accounts Receivable", category_name: "Current Assets" },
   { account_code: "1200", account_name: "Inventory Asset", account_type: "Asset", account_subtype: "Inventory", category_name: "Current Assets" },
-  { account_code: "1300", account_name: "Prepaid Expenses", account_type: "Asset", account_subtype: "Prepaid Expenses", category_name: "Current Assets" },
+  { account_code: "1350", account_name: "Prepaid Expenses", account_type: "Asset", account_subtype: "Prepaid Expenses", category_name: "Current Assets" },
   { account_code: "1310", account_name: "Employee Advances", account_type: "Asset", account_subtype: "Other Current Assets", category_name: "Current Assets" },
   { account_code: "1400", account_name: "VAT Receivable", account_type: "Asset", account_subtype: "Other Current Assets", category_name: "Current Assets" },
   // Assets → Non-Current Assets
@@ -49,8 +59,9 @@ const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   { account_code: "1530", account_name: "Equipment", account_type: "Asset", account_subtype: "Furniture & Equipment", category_name: "Non-Current Assets" },
   { account_code: "1540", account_name: "Vehicles", account_type: "Asset", account_subtype: "Vehicles", category_name: "Non-Current Assets" },
   { account_code: "1550", account_name: "Furniture & Fixtures", account_type: "Asset", account_subtype: "Furniture & Equipment", category_name: "Non-Current Assets" },
-  { account_code: "1600", account_name: "Accumulated Depreciation", account_type: "Asset", account_subtype: "Accumulated Depreciation", category_name: "Non-Current Assets" },
+  { account_code: "1600", account_name: "PP&E — Cost", account_type: "Asset", account_subtype: "Fixed Asset", category_name: "Non-Current Assets" },
   { account_code: "1610", account_name: "Intangible Assets", account_type: "Asset", account_subtype: "Intangible Assets", category_name: "Non-Current Assets" },
+  { account_code: "1650", account_name: "Accumulated Depreciation", account_type: "Asset", account_subtype: "Accumulated Depreciation", category_name: "Non-Current Assets", is_contra: true },
   // Liabilities → Current
   { account_code: "2000", account_name: "Accounts Payable", account_type: "Liability", account_subtype: "Accounts Payable", category_name: "Current Liabilities" },
   { account_code: "2100", account_name: "Salaries Payable", account_type: "Liability", account_subtype: "Payroll Liability", category_name: "Current Liabilities" },
@@ -152,6 +163,8 @@ Deno.serve(async (req) => {
       account_name: a.account_name,
       account_type: a.account_type,
       account_subtype: a.account_subtype,
+      normal_balance: getNormalBalance(a.account_type, a.is_contra ?? false),
+      is_contra: a.is_contra ?? false,
       category_id: catMap.get(a.category_name) || null,
       tenant_id,
       is_system: a.is_system || false,
