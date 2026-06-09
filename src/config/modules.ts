@@ -78,7 +78,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "AR Aging", path: "/accounting/ar-aging", icon: Calendar },
       { label: "Vendors", path: "/accounting/vendors", icon: Store },
       { label: "Bills", path: "/accounting/bills", icon: FileText },
-      { label: "Pay Bills", path: "/accounting/bills?filter=unpaid", icon: CreditCard },
+      { label: "Pay Bills", path: "/accounting/pay-bills", icon: CreditCard },
       { label: "AP Aging", path: "/accounting/ap-aging", icon: Calendar },
       { label: "Inventory (Items)", path: "/accounting/inventory", icon: Package },
       { label: "Procurement & Inventory", path: "/accounting/procurement", icon: Package },

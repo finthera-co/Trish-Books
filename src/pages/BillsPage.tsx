@@ -1,45 +1,24 @@
 import { useState, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Plus, Eye, Play, CreditCard } from "lucide-react";
+import { Plus, Eye, Play, CreditCard, CheckCircle2, Info } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { formatCurrency } from "@/lib/currency";
+import { computeBillStatus, BILL_STATUS_BADGE, type BillStatus } from "@/lib/billStatus";
 import { useSupplierBills, useCreateSupplierBill } from "@/hooks/useProcurement";
 import { usePostSupplierBill } from "@/hooks/useAPModule";
 import { useVendorsWithBalance } from "@/hooks/useSubledgerData";
 import { useAccounts } from "@/hooks/useData";
 import PayBillsDialog from "@/components/ap/PayBillsDialog";
 import { toast } from "sonner";
-
-type StatusFilter = "all" | "draft" | "posted" | "partial" | "paid" | "overdue";
-
-function computeStatus(bill: any): StatusFilter {
-  const today = new Date();
-  const balanceDue = Number(bill.total_amount) - Number(bill.amount_paid ?? 0);
-  const amountPaid = Number(bill.amount_paid ?? 0);
-  const isOverdue = bill.due_date && new Date(bill.due_date) < today && balanceDue > 0.005;
-  if (bill.status === "draft") return "draft";
-  if (balanceDue <= 0.005 || bill.status === "paid") return "paid";
-  if (isOverdue) return "overdue";
-  if (amountPaid > 0 && amountPaid < Number(bill.total_amount)) return "partial";
-  return "posted";
-}
-
-const STATUS_BADGE: Record<StatusFilter, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  all:     { label: "All",     variant: "outline" },
-  draft:   { label: "Draft",   variant: "secondary" },
-  posted:  { label: "Posted",  variant: "outline" },
-  partial: { label: "Partial", variant: "outline" },
-  paid:    { label: "Paid",    variant: "default" },
-  overdue: { label: "Overdue", variant: "destructive" },
-};
 
 interface BillLineInput { account_id?: string; description?: string; qty: number; unit_cost: number }
 
@@ -54,7 +33,7 @@ export default function BillsPage() {
   const postBill = usePostSupplierBill();
   const createBill = useCreateSupplierBill();
 
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>(initialFilter as StatusFilter);
+  const [statusFilter, setStatusFilter] = useState<BillStatus | "all">(initialFilter as BillStatus | "all");
   const [vendorFilter, setVendorFilter] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -71,7 +50,7 @@ export default function BillsPage() {
   const [nbLines, setNbLines] = useState<BillLineInput[]>([{ qty: 1, unit_cost: 0 }]);
 
   const expenseAccounts = useMemo(() =>
-    (accounts as any[] ?? []).filter((a) => a.is_active && a.account_type === "Expense"),
+    (accounts as any[] ?? []).filter((a) => a.is_active && (a.account_type === "Expense" || a.account_type === "Asset")),
     [accounts]
   );
 
@@ -80,7 +59,7 @@ export default function BillsPage() {
       ...b,
       amount_paid: Number(b.amount_paid ?? 0),
       balance_due: Number(b.total_amount) - Number(b.amount_paid ?? 0),
-      computed_status: computeStatus(b),
+      computed_status: computeBillStatus(b),
     }));
   }, [allBills]);
 
@@ -95,7 +74,7 @@ export default function BillsPage() {
   }, [bills, statusFilter, vendorFilter, dateFrom, dateTo]);
 
   const totalOutstanding = bills
-    .filter((b) => b.computed_status === "posted" || b.computed_status === "partial" || b.computed_status === "overdue")
+    .filter((b) => ["posted", "partial", "overdue"].includes(b.computed_status))
     .reduce((s, b) => s + b.balance_due, 0);
 
   const resetNewBillForm = () => {
@@ -110,12 +89,11 @@ export default function BillsPage() {
   const subtotal = nbLines.reduce((s, l) => s + (l.qty || 0) * (l.unit_cost || 0), 0);
   const total = subtotal + (parseFloat(nbTax) || 0);
 
-  const handleCreateAndPost = async () => {
+  const handleCreateDraft = async () => {
     if (!nbVendorId) { toast.error("Select a vendor"); return; }
     const validLines = nbLines.filter((l) => l.qty > 0 && l.unit_cost > 0 && l.account_id);
     if (validLines.length === 0) { toast.error("Add at least one valid line with an account"); return; }
-
-    const billId = await createBill.mutateAsync({
+    await createBill.mutateAsync({
       vendor_id: nbVendorId,
       bill_date: nbBillDate,
       due_date: nbDueDate || undefined,
@@ -124,8 +102,6 @@ export default function BillsPage() {
       notes: nbNotes || undefined,
       lines: validLines,
     });
-
-    await postBill.mutateAsync(billId);
     resetNewBillForm();
     setNewBillOpen(false);
   };
@@ -173,11 +149,12 @@ export default function BillsPage() {
           <div className="flex flex-wrap gap-3 items-end">
             <div>
               <Label className="text-xs mb-1 block">Status</Label>
-              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as BillStatus | "all")}>
                 <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {(["all", "draft", "posted", "partial", "paid", "overdue"] as StatusFilter[]).map((s) => (
-                    <SelectItem key={s} value={s}>{s === "all" ? "All" : STATUS_BADGE[s].label}</SelectItem>
+                  <SelectItem value="all">All</SelectItem>
+                  {(["draft", "posted", "partial", "paid", "overdue"] as BillStatus[]).map((s) => (
+                    <SelectItem key={s} value={s}>{BILL_STATUS_BADGE[s].label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -235,7 +212,7 @@ export default function BillsPage() {
               </TableHeader>
               <TableBody>
                 {filtered.map((bill) => {
-                  const { label, variant } = STATUS_BADGE[bill.computed_status] ?? STATUS_BADGE.posted;
+                  const { label, variant } = BILL_STATUS_BADGE[bill.computed_status] ?? BILL_STATUS_BADGE.posted;
                   const vendorName = bill.vendor?.name ?? (vendors ?? []).find((v: any) => v.id === bill.vendor_id)?.name ?? "—";
                   return (
                     <TableRow key={bill.id}>
@@ -257,13 +234,24 @@ export default function BillsPage() {
                       <TableCell className={`text-right tabular-nums font-semibold ${bill.balance_due > 0.005 ? "text-destructive" : "text-primary"}`}>
                         {formatCurrency(bill.balance_due)}
                       </TableCell>
-                      <TableCell><Badge variant={variant}>{label}</Badge></TableCell>
+                      <TableCell>
+                        {bill.computed_status === "paid" ? (
+                          <div className="flex flex-col gap-0.5">
+                            <Badge className="bg-green-100 text-green-800 border-green-200 w-fit gap-1">
+                              <CheckCircle2 className="w-3 h-3" /> Paid
+                            </Badge>
+                            <span className="text-xs text-green-700 font-medium">Posted to GL</span>
+                          </div>
+                        ) : (
+                          <Badge variant={variant}>{label}</Badge>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
                           <Button
                             variant="ghost"
                             size="icon"
-                            title="View detail"
+                            title="View vendor"
                             onClick={() => navigate(`/accounting/vendors/${bill.vendor_id}`)}
                           >
                             <Eye className="w-4 h-4" />
@@ -308,13 +296,23 @@ export default function BillsPage() {
         )}
       </Card>
 
-      {/* New Bill Dialog */}
+      {/* New Expense Bill Dialog */}
       <Dialog open={newBillOpen} onOpenChange={(v) => { setNewBillOpen(v); if (!v) resetNewBillForm(); }}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>New Supplier Bill</DialogTitle>
+            <DialogTitle>New Expense Bill</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {/* Info banner */}
+            <Alert className="border-blue-200 bg-blue-50 text-blue-900">
+              <Info className="h-4 w-4 text-blue-600" />
+              <AlertDescription className="text-sm">
+                This form is for <strong>direct expense bills</strong> (e.g. rent, utilities, services).
+                For inventory purchases received via a GRN, create bills from{" "}
+                <strong>Procurement &amp; Inventory → Goods Receipts → Create Bill</strong>.
+              </AlertDescription>
+            </Alert>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Vendor *</Label>
@@ -417,10 +415,10 @@ export default function BillsPage() {
             <div className="flex gap-3 justify-end">
               <Button variant="outline" onClick={() => { setNewBillOpen(false); resetNewBillForm(); }}>Cancel</Button>
               <Button
-                onClick={handleCreateAndPost}
-                disabled={createBill.isPending || postBill.isPending || !nbVendorId}
+                onClick={handleCreateDraft}
+                disabled={createBill.isPending || !nbVendorId}
               >
-                {createBill.isPending || postBill.isPending ? "Posting…" : "Create & Post Bill"}
+                {createBill.isPending ? "Saving…" : "Save as Draft"}
               </Button>
             </div>
           </div>

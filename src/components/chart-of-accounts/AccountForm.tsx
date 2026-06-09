@@ -153,6 +153,8 @@ export default function AccountForm({
       account_subtype: accountSubtype || undefined,
       parent_account_id: parentId || undefined,
       category_id: categoryId || undefined,
+      normal_balance: getNormalBalance(accountType, isContraSubtype(accountSubtype)).toLowerCase(),
+      is_contra: isContraSubtype(accountSubtype),
     });
     setAccountName("");
     setAccountCode("");

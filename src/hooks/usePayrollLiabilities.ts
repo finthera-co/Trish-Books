@@ -46,7 +46,7 @@ export interface RunLiabilityRow {
   etf_employer: number;
   epf_total: number;
   etf_total: number;
-  remittance_status: "PENDING" | "PARTIAL" | "REMITTED";
+  remittance_status: "settled" | "partial" | "pending";
 }
 
 export interface PayrollRemittance {
@@ -142,25 +142,28 @@ export function usePayrollLiabilityByRun() {
   return useQuery({
     queryKey: ["payroll_liability_by_run"],
     queryFn: async () => {
-      const [{ data: results, error: resErr }, { data: periodData }] = await Promise.all([
+      const [{ data: results, error: resErr }, { data: remittances }] = await Promise.all([
         supabase
           .from("payroll_results")
           .select("component_code, value, run_id, payroll_runs(run_number, period_start, period_end, status)")
           .in("component_code", ["EPF_EMPLOYEE", "EPF_EMPLOYER", "ETF_EMPLOYER"]),
         (supabase as any)
-          .from("payroll_liability_summary")
-          .select("period, accrued_amount, remitted_amount"),
+          .from("payroll_remittances")
+          .select("payroll_run_id, remittance_type, amount")
+          .eq("status", "posted")
+          .not("payroll_run_id", "is", null),
       ]);
       if (resErr) throw resErr;
 
-      // Aggregate period-level totals from view to determine remittance status
-      const periodTotals = new Map<string, { accrued: number; remitted: number }>();
-      for (const row of periodData || []) {
-        const p = row.period as string;
-        const existing = periodTotals.get(p) ?? { accrued: 0, remitted: 0 };
-        existing.accrued += Number(row.accrued_amount);
-        existing.remitted += Number(row.remitted_amount);
-        periodTotals.set(p, existing);
+      // Build per-run remittance totals keyed by run_id
+      const runRemitted = new Map<string, { epf_employee: number; epf_employer: number; etf_employer: number }>();
+      for (const rem of remittances || []) {
+        if (!rem.payroll_run_id) continue;
+        const e = runRemitted.get(rem.payroll_run_id) ?? { epf_employee: 0, epf_employer: 0, etf_employer: 0 };
+        if (rem.remittance_type === "EPF_EMPLOYEE") e.epf_employee += Number(rem.amount);
+        if (rem.remittance_type === "EPF_EMPLOYER") e.epf_employer += Number(rem.amount);
+        if (rem.remittance_type === "ETF_EMPLOYER") e.etf_employer += Number(rem.amount);
+        runRemitted.set(rem.payroll_run_id, e);
       }
 
       const byRun = new Map<string, {
@@ -188,12 +191,16 @@ export function usePayrollLiabilityByRun() {
       }
 
       return Array.from(byRun.values()).map((r): RunLiabilityRow => {
-        const pt = periodTotals.get(r.period_key);
-        let remittance_status: "PENDING" | "PARTIAL" | "REMITTED" = "PENDING";
-        if (pt && pt.accrued > 0.01) {
-          if (pt.remitted >= pt.accrued - 0.01) remittance_status = "REMITTED";
-          else if (pt.remitted > 0.01) remittance_status = "PARTIAL";
+        const rem = runRemitted.get(r.run_id);
+        const totalAccrued = r2(r.epf_employee + r.epf_employer + r.etf_employer);
+        const totalRemitted = rem ? r2(rem.epf_employee + rem.epf_employer + rem.etf_employer) : 0;
+
+        let remittance_status: RunLiabilityRow["remittance_status"] = "pending";
+        if (totalAccrued > 0.01) {
+          if (totalRemitted >= totalAccrued - 0.01) remittance_status = "settled";
+          else if (totalRemitted > 0.01) remittance_status = "partial";
         }
+
         return {
           ...r,
           epf_total: r2(r.epf_employee + r.epf_employer),
@@ -378,5 +385,28 @@ export function useRecordRemittance() {
       toast.success("Remittance recorded and posted to GL");
     },
     onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ─── Resolve the liability account mapped for a remittance type ───────────────
+export function useResolvedLiabilityAccount(remittanceType: RemittanceType | undefined) {
+  return useQuery({
+    queryKey: ["resolved_liability_account", remittanceType],
+    enabled: !!remittanceType,
+    staleTime: 0,
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("payroll_component_accounts")
+        .select("account_id, accounts(id, account_code, account_name)")
+        .eq("component_code", remittanceType!)
+        .eq("posting_side", "credit")
+        .eq("is_active", true)
+        .maybeSingle();
+      if (error) throw error;
+      return data as {
+        account_id: string;
+        accounts: { id: string; account_code: string; account_name: string };
+      } | null;
+    },
   });
 }

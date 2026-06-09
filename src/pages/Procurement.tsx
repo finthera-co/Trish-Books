@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Send, ShoppingCart, PackageCheck, Receipt as ReceiptIcon, FileCheck2, BarChart3, Warehouse as WarehouseIcon, ArrowRightLeft, ClipboardEdit, Truck, RotateCcw, PackageX, ClipboardList, Wrench, ClipboardCheck, Keyboard } from "lucide-react";
+import { Plus, Trash2, Send, ShoppingCart, PackageCheck, Receipt as ReceiptIcon, FileCheck2, BarChart3, Warehouse as WarehouseIcon, ArrowRightLeft, ClipboardEdit, Truck, RotateCcw, PackageX, ClipboardList, Wrench, ClipboardCheck, Keyboard, CreditCard } from "lucide-react";
 import { InventoryReportsHub } from "@/components/inventory/InventoryReportsHub";
 import { WarehousesTab, TransfersTab } from "@/components/inventory/WarehousesAndTransfers";
 import { StockAdjustmentsTab } from "@/components/inventory/StockAdjustments";
@@ -33,6 +33,8 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { CheckCircle2, XCircle, Lock } from "lucide-react";
+import PayBillsDialog from "@/components/ap/PayBillsDialog";
+import { computeBillStatus } from "@/lib/billStatus";
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -510,51 +512,83 @@ function GRNCreateDialog({ onClose }: { onClose: () => void }) {
 function BillTab() {
   const { data: bills, isLoading } = useSupplierBills();
   const post = usePostSupplierBill();
-  const [open, setOpen] = useState(false);
+  const [payDialog, setPayDialog] = useState<{ vendorId: string; vendorName: string; billId: string } | null>(null);
+
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Supplier Bills</CardTitle>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button data-procurement-new><Plus className="w-4 h-4 mr-2" />New Bill</Button></DialogTrigger>
-          <BillCreateDialog onClose={() => setOpen(false)} />
-        </Dialog>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? <p className="text-muted-foreground">Loading…</p> : (bills || []).length === 0 ? (
-          <p className="text-muted-foreground text-center py-8">No bills yet.</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Bill #</TableHead><TableHead>Vendor Ref</TableHead><TableHead>Date</TableHead>
-                <TableHead>Vendor</TableHead><TableHead className="text-right">Total</TableHead>
-                <TableHead>Status</TableHead><TableHead className="w-32">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(bills || []).map((b: any) => (
-                <TableRow key={b.id}>
-                  <TableCell className="font-mono">{b.bill_number}</TableCell>
-                  <TableCell className="text-muted-foreground">{b.vendor_ref || "—"}</TableCell>
-                  <TableCell>{format(new Date(b.bill_date), "MMM d, yyyy")}</TableCell>
-                  <TableCell>{b.vendor?.name}</TableCell>
-                  <TableCell className="text-right font-mono">{formatCurrency(b.total_amount)}</TableCell>
-                  <TableCell><StatusBadge status={b.status} /></TableCell>
-                  <TableCell>
-                    {b.status === "draft" && (
-                      <Button size="sm" variant="outline" onClick={() => post.mutate(b.id)} disabled={post.isPending}>
-                        <FileCheck2 className="w-3 h-3 mr-1" />Post
-                      </Button>
-                    )}
-                  </TableCell>
+    <>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Supplier Bills</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Bills are created from Goods Receipts above. Direct expense bills can be created from{" "}
+            <strong>Accounting → Bills</strong>.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? <p className="text-muted-foreground">Loading…</p> : (bills || []).length === 0 ? (
+            <p className="text-muted-foreground text-center py-8">No bills yet. Create a bill from a GRN above.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Bill #</TableHead><TableHead>Vendor Ref</TableHead><TableHead>Date</TableHead>
+                  <TableHead>Vendor</TableHead><TableHead className="text-right">Total</TableHead>
+                  <TableHead>Status</TableHead><TableHead className="w-36">Action</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
+              </TableHeader>
+              <TableBody>
+                {(bills || []).map((b: any) => {
+                  const computed = computeBillStatus(b);
+                  return (
+                    <TableRow key={b.id}>
+                      <TableCell className="font-mono">{b.bill_number}</TableCell>
+                      <TableCell className="text-muted-foreground">{b.vendor_ref || "—"}</TableCell>
+                      <TableCell>{format(new Date(b.bill_date), "MMM d, yyyy")}</TableCell>
+                      <TableCell>{b.vendor?.name}</TableCell>
+                      <TableCell className="text-right font-mono">{formatCurrency(b.total_amount)}</TableCell>
+                      <TableCell>
+                        {computed === "paid" ? (
+                          <span className="flex items-center gap-1 text-xs text-green-700 font-medium">
+                            <CheckCircle2 className="w-3 h-3" /> Paid
+                          </span>
+                        ) : (
+                          <StatusBadge status={b.status} />
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {b.status === "draft" && (
+                          <Button size="sm" variant="outline" onClick={() => post.mutate(b.id)} disabled={post.isPending}>
+                            <FileCheck2 className="w-3 h-3 mr-1" />Post
+                          </Button>
+                        )}
+                        {(computed === "posted" || computed === "partial" || computed === "overdue") && (
+                          <Button
+                            size="sm"
+                            onClick={() => setPayDialog({ vendorId: b.vendor_id, vendorName: b.vendor?.name ?? "", billId: b.id })}
+                          >
+                            <CreditCard className="w-3 h-3 mr-1" />Pay
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {payDialog && (
+        <PayBillsDialog
+          open={!!payDialog}
+          onOpenChange={(v) => { if (!v) setPayDialog(null); }}
+          vendorId={payDialog.vendorId}
+          vendorName={payDialog.vendorName}
+          preselectedBillId={payDialog.billId}
+        />
+      )}
+    </>
   );
 }
 

@@ -80,6 +80,8 @@ export function useUpsertPayrollGLMapping() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["payroll_component_accounts"] });
+      qc.invalidateQueries({ queryKey: ["resolved_liability_account"] });
+      qc.invalidateQueries({ queryKey: ["payroll_epf_etf_mappings"] });
       toast.success("Mapping saved");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -95,6 +97,8 @@ export function useDeletePayrollGLMapping() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["payroll_component_accounts"] });
+      qc.invalidateQueries({ queryKey: ["resolved_liability_account"] });
+      qc.invalidateQueries({ queryKey: ["payroll_epf_etf_mappings"] });
       toast.success("Mapping removed");
     },
     onError: (e: Error) => toast.error(e.message),

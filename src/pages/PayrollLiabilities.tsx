@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { differenceInDays, format, parseISO } from "date-fns";
 import {
-  AlertTriangle, CheckCircle, ExternalLink, Download, XCircle,
+  AlertTriangle, CheckCircle, CheckCircle2, ExternalLink, Download, XCircle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,12 @@ const REMITTANCE_TYPES: { value: RemittanceType; label: string }[] = [
   { value: "ETF_EMPLOYER", label: "ETF Employer (3%)" },
 ];
 
+const REMITTANCE_LABELS: Record<string, string> = {
+  EPF_EMPLOYEE: "EPF Employee (8%)",
+  EPF_EMPLOYER: "EPF Employer (12%)",
+  ETF_EMPLOYER: "ETF Employer (3%)",
+};
+
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
 function StatusBadge({ status, dueDate }: {
@@ -67,9 +73,9 @@ function StatusBadge({ status, dueDate }: {
   return <Badge variant="outline" className="text-muted-foreground">Pending</Badge>;
 }
 
-function RunStatusBadge({ status }: { status: "PENDING" | "PARTIAL" | "REMITTED" }) {
-  if (status === "REMITTED") return <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border-0">Remitted</Badge>;
-  if (status === "PARTIAL") return <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 border-0">Partial</Badge>;
+function RunStatusBadge({ status }: { status: "settled" | "partial" | "pending" }) {
+  if (status === "settled") return <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border-0">Settled</Badge>;
+  if (status === "partial") return <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 border-0">Partial</Badge>;
   return <Badge className="bg-destructive/10 text-destructive border-0">Pending</Badge>;
 }
 
@@ -148,10 +154,11 @@ function RecordRemittanceDialog({ open, onOpenChange, defaultType }: {
   defaultType?: RemittanceType;
 }) {
   const { data: accounts = [] } = useAccounts();
-  const { data: glMappings = [] } = usePayrollGLMappings();
   const { data: periodData = [] } = usePayrollLiabilityByPeriod();
   const { data: history = [] } = usePayrollRemittanceHistory();
+  const { data: runRows = [] } = usePayrollLiabilityByRun();
   const record = useRecordRemittance();
+  const { data: glMappings = [] } = usePayrollGLMappings();
 
   const [form, setForm] = useState({
     remittance_type: (defaultType ?? "EPF_EMPLOYEE") as RemittanceType,
@@ -159,25 +166,31 @@ function RecordRemittanceDialog({ open, onOpenChange, defaultType }: {
     amount: "",
     payment_date: format(new Date(), "yyyy-MM-dd"),
     bank_account_id: "",
+    liability_account_id: "",
     reference: "",
     notes: "",
+    payroll_run_id: "",
   });
-  const [overrideLiability, setOverrideLiability] = useState(false);
-  const [manualLiabilityAccountId, setManualLiabilityAccountId] = useState("");
-
-  // Auto-resolve liability account: find credit-side GL mapping for this component
-  const autoLiabilityAccountId = useMemo(() => {
-    const creditMapping = glMappings.find(
-      (m) => m.component_code === form.remittance_type && m.posting_side === "credit"
-    );
-    return creditMapping?.account_id ?? null;
-  }, [glMappings, form.remittance_type]);
-
-  const effectiveLiabilityAccountId = overrideLiability
-    ? manualLiabilityAccountId
-    : (autoLiabilityAccountId ?? "");
 
   const allAccounts = accounts as any[];
+
+  // Instantly resolve the credit-side liability account from already-cached GL mappings — no network round trip
+  const resolvedMapping = useMemo(
+    () => glMappings.find(
+      (m) => m.component_code === form.remittance_type && m.posting_side === "credit" && m.is_active
+    ) ?? null,
+    [glMappings, form.remittance_type]
+  );
+
+  const resolvedAccount = useMemo(
+    () => resolvedMapping ? (allAccounts.find((a: any) => a.id === resolvedMapping.account_id) ?? null) : null,
+    [resolvedMapping, allAccounts]
+  );
+
+  useEffect(() => {
+    setForm((prev) => ({ ...prev, liability_account_id: resolvedMapping?.account_id ?? "" }));
+  }, [resolvedMapping]);
+
   const bankAccounts = allAccounts.filter(
     (a) => a.is_active && (
       a.account_subtype?.toLowerCase().includes("cash") ||
@@ -189,7 +202,6 @@ function RecordRemittanceDialog({ open, onOpenChange, defaultType }: {
     )
   );
   const liabilityAccounts = allAccounts.filter((a) => a.is_active && a.account_type === "Liability");
-  const autoLiabilityAccount = allAccounts.find((a) => a.id === autoLiabilityAccountId);
 
   // Outstanding for selected type + period
   const periodOutstanding = useMemo(() => {
@@ -210,10 +222,11 @@ function RecordRemittanceDialog({ open, onOpenChange, defaultType }: {
   );
 
   const canSubmit = !!(
+    form.payroll_run_id &&
     form.amount &&
     parseFloat(form.amount) > 0 &&
     form.bank_account_id &&
-    effectiveLiabilityAccountId &&
+    form.liability_account_id &&
     !record.isPending
   );
 
@@ -226,9 +239,10 @@ function RecordRemittanceDialog({ open, onOpenChange, defaultType }: {
         amount: parseFloat(form.amount),
         payment_date: form.payment_date,
         bank_account_id: form.bank_account_id,
-        liability_account_id: effectiveLiabilityAccountId,
+        liability_account_id: form.liability_account_id,
         reference: form.reference || undefined,
         notes: form.notes || undefined,
+        payroll_run_id: form.payroll_run_id,
       },
       { onSuccess: () => onOpenChange(false) }
     );
@@ -239,12 +253,37 @@ function RecordRemittanceDialog({ open, onOpenChange, defaultType }: {
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>Record Remittance Payment</DialogTitle></DialogHeader>
         <div className="space-y-4">
+          {/* Payroll Run — required, drives period auto-fill */}
+          <div>
+            <Label>Payroll Run <span className="text-destructive">*</span></Label>
+            <Select
+              value={form.payroll_run_id}
+              onValueChange={(v) => {
+                const run = runRows.find((r) => r.run_id === v);
+                setForm((f) => ({
+                  ...f,
+                  payroll_run_id: v,
+                  period: run ? run.period_key : f.period,
+                }));
+              }}
+            >
+              <SelectTrigger><SelectValue placeholder="Select payroll run…" /></SelectTrigger>
+              <SelectContent>
+                {runRows.map((r) => (
+                  <SelectItem key={r.run_id} value={r.run_id}>
+                    {r.run_number} — {r.period_label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <Label>Remittance Type</Label>
               <Select
                 value={form.remittance_type}
-                onValueChange={(v) => setForm({ ...form, remittance_type: v as RemittanceType })}
+                onValueChange={(v) => setForm({ ...form, remittance_type: v as RemittanceType, liability_account_id: "" })}
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -310,39 +349,48 @@ function RecordRemittanceDialog({ open, onOpenChange, defaultType }: {
             />
           </div>
 
-          {/* Liability account — auto-resolved with override toggle */}
+          {/* Liability account — auto-resolved from payroll_component_accounts */}
           <div>
-            <div className="flex items-center justify-between mb-1">
-              <Label>Liability Account (Dr)</Label>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-auto p-0 text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => setOverrideLiability((v) => !v)}
-              >
-                {overrideLiability ? "Use Auto-resolved" : "Override"}
-              </Button>
-            </div>
-            {overrideLiability ? (
-              <Select value={manualLiabilityAccountId} onValueChange={setManualLiabilityAccountId}>
-                <SelectTrigger><SelectValue placeholder="Select liability account…" /></SelectTrigger>
-                <SelectContent>
-                  {liabilityAccounts.map((a: any) => (
-                    <SelectItem key={a.id} value={a.id}>{a.account_code} — {a.account_name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <Label>Liability Account (Dr)</Label>
+
+            {resolvedMapping && resolvedAccount ? (
+              <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400 mb-2">
+                <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>
+                  Auto-resolved from GL Mapping:{" "}
+                  <strong>{(resolvedAccount as any).account_code} — {(resolvedAccount as any).account_name}</strong>
+                </span>
+              </div>
             ) : (
-              <div className="rounded-md border px-3 py-2 bg-muted/30 text-sm min-h-[38px] flex items-center">
-                {autoLiabilityAccount
-                  ? <span>{autoLiabilityAccount.account_code} — {autoLiabilityAccount.account_name}</span>
-                  : <span className="text-muted-foreground italic">
-                      No credit-side GL mapping for {form.remittance_type}. Use Override to select manually.
-                    </span>
-                }
+              <div className="flex items-center gap-1.5 text-xs text-yellow-600 dark:text-yellow-400 mb-2">
+                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>
+                  No GL mapping found for this type — select manually below or{" "}
+                  <a
+                    href="/settings/payroll-gl-mapping"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline hover:no-underline"
+                  >
+                    configure in Settings → Payroll GL Mapping
+                  </a>
+                </span>
               </div>
             )}
+
+            <Select
+              value={form.liability_account_id}
+              onValueChange={(v) => setForm({ ...form, liability_account_id: v })}
+            >
+              <SelectTrigger className={!form.liability_account_id ? "border-destructive/40" : ""}>
+                <SelectValue placeholder="Select liability account…" />
+              </SelectTrigger>
+              <SelectContent>
+                {liabilityAccounts.map((a: any) => (
+                  <SelectItem key={a.id} value={a.id}>{a.account_code} — {a.account_name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div>
@@ -446,6 +494,15 @@ export default function PayrollLiabilities() {
   const { data: runRows = [] } = usePayrollLiabilityByRun();
   const { data: history = [] } = usePayrollRemittanceHistory();
 
+  // Check which remittance types have a credit-side GL mapping configured — client-side from cached data
+  const { data: pageGlMappings = [] } = usePayrollGLMappings();
+  const missingMappings = useMemo(
+    () => (["EPF_EMPLOYEE", "EPF_EMPLOYER", "ETF_EMPLOYER"] as const).filter(
+      (code) => !pageGlMappings.some(m => m.component_code === code && m.posting_side === "credit" && m.is_active)
+    ),
+    [pageGlMappings]
+  );
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [defaultType, setDefaultType] = useState<RemittanceType | undefined>(undefined);
   const [voidTarget, setVoidTarget] = useState<PayrollRemittance | null>(null);
@@ -517,6 +574,23 @@ export default function PayrollLiabilities() {
         </div>
         <Button onClick={() => openRecordFor(undefined)}>Record Remittance</Button>
       </div>
+
+      {missingMappings.length > 0 && (
+        <Alert className="border-yellow-400/40 bg-yellow-50/50 dark:bg-yellow-900/10">
+          <AlertTriangle className="w-4 h-4 text-yellow-600" />
+          <AlertDescription className="text-sm">
+            <strong>GL Mapping incomplete.</strong>{" "}
+            The following types have no liability account mapped and will require manual selection:{" "}
+            {missingMappings.map((c) => REMITTANCE_LABELS[c]).join(", ")}.{" "}
+            <a
+              href="/settings/payroll-gl-mapping"
+              className="underline font-medium hover:no-underline"
+            >
+              Fix in Settings → Payroll GL Mapping →
+            </a>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Tabs defaultValue="summary">
         <TabsList>

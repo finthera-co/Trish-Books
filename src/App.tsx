@@ -73,6 +73,7 @@ import APAgingReport from "./pages/APAgingReport";
 import VendorsPage from "./pages/VendorsPage";
 import VendorDetail from "./pages/VendorDetail";
 import BillsPage from "./pages/BillsPage";
+import PayBillsPage from "./pages/PayBillsPage";
 import InventoryPage from "./pages/InventoryPage";
 import Procurement from "./pages/Procurement";
 import BankAccountsPage from "./pages/BankAccountsPage";
@@ -141,6 +142,7 @@ const App = () => (
                     <Route path="/accounting/vendors" element={<VendorsPage />} />
                     <Route path="/accounting/vendors/:id" element={<VendorDetail />} />
                     <Route path="/accounting/bills" element={<BillsPage />} />
+                    <Route path="/accounting/pay-bills" element={<PayBillsPage />} />
                     <Route path="/accounting/ap-aging" element={<APAgingReport />} />
                     <Route path="/accounting/inventory" element={<InventoryPage />} />
                     <Route path="/accounting/procurement" element={<Procurement />} />
