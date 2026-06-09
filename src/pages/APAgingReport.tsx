@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Clock, Printer, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react";
+import { ArrowLeft, Clock, Printer, CheckCircle2, AlertTriangle, RefreshCw, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -30,6 +30,30 @@ export default function APAgingReport() {
 
   const handleRefresh = () => { refetchAging(); refetchRecon(); };
 
+  const handleExportCSV = () => {
+    const header = ["Vendor", "Current", "1-30 Days", "31-60 Days", "61-90 Days", "91-120 Days", "120+ Days", "Total"];
+    const dataRows = rows.map((r) => [
+      r.vendor_name,
+      r.current.toFixed(2), r.days_1_30.toFixed(2), r.days_31_60.toFixed(2),
+      r.days_61_90.toFixed(2), r.days_91_120.toFixed(2), r.over_120.toFixed(2),
+      r.total.toFixed(2),
+    ]);
+    const totalRow = [
+      "TOTAL",
+      totals.current.toFixed(2), totals.days_1_30.toFixed(2), totals.days_31_60.toFixed(2),
+      totals.days_61_90.toFixed(2), totals.days_91_120.toFixed(2), totals.over_120.toFixed(2),
+      totals.grand_total.toFixed(2),
+    ];
+    const csv = [header, ...dataRows, totalRow].map((r) => r.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ap-aging-${asOfDate}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6 print:space-y-4">
       {/* ── Header ── */}
@@ -55,6 +79,9 @@ export default function APAgingReport() {
           />
           <Button variant="outline" size="sm" onClick={handleRefresh}>
             <RefreshCw className="w-4 h-4 mr-1.5" /> Refresh
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={rows.length === 0}>
+            <Download className="w-4 h-4 mr-1.5" /> Export CSV
           </Button>
           <Button variant="outline" size="sm" onClick={() => window.print()}>
             <Printer className="w-4 h-4 mr-1.5" /> Print
@@ -164,9 +191,9 @@ export default function APAgingReport() {
                     <TableRow
                       key={row.vendor_id}
                       className="cursor-pointer hover:bg-muted/40"
-                      onClick={() => navigate(`/accounting/vendors`)}
+                      onClick={() => navigate(`/accounting/vendors/${row.vendor_id}`)}
                     >
-                      <TableCell className="font-medium">{row.vendor_name}</TableCell>
+                      <TableCell className="font-medium text-primary underline-offset-2 hover:underline">{row.vendor_name}</TableCell>
                       <TableCell className="text-right tabular-nums text-green-700">
                         {row.current > 0 ? formatCurrency(row.current) : "—"}
                       </TableCell>

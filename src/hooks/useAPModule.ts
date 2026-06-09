@@ -1,6 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
+import { postBillPayment, post } from "@/lib/postingEngine";
 
 export type APAgingRow = {
   vendor_id: string;
@@ -165,5 +167,306 @@ export function useAPTransactions(vendorId?: string) {
       return data ?? [];
     },
     enabled: !!vendorId && !!appUser?.tenant_id,
+  });
+}
+
+// ─── Supplier Bills for a vendor ─────────────────────────
+export function useSupplierBillsForVendor(vendorId: string | undefined) {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["supplier_bills", "vendor", vendorId, appUser?.tenant_id],
+    enabled: !!vendorId && !!appUser?.tenant_id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("supplier_bills" as any)
+        .select("*, supplier_bill_lines(*)")
+        .eq("vendor_id", vendorId!)
+        .eq("tenant_id", appUser!.tenant_id)
+        .order("bill_date", { ascending: false });
+      if (error) throw error;
+      return ((data as any[]) ?? []).map((bill) => ({
+        ...bill,
+        amount_paid: Number(bill.amount_paid ?? 0),
+        balance_due: Number(bill.total_amount) - Number(bill.amount_paid ?? 0),
+      }));
+    },
+  });
+}
+
+// ─── Record a bill payment ────────────────────────────────
+export function useRecordBillPayment() {
+  const { appUser } = useAuth();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: {
+      vendor_id: string;
+      payment_date: string;
+      amount: number;
+      bank_account_id: string;
+      ap_account_id: string;
+      reference?: string;
+      notes?: string;
+      allocations: { bill_id: string; amount_applied: number }[];
+    }) => {
+      const tenantId = appUser!.tenant_id;
+
+      // 1. Insert payment record
+      const { data: payment, error: pmtErr } = await supabase
+        .from("bill_payments" as any)
+        .insert({
+          tenant_id: tenantId,
+          vendor_id: params.vendor_id,
+          payment_date: params.payment_date,
+          amount: params.amount,
+          bank_account_id: params.bank_account_id,
+          ap_account_id: params.ap_account_id,
+          reference: params.reference || null,
+          notes: params.notes || null,
+          status: "posted",
+        } as any)
+        .select()
+        .single();
+      if (pmtErr) throw pmtErr;
+
+      const pmtId = (payment as any).id as string;
+
+      // 2. Insert allocations (trigger auto-updates amount_paid on each bill)
+      if (params.allocations.length > 0) {
+        const { error: allocErr } = await supabase
+          .from("bill_payment_allocations" as any)
+          .insert(
+            params.allocations.map((a) => ({
+              tenant_id: tenantId,
+              payment_id: pmtId,
+              bill_id: a.bill_id,
+              amount_applied: a.amount_applied,
+            })) as any
+          );
+        if (allocErr) throw allocErr;
+      }
+
+      // 3. Post GL: Dr AP / Cr Bank
+      const result = await postBillPayment({
+        tenant_id: tenantId,
+        payment_id: pmtId,
+        vendor_id: params.vendor_id,
+        amount: params.amount,
+        payment_date: params.payment_date,
+        bank_account_id: params.bank_account_id,
+        ap_account_id: params.ap_account_id,
+        reference: params.reference,
+      });
+
+      // 4. Link journal entry to payment
+      await supabase
+        .from("bill_payments" as any)
+        .update({ journal_entry_id: result.journal_entry_id } as any)
+        .eq("id", pmtId);
+
+      // 5. Mark fully-paid bills as 'paid' (amount_paid updated by trigger above)
+      for (const alloc of params.allocations) {
+        const { data: bill } = await supabase
+          .from("supplier_bills" as any)
+          .select("total_amount, amount_paid")
+          .eq("id", alloc.bill_id)
+          .single();
+        if (bill && Number((bill as any).amount_paid) >= Number((bill as any).total_amount)) {
+          await supabase
+            .from("supplier_bills" as any)
+            .update({ status: "paid" } as any)
+            .eq("id", alloc.bill_id);
+        }
+      }
+
+      return payment;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["supplier_bills"] });
+      qc.invalidateQueries({ queryKey: ["ap_subledger"] });
+      qc.invalidateQueries({ queryKey: ["vendors_with_balance"] });
+      qc.invalidateQueries({ queryKey: ["bill_payments"] });
+      qc.invalidateQueries({ queryKey: ["vendor_detail"] });
+      toast.success("Payment recorded and posted to GL");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ─── Vendor credit notes ──────────────────────────────────
+export function useVendorCreditNotes(vendorId?: string) {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["vendor_credit_notes", appUser?.tenant_id, vendorId ?? "all"],
+    enabled: !!appUser?.tenant_id,
+    queryFn: async () => {
+      let q = supabase
+        .from("vendor_credit_notes" as any)
+        .select("*")
+        .eq("tenant_id", appUser!.tenant_id)
+        .order("credit_date", { ascending: false });
+      if (vendorId) q = (q as any).eq("vendor_id", vendorId);
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data as any[]) ?? [];
+    },
+  });
+}
+
+// ─── Create vendor credit note ────────────────────────────
+export function useCreateVendorCreditNote() {
+  const { appUser } = useAuth();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: {
+      vendor_id: string;
+      credit_note_number: string;
+      credit_date: string;
+      amount: number;
+      reason?: string;
+      expense_account_id: string;
+      ap_account_id: string;
+      bill_id?: string;
+    }) => {
+      const tenantId = appUser!.tenant_id;
+
+      // 1. Insert credit note record
+      const { data: cn, error: cnErr } = await supabase
+        .from("vendor_credit_notes" as any)
+        .insert({
+          tenant_id: tenantId,
+          vendor_id: params.vendor_id,
+          credit_note_number: params.credit_note_number,
+          credit_date: params.credit_date,
+          amount: params.amount,
+          reason: params.reason || null,
+          expense_account_id: params.expense_account_id,
+          ap_account_id: params.ap_account_id,
+          bill_id: params.bill_id || null,
+          status: "draft",
+        } as any)
+        .select()
+        .single();
+      if (cnErr) throw cnErr;
+
+      const cnId = (cn as any).id as string;
+
+      // 2. Post GL: Dr AP / Cr Expense (reduces liability and reverses expense)
+      const result = await post({
+        tenant_id: tenantId,
+        entry_date: params.credit_date,
+        description: `Vendor Credit Note ${params.credit_note_number}`,
+        source_type: "vendor_credit",
+        source_id: cnId,
+        reference: params.credit_note_number,
+        lines: [
+          { account_id: params.ap_account_id, debit: params.amount, credit: 0, vendor_id: params.vendor_id },
+          { account_id: params.expense_account_id, debit: 0, credit: params.amount },
+        ],
+        subledger_entries: [
+          {
+            type: "ap",
+            entity_id: params.vendor_id,
+            document_type: "vendor_credit",
+            document_id: cnId,
+            debit: params.amount,
+            credit: 0,
+          },
+        ],
+      });
+
+      // 3. Update status and link journal entry
+      await supabase
+        .from("vendor_credit_notes" as any)
+        .update({ status: "posted", journal_entry_id: result.journal_entry_id } as any)
+        .eq("id", cnId);
+
+      return cn;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["vendor_credit_notes"] });
+      qc.invalidateQueries({ queryKey: ["ap_subledger"] });
+      qc.invalidateQueries({ queryKey: ["vendors_with_balance"] });
+      qc.invalidateQueries({ queryKey: ["vendor_detail"] });
+      toast.success("Credit note created and posted to GL");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ─── Post a draft supplier bill ───────────────────────────
+export function usePostSupplierBill() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (billId: string) => {
+      const { data, error } = await supabase.rpc("post_supplier_bill" as any, {
+        p_bill_id: billId,
+      });
+      if (error) throw new Error(error.message);
+      if ((data as any)?.error) throw new Error((data as any).error);
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["supplier_bills"] });
+      qc.invalidateQueries({ queryKey: ["ap_subledger"] });
+      qc.invalidateQueries({ queryKey: ["vendor_detail"] });
+      toast.success("Bill posted to GL");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ─── Vendor detail (parallel fetch) ──────────────────────
+export function useVendorDetail(vendorId: string | undefined) {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["vendor_detail", vendorId, appUser?.tenant_id],
+    enabled: !!vendorId && !!appUser?.tenant_id,
+    queryFn: async () => {
+      const tid = appUser!.tenant_id;
+
+      const [vendorRes, billsRes, paymentsRes, creditNotesRes, apRes] = await Promise.all([
+        supabase.from("vendors").select("*").eq("id", vendorId!).single(),
+        supabase
+          .from("supplier_bills" as any)
+          .select("*")
+          .eq("vendor_id", vendorId!)
+          .eq("tenant_id", tid)
+          .order("bill_date", { ascending: false }),
+        supabase
+          .from("bill_payments" as any)
+          .select("*")
+          .eq("vendor_id", vendorId!)
+          .eq("tenant_id", tid)
+          .order("payment_date", { ascending: false }),
+        supabase
+          .from("vendor_credit_notes" as any)
+          .select("*")
+          .eq("vendor_id", vendorId!)
+          .eq("tenant_id", tid)
+          .order("credit_date", { ascending: false }),
+        supabase
+          .from("ap_subledger")
+          .select("*")
+          .eq("vendor_id", vendorId!)
+          .eq("tenant_id", tid)
+          .order("created_at"),
+      ]);
+
+      if (vendorRes.error) throw vendorRes.error;
+
+      const bills = ((billsRes.data as any[]) ?? []).map((b) => ({
+        ...b,
+        amount_paid: Number(b.amount_paid ?? 0),
+        balance_due: Number(b.total_amount) - Number(b.amount_paid ?? 0),
+      }));
+
+      return {
+        vendor: vendorRes.data,
+        bills,
+        payments: (paymentsRes.data as any[]) ?? [],
+        creditNotes: (creditNotesRes.data as any[]) ?? [],
+        apEntries: apRes.data ?? [],
+      };
+    },
   });
 }

@@ -40,6 +40,7 @@ import ProductsTaxes from "./pages/ProductsTaxes";
 import Expenses from "./pages/Expenses";
 import Payroll from "./pages/Payroll";
 import PayrollGLMapping from "./pages/PayrollGLMapping";
+import PayrollLiabilities from "./pages/PayrollLiabilities";
 import Employees from "./pages/Employees";
 import Reports from "./pages/Reports";
 import Budgets from "./pages/Budgets";
@@ -70,6 +71,8 @@ import CreditNotePage from "./pages/CreditNotePage";
 import ARAgingReport from "./pages/ARAgingReport";
 import APAgingReport from "./pages/APAgingReport";
 import VendorsPage from "./pages/VendorsPage";
+import VendorDetail from "./pages/VendorDetail";
+import BillsPage from "./pages/BillsPage";
 import InventoryPage from "./pages/InventoryPage";
 import Procurement from "./pages/Procurement";
 import BankAccountsPage from "./pages/BankAccountsPage";
@@ -136,6 +139,8 @@ const App = () => (
                     <Route path="/accounting/credit-notes" element={<CreditNotePage />} />
                     <Route path="/accounting/ar-aging" element={<ARAgingReport />} />
                     <Route path="/accounting/vendors" element={<VendorsPage />} />
+                    <Route path="/accounting/vendors/:id" element={<VendorDetail />} />
+                    <Route path="/accounting/bills" element={<BillsPage />} />
                     <Route path="/accounting/ap-aging" element={<APAgingReport />} />
                     <Route path="/accounting/inventory" element={<InventoryPage />} />
                     <Route path="/accounting/procurement" element={<Procurement />} />
@@ -173,6 +178,7 @@ const App = () => (
                     <Route path="/payroll" element={<ModuleDashboard config={MODULE_CONFIGS.payroll} />} />
                     <Route path="/payroll/runs" element={<Payroll />} />
                     <Route path="/payroll/employees" element={<Employees />} />
+                    <Route path="/payroll/liabilities" element={<PayrollLiabilities />} />
                   </Route>
 
                   {/* Reports module */}

@@ -4,7 +4,8 @@
 //
 // QuickBooks-style design: every component (BASIC, EPF_EMPLOYEE, EPF_EMPLOYER, ETF_EMPLOYER,
 // OTHER_DEDUCTIONS, NET_PAY, etc.) is mapped to a GL account on either the debit or credit side.
-// The function aggregates results across all employees in the run, then groups by (account, side).
+// Supports dry_run mode for journal preview before posting.
+// Supports per-department account overrides via payroll_department_gl.
 //
 // Skips: derived components (GROSS_PAY) and any component with value=0 or no mapping.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
@@ -45,7 +46,8 @@ Deno.serve(async (req) => {
       .single();
     if (!appUser?.tenant_id) return json({ error: "User has no tenant" }, 403);
 
-    const { run_id } = await req.json().catch(() => ({}));
+    const body = await req.json().catch(() => ({}));
+    const { run_id, dry_run = false } = body;
     if (!run_id) return json({ error: "run_id required" }, 400);
 
     // 1. Load run + ensure tenant + not already posted
@@ -57,30 +59,21 @@ Deno.serve(async (req) => {
     if (runErr || !run) return json({ error: "Run not found" }, 404);
     if (run.tenant_id !== appUser.tenant_id) return json({ error: "Forbidden" }, 403);
     if (run.status === "voided") return json({ error: "Run is voided" }, 400);
-    if (run.journal_entry_id) {
+    if (!dry_run && run.journal_entry_id) {
       return json({ error: "Run already posted to GL", journal_entry_id: run.journal_entry_id }, 409);
     }
 
-    // 2. Load immutable payroll_results
+    // 2. Load immutable payroll_results with employee department for cost-centre split
     const { data: results, error: resErr } = await admin
       .from("payroll_results")
-      .select("component_code, value")
+      .select("component_code, value, employee_id, employees(department)")
       .eq("run_id", run_id);
     if (resErr) throw resErr;
     if (!results || results.length === 0) {
       return json({ error: "No payroll_results found for this run" }, 400);
     }
 
-    // 3. Aggregate by component_code across all employees
-    const totals = new Map<string, number>();
-    for (const r of results) {
-      if (DERIVED_SKIP.has(r.component_code)) continue;
-      const v = Number(r.value || 0);
-      if (Math.abs(v) < EPSILON) continue;
-      totals.set(r.component_code, (totals.get(r.component_code) || 0) + v);
-    }
-
-    // 4. Load tenant's component → account mapping
+    // 3. Load global component → account mapping
     const { data: mappings, error: mapErr } = await admin
       .from("payroll_component_accounts")
       .select("component_code, posting_side, account_id, accounts(account_code, account_name)")
@@ -97,23 +90,66 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 5. Build journal lines (group by account + side so each account appears once)
+    // 4. Load per-department GL overrides (may be empty — falls back to global)
+    const { data: deptMappings } = await admin
+      .from("payroll_department_gl")
+      .select("department, component_code, account_id, posting_side")
+      .eq("tenant_id", appUser.tenant_id);
+
+    const deptMap = new Map<string, { account_id: string; side: "debit" | "credit" }>();
+    for (const dm of deptMappings || []) {
+      deptMap.set(`${dm.department}||${dm.component_code}`, {
+        account_id: dm.account_id,
+        side: dm.posting_side as "debit" | "credit",
+      });
+    }
+
+    // 5. Build journal lines per result row (supports dept-level splitting)
+    //    Groups by account_id:posting_side — same key merges across employees/depts
     type LineAgg = { account_id: string; debit: number; credit: number };
     const linesByKey = new Map<string, LineAgg>();
-    const unmapped: { component_code: string; amount: number }[] = [];
+    const unmappedMap = new Map<string, number>(); // component_code → total amount
 
-    for (const [code, amount] of totals) {
-      const m = mapByCode.get(code);
-      if (!m) { unmapped.push({ component_code: code, amount }); continue; }
-      const key = `${m.account_id}|${m.side}`;
-      const cur = linesByKey.get(key) || { account_id: m.account_id, debit: 0, credit: 0 };
-      if (m.side === "debit") cur.debit += amount;
-      else cur.credit += amount;
+    for (const r of results) {
+      if (DERIVED_SKIP.has(r.component_code)) continue;
+      const v = Number(r.value || 0);
+      if (Math.abs(v) < EPSILON) continue;
+
+      const dept = (r as any).employees?.department as string | null;
+
+      // Dept override takes priority; fall back to global mapping
+      const deptKey = dept ? `${dept}||${r.component_code}` : null;
+      const deptOverride = deptKey ? deptMap.get(deptKey) : undefined;
+      const globalMapping = mapByCode.get(r.component_code);
+
+      let accountId: string | null = null;
+      let side: "debit" | "credit" | null = null;
+
+      if (deptOverride) {
+        accountId = deptOverride.account_id;
+        side = deptOverride.side;
+      } else if (globalMapping) {
+        accountId = globalMapping.account_id;
+        side = globalMapping.side;
+      }
+
+      if (!accountId || !side) {
+        unmappedMap.set(r.component_code, (unmappedMap.get(r.component_code) || 0) + v);
+        continue;
+      }
+
+      const key = `${accountId}:${side}`;
+      const cur = linesByKey.get(key) || { account_id: accountId, debit: 0, credit: 0 };
+      if (side === "debit") cur.debit += v;
+      else cur.credit += v;
       linesByKey.set(key, cur);
     }
 
-    if (unmapped.length > 0) {
-      // Return 200 so supabase-js client can read the body (non-2xx strips it)
+    if (unmappedMap.size > 0) {
+      const unmapped = Array.from(unmappedMap.entries()).map(([component_code, amount]) => ({
+        component_code,
+        amount: round2(amount),
+      }));
       return json({
         ok: false,
         error: `Unmapped payroll components: ${unmapped.map((u) => u.component_code).join(", ")}. Go to Payroll → GL Mapping to assign accounts.`,
@@ -142,7 +178,19 @@ Deno.serve(async (req) => {
     }
     if (lines.length < 2) return json({ ok: false, error: "Need at least two journal lines — map more components" }, 200);
 
-    // 7. Insert journal entry as draft → lines → flip to posted (mirrors validate-journal-entry pattern)
+    // ── DRY RUN: return preview without any DB writes ──────────────────────
+    if (dry_run) {
+      return json({
+        ok: true,
+        dry_run: true,
+        lines,
+        total_debit: round2(totalDr),
+        total_credit: round2(totalCr),
+        line_count: lines.length,
+      });
+    }
+
+    // 7. Insert journal entry as draft → lines → flip to posted
     const { data: je, error: jeErr } = await admin
       .from("journal_entries")
       .insert({
@@ -190,7 +238,6 @@ Deno.serve(async (req) => {
         total_debit: round2(totalDr),
         total_credit: round2(totalCr),
         line_count: lines.length,
-        components_posted: Array.from(totals.entries()).map(([k, v]) => ({ code: k, amount: round2(v) })),
       },
     });
 

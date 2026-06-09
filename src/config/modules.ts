@@ -77,6 +77,8 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "Credit Notes", path: "/accounting/credit-notes", icon: Receipt },
       { label: "AR Aging", path: "/accounting/ar-aging", icon: Calendar },
       { label: "Vendors", path: "/accounting/vendors", icon: Store },
+      { label: "Bills", path: "/accounting/bills", icon: FileText },
+      { label: "Pay Bills", path: "/accounting/bills?filter=unpaid", icon: CreditCard },
       { label: "AP Aging", path: "/accounting/ap-aging", icon: Calendar },
       { label: "Inventory (Items)", path: "/accounting/inventory", icon: Package },
       { label: "Procurement & Inventory", path: "/accounting/procurement", icon: Package },
@@ -125,6 +127,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
     sidebarItems: [
       { label: "Payroll Runs", path: "/payroll/runs", icon: DollarSign },
       { label: "Employees", path: "/payroll/employees", icon: UserCheck },
+      { label: "Liability Tracking", path: "/payroll/liabilities", icon: AlertTriangle },
     ],
   },
   reports: {

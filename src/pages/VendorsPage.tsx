@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Plus, Pencil, Trash2, Building2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Plus, Pencil, Trash2, Building2, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,6 +11,7 @@ import { formatCurrency } from "@/lib/currency";
 import { useVendorsWithBalance, useCreateVendorWithOB, useUpdateVendor, useDeleteVendor } from "@/hooks/useSubledgerData";
 
 export default function VendorsPage() {
+  const navigate = useNavigate();
   const { data: vendors, isLoading } = useVendorsWithBalance();
   const createMutation = useCreateVendorWithOB();
   const updateMutation = useUpdateVendor();
@@ -109,6 +111,7 @@ export default function VendorsPage() {
                     <TableCell className="text-right font-mono">{formatCurrency(v.opening_balance || 0)}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" title="View detail" onClick={() => navigate(`/accounting/vendors/${v.id}`)}><Eye className="w-4 h-4" /></Button>
                         <Button variant="ghost" size="icon" onClick={() => handleEdit(v)}><Pencil className="w-4 h-4" /></Button>
                         <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(v.id)}><Trash2 className="w-4 h-4 text-destructive" /></Button>
                       </div>

@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -39,6 +39,13 @@ export default function AssetCategoryDialog({ open, onOpenChange, editingId }: P
   const existing = editingId ? categories?.find((c: any) => c.id === editingId) : null;
 
   const assetAccounts = (accounts ?? []).filter((a: any) => a.is_active && a.account_type === "Asset");
+  const accumDepreciationAccounts = (accounts ?? []).filter((a: any) =>
+    a.is_active &&
+    a.account_type === "Asset" &&
+    (a.account_subtype?.toLowerCase().includes("accumulated depreciation") ||
+      a.account_subtype?.toLowerCase().includes("contra") ||
+      a.is_contra === true)
+  );
   const expenseAccounts = (accounts ?? []).filter((a: any) => a.is_active && a.account_type === "Expense");
   const incomeAccounts = (accounts ?? []).filter((a: any) => a.is_active && (a.account_type === "Revenue" || a.account_type === "Income"));
 
@@ -108,7 +115,7 @@ export default function AssetCategoryDialog({ open, onOpenChange, editingId }: P
 
             <FormField control={form.control} name="asset_account_id" render={({ field }) => (
               <FormItem>
-                <FormLabel>Asset Account (Dr on acquisition)</FormLabel>
+                <FormLabel>Asset Account</FormLabel>
                 <Select value={field.value} onValueChange={field.onChange}>
                   <FormControl><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger></FormControl>
                   <SelectContent>
@@ -117,28 +124,34 @@ export default function AssetCategoryDialog({ open, onOpenChange, editingId }: P
                     ))}
                   </SelectContent>
                 </Select>
+                <FormDescription>Dr on acquisition</FormDescription>
                 <FormMessage />
               </FormItem>
             )} />
 
             <FormField control={form.control} name="accumulated_depreciation_account_id" render={({ field }) => (
               <FormItem>
-                <FormLabel>Accumulated Depreciation Account (Cr)</FormLabel>
+                <FormLabel>Accumulated Depreciation Account</FormLabel>
                 <Select value={field.value} onValueChange={field.onChange}>
                   <FormControl><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger></FormControl>
                   <SelectContent>
-                    {assetAccounts.map((a: any) => (
-                      <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
-                    ))}
+                    {accumDepreciationAccounts.length > 0 ? (
+                      accumDepreciationAccounts.map((a: any) => (
+                        <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="_none" disabled>No contra-asset accounts found</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
+                <FormDescription>Cr on each depreciation run (contra-asset)</FormDescription>
                 <FormMessage />
               </FormItem>
             )} />
 
             <FormField control={form.control} name="depreciation_expense_account_id" render={({ field }) => (
               <FormItem>
-                <FormLabel>Depreciation Expense Account (Dr)</FormLabel>
+                <FormLabel>Depreciation Expense Account</FormLabel>
                 <Select value={field.value} onValueChange={field.onChange}>
                   <FormControl><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger></FormControl>
                   <SelectContent>
@@ -147,6 +160,7 @@ export default function AssetCategoryDialog({ open, onOpenChange, editingId }: P
                     ))}
                   </SelectContent>
                 </Select>
+                <FormDescription>Dr on each depreciation run</FormDescription>
                 <FormMessage />
               </FormItem>
             )} />
@@ -163,6 +177,7 @@ export default function AssetCategoryDialog({ open, onOpenChange, editingId }: P
                       ))}
                     </SelectContent>
                   </Select>
+                  <FormDescription>Cr when sale value &gt; Net Book Value</FormDescription>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -177,6 +192,7 @@ export default function AssetCategoryDialog({ open, onOpenChange, editingId }: P
                       ))}
                     </SelectContent>
                   </Select>
+                  <FormDescription>Dr when sale value &lt; Net Book Value</FormDescription>
                   <FormMessage />
                 </FormItem>
               )} />

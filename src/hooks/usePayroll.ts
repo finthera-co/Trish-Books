@@ -485,6 +485,32 @@ export function useProcessPayrollRun() {
   });
 }
 
+export function usePayrollGLPreview(runId: string | undefined) {
+  return useQuery({
+    queryKey: ["payroll_gl_preview", runId],
+    enabled: !!runId,
+    staleTime: 0,
+    queryFn: async () => {
+      const { data, error } = await supabase.functions.invoke("post-payroll-gl", {
+        body: { run_id: runId, dry_run: true },
+      });
+      if (error) throw error;
+      if (data && (data as any).ok === false) {
+        throw new Error((data as any).error || "Preview failed");
+      }
+      return data as {
+        ok: true;
+        dry_run: true;
+        lines: { account_id: string; debit: number; credit: number }[];
+        total_debit: number;
+        total_credit: number;
+        line_count: number;
+        unmapped?: { component_code: string; amount: number }[];
+      };
+    },
+  });
+}
+
 export function useVoidPayrollRun() {
   const qc = useQueryClient();
   return useMutation({

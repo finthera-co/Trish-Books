@@ -1,17 +1,22 @@
 import { useState, useMemo } from "react";
 import { useSearchParams, Link } from "react-router-dom";
-import { Play, CheckCircle, AlertCircle } from "lucide-react";
+import { Play, CheckCircle, AlertCircle, Info, ChevronDown, ChevronUp } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator, BreadcrumbPage } from "@/components/ui/breadcrumb";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useRunDepreciation, useFixedAssets } from "@/hooks/useFixedAssets";
+import { useAssetCategories } from "@/hooks/useAssetCategories";
 import { useAccounts } from "@/hooks/useData";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { formatCurrency } from "@/lib/currency";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-// Recursive child collection
 function getChildAccountIds(accountId: string, accounts: any[]): string[] {
   const children = accounts.filter(a => a.parent_account_id === accountId);
   return children.reduce<string[]>((acc, child) => {
@@ -29,12 +34,23 @@ function buildBreadcrumbChain(accountId: string, accountMap: Map<string, any>): 
   return chain;
 }
 
+function calcMonthlyAmount(asset: any): number | null {
+  const cost = asset.cost ?? 0;
+  const salvage = asset.salvage_value ?? 0;
+  const life = asset.useful_life_months;
+  if (!life || life <= 0) return null;
+  return (cost - salvage) / life;
+}
+
 export default function DepreciationRun() {
+  const { appUser } = useAuth();
   const now = new Date();
   const [period, setPeriod] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
+  const [errorsOpen, setErrorsOpen] = useState(false);
   const runDep = useRunDepreciation();
   const { data: assets } = useFixedAssets();
   const { data: accounts } = useAccounts();
+  const { data: categories } = useAssetCategories();
   const [result, setResult] = useState<{ processed: number; skipped: number; message?: string; errors?: string[]; journal_entry_ids?: string[] } | null>(null);
   const [searchParams] = useSearchParams();
   const accountId = searchParams.get("account_id");
@@ -45,7 +61,12 @@ export default function DepreciationRun() {
     return map;
   }, [accounts]);
 
-  // Recursive filtering: include accountId + all descendant depreciation account IDs
+  const categoryMap = useMemo(() => {
+    const map = new Map<string, any>();
+    (categories ?? []).forEach((c: any) => map.set(c.id, c));
+    return map;
+  }, [categories]);
+
   const activeAssets = useMemo(() => {
     const all = assets?.filter(a => a.status === "active") ?? [];
     if (!accountId) return all;
@@ -60,14 +81,40 @@ export default function DepreciationRun() {
 
   const categoryName = accountId ? accountMap.get(accountId)?.account_name : null;
 
+  const { data: postedThisPeriod } = useQuery({
+    queryKey: ["asset_depreciation_period", period, appUser?.tenant_id],
+    enabled: !!period && !!appUser?.tenant_id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("asset_depreciation")
+        .select("asset_id")
+        .eq("period", period);
+      if (error) throw error;
+      return (data ?? []) as { asset_id: string }[];
+    },
+  });
+
+  const postedAssetIds = useMemo(() =>
+    new Set(postedThisPeriod?.map(r => r.asset_id) ?? []),
+    [postedThisPeriod]
+  );
+
+  const pendingAssets = useMemo(() =>
+    activeAssets.filter((a: any) => !postedAssetIds.has(a.id)),
+    [activeAssets, postedAssetIds]
+  );
+
+  const periodAlreadyPosted = activeAssets.length > 0 && pendingAssets.length === 0;
+
   const handleRun = async () => {
+    setErrorsOpen(false);
     const res = await runDep.mutateAsync(period);
     setResult(res);
+    if (res.errors?.length) setErrorsOpen(true);
   };
 
   return (
     <div className="space-y-6">
-      {/* Breadcrumb */}
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
@@ -126,11 +173,11 @@ export default function DepreciationRun() {
               <Input
                 type="month"
                 value={period}
-                onChange={e => setPeriod(e.target.value)}
+                onChange={e => { setPeriod(e.target.value); setResult(null); }}
                 className="w-48"
               />
             </div>
-            <Button onClick={handleRun} disabled={runDep.isPending || !period}>
+            <Button onClick={handleRun} disabled={runDep.isPending || !period || periodAlreadyPosted}>
               <Play className="w-4 h-4 mr-2" />
               {runDep.isPending ? "Processing..." : "Run Depreciation"}
             </Button>
@@ -138,6 +185,78 @@ export default function DepreciationRun() {
         </CardContent>
       </Card>
 
+      {/* Pre-run preview */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2">
+                Assets Pending for {period}
+                {pendingAssets.length > 0 && (
+                  <Badge>{pendingAssets.length}</Badge>
+                )}
+              </CardTitle>
+              <CardDescription>Review before running depreciation</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {periodAlreadyPosted ? (
+            <div className="flex items-center gap-2 px-6 py-4 text-sm text-muted-foreground">
+              <Info className="w-4 h-4 shrink-0" />
+              All active assets have already been posted for {period}. Select a different period to run again.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Asset Name</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Method</TableHead>
+                  <TableHead className="text-right">Monthly Amount</TableHead>
+                  <TableHead className="text-right">Accumulated to Date</TableHead>
+                  <TableHead className="text-right">NBV After Run</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pendingAssets.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                      <AlertCircle className="w-5 h-5 mx-auto mb-2" />
+                      No active assets to depreciate
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  pendingAssets.map((asset: any) => {
+                    const monthly = calcMonthlyAmount(asset);
+                    const accumDep = asset.accumulated_depreciation ?? 0;
+                    const nbvAfter = asset.cost - accumDep - (monthly ?? 0);
+                    const catName = asset.category_id ? categoryMap.get(asset.category_id)?.name : null;
+                    return (
+                      <TableRow key={asset.id}>
+                        <TableCell className="font-medium">{asset.asset_name}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{catName ?? "—"}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{asset.depreciation_method ?? "straight_line"}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {monthly != null ? formatCurrency(monthly) : "—"}
+                        </TableCell>
+                        <TableCell className="text-right">{formatCurrency(accumDep)}</TableCell>
+                        <TableCell className="text-right">
+                          {monthly != null ? formatCurrency(Math.max(0, nbvAfter)) : "—"}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Results */}
       {result && (
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="pt-6">
@@ -160,65 +279,33 @@ export default function DepreciationRun() {
             </div>
             {result.journal_entry_ids && result.journal_entry_ids.length > 0 && (
               <p className="text-xs text-muted-foreground mt-3">
-                {result.journal_entry_ids.length} journal {result.journal_entry_ids.length === 1 ? 'entry' : 'entries'} created
+                {result.journal_entry_ids.length} journal {result.journal_entry_ids.length === 1 ? "entry" : "entries"} created
               </p>
             )}
+
             {result.errors && result.errors.length > 0 && (
-              <div className="mt-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertCircle className="w-4 h-4 text-destructive" />
-                  <span className="text-sm font-medium text-destructive">Errors</span>
-                </div>
-                <ul className="text-xs text-destructive space-y-1">
-                  {result.errors.map((e, i) => <li key={i}>• {e}</li>)}
-                </ul>
-              </div>
+              <Collapsible open={errorsOpen} onOpenChange={setErrorsOpen} className="mt-4">
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    <CollapsibleTrigger asChild>
+                      <button className="flex items-center gap-2 w-full text-left font-medium">
+                        {result.errors.length} error{result.errors.length > 1 ? "s" : ""} during run
+                        {errorsOpen ? <ChevronUp className="w-4 h-4 ml-auto" /> : <ChevronDown className="w-4 h-4 ml-auto" />}
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <ul className="mt-2 space-y-1 text-xs">
+                        {result.errors.map((e, i) => <li key={i}>• {e}</li>)}
+                      </ul>
+                    </CollapsibleContent>
+                  </AlertDescription>
+                </Alert>
+              </Collapsible>
             )}
           </CardContent>
         </Card>
       )}
-
-      {/* Active Assets Summary */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Active Assets ({activeAssets.length})</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead className="text-right">Cost</TableHead>
-                <TableHead className="text-right">Accum. Dep.</TableHead>
-                <TableHead className="text-right">NBV</TableHead>
-                <TableHead>Method</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {activeAssets.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                    <AlertCircle className="w-5 h-5 mx-auto mb-2" />
-                    No active assets to depreciate
-                  </TableCell>
-                </TableRow>
-              ) : (
-                activeAssets.map(asset => (
-                  <TableRow key={asset.id}>
-                    <TableCell className="font-medium">{asset.asset_name}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(asset.cost)}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(asset.accumulated_depreciation)}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(asset.cost - (asset.accumulated_depreciation ?? 0))}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{(asset as any).depreciation_method ?? "straight_line"}</Badge>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
     </div>
   );
 }
