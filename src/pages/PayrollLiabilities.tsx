@@ -201,7 +201,17 @@ function RecordRemittanceDialog({ open, onOpenChange, defaultType }: {
       a.account_name?.toLowerCase().includes("cash")
     )
   );
-  const liabilityAccounts = allAccounts.filter((a) => a.is_active && a.account_type === "Liability");
+  const liabilityAccounts = useMemo(() => {
+    const all = allAccounts.filter((a: any) => a.is_active && a.account_type === "Liability");
+    // Float the resolved account to the top so it's immediately visible
+    if (resolvedMapping?.account_id) {
+      return [
+        ...all.filter((a: any) => a.id === resolvedMapping.account_id),
+        ...all.filter((a: any) => a.id !== resolvedMapping.account_id),
+      ];
+    }
+    return all;
+  }, [allAccounts, resolvedMapping]);
 
   // Outstanding for selected type + period
   const periodOutstanding = useMemo(() => {
