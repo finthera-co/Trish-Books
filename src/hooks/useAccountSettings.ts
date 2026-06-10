@@ -3,26 +3,54 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
+// ─── Full shape of account_settings (all 19 mappable fields) ─────────────────
+
 export interface AccountSettings {
   id?: string;
   tenant_id?: string;
-  // ── Existing fields ─────────────────────────────────────
-  ar_account_id:                  string | null;
-  sales_account_id:               string | null;
-  tax_payable_account_id:         string | null;
-  ap_account_id:                  string | null;
-  bank_account_id:                string | null;
-  // ── New fields (added in migration expand_account_settings) ─
-  retained_earnings_account_id:      string | null;
-  inventory_asset_account_id:        string | null;
-  cogs_account_id:                   string | null;
-  grni_clearing_account_id:          string | null;
-  depreciation_expense_account_id:   string | null;
-  accum_depreciation_account_id:     string | null;
-  gain_on_disposal_account_id:       string | null;
-  loss_on_disposal_account_id:       string | null;
-  petty_cash_account_id:             string | null;
+
+  // ── Core AR/AP/Sales ──────────────────────────────────────────────────────
+  ar_account_id:                       string | null;
+  sales_account_id:                    string | null;
+  tax_payable_account_id:              string | null;
+  ap_account_id:                       string | null;
+  bank_account_id:                     string | null;
+
+  // ── Inventory & Procurement ───────────────────────────────────────────────
+  inventory_account_id:                string | null;
+  cogs_account_id:                     string | null;
+  grni_clearing_account_id:            string | null;
+  purchase_price_variance_account_id:  string | null;
+
+  // ── Fixed Assets (global fallback) ────────────────────────────────────────
+  depreciation_expense_account_id:     string | null;
+  accumulated_depreciation_account_id: string | null;
+  disposal_gain_account_id:            string | null;
+  disposal_loss_account_id:            string | null;
+
+  // ── Equity & Period-Close ─────────────────────────────────────────────────
+  retained_earnings_account_id:        string | null;
+
+  // ── FX (IAS 21 — used when multi-currency is active) ─────────────────────
+  fx_gain_account_id:                  string | null;
+  fx_loss_account_id:                  string | null;
+
+  // ── Payroll (global fallback — component mapping takes priority) ──────────
+  wages_expense_account_id:            string | null;
+  payroll_clearing_account_id:         string | null;
 }
+
+// ─── Completeness response from DB RPC ────────────────────────────────────────
+
+export interface AccountSettingsCompleteness {
+  configured: boolean;
+  critical_missing: string[];
+  recommended_missing: string[];
+  critical_complete: boolean;
+  fully_complete: boolean;
+}
+
+// ─── Fetch current settings ───────────────────────────────────────────────────
 
 export function useAccountSettings() {
   const { appUser } = useAuth();
@@ -42,6 +70,25 @@ export function useAccountSettings() {
   });
 }
 
+// ─── Fetch completeness via RPC ───────────────────────────────────────────────
+
+export function useAccountSettingsCompleteness() {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["account_settings_completeness", appUser?.tenant_id],
+    queryFn: async () => {
+      if (!appUser?.tenant_id) return null;
+      const { data, error } = await supabase
+        .rpc("get_account_settings_completeness", { p_tenant_id: appUser.tenant_id });
+      if (error) throw error;
+      return data as AccountSettingsCompleteness | null;
+    },
+    enabled: !!appUser?.tenant_id,
+  });
+}
+
+// ─── Upsert (save) settings ───────────────────────────────────────────────────
+
 export function useUpsertAccountSettings() {
   const qc = useQueryClient();
   const { appUser } = useAuth();
@@ -50,7 +97,10 @@ export function useUpsertAccountSettings() {
       if (!appUser?.tenant_id) throw new Error("No tenant");
       const { data, error } = await supabase
         .from("account_settings")
-        .upsert({ tenant_id: appUser.tenant_id, ...settings }, { onConflict: "tenant_id" })
+        .upsert(
+          { tenant_id: appUser.tenant_id, ...settings },
+          { onConflict: "tenant_id" }
+        )
         .select()
         .single();
       if (error) throw error;
@@ -58,11 +108,14 @@ export function useUpsertAccountSettings() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["account_settings"] });
+      qc.invalidateQueries({ queryKey: ["account_settings_completeness"] });
       toast.success("Account mapping saved");
     },
     onError: (e: Error) => toast.error(e.message),
   });
 }
+
+// ─── Keep existing usePostInvoice — do not remove ────────────────────────────
 
 export function usePostInvoice() {
   const qc = useQueryClient();
