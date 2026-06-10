@@ -1,11 +1,15 @@
 import { Plus, Search, MoreHorizontal, Eye, Send, Ban, Download } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useInvoices, useUpdateInvoice, useAccounts } from "@/hooks/useData";
 import { usePostInvoice } from "@/hooks/useAccountSettings";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import JournalPreview, { type JournalPreviewLine } from "@/components/accounting/JournalPreview";
+import { useAccountSettings } from "@/hooks/useAccountSettings";
+import { useAccountById } from "@/hooks/useAccountSearch";
 import { formatCurrency } from "@/lib/currency";
 import InvoiceDetails from "@/components/invoices/InvoiceDetails";
 import { useMyPermissions } from "@/hooks/usePermissions";
@@ -33,6 +37,7 @@ export default function Invoices() {
   const [voidDialogInvoice, setVoidDialogInvoice] = useState<any>(null);
   const [voidReason, setVoidReason] = useState("");
   const [processing, setProcessing] = useState(false);
+  const [postConfirmInvoice, setPostConfirmInvoice] = useState<any>(null);
 
   const { data: invoices, isLoading } = useInvoices();
   const { data: accounts } = useAccounts();
@@ -52,6 +57,55 @@ export default function Invoices() {
   };
 
   const postInvoice = usePostInvoice();
+  const { data: settings } = useAccountSettings();
+  const { data: arAccountData }       = useAccountById(settings?.ar_account_id       ?? null);
+  const { data: salesAccountData }    = useAccountById(settings?.sales_account_id    ?? null);
+  const { data: taxPayableAccountData }= useAccountById(settings?.tax_payable_account_id ?? null);
+
+  const previewLines = useMemo((): JournalPreviewLine[] => {
+    const inv = postConfirmInvoice;
+    if (!inv || !settings) return [];
+    const lines: JournalPreviewLine[] = [];
+
+    // Dr: AR
+    lines.push({
+      side: "Dr",
+      role: "Accounts Receivable",
+      accountName: arAccountData?.account_name ?? null,
+      isMissing: !settings.ar_account_id,
+      amount: Number(inv.total_amount),
+    });
+
+    // Cr: Revenue
+    const revenueAccountId = inv.invoice_items?.[0]?.account_id || settings.sales_account_id;
+    lines.push({
+      side: "Cr",
+      role: "Sales Revenue",
+      accountName: salesAccountData?.account_name ?? null,
+      isMissing: !revenueAccountId,
+      amount: Number(inv.subtotal),
+    });
+
+    // Cr: Tax Payable (only if tax_amount > 0)
+    if (Number(inv.tax_amount || 0) > 0) {
+      lines.push({
+        side: "Cr",
+        role: "Tax Payable",
+        accountName: taxPayableAccountData?.account_name ?? null,
+        isMissing: !settings.tax_payable_account_id,
+        amount: Number(inv.tax_amount),
+      });
+    }
+
+    // COGS / Inventory rows for tracked products
+    const trackedItems = (inv.invoice_items || []).filter((i: any) => i.inventory_item_id);
+    if (trackedItems.length > 0) {
+      lines.push({ side: "Dr", role: "COGS", note: "Per product — fallback to Default COGS", isMissing: false });
+      lines.push({ side: "Cr", role: "Inventory Asset", note: "Per product — fallback to Default Inventory Asset", isMissing: false });
+    }
+
+    return lines;
+  }, [postConfirmInvoice, settings, arAccountData, salesAccountData, taxPayableAccountData]);
 
   // Post a draft invoice via edge function (atomic, idempotent, validated)
   const handlePostDraft = async (inv: any) => {
@@ -184,7 +238,7 @@ export default function Invoices() {
                             <Download className="w-4 h-4" />
                           </Button>
                           {isDraft && (
-                            <Button variant="ghost" size="sm" title="Post Invoice" onClick={() => handlePostDraft(inv)} disabled={processing}>
+                            <Button variant="ghost" size="sm" title="Post Invoice" onClick={() => setPostConfirmInvoice(inv)} disabled={processing}>
                               <Send className="w-4 h-4 text-primary" />
                             </Button>
                           )}
@@ -197,7 +251,7 @@ export default function Invoices() {
                                 <Download className="w-4 h-4 mr-2" /> Download PDF
                               </DropdownMenuItem>
                               {isDraft && (
-                                <DropdownMenuItem onClick={() => handlePostDraft(inv)} disabled={processing}>
+                                <DropdownMenuItem onClick={() => setPostConfirmInvoice(inv)} disabled={processing}>
                                   <Send className="w-4 h-4 mr-2" /> Post & Create Journal
                                 </DropdownMenuItem>
                               )}
@@ -231,6 +285,34 @@ export default function Invoices() {
       </div>
 
       <InvoiceDetails invoice={selectedInvoice} open={detailsOpen} onOpenChange={setDetailsOpen} />
+
+      {/* Post Invoice confirmation */}
+      <AlertDialog open={!!postConfirmInvoice} onOpenChange={(v) => { if (!v) setPostConfirmInvoice(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Post Invoice {postConfirmInvoice?.invoice_number}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will create a journal entry and mark the invoice as posted. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="mb-4">
+            <JournalPreview
+              lines={previewLines}
+              title="Journal Entry to be Posted"
+              description="Review the accounts this invoice will post to before confirming."
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => { handlePostDraft(postConfirmInvoice); setPostConfirmInvoice(null); }}
+              disabled={processing}
+            >
+              Confirm & Post
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Void Invoice Dialog */}
       <Dialog open={!!voidDialogInvoice} onOpenChange={(v) => { if (!v) { setVoidDialogInvoice(null); setVoidReason(""); } }}>

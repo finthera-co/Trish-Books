@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useProducts, useCreateProduct, useTaxes, useCreateTax, useAccounts } from "@/hooks/useData";
 import { useInventoryRealtime } from "@/hooks/useInventoryRealtime";
+import AccountSelector from "@/components/shared/AccountSelector";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -15,6 +16,9 @@ export default function ProductsTaxes() {
   const [productPrice, setProductPrice] = useState(0);
   const [productTaxId, setProductTaxId] = useState("");
   const [productAccountId, setProductAccountId] = useState("");
+  const [productExpenseAccountId, setProductExpenseAccountId] = useState("");
+  const [productAssetAccountId, setProductAssetAccountId] = useState("");
+  const [productType, setProductType] = useState<"service" | "non_inventory" | "inventory">("service");
 
   // Tax form
   const [taxOpen, setTaxOpen] = useState(false);
@@ -36,6 +40,9 @@ export default function ProductsTaxes() {
       price: productPrice,
       tax_id: productTaxId || undefined,
       income_account_id: productAccountId || undefined,
+      type: productType,
+      expense_account_id: productExpenseAccountId || undefined,
+      asset_account_id: productAssetAccountId || undefined,
     });
     setProductOpen(false);
     setProductName("");
@@ -43,6 +50,9 @@ export default function ProductsTaxes() {
     setProductPrice(0);
     setProductTaxId("");
     setProductAccountId("");
+    setProductType("service");
+    setProductExpenseAccountId("");
+    setProductAssetAccountId("");
   };
 
   const handleCreateTax = async () => {
@@ -109,6 +119,39 @@ export default function ProductsTaxes() {
                       {revenueAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} - {a.account_name}</option>)}
                     </select>
                   </div>
+                  <div>
+                    <label className="text-sm font-medium">Product Type</label>
+                    <select value={productType} onChange={(e) => setProductType(e.target.value as "service" | "non_inventory" | "inventory")}
+                      className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground">
+                      <option value="service">Service</option>
+                      <option value="non_inventory">Non-Inventory</option>
+                      <option value="inventory">Inventory</option>
+                    </select>
+                  </div>
+                  {(productType === "non_inventory" || productType === "inventory") && (
+                    <div>
+                      <label className="text-sm font-medium">COGS / Expense Account</label>
+                      <p className="text-xs text-muted-foreground mt-0.5 mb-1">Debited when this product is sold</p>
+                      <AccountSelector
+                        value={productExpenseAccountId}
+                        onChange={(id) => setProductExpenseAccountId(id)}
+                        types={["Cost of Goods Sold", "Expense"]}
+                        placeholder="Search account…"
+                      />
+                    </div>
+                  )}
+                  {productType === "inventory" && (
+                    <div>
+                      <label className="text-sm font-medium">Inventory Asset Account</label>
+                      <p className="text-xs text-muted-foreground mt-0.5 mb-1">Stock-on-hand balance sheet account</p>
+                      <AccountSelector
+                        value={productAssetAccountId}
+                        onChange={(id) => setProductAssetAccountId(id)}
+                        types={["Asset"]}
+                        placeholder="Search account…"
+                      />
+                    </div>
+                  )}
                   <Button onClick={handleCreateProduct} disabled={!productName || createProduct.isPending} className="w-full">
                     {createProduct.isPending ? "Creating..." : "Create Product"}
                   </Button>

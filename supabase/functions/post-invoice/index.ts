@@ -191,7 +191,7 @@ Deno.serve(async (req) => {
     // ── Resolve account settings ────────────────────────────────────
     const { data: settings } = await admin
       .from("account_settings")
-      .select("ar_account_id, sales_account_id, tax_payable_account_id")
+      .select("ar_account_id, sales_account_id, tax_payable_account_id, cogs_account_id, inventory_asset_account_id")
       .eq("tenant_id", appUser.tenant_id)
       .maybeSingle();
 
@@ -279,10 +279,24 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const cogsAcct = product.expense_account_id;
-      const assetAcct = product.asset_account_id || invRow.account_id;
-      if (!cogsAcct) errors.push(`Product "${product.name}" missing COGS (expense) account`);
-      if (!assetAcct) errors.push(`Product "${product.name}" missing Inventory (asset) account`);
+      // Three-tier: product-level → inventory item's account → global settings fallback
+      const cogsAcct =
+        product.expense_account_id
+        ?? settings?.cogs_account_id;
+
+      const assetAcct =
+        product.asset_account_id
+        ?? invRow.account_id
+        ?? settings?.inventory_asset_account_id;
+
+      if (!cogsAcct) errors.push(
+        `Product "${product.name}" missing COGS account. ` +
+        `Set it on the product or configure a Default COGS in Settings → Account Mapping.`
+      );
+      if (!assetAcct) errors.push(
+        `Product "${product.name}" missing Inventory Asset account. ` +
+        `Set it on the product or configure a Default Inventory Asset in Settings → Account Mapping.`
+      );
 
       // Stock availability check (default: block negative)
       const qty = Number(item.quantity) || 0;

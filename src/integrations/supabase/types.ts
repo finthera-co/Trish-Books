@@ -51,42 +51,76 @@ export type Database = {
       }
       account_settings: {
         Row: {
+          accum_depreciation_account_id: string | null
           ap_account_id: string | null
           ar_account_id: string | null
           bank_account_id: string | null
+          cogs_account_id: string | null
           created_at: string
+          depreciation_expense_account_id: string | null
+          gain_on_disposal_account_id: string | null
+          grni_clearing_account_id: string | null
           id: string
           inventory_adjustment_approval_threshold: number
+          inventory_asset_account_id: string | null
+          loss_on_disposal_account_id: string | null
+          petty_cash_account_id: string | null
+          retained_earnings_account_id: string | null
           sales_account_id: string | null
           tax_payable_account_id: string | null
           tenant_id: string
           updated_at: string
         }
         Insert: {
+          accum_depreciation_account_id?: string | null
           ap_account_id?: string | null
           ar_account_id?: string | null
           bank_account_id?: string | null
+          cogs_account_id?: string | null
           created_at?: string
+          depreciation_expense_account_id?: string | null
+          gain_on_disposal_account_id?: string | null
+          grni_clearing_account_id?: string | null
           id?: string
           inventory_adjustment_approval_threshold?: number
+          inventory_asset_account_id?: string | null
+          loss_on_disposal_account_id?: string | null
+          petty_cash_account_id?: string | null
+          retained_earnings_account_id?: string | null
           sales_account_id?: string | null
           tax_payable_account_id?: string | null
           tenant_id: string
           updated_at?: string
         }
         Update: {
+          accum_depreciation_account_id?: string | null
           ap_account_id?: string | null
           ar_account_id?: string | null
           bank_account_id?: string | null
+          cogs_account_id?: string | null
           created_at?: string
+          depreciation_expense_account_id?: string | null
+          gain_on_disposal_account_id?: string | null
+          grni_clearing_account_id?: string | null
           id?: string
           inventory_adjustment_approval_threshold?: number
+          inventory_asset_account_id?: string | null
+          loss_on_disposal_account_id?: string | null
+          petty_cash_account_id?: string | null
+          retained_earnings_account_id?: string | null
           sales_account_id?: string | null
           tax_payable_account_id?: string | null
           tenant_id?: string
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "account_settings_accum_depreciation_account_id_fkey"
+            columns: ["accum_depreciation_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "account_settings_ap_account_id_fkey"
             columns: ["ap_account_id"]
@@ -104,6 +138,62 @@ export type Database = {
           {
             foreignKeyName: "account_settings_bank_account_id_fkey"
             columns: ["bank_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_cogs_account_id_fkey"
+            columns: ["cogs_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_depreciation_expense_account_id_fkey"
+            columns: ["depreciation_expense_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_gain_on_disposal_account_id_fkey"
+            columns: ["gain_on_disposal_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_grni_clearing_account_id_fkey"
+            columns: ["grni_clearing_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_inventory_asset_account_id_fkey"
+            columns: ["inventory_asset_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_loss_on_disposal_account_id_fkey"
+            columns: ["loss_on_disposal_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_petty_cash_account_id_fkey"
+            columns: ["petty_cash_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_retained_earnings_account_id_fkey"
+            columns: ["retained_earnings_account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
             referencedColumns: ["id"]

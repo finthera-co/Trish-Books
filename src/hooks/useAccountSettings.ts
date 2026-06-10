@@ -6,11 +6,22 @@ import { toast } from "sonner";
 export interface AccountSettings {
   id?: string;
   tenant_id?: string;
-  ar_account_id: string | null;
-  sales_account_id: string | null;
-  tax_payable_account_id: string | null;
-  ap_account_id: string | null;
-  bank_account_id: string | null;
+  // ── Existing fields ─────────────────────────────────────
+  ar_account_id:                  string | null;
+  sales_account_id:               string | null;
+  tax_payable_account_id:         string | null;
+  ap_account_id:                  string | null;
+  bank_account_id:                string | null;
+  // ── New fields (added in migration expand_account_settings) ─
+  retained_earnings_account_id:      string | null;
+  inventory_asset_account_id:        string | null;
+  cogs_account_id:                   string | null;
+  grni_clearing_account_id:          string | null;
+  depreciation_expense_account_id:   string | null;
+  accum_depreciation_account_id:     string | null;
+  gain_on_disposal_account_id:       string | null;
+  loss_on_disposal_account_id:       string | null;
+  petty_cash_account_id:             string | null;
 }
 
 export function useAccountSettings() {

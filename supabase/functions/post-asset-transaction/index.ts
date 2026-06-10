@@ -505,6 +505,13 @@ async function handleDepreciationPosted(db: any, tenantId: string, body: any, us
     });
   }
 
+  // Fetch global account_settings fallbacks (used when category accounts are missing)
+  const { data: globalSettings } = await db
+    .from("account_settings")
+    .select("depreciation_expense_account_id, accum_depreciation_account_id")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
   // STEP 2: Mark all rows as 'processing' to lock against concurrent runs
   const rowIds = rows.map((r: any) => r.id);
   const { error: lockErr } = await db
@@ -550,15 +557,31 @@ async function handleDepreciationPosted(db: any, tenantId: string, body: any, us
         .single();
       if (catErr || !cat) throw new Error("Asset category not found");
 
-      const expenseAccountId = cat.depreciation_expense_account_id;
-      const accumAccountId = cat.accumulated_depreciation_account_id;
+      // Three-tier resolution:
+      // 1. Asset's own stored account (snapshot from category at creation time)
+      // 2. Current asset category account
+      // 3. Global account_settings fallback (Settings → Account Mapping)
+      const expenseAccountId =
+        asset.depr_expense_account_id              // tier 1: asset snapshot
+        ?? cat.depreciation_expense_account_id      // tier 2: category
+        ?? globalSettings?.depreciation_expense_account_id; // tier 3: global
 
-      // STRICT VALIDATION — DO NOT skip silently
+      const accumAccountId =
+        asset.depreciation_account_id              // tier 1: asset snapshot
+        ?? cat.accumulated_depreciation_account_id  // tier 2: category
+        ?? globalSettings?.accum_depreciation_account_id; // tier 3: global
+
       if (!expenseAccountId) {
-        throw new Error("Category missing depreciation_expense_account_id — CANNOT post");
+        throw new Error(
+          `Depreciation Expense account not configured for asset "${asset.asset_name}". ` +
+          `Set it on the asset category or in Settings → Account Mapping.`
+        );
       }
       if (!accumAccountId) {
-        throw new Error("Category missing accumulated_depreciation_account_id — CANNOT post");
+        throw new Error(
+          `Accumulated Depreciation account not configured for asset "${asset.asset_name}". ` +
+          `Set it on the asset category or in Settings → Account Mapping.`
+        );
       }
 
       // Validate both accounts are active
@@ -670,18 +693,32 @@ async function handleAssetDisposed(db: any, tenantId: string, body: any, userId:
   await validatePeriodOpen(db, tenantId, today);
   await validateAccountActive(db, cash_account_id, "Cash/Bank");
 
-  // Resolve ALL accounts from category (rule engine)
+  // Fetch global account_settings fallbacks
+  const { data: globalSettings } = await db
+    .from("account_settings")
+    .select("gain_on_disposal_account_id, loss_on_disposal_account_id, accum_depreciation_account_id")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  // Resolve ALL accounts — three-tier: asset snapshot → category → global settings
   let assetAccountId = asset.asset_account_id;
-  let accumAccountId = asset.depreciation_account_id;
-  let gainAccountId: string | null = null;
-  let lossAccountId: string | null = null;
+  let accumAccountId: string | null =
+    asset.depreciation_account_id
+    ?? globalSettings?.accum_depreciation_account_id
+    ?? null;
+  let gainAccountId: string | null = globalSettings?.gain_on_disposal_account_id ?? null;
+  let lossAccountId: string | null = globalSettings?.loss_on_disposal_account_id ?? null;
 
   if (asset.category_id) {
     const cat = await validateCategory(db, asset.category_id);
-    assetAccountId = cat.asset_account_id;
-    accumAccountId = cat.accumulated_depreciation_account_id;
-    gainAccountId = cat.disposal_gain_account_id;
-    lossAccountId = cat.disposal_loss_account_id;
+    // Category values override global settings but not asset-level snapshot
+    assetAccountId = cat.asset_account_id ?? assetAccountId;
+    accumAccountId = asset.depreciation_account_id
+      ?? cat.accumulated_depreciation_account_id
+      ?? globalSettings?.accum_depreciation_account_id
+      ?? null;
+    gainAccountId  = cat.disposal_gain_account_id ?? globalSettings?.gain_on_disposal_account_id ?? null;
+    lossAccountId  = cat.disposal_loss_account_id ?? globalSettings?.loss_on_disposal_account_id ?? null;
   }
 
   if (!assetAccountId) return errorResponse("Asset account not configured");
@@ -703,10 +740,14 @@ async function handleAssetDisposed(db: any, tenantId: string, body: any, userId:
   lines.push({ account_id: assetAccountId, debit: 0, credit: asset.cost, asset_id: asset_id });
 
   if (gainLoss > 0) {
-    if (!gainAccountId) return errorResponse("Disposal gain account not configured in category");
+    if (!gainAccountId) return errorResponse(
+      "Disposal Gain account not configured. Set it on the asset category or in Settings → Account Mapping."
+    );
     lines.push({ account_id: gainAccountId, debit: 0, credit: gainLoss });
   } else if (gainLoss < 0) {
-    if (!lossAccountId) return errorResponse("Disposal loss account not configured in category");
+    if (!lossAccountId) return errorResponse(
+      "Disposal Loss account not configured. Set it on the asset category or in Settings → Account Mapping."
+    );
     lines.push({ account_id: lossAccountId, debit: Math.abs(gainLoss), credit: 0 });
   }
 
