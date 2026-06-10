@@ -6,154 +6,122 @@ import {
   type AccountSettings,
 } from "@/hooks/useAccountSettings";
 import AccountSelector from "@/components/shared/AccountSelector";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Collapsible,
-  CollapsibleTrigger,
-  CollapsibleContent,
-} from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Settings,
   Save,
   CheckCircle2,
   AlertTriangle,
   XCircle,
-  Info,
-  BookOpen,
-  TrendingUp,
-  Package,
-  Landmark,
-  RefreshCw,
-  DollarSign,
-  ArrowRight,
   ChevronDown,
-  Loader2,
+  ChevronUp,
 } from "lucide-react";
 
-// ── Badges ──────────────────────────────────────────────────────────────────
+// ── Dr/Cr badge helpers ──────────────────────────────────────────────────────
 
-function DrBadge() {
-  return (
-    <Badge className="rounded-full bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-50 text-xs font-semibold px-2 py-0.5 shrink-0">
-      Dr
-    </Badge>
-  );
-}
+const Dr = () => (
+  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+    Dr
+  </span>
+);
+const Cr = () => (
+  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+    Cr
+  </span>
+);
+const DrCr = () => (
+  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200">
+    Dr/Cr
+  </span>
+);
 
-function CrBadge() {
-  return (
-    <Badge className="rounded-full bg-green-50 text-green-700 border border-green-200 hover:bg-green-50 text-xs font-semibold px-2 py-0.5 shrink-0">
-      Cr
-    </Badge>
-  );
-}
-
-function DrCrBadge() {
-  return (
-    <span className="flex gap-1 shrink-0">
-      <DrBadge />
-      <CrBadge />
-    </span>
-  );
-}
-
-// ── FieldRow ─────────────────────────────────────────────────────────────────
+// ── Field row ────────────────────────────────────────────────────────────────
 
 interface FieldRowProps {
   fieldKey: keyof AccountSettings;
   label: string;
-  side: "Dr" | "Cr" | "Dr/Cr";
+  badge: React.ReactNode;
   types: string[];
   hint: string;
-  value: string | null | undefined;
-  onChange: (key: keyof AccountSettings, value: string | null) => void;
+  form: Partial<AccountSettings>;
+  set: (key: keyof AccountSettings) => (val: string) => void;
 }
 
-function FieldRow({ fieldKey, label, side, types, hint, value, onChange }: FieldRowProps) {
-  const id = `field-${String(fieldKey)}`;
+function FieldRow({ fieldKey, label, badge, types, hint, form, set }: FieldRowProps) {
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-3">
-        <Label htmlFor={id} className="font-medium text-sm w-52 shrink-0 leading-tight">
-          {label}
-        </Label>
-        <div className="shrink-0">
-          {side === "Dr" ? <DrBadge /> : side === "Cr" ? <CrBadge /> : <DrCrBadge />}
+    <div className="flex items-start gap-3 py-3 border-b border-border/50 last:border-0">
+      <div className="flex-1 space-y-1.5">
+        <div className="flex items-center gap-2">
+          <Label className="text-sm font-medium">{label}</Label>
+          {badge}
         </div>
-        <div className="flex-1">
-          <AccountSelector
-            id={id}
-            value={value ?? null}
-            onChange={(val) => onChange(fieldKey, val || null)}
-            types={types}
-          />
-        </div>
+        <AccountSelector
+          value={(form[fieldKey] as string | null) ?? ""}
+          onChange={set(fieldKey)}
+          types={types}
+          placeholder="Search account…"
+        />
+        <p className="text-xs text-muted-foreground italic">{hint}</p>
       </div>
-      <p className="text-xs text-muted-foreground italic pl-[calc(13rem+2.75rem+0.75rem)]">
-        {hint}
-      </p>
     </div>
   );
 }
 
-// ── Sample Journal ────────────────────────────────────────────────────────────
+// ── Sample journal collapsible ────────────────────────────────────────────────
 
 interface JournalRow {
-  side: "Dr" | "Cr";
   account: string;
   dr?: string;
   cr?: string;
+  indent?: boolean;
 }
 
-function SampleJournal({ title, rows }: { title: string; rows: JournalRow[] }) {
-  const [open, setOpen] = useState(false);
+interface SampleJournalProps {
+  tabKey: string;
+  title: string;
+  rows: JournalRow[];
+  previewOpen: Record<string, boolean>;
+  setPreviewOpen: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+}
+
+function SampleJournal({ tabKey, title, rows, previewOpen, setPreviewOpen }: SampleJournalProps) {
+  const open = previewOpen[tabKey] ?? false;
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
+    <Collapsible
+      open={open}
+      onOpenChange={(v) => setPreviewOpen((p) => ({ ...p, [tabKey]: v }))}
+    >
       <CollapsibleTrigger asChild>
         <Button
-          type="button"
           variant="ghost"
           size="sm"
-          className="flex items-center gap-2 text-muted-foreground hover:text-foreground text-xs h-7 px-2"
+          className="text-xs text-muted-foreground w-full justify-between mt-4"
         >
-          <BookOpen className="h-3.5 w-3.5" />
           {title}
-          <ChevronDown
-            className={`h-3.5 w-3.5 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
-          />
+          {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
         </Button>
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="mt-2 rounded-lg border bg-muted/30 overflow-hidden">
-          <table className="w-full text-xs">
+        <div className="mt-2 rounded-md border border-border bg-muted/30 text-xs font-mono">
+          <table className="w-full">
             <thead>
-              <tr className="border-b bg-muted/50">
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground w-10">Side</th>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Account</th>
-                <th className="px-3 py-2 text-right font-medium text-muted-foreground w-28">Dr</th>
-                <th className="px-3 py-2 text-right font-medium text-muted-foreground w-28">Cr</th>
+              <tr className="border-b border-border">
+                <th className="text-left px-3 py-1.5 text-muted-foreground font-medium">Account</th>
+                <th className="text-right px-3 py-1.5 text-muted-foreground font-medium w-24">Dr</th>
+                <th className="text-right px-3 py-1.5 text-muted-foreground font-medium w-24">Cr</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
-                <tr key={i} className="border-b last:border-0">
-                  <td className="px-3 py-1.5">
-                    {r.side === "Dr" ? <DrBadge /> : <CrBadge />}
-                  </td>
-                  <td className="px-3 py-1.5 text-foreground">{r.account}</td>
-                  <td className="px-3 py-1.5 text-right font-mono text-foreground">{r.dr ?? ""}</td>
-                  <td className="px-3 py-1.5 text-right font-mono text-foreground">{r.cr ?? ""}</td>
+              {rows.map((row, i) => (
+                <tr key={i} className="border-b border-border/50 last:border-0">
+                  <td className={`px-3 py-1.5 ${row.indent ? "pl-8" : ""}`}>{row.account}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">{row.dr ?? ""}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">{row.cr ?? ""}</td>
                 </tr>
               ))}
             </tbody>
@@ -164,103 +132,87 @@ function SampleJournal({ title, rows }: { title: string; rows: JournalRow[] }) {
   );
 }
 
-// ── Completeness Banner ───────────────────────────────────────────────────────
-
-type Completeness = ReturnType<typeof useAccountSettingsCompleteness>["data"];
-
-function CompletenessBanner({ completeness }: { completeness: Completeness }) {
-  if (!completeness) return null;
-
-  if (!completeness.configured) {
-    return (
-      <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
-        <XCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
-        <p className="text-sm font-medium text-red-800">
-          No account settings configured for this tenant.
-        </p>
-      </div>
-    );
-  }
-
-  if (completeness.fully_complete) {
-    return (
-      <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
-        <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
-        <p className="text-sm font-medium text-green-800">
-          All accounts mapped — posting engines have full coverage.
-        </p>
-      </div>
-    );
-  }
-
-  if (completeness.critical_complete) {
-    return (
-      <div className="flex items-start gap-3 rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3">
-        <AlertTriangle className="h-5 w-5 text-yellow-600 shrink-0 mt-0.5" />
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-yellow-800">
-            Core accounts mapped. Recommended accounts below are missing — some modules may not
-            post correctly.
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {completeness.recommended_missing.map((f) => (
-              <span
-                key={f}
-                className="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-800 border border-yellow-200"
-              >
-                {f}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
-      <XCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
-      <div className="space-y-2">
-        <p className="text-sm font-medium text-red-800">
-          Critical accounts missing — posting will fail.
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {completeness.critical_missing.map((f) => (
-            <span
-              key={f}
-              className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800 border border-red-200"
-            >
-              {f}
-            </span>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Main Page ─────────────────────────────────────────────────────────────────
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function AccountMapping() {
   const { data: settings, isLoading } = useAccountSettings();
   const { data: completeness } = useAccountSettingsCompleteness();
   const upsert = useUpsertAccountSettings();
+
   const [form, setForm] = useState<Partial<AccountSettings>>({});
+  const [previewOpen, setPreviewOpen] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (settings) setForm(settings);
   }, [settings]);
 
-  const setField = (key: keyof AccountSettings, value: string | null) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
+  const set = (key: keyof AccountSettings) => (val: string) =>
+    setForm((prev) => ({ ...prev, [key]: val || null }));
+
+  const handleSave = () => {
+    const payload: Partial<AccountSettings> = Object.fromEntries(
+      Object.entries(form).map(([k, v]) => [k, v === "" ? null : v])
+    ) as Partial<AccountSettings>;
+    upsert.mutate(payload);
+  };
+
+  // ── Completeness banner ───────────────────────────────────────────────────
+
+  const renderBanner = () => {
+    if (!completeness) return null;
+    if (completeness.fully_complete) {
+      return (
+        <div className="flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
+          <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+          <p className="text-sm font-medium text-emerald-800">
+            All 19 accounts mapped — posting engines have full coverage.
+          </p>
+        </div>
+      );
+    }
+    if (completeness.critical_complete) {
+      return (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-amber-800">
+              Core accounts mapped. Missing recommended:
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {completeness.recommended_missing.map((f) => (
+                <Badge key={f} variant="outline" className="text-xs font-mono">
+                  {f}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+        <XCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-red-800">
+            Critical accounts missing — posting will fail:
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {completeness.critical_missing.map((f) => (
+              <Badge key={f} variant="destructive" className="text-xs font-mono">
+                {f}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   if (isLoading) {
     return (
-      <div className="p-6 max-w-5xl mx-auto space-y-4">
+      <div className="p-6 max-w-4xl mx-auto space-y-4">
         <div className="animate-pulse space-y-4">
           <div className="h-8 w-52 bg-muted rounded" />
-          <div className="h-4 w-[480px] bg-muted rounded" />
           <div className="h-14 bg-muted rounded-lg" />
           <div className="h-72 bg-muted rounded-xl" />
         </div>
@@ -268,9 +220,11 @@ export default function AccountMapping() {
     );
   }
 
+  const sharedProps = { form, set };
+
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6 pb-28">
-      {/* ── Header ──────────────────────────────────────────────────────── */}
+    <div className="p-6 max-w-4xl mx-auto space-y-6">
+      {/* Header */}
       <div className="flex items-start gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 shrink-0">
           <Settings className="h-5 w-5 text-primary" />
@@ -284,101 +238,59 @@ export default function AccountMapping() {
         </div>
       </div>
 
-      {/* ── Completeness banner ──────────────────────────────────────────── */}
-      <CompletenessBanner completeness={completeness} />
+      {/* Completeness banner */}
+      {renderBanner()}
 
-      {/* ── Tabs ────────────────────────────────────────────────────────── */}
+      {/* Tabs */}
       <Tabs defaultValue="core">
-        <TabsList className="flex flex-wrap h-auto gap-1 p-1">
-          <TabsTrigger value="core" className="flex items-center gap-1.5 text-xs sm:text-sm">
-            <DollarSign className="h-3.5 w-3.5" />
-            Core
-          </TabsTrigger>
-          <TabsTrigger value="inventory" className="flex items-center gap-1.5 text-xs sm:text-sm">
-            <Package className="h-3.5 w-3.5" />
-            Inventory &amp; Procurement
-          </TabsTrigger>
-          <TabsTrigger value="fixed-assets" className="flex items-center gap-1.5 text-xs sm:text-sm">
-            <Landmark className="h-3.5 w-3.5" />
-            Fixed Assets
-          </TabsTrigger>
-          <TabsTrigger value="equity-fx" className="flex items-center gap-1.5 text-xs sm:text-sm">
-            <TrendingUp className="h-3.5 w-3.5" />
-            Equity &amp; FX
-          </TabsTrigger>
-          <TabsTrigger value="payroll" className="flex items-center gap-1.5 text-xs sm:text-sm">
-            <RefreshCw className="h-3.5 w-3.5" />
-            Payroll
-          </TabsTrigger>
+        <TabsList>
+          <TabsTrigger value="core">Core</TabsTrigger>
+          <TabsTrigger value="inventory">Inventory &amp; Procurement</TabsTrigger>
+          <TabsTrigger value="assets">Fixed Assets</TabsTrigger>
+          <TabsTrigger value="equity">Equity &amp; FX</TabsTrigger>
+          <TabsTrigger value="payroll">Payroll</TabsTrigger>
         </TabsList>
 
-        {/* ── Tab 1: Core ───────────────────────────────────────────────── */}
+        {/* ── Tab 1: Core ─────────────────────────────────────────────────── */}
         <TabsContent value="core" className="mt-4">
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-2">
               <CardTitle className="text-base">Core AR / AP / Sales</CardTitle>
               <CardDescription>
-                Fundamental accounts required for invoice posting, bill posting, and payment recording.
+                Required for invoice posting, bill posting, and payment recording.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-5">
-              <FieldRow
-                fieldKey="ar_account_id"
-                label="Accounts Receivable"
-                side="Dr"
+            <CardContent>
+              <FieldRow fieldKey="ar_account_id" label="Accounts Receivable" badge={<Dr />}
                 types={["Asset"]}
-                hint="Debited when an invoice is posted; credited when payment is received."
-                value={form.ar_account_id}
-                onChange={setField}
-              />
-              <Separator />
-              <FieldRow
-                fieldKey="sales_account_id"
-                label="Default Sales Revenue"
-                side="Cr"
+                hint="Debited on invoice post; credited on payment receipt."
+                {...sharedProps} />
+              <FieldRow fieldKey="sales_account_id" label="Default Sales Revenue" badge={<Cr />}
                 types={["Income", "Revenue"]}
-                hint="Credited on every invoice line that has no specific revenue account."
-                value={form.sales_account_id}
-                onChange={setField}
-              />
-              <Separator />
-              <FieldRow
-                fieldKey="tax_payable_account_id"
-                label="Tax Payable"
-                side="Cr"
+                hint="Credited on invoice lines with no specific revenue account."
+                {...sharedProps} />
+              <FieldRow fieldKey="tax_payable_account_id" label="Tax Payable" badge={<Cr />}
                 types={["Liability"]}
                 hint="Credited for the tax portion of every posted invoice and bill."
-                value={form.tax_payable_account_id}
-                onChange={setField}
-              />
-              <Separator />
-              <FieldRow
-                fieldKey="ap_account_id"
-                label="Accounts Payable"
-                side="Cr"
+                {...sharedProps} />
+              <FieldRow fieldKey="ap_account_id" label="Accounts Payable" badge={<Cr />}
                 types={["Liability"]}
-                hint="Credited when a supplier bill is posted; debited when a payment is made."
-                value={form.ap_account_id}
-                onChange={setField}
-              />
-              <Separator />
-              <FieldRow
-                fieldKey="bank_account_id"
-                label="Default Bank / Cash"
-                side="Dr/Cr"
+                hint="Credited on bill post; debited on supplier payment."
+                {...sharedProps} />
+              <FieldRow fieldKey="bank_account_id" label="Default Bank / Cash" badge={<DrCr />}
                 types={["Asset"]}
-                hint="Debited on customer payment receipt; credited on supplier payment."
-                value={form.bank_account_id}
-                onChange={setField}
-              />
-              <Separator />
+                hint="Debited on payment receipt; credited on supplier payment."
+                {...sharedProps} />
               <SampleJournal
-                title="Sample Journal Entry — Invoice Post"
+                tabKey="core"
+                title="Sample journal entry — Invoice Post"
                 rows={[
-                  { side: "Dr", account: "Accounts Receivable", dr: "1,150.00" },
-                  { side: "Cr", account: "Sales Revenue", cr: "1,000.00" },
-                  { side: "Cr", account: "Tax Payable", cr: "150.00" },
+                  { account: "Accounts Receivable", dr: "1,150.00" },
+                  { account: "Sales Revenue", cr: "1,000.00", indent: true },
+                  { account: "Tax Payable", cr: "150.00", indent: true },
                 ]}
+                previewOpen={previewOpen}
+                setPreviewOpen={setPreviewOpen}
               />
             </CardContent>
           </Card>
@@ -387,197 +299,113 @@ export default function AccountMapping() {
         {/* ── Tab 2: Inventory & Procurement ────────────────────────────── */}
         <TabsContent value="inventory" className="mt-4">
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-2">
               <CardTitle className="text-base">Inventory &amp; Procurement</CardTitle>
               <CardDescription>
-                Accounts for stock movements, cost of sales, and the three-way match clearing cycle.
+                Stock movements, cost of sales, and the three-way match clearing cycle.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-5">
-              <FieldRow
-                fieldKey="inventory_account_id"
-                label="Inventory / Stock Control"
-                side="Dr"
+            <CardContent>
+              <FieldRow fieldKey="inventory_account_id" label="Inventory / Stock Control" badge={<Dr />}
                 types={["Asset"]}
-                hint="Debited on GRN receipt; credited when inventory is sold (COGS entry)."
-                value={form.inventory_account_id}
-                onChange={setField}
-              />
-              <Separator />
-              <FieldRow
-                fieldKey="cogs_account_id"
-                label="Cost of Goods Sold (COGS)"
-                side="Dr"
+                hint="Debited on GRN receipt; credited on COGS entry at sale."
+                {...sharedProps} />
+              <FieldRow fieldKey="cogs_account_id" label="Cost of Goods Sold" badge={<Dr />}
                 types={["Cost of Goods Sold", "Expense"]}
-                hint="Debited when an invoiced product is issued from stock."
-                value={form.cogs_account_id}
-                onChange={setField}
-              />
-              <Separator />
-              <FieldRow
-                fieldKey="grni_clearing_account_id"
-                label="GRNI Clearing"
-                side="Dr/Cr"
+                hint="Debited when an invoiced tracked product is issued from stock."
+                {...sharedProps} />
+              <FieldRow fieldKey="grni_clearing_account_id" label="Goods Received Not Invoiced" badge={<DrCr />}
                 types={["Liability"]}
-                hint="Credited on GRN receipt (accrual); debited when the supplier bill is posted."
-                value={form.grni_clearing_account_id}
-                onChange={setField}
-              />
-              <Separator />
-              <FieldRow
-                fieldKey="purchase_price_variance_account_id"
-                label="Purchase Price Variance (PPV)"
-                side="Dr/Cr"
+                hint="Credited on GRN (accrual); debited when supplier bill is posted."
+                {...sharedProps} />
+              <FieldRow fieldKey="purchase_price_variance_account_id" label="Purchase Price Variance (PPV)" badge={<DrCr />}
                 types={["Expense", "Cost of Goods Sold"]}
-                hint="Captures the difference between PO/GRN cost and actual supplier invoice cost."
-                value={form.purchase_price_variance_account_id}
-                onChange={setField}
+                hint="Captures cost difference between PO/GRN cost and actual bill cost."
+                {...sharedProps} />
+              <SampleJournal
+                tabKey="inventory"
+                title="Sample journal entry — GRN Receipt"
+                rows={[
+                  { account: "Inventory / Stock", dr: "500.00" },
+                  { account: "GRNI Clearing", cr: "500.00", indent: true },
+                ]}
+                previewOpen={previewOpen}
+                setPreviewOpen={setPreviewOpen}
               />
-              <Separator />
-              <div className="space-y-2">
-                <SampleJournal
-                  title="Sample Journal Entry — GRN Receipt"
-                  rows={[
-                    { side: "Dr", account: "Inventory / Stock", dr: "500.00" },
-                    { side: "Cr", account: "GRNI Clearing", cr: "500.00" },
-                  ]}
-                />
-                <SampleJournal
-                  title="Sample Journal Entry — Invoice COGS"
-                  rows={[
-                    { side: "Dr", account: "Cost of Goods Sold", dr: "300.00" },
-                    { side: "Cr", account: "Inventory / Stock", cr: "300.00" },
-                  ]}
-                />
-              </div>
             </CardContent>
           </Card>
         </TabsContent>
 
         {/* ── Tab 3: Fixed Assets ───────────────────────────────────────── */}
-        <TabsContent value="fixed-assets" className="mt-4">
+        <TabsContent value="assets" className="mt-4">
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-2">
               <CardTitle className="text-base">Fixed Assets</CardTitle>
-              <CardDescription>
-                Global fallback accounts for depreciation and disposal journals (IAS 16).
-              </CardDescription>
+              <CardDescription>Global fallback accounts for depreciation and disposal (IAS 16).</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="flex items-start gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2.5">
-                <Info className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
-                <p className="text-xs text-blue-700">
-                  These are global fallbacks. Asset Category-level accounts take priority when set.
-                </p>
-              </div>
-              <FieldRow
-                fieldKey="depreciation_expense_account_id"
-                label="Depreciation Expense"
-                side="Dr"
+            <CardContent>
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-4">
+                Asset Category-level accounts take priority when set. These are global fallbacks for categories missing account mappings.
+              </p>
+              <FieldRow fieldKey="depreciation_expense_account_id" label="Depreciation Expense" badge={<Dr />}
                 types={["Expense"]}
                 hint="Debited on each monthly depreciation journal (IAS 16)."
-                value={form.depreciation_expense_account_id}
-                onChange={setField}
-              />
-              <Separator />
-              <FieldRow
-                fieldKey="accumulated_depreciation_account_id"
-                label="Accumulated Depreciation"
-                side="Cr"
+                {...sharedProps} />
+              <FieldRow fieldKey="accumulated_depreciation_account_id" label="Accumulated Depreciation" badge={<Cr />}
                 types={["Asset"]}
-                hint="Credited on each monthly depreciation journal. Contra-asset account."
-                value={form.accumulated_depreciation_account_id}
-                onChange={setField}
-              />
-              <Separator />
-              <FieldRow
-                fieldKey="disposal_gain_account_id"
-                label="Gain on Asset Disposal"
-                side="Cr"
+                hint="Credited on depreciation. Contra-asset account."
+                {...sharedProps} />
+              <FieldRow fieldKey="disposal_gain_account_id" label="Gain on Asset Disposal" badge={<Cr />}
                 types={["Income", "Other Income"]}
-                hint="Credited when sale proceeds exceed Net Book Value (IAS 16). Must be separate from loss account."
-                value={form.disposal_gain_account_id}
-                onChange={setField}
-              />
-              <Separator />
-              <FieldRow
-                fieldKey="disposal_loss_account_id"
-                label="Loss on Asset Disposal"
-                side="Dr"
+                hint="Credited when sale proceeds exceed Net Book Value (IAS 16)."
+                {...sharedProps} />
+              <FieldRow fieldKey="disposal_loss_account_id" label="Loss on Asset Disposal" badge={<Dr />}
                 types={["Expense", "Other Expense"]}
-                hint="Debited when sale proceeds are below Net Book Value (IAS 16). Must be separate from gain account."
-                value={form.disposal_loss_account_id}
-                onChange={setField}
+                hint="Debited when sale proceeds are below Net Book Value (IAS 16)."
+                {...sharedProps} />
+              <SampleJournal
+                tabKey="assets"
+                title="Sample journal entry — Monthly Depreciation"
+                rows={[
+                  { account: "Depreciation Expense", dr: "833.00" },
+                  { account: "Accumulated Depreciation", cr: "833.00", indent: true },
+                ]}
+                previewOpen={previewOpen}
+                setPreviewOpen={setPreviewOpen}
               />
-              <Separator />
-              <div className="space-y-2">
-                <SampleJournal
-                  title="Sample Journal Entry — Monthly Depreciation"
-                  rows={[
-                    { side: "Dr", account: "Depreciation Expense", dr: "833.00" },
-                    { side: "Cr", account: "Accumulated Depreciation", cr: "833.00" },
-                  ]}
-                />
-                <SampleJournal
-                  title="Sample Journal Entry — Asset Disposal (gain)"
-                  rows={[
-                    { side: "Dr", account: "Cash / Bank", dr: "12,000.00" },
-                    { side: "Dr", account: "Accumulated Depreciation", dr: "8,000.00" },
-                    { side: "Cr", account: "Asset at Cost", cr: "18,000.00" },
-                    { side: "Cr", account: "Gain on Disposal", cr: "2,000.00" },
-                  ]}
-                />
-              </div>
             </CardContent>
           </Card>
         </TabsContent>
 
         {/* ── Tab 4: Equity & FX ────────────────────────────────────────── */}
-        <TabsContent value="equity-fx" className="mt-4">
+        <TabsContent value="equity" className="mt-4">
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-2">
               <CardTitle className="text-base">Equity &amp; Foreign Exchange</CardTitle>
-              <CardDescription>
-                Accounts for period-close entries and multi-currency revaluation (IAS 21).
-              </CardDescription>
+              <CardDescription>Period-close and multi-currency revaluation (IAS 21).</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-5">
-              <FieldRow
-                fieldKey="retained_earnings_account_id"
-                label="Retained Earnings"
-                side="Dr/Cr"
+            <CardContent>
+              <FieldRow fieldKey="retained_earnings_account_id" label="Retained Earnings" badge={<DrCr />}
                 types={["Equity"]}
-                hint="Net income is transferred here on period close. Required for year-end closing journals."
-                value={form.retained_earnings_account_id}
-                onChange={setField}
-              />
-              <Separator />
-              <FieldRow
-                fieldKey="fx_gain_account_id"
-                label="Foreign Exchange Gain"
-                side="Cr"
+                hint="Net income transferred here on period close. Required for year-end closing journals."
+                {...sharedProps} />
+              <FieldRow fieldKey="fx_gain_account_id" label="FX Gain (IAS 21)" badge={<Cr />}
                 types={["Income", "Other Income"]}
-                hint="Credited when re-measuring foreign currency balances at period-end (IAS 21)."
-                value={form.fx_gain_account_id}
-                onChange={setField}
-              />
-              <Separator />
-              <FieldRow
-                fieldKey="fx_loss_account_id"
-                label="Foreign Exchange Loss"
-                side="Dr"
+                hint="Credited on favourable foreign currency re-measurement at period-end."
+                {...sharedProps} />
+              <FieldRow fieldKey="fx_loss_account_id" label="FX Loss (IAS 21)" badge={<Dr />}
                 types={["Expense", "Other Expense"]}
-                hint="Debited when re-measuring foreign currency balances at period-end (IAS 21)."
-                value={form.fx_loss_account_id}
-                onChange={setField}
-              />
-              <Separator />
+                hint="Debited on adverse foreign currency re-measurement at period-end."
+                {...sharedProps} />
               <SampleJournal
-                title="Sample Journal Entry — Period Close"
+                tabKey="equity"
+                title="Sample journal entry — Period Close (net profit)"
                 rows={[
-                  { side: "Dr", account: "Sales Revenue", dr: "50,000.00" },
-                  { side: "Cr", account: "Retained Earnings", cr: "50,000.00" },
+                  { account: "Sales Revenue (all income)", dr: "50,000.00" },
+                  { account: "Retained Earnings", cr: "50,000.00", indent: true },
                 ]}
+                previewOpen={previewOpen}
+                setPreviewOpen={setPreviewOpen}
               />
             </CardContent>
           </Card>
@@ -586,65 +414,42 @@ export default function AccountMapping() {
         {/* ── Tab 5: Payroll ────────────────────────────────────────────── */}
         <TabsContent value="payroll" className="mt-4">
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-2">
               <CardTitle className="text-base">Payroll</CardTitle>
-              <CardDescription>
-                Global fallback accounts for payroll posting.
-              </CardDescription>
+              <CardDescription>Global fallback accounts for payroll posting.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="flex items-start gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2.5">
-                <Info className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
-                <p className="text-xs text-blue-700">
-                  These are global fallbacks. Payroll GL Mapping (component-level) takes priority when set.
-                </p>
-              </div>
-              <FieldRow
-                fieldKey="wages_expense_account_id"
-                label="Salaries & Wages Expense"
-                side="Dr"
+            <CardContent>
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-4">
+                Payroll GL Mapping (component-level) takes priority. These are global fallbacks only.
+              </p>
+              <FieldRow fieldKey="wages_expense_account_id" label="Salaries & Wages Expense" badge={<Dr />}
                 types={["Expense"]}
-                hint="Debited for gross payroll expense when no component-level mapping exists."
-                value={form.wages_expense_account_id}
-                onChange={setField}
-              />
-              <Separator />
-              <FieldRow
-                fieldKey="payroll_clearing_account_id"
-                label="Payroll Clearing / Net Pay Payable"
-                side="Cr"
+                hint="Debited for gross payroll when no component-level mapping exists."
+                {...sharedProps} />
+              <FieldRow fieldKey="payroll_clearing_account_id" label="Payroll Clearing" badge={<Cr />}
                 types={["Liability"]}
-                hint="Credited for net pay amounts awaiting bank transfer."
-                value={form.payroll_clearing_account_id}
-                onChange={setField}
-              />
-              <Separator />
+                hint="Credited for net pay amounts pending bank transfer."
+                {...sharedProps} />
               <SampleJournal
-                title="Sample Journal Entry — Payroll Post"
+                tabKey="payroll"
+                title="Sample journal entry — Payroll Post"
                 rows={[
-                  { side: "Dr", account: "Salaries & Wages Expense", dr: "80,000.00" },
-                  { side: "Cr", account: "Payroll Clearing", cr: "80,000.00" },
+                  { account: "Salaries & Wages Expense", dr: "80,000.00" },
+                  { account: "Payroll Clearing", cr: "80,000.00", indent: true },
                 ]}
+                previewOpen={previewOpen}
+                setPreviewOpen={setPreviewOpen}
               />
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
 
-      {/* ── Save button ──────────────────────────────────────────────────── */}
-      <div className="fixed bottom-6 right-6 z-20">
-        <Button
-          onClick={() => upsert.mutate(form)}
-          disabled={upsert.isPending}
-          size="lg"
-          className="flex items-center gap-2 shadow-lg"
-        >
-          {upsert.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="h-4 w-4" />
-          )}
-          Save Mapping
+      {/* Save button */}
+      <div className="flex justify-end pt-4">
+        <Button onClick={handleSave} disabled={upsert.isPending} className="gap-2">
+          <Save className="w-4 h-4" />
+          {upsert.isPending ? "Saving…" : "Save Mapping"}
         </Button>
       </div>
     </div>

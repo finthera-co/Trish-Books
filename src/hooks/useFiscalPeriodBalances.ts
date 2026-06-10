@@ -200,15 +200,26 @@ export function useCloseFiscalPeriod() {
           }
         });
 
-        // 8. Find Retained Earnings account
-        const { data: reAccount } = await supabase
-          .from("accounts")
-          .select("id")
+        // 8. Find Retained Earnings account — prefer account_settings mapping, fallback to name search
+        let reAccountId: string | null = null;
+        const { data: acctSettings } = await supabase
+          .from("account_settings")
+          .select("retained_earnings_account_id")
           .eq("tenant_id", appUser.tenant_id)
-          .eq("account_type", "Equity")
-          .ilike("account_name", "%retained earnings%")
-          .limit(1)
           .maybeSingle();
+        if (acctSettings?.retained_earnings_account_id) {
+          reAccountId = acctSettings.retained_earnings_account_id;
+        } else {
+          const { data: reAccount } = await supabase
+            .from("accounts")
+            .select("id")
+            .eq("tenant_id", appUser.tenant_id)
+            .eq("account_type", "Equity")
+            .ilike("account_name", "%retained earnings%")
+            .limit(1)
+            .maybeSingle();
+          reAccountId = reAccount?.id ?? null;
+        }
 
         // 9. Build next period opening balances (balance sheet accounts only)
         const nextOBRows: {
@@ -229,7 +240,7 @@ export function useCloseFiscalPeriod() {
           let credit = bal.credit;
 
           // Add net income to Retained Earnings
-          if (reAccount && a.id === reAccount.id) {
+          if (reAccountId && a.id === reAccountId) {
             // Net income: credit Retained Earnings for profit, debit for loss
             // Revenue net (credit-side) minus Expense net (debit-side)
             credit += netIncomeCredit;
@@ -264,7 +275,7 @@ export function useCloseFiscalPeriod() {
           if (obErr) throw obErr;
         }
 
-        if (!reAccount && Math.abs(netIncomeCredit - netIncomeDebit) > 0.005) {
+        if (!reAccountId && Math.abs(netIncomeCredit - netIncomeDebit) > 0.005) {
           console.warn(
             "No Retained Earnings account found. Net income was not carried forward."
           );
