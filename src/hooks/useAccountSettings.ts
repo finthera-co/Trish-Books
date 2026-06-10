@@ -1,50 +1,48 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// useAccountSettings.ts
+// Central hook for account_settings GL control account mappings.
+// Exports: AccountSettings (interface), AccountSettingsCompleteness (interface),
+//          useAccountSettings, useAccountSettingsCompleteness,
+//          useUpsertAccountSettings, usePostInvoice
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
-// ─── Full 19-field AccountSettings interface ──────────────────────────────────
-// All fields nullable — the DB schema is nullable for all non-PK columns.
-// The `as AccountSettings` cast in useAccountSettings() is intentional: types.ts
-// has not yet been regenerated so TS doesn't know about the new columns.
-// Once types.ts is regenerated the cast can be removed.
+// ─── AccountSettings — all 19 mappable GL control fields ─────────────────────
 
 export interface AccountSettings {
   id?: string;
   tenant_id?: string;
-
-  // ── Core (original 5 fields — preserved exactly) ──────────────────────────
+  // Core — required for invoice/bill/payment posting
   ar_account_id:                        string | null;
   sales_account_id:                     string | null;
   tax_payable_account_id:               string | null;
   ap_account_id:                        string | null;
   bank_account_id:                      string | null;
-
-  // ── Inventory & Procurement ───────────────────────────────────────────────
+  // Inventory & Procurement
   inventory_account_id:                 string | null;
   cogs_account_id:                      string | null;
   grni_clearing_account_id:             string | null;
   purchase_price_variance_account_id:   string | null;
-
-  // ── Fixed Assets (global fallback — asset category takes priority) ─────────
+  // Fixed Assets — global fallback (asset category takes priority)
   depreciation_expense_account_id:      string | null;
   accumulated_depreciation_account_id:  string | null;
   disposal_gain_account_id:             string | null;
   disposal_loss_account_id:             string | null;
-
-  // ── Equity & Period-Close ─────────────────────────────────────────────────
+  // Equity & Period-Close
   retained_earnings_account_id:         string | null;
-
-  // ── FX — IAS 21 ───────────────────────────────────────────────────────────
+  // Foreign Exchange — IAS 21
   fx_gain_account_id:                   string | null;
   fx_loss_account_id:                   string | null;
-
-  // ── Payroll (global fallback — component GL mapping takes priority) ────────
+  // Payroll — global fallback (component GL mapping takes priority)
   wages_expense_account_id:             string | null;
   payroll_clearing_account_id:          string | null;
 }
 
-// ─── Completeness response shape (from get_account_settings_completeness RPC) ─
+// ─── AccountSettingsCompleteness — shape returned by get_account_settings_completeness RPC
 
 export interface AccountSettingsCompleteness {
   configured: boolean;
@@ -55,8 +53,6 @@ export interface AccountSettingsCompleteness {
 }
 
 // ─── useAccountSettings ───────────────────────────────────────────────────────
-// Fetches the single account_settings row for the current tenant.
-// Uses .maybeSingle() — returns null if no row exists (safe for new tenants).
 
 export function useAccountSettings() {
   const { appUser } = useAuth();
@@ -77,8 +73,6 @@ export function useAccountSettings() {
 }
 
 // ─── useAccountSettingsCompleteness ──────────────────────────────────────────
-// Calls the get_account_settings_completeness RPC to determine which of the
-// 19 accounts are mapped. Used by AccountMapping.tsx to render the health banner.
 
 export function useAccountSettingsCompleteness() {
   const { appUser } = useAuth();
@@ -98,8 +92,6 @@ export function useAccountSettingsCompleteness() {
 }
 
 // ─── useUpsertAccountSettings ─────────────────────────────────────────────────
-// Upserts all 19 account mapping fields in one call.
-// Invalidates both account_settings and account_settings_completeness on success.
 
 export function useUpsertAccountSettings() {
   const qc = useQueryClient();
@@ -127,9 +119,7 @@ export function useUpsertAccountSettings() {
   });
 }
 
-// ─── usePostInvoice ───────────────────────────────────────────────────────────
-// Preserved exactly — do not change any line of this function.
-// Imported by CreateInvoice.tsx and Invoices.tsx.
+// ─── usePostInvoice — DO NOT CHANGE, imported by CreateInvoice.tsx and Invoices.tsx
 
 export function usePostInvoice() {
   const qc = useQueryClient();

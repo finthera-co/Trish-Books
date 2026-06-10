@@ -51,42 +51,98 @@ export type Database = {
       }
       account_settings: {
         Row: {
+          accum_depreciation_account_id: string | null
+          accumulated_depreciation_account_id: string | null
           ap_account_id: string | null
           ar_account_id: string | null
           bank_account_id: string | null
+          cogs_account_id: string | null
           created_at: string
+          depreciation_expense_account_id: string | null
+          disposal_gain_account_id: string | null
+          disposal_loss_account_id: string | null
+          fx_gain_account_id: string | null
+          fx_loss_account_id: string | null
+          grni_clearing_account_id: string | null
           id: string
+          inventory_account_id: string | null
           inventory_adjustment_approval_threshold: number
+          payroll_clearing_account_id: string | null
+          purchase_price_variance_account_id: string | null
+          retained_earnings_account_id: string | null
           sales_account_id: string | null
           tax_payable_account_id: string | null
           tenant_id: string
           updated_at: string
+          wages_expense_account_id: string | null
         }
         Insert: {
+          accum_depreciation_account_id?: string | null
+          accumulated_depreciation_account_id?: string | null
           ap_account_id?: string | null
           ar_account_id?: string | null
           bank_account_id?: string | null
+          cogs_account_id?: string | null
           created_at?: string
+          depreciation_expense_account_id?: string | null
+          disposal_gain_account_id?: string | null
+          disposal_loss_account_id?: string | null
+          fx_gain_account_id?: string | null
+          fx_loss_account_id?: string | null
+          grni_clearing_account_id?: string | null
           id?: string
+          inventory_account_id?: string | null
           inventory_adjustment_approval_threshold?: number
+          payroll_clearing_account_id?: string | null
+          purchase_price_variance_account_id?: string | null
+          retained_earnings_account_id?: string | null
           sales_account_id?: string | null
           tax_payable_account_id?: string | null
           tenant_id: string
           updated_at?: string
+          wages_expense_account_id?: string | null
         }
         Update: {
+          accum_depreciation_account_id?: string | null
+          accumulated_depreciation_account_id?: string | null
           ap_account_id?: string | null
           ar_account_id?: string | null
           bank_account_id?: string | null
+          cogs_account_id?: string | null
           created_at?: string
+          depreciation_expense_account_id?: string | null
+          disposal_gain_account_id?: string | null
+          disposal_loss_account_id?: string | null
+          fx_gain_account_id?: string | null
+          fx_loss_account_id?: string | null
+          grni_clearing_account_id?: string | null
           id?: string
+          inventory_account_id?: string | null
           inventory_adjustment_approval_threshold?: number
+          payroll_clearing_account_id?: string | null
+          purchase_price_variance_account_id?: string | null
+          retained_earnings_account_id?: string | null
           sales_account_id?: string | null
           tax_payable_account_id?: string | null
           tenant_id?: string
           updated_at?: string
+          wages_expense_account_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "account_settings_accum_depreciation_account_id_fkey"
+            columns: ["accum_depreciation_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_accumulated_depreciation_account_id_fkey"
+            columns: ["accumulated_depreciation_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "account_settings_ap_account_id_fkey"
             columns: ["ap_account_id"]
@@ -104,6 +160,83 @@ export type Database = {
           {
             foreignKeyName: "account_settings_bank_account_id_fkey"
             columns: ["bank_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_cogs_account_id_fkey"
+            columns: ["cogs_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_depreciation_expense_account_id_fkey"
+            columns: ["depreciation_expense_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_disposal_gain_account_id_fkey"
+            columns: ["disposal_gain_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_disposal_loss_account_id_fkey"
+            columns: ["disposal_loss_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_fx_gain_account_id_fkey"
+            columns: ["fx_gain_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_fx_loss_account_id_fkey"
+            columns: ["fx_loss_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_grni_clearing_account_id_fkey"
+            columns: ["grni_clearing_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_inventory_account_id_fkey"
+            columns: ["inventory_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_payroll_clearing_account_id_fkey"
+            columns: ["payroll_clearing_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_purchase_price_variance_account_id_fkey"
+            columns: ["purchase_price_variance_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_retained_earnings_account_id_fkey"
+            columns: ["retained_earnings_account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
             referencedColumns: ["id"]
@@ -127,6 +260,13 @@ export type Database = {
             columns: ["tenant_id"]
             isOneToOne: true
             referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_wages_expense_account_id_fkey"
+            columns: ["wages_expense_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
             referencedColumns: ["id"]
           },
         ]
@@ -8090,6 +8230,10 @@ export type Database = {
       seed_inventory_coa_accounts: {
         Args: { p_tenant_id: string }
         Returns: undefined
+      }
+      get_account_settings_completeness: {
+        Args: { p_tenant_id: string }
+        Returns: Json
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
