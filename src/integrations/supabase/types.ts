@@ -63,11 +63,15 @@ export type Database = {
           disposal_loss_account_id: string | null
           fx_gain_account_id: string | null
           fx_loss_account_id: string | null
+          gain_on_disposal_account_id: string | null
           grni_clearing_account_id: string | null
           id: string
           inventory_account_id: string | null
           inventory_adjustment_approval_threshold: number
+          inventory_asset_account_id: string | null
+          loss_on_disposal_account_id: string | null
           payroll_clearing_account_id: string | null
+          petty_cash_account_id: string | null
           purchase_price_variance_account_id: string | null
           retained_earnings_account_id: string | null
           sales_account_id: string | null
@@ -89,11 +93,15 @@ export type Database = {
           disposal_loss_account_id?: string | null
           fx_gain_account_id?: string | null
           fx_loss_account_id?: string | null
+          gain_on_disposal_account_id?: string | null
           grni_clearing_account_id?: string | null
           id?: string
           inventory_account_id?: string | null
           inventory_adjustment_approval_threshold?: number
+          inventory_asset_account_id?: string | null
+          loss_on_disposal_account_id?: string | null
           payroll_clearing_account_id?: string | null
+          petty_cash_account_id?: string | null
           purchase_price_variance_account_id?: string | null
           retained_earnings_account_id?: string | null
           sales_account_id?: string | null
@@ -115,11 +123,15 @@ export type Database = {
           disposal_loss_account_id?: string | null
           fx_gain_account_id?: string | null
           fx_loss_account_id?: string | null
+          gain_on_disposal_account_id?: string | null
           grni_clearing_account_id?: string | null
           id?: string
           inventory_account_id?: string | null
           inventory_adjustment_approval_threshold?: number
+          inventory_asset_account_id?: string | null
+          loss_on_disposal_account_id?: string | null
           payroll_clearing_account_id?: string | null
+          petty_cash_account_id?: string | null
           purchase_price_variance_account_id?: string | null
           retained_earnings_account_id?: string | null
           sales_account_id?: string | null
@@ -207,6 +219,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "account_settings_gain_on_disposal_account_id_fkey"
+            columns: ["gain_on_disposal_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "account_settings_grni_clearing_account_id_fkey"
             columns: ["grni_clearing_account_id"]
             isOneToOne: false
@@ -221,8 +240,29 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "account_settings_inventory_asset_account_id_fkey"
+            columns: ["inventory_asset_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_loss_on_disposal_account_id_fkey"
+            columns: ["loss_on_disposal_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "account_settings_payroll_clearing_account_id_fkey"
             columns: ["payroll_clearing_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_petty_cash_account_id_fkey"
+            columns: ["petty_cash_account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
             referencedColumns: ["id"]
