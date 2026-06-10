@@ -508,7 +508,7 @@ async function handleDepreciationPosted(db: any, tenantId: string, body: any, us
   // Fetch global account_settings fallbacks (used when category accounts are missing)
   const { data: globalSettings } = await db
     .from("account_settings")
-    .select("depreciation_expense_account_id, accum_depreciation_account_id")
+    .select("depreciation_expense_account_id, accum_depreciation_account_id, accumulated_depreciation_account_id")
     .eq("tenant_id", tenantId)
     .maybeSingle();
 
@@ -569,7 +569,8 @@ async function handleDepreciationPosted(db: any, tenantId: string, body: any, us
       const accumAccountId =
         asset.depreciation_account_id              // tier 1: asset snapshot
         ?? cat.accumulated_depreciation_account_id  // tier 2: category
-        ?? globalSettings?.accum_depreciation_account_id; // tier 3: global
+        ?? globalSettings?.accum_depreciation_account_id
+        ?? globalSettings?.accumulated_depreciation_account_id; // tier 3: global (both column names)
 
       if (!expenseAccountId) {
         throw new Error(
@@ -696,7 +697,7 @@ async function handleAssetDisposed(db: any, tenantId: string, body: any, userId:
   // Fetch global account_settings fallbacks
   const { data: globalSettings } = await db
     .from("account_settings")
-    .select("gain_on_disposal_account_id, loss_on_disposal_account_id, accum_depreciation_account_id")
+    .select("gain_on_disposal_account_id, loss_on_disposal_account_id, accum_depreciation_account_id, accumulated_depreciation_account_id")
     .eq("tenant_id", tenantId)
     .maybeSingle();
 
@@ -705,6 +706,7 @@ async function handleAssetDisposed(db: any, tenantId: string, body: any, userId:
   let accumAccountId: string | null =
     asset.depreciation_account_id
     ?? globalSettings?.accum_depreciation_account_id
+    ?? globalSettings?.accumulated_depreciation_account_id
     ?? null;
   let gainAccountId: string | null = globalSettings?.gain_on_disposal_account_id ?? null;
   let lossAccountId: string | null = globalSettings?.loss_on_disposal_account_id ?? null;
@@ -716,6 +718,7 @@ async function handleAssetDisposed(db: any, tenantId: string, body: any, userId:
     accumAccountId = asset.depreciation_account_id
       ?? cat.accumulated_depreciation_account_id
       ?? globalSettings?.accum_depreciation_account_id
+      ?? globalSettings?.accumulated_depreciation_account_id
       ?? null;
     gainAccountId  = cat.disposal_gain_account_id ?? globalSettings?.gain_on_disposal_account_id ?? null;
     lossAccountId  = cat.disposal_loss_account_id ?? globalSettings?.loss_on_disposal_account_id ?? null;
