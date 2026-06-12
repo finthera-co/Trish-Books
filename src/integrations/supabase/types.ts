@@ -1291,6 +1291,89 @@ export type Database = {
           },
         ]
       }
+      attendance_records: {
+        Row: {
+          attendance_date: string
+          check_in_time: string | null
+          check_out_time: string | null
+          created_at: string
+          created_by: string | null
+          device_id: string | null
+          employee_id: string
+          entry_source: string
+          id: string
+          leave_request_id: string | null
+          notes: string | null
+          overtime_hours: number
+          status: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          attendance_date: string
+          check_in_time?: string | null
+          check_out_time?: string | null
+          created_at?: string
+          created_by?: string | null
+          device_id?: string | null
+          employee_id: string
+          entry_source?: string
+          id?: string
+          leave_request_id?: string | null
+          notes?: string | null
+          overtime_hours?: number
+          status: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          attendance_date?: string
+          check_in_time?: string | null
+          check_out_time?: string | null
+          created_at?: string
+          created_by?: string | null
+          device_id?: string | null
+          employee_id?: string
+          entry_source?: string
+          id?: string
+          leave_request_id?: string | null
+          notes?: string | null
+          overtime_hours?: number
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendance_records_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_records_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_records_leave_request_id_fkey"
+            columns: ["leave_request_id"]
+            isOneToOne: false
+            referencedRelation: "leave_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_records_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_logs: {
         Row: {
           action: string
@@ -3110,6 +3193,41 @@ export type Database = {
           },
         ]
       }
+      holidays: {
+        Row: {
+          created_at: string
+          holiday_date: string
+          id: string
+          is_recurring: boolean
+          name: string
+          tenant_id: string
+        }
+        Insert: {
+          created_at?: string
+          holiday_date: string
+          id?: string
+          is_recurring?: boolean
+          name: string
+          tenant_id: string
+        }
+        Update: {
+          created_at?: string
+          holiday_date?: string
+          id?: string
+          is_recurring?: boolean
+          name?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "holidays_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       insights: {
         Row: {
           created_at: string
@@ -3990,6 +4108,143 @@ export type Database = {
             columns: ["journal_entry_id"]
             isOneToOne: false
             referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leave_requests: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          created_at: string
+          created_by: string | null
+          days: number
+          employee_id: string
+          end_date: string
+          id: string
+          is_half_day: boolean
+          leave_type_id: string
+          reason: string | null
+          rejection_reason: string | null
+          start_date: string
+          status: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          days: number
+          employee_id: string
+          end_date: string
+          id?: string
+          is_half_day?: boolean
+          leave_type_id: string
+          reason?: string | null
+          rejection_reason?: string | null
+          start_date: string
+          status?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          days?: number
+          employee_id?: string
+          end_date?: string
+          id?: string
+          is_half_day?: boolean
+          leave_type_id?: string
+          reason?: string | null
+          rejection_reason?: string | null
+          start_date?: string
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leave_requests_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leave_requests_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leave_requests_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leave_requests_leave_type_id_fkey"
+            columns: ["leave_type_id"]
+            isOneToOne: false
+            referencedRelation: "leave_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leave_requests_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leave_types: {
+        Row: {
+          annual_entitlement: number
+          code: string
+          created_at: string
+          id: string
+          is_active: boolean
+          is_paid: boolean
+          name: string
+          requires_approval: boolean
+          tenant_id: string
+        }
+        Insert: {
+          annual_entitlement?: number
+          code: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          is_paid?: boolean
+          name: string
+          requires_approval?: boolean
+          tenant_id: string
+        }
+        Update: {
+          annual_entitlement?: number
+          code?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          is_paid?: boolean
+          name?: string
+          requires_approval?: boolean
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leave_types_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
         ]
@@ -4954,9 +5209,11 @@ export type Database = {
       payroll_run_items: {
         Row: {
           allowances: number
+          attendance_deduction: number
           basic_salary: number
           bonuses: number
           created_at: string
+          days_present: number | null
           employee_epf: number
           employee_id: string
           employer_epf: number
@@ -4969,14 +5226,19 @@ export type Database = {
           other_deductions: number
           overtime_hours: number | null
           overtime_pay: number
+          paid_leave_days: number | null
           payment_method: string
           run_id: string
+          unpaid_absent_days: number | null
+          working_days: number | null
         }
         Insert: {
           allowances?: number
+          attendance_deduction?: number
           basic_salary?: number
           bonuses?: number
           created_at?: string
+          days_present?: number | null
           employee_epf?: number
           employee_id: string
           employer_epf?: number
@@ -4989,14 +5251,19 @@ export type Database = {
           other_deductions?: number
           overtime_hours?: number | null
           overtime_pay?: number
+          paid_leave_days?: number | null
           payment_method?: string
           run_id: string
+          unpaid_absent_days?: number | null
+          working_days?: number | null
         }
         Update: {
           allowances?: number
+          attendance_deduction?: number
           basic_salary?: number
           bonuses?: number
           created_at?: string
+          days_present?: number | null
           employee_epf?: number
           employee_id?: string
           employer_epf?: number
@@ -5009,8 +5276,11 @@ export type Database = {
           other_deductions?: number
           overtime_hours?: number | null
           overtime_pay?: number
+          paid_leave_days?: number | null
           payment_method?: string
           run_id?: string
+          unpaid_absent_days?: number | null
+          working_days?: number | null
         }
         Relationships: [
           {
@@ -8078,9 +8348,17 @@ export type Database = {
         Args: { p_as_of_date?: string }
         Returns: Json
       }
+      approve_leave_request: {
+        Args: { p_request_id: string }
+        Returns: undefined
+      }
       approve_stock_adjustment: {
         Args: { p_adjustment_id: string }
         Returns: Json
+      }
+      cancel_leave_request: {
+        Args: { p_request_id: string }
+        Returns: undefined
       }
       budget_vs_actual: {
         Args: {
@@ -8170,6 +8448,22 @@ export type Database = {
         Args: { p_tenant_id: string }
         Returns: string
       }
+      get_attendance_summary: {
+        Args: {
+          p_employee_id?: string
+          p_period_end: string
+          p_period_start: string
+        }
+        Returns: {
+          days_present: number
+          employee_id: string
+          overtime_hours: number
+          paid_leave_days: number
+          unmarked_days: number
+          unpaid_absent_days: number
+          working_days: number
+        }[]
+      }
       get_category_time_series: {
         Args: {
           p_granularity?: string
@@ -8184,6 +8478,18 @@ export type Database = {
           period: string
           stream: string
         }[]
+      }
+      is_attendance_period_locked: {
+        Args: { p_date: string; p_tenant_id: string }
+        Returns: boolean
+      }
+      reject_leave_request: {
+        Args: { p_reason?: string; p_request_id: string }
+        Returns: undefined
+      }
+      seed_default_leave_types: {
+        Args: { p_tenant_id: string }
+        Returns: undefined
       }
       get_user_permission: {
         Args: { p_module: string; p_user_id: string }
