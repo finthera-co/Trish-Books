@@ -30,6 +30,8 @@ import {
   Activity,
   AlertTriangle,
   Zap,
+  CalendarCheck,
+  CalendarOff,
 } from "lucide-react";
 import type { ModuleConfig } from "@/components/layout/ModuleLayout";
 
@@ -127,6 +129,8 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
     sidebarItems: [
       { label: "Payroll Runs", path: "/payroll/runs", icon: DollarSign },
       { label: "Employees", path: "/payroll/employees", icon: UserCheck },
+      { label: "Attendance", path: "/payroll/attendance", icon: CalendarCheck },
+      { label: "Leave", path: "/payroll/leave", icon: CalendarOff },
       { label: "Liability Tracking", path: "/payroll/liabilities", icon: AlertTriangle },
     ],
   },

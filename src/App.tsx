@@ -42,6 +42,8 @@ import Payroll from "./pages/Payroll";
 import PayrollGLMapping from "./pages/PayrollGLMapping";
 import PayrollLiabilities from "./pages/PayrollLiabilities";
 import Employees from "./pages/Employees";
+import AttendanceRegister from "./pages/AttendanceRegister";
+import LeaveManagement from "./pages/LeaveManagement";
 import Reports from "./pages/Reports";
 import Budgets from "./pages/Budgets";
 import BudgetVsActual from "./pages/BudgetVsActual";
@@ -180,6 +182,8 @@ const App = () => (
                     <Route path="/payroll" element={<ModuleDashboard config={MODULE_CONFIGS.payroll} />} />
                     <Route path="/payroll/runs" element={<Payroll />} />
                     <Route path="/payroll/employees" element={<Employees />} />
+                    <Route path="/payroll/attendance" element={<AttendanceRegister />} />
+                    <Route path="/payroll/leave" element={<LeaveManagement />} />
                     <Route path="/payroll/liabilities" element={<PayrollLiabilities />} />
                   </Route>
 
