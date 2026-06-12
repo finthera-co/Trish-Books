@@ -191,6 +191,14 @@ export interface PayrollRunInput {
     other_deductions?: number;
     payment_method?: string;
     notes?: string;
+    // Attendance pro-rata: basic_salary stays the FULL contractual basic;
+    // attendance_deduction is stored separately (audit trail). The engine
+    // runs on earned basic = basic_salary - attendance_deduction.
+    working_days?: number;
+    days_present?: number;
+    paid_leave_days?: number;
+    unpaid_absent_days?: number;
+    attendance_deduction?: number;
   }[];
 }
 
@@ -230,13 +238,18 @@ export function useCreatePayrollRun() {
           is_etf_applicable: true,
           is_paye_applicable: false,
         };
+        // The rule engine (and therefore EPF/ETF, gross, net and GL posting via
+        // payroll_results) runs on the EARNED basic after the attendance
+        // (no-pay) deduction. The full contractual basic is persisted on the
+        // run item alongside the deduction.
+        const attendanceDeduction = emp.attendance_deduction || 0;
         const engineInput: EmployeePayrollInput = {
           id: emp.employee_id,
           is_epf_applicable: !!empFlags.is_epf_applicable,
           is_etf_applicable: !!empFlags.is_etf_applicable,
           is_paye_applicable: !!empFlags.is_paye_applicable,
           employment_type: empFlags.employment_type,
-          basic_salary: emp.basic_salary,
+          basic_salary: emp.basic_salary - attendanceDeduction,
           overtime_pay: emp.overtime_pay || 0,
           bonuses: emp.bonuses || 0,
           allowances: emp.allowances || 0,
@@ -254,7 +267,7 @@ export function useCreatePayrollRun() {
 
         return {
           employee_id: emp.employee_id,
-          basic_salary: emp.basic_salary,
+          basic_salary: emp.basic_salary, // full contractual basic — never pro-rated in storage
           overtime_hours: emp.overtime_hours || 0,
           overtime_pay: emp.overtime_pay || 0,
           gross_pay: result.gross_pay,
@@ -267,6 +280,11 @@ export function useCreatePayrollRun() {
           net_pay: result.net_pay,
           payment_method: emp.payment_method || "bank_transfer",
           notes: emp.notes,
+          working_days: emp.working_days ?? null,
+          days_present: emp.days_present ?? null,
+          paid_leave_days: emp.paid_leave_days ?? null,
+          unpaid_absent_days: emp.unpaid_absent_days ?? null,
+          attendance_deduction: attendanceDeduction,
         };
       });
 
@@ -366,7 +384,7 @@ export function useRecalculateDraftRuns() {
       const runIds = drafts.map((r) => r.id);
       const { data: items, error: iErr } = await supabase
         .from("payroll_run_items")
-        .select("id,run_id,employee_id,basic_salary,overtime_pay,bonuses,allowances,other_deductions")
+        .select("id,run_id,employee_id,basic_salary,overtime_pay,bonuses,allowances,other_deductions,attendance_deduction")
         .in("run_id", runIds);
       if (iErr) throw iErr;
       if (!items || items.length === 0) return { runs: drafts.length, items: 0 };
@@ -391,7 +409,7 @@ export function useRecalculateDraftRuns() {
           is_etf_applicable: !!ef.is_etf_applicable,
           is_paye_applicable: !!ef.is_paye_applicable,
           employment_type: ef.employment_type,
-          basic_salary: Number(it.basic_salary || 0),
+          basic_salary: Number(it.basic_salary || 0) - Number(it.attendance_deduction || 0),
           overtime_pay: Number(it.overtime_pay || 0),
           bonuses: Number(it.bonuses || 0),
           allowances: Number(it.allowances || 0),

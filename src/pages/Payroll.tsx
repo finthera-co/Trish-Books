@@ -87,7 +87,8 @@ export default function Payroll() {
       const headers = [
         "Run #", "Period Start", "Period End", "Status", "Payment Date",
         "Employee Name", "Department", "EPF No.", "Bank", "Account No.",
-        "Basic Salary", "Overtime Pay", "Bonuses", "Allowances", "Gross Pay",
+        "Basic Salary", "Working Days", "Days Present", "Unpaid Absent", "No-Pay Deduction",
+        "Overtime Pay", "Bonuses", "Allowances", "Gross Pay",
         "Employee EPF (8%)", "Employer EPF (12%)", "Employer ETF (3%)",
         "Other Deductions", "Total Deductions", "Net Pay", "Payment Method",
       ];
@@ -103,6 +104,10 @@ export default function Payroll() {
           emp?.department || "", emp?.epf_number || "",
           emp?.bank_name || "", emp?.bank_account_no || "",
           Number(item.basic_salary).toFixed(2),
+          item.working_days != null ? Number(item.working_days) : "",
+          item.days_present != null ? Number(item.days_present) : "",
+          item.unpaid_absent_days != null ? Number(item.unpaid_absent_days) : "",
+          Number(item.attendance_deduction || 0).toFixed(2),
           Number(item.overtime_pay).toFixed(2),
           Number(item.bonuses).toFixed(2),
           Number(item.allowances).toFixed(2),

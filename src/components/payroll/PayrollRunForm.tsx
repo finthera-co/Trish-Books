@@ -1,11 +1,13 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useEmployees } from "@/hooks/useData";
 import { usePaySchedules, useCreatePayrollRun, type PayrollRunInput } from "@/hooks/usePayroll";
+import { useAttendanceSummary } from "@/hooks/useAttendance";
 import { formatCurrency } from "@/lib/currency";
-import { ChevronRight, ChevronLeft, Calculator, Users } from "lucide-react";
+import { ChevronRight, ChevronLeft, Calculator, Users, AlertTriangle } from "lucide-react";
 
 interface Props {
   open: boolean;
@@ -28,7 +30,25 @@ interface EmployeePayItem {
   other_deductions: number;
   payment_method: string;
   selected: boolean;
+  // Attendance pro-rata (basic_salary stays the FULL contractual basic;
+  // the deduction is carried separately for the audit trail)
+  working_days: number;
+  days_present: number;
+  paid_leave_days: number;
+  unpaid_absent_days: number;
+  attendance_deduction: number;
+  attendance_override: boolean;
+  has_attendance: boolean;
 }
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+function computeAttendanceDeduction(basic: number, workingDays: number, unpaidAbsentDays: number) {
+  if (workingDays <= 0 || unpaidAbsentDays <= 0) return 0;
+  return round2((basic / workingDays) * unpaidAbsentDays);
+}
+
+const earnedBasic = (item: EmployeePayItem) => item.basic_salary - item.attendance_deduction;
 
 export default function PayrollRunForm({ open, onOpenChange }: Props) {
   const [step, setStep] = useState(1);
@@ -41,11 +61,17 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
 
   const { data: employees } = useEmployees();
   const { data: schedules } = usePaySchedules();
+  const { data: attendanceSummary } = useAttendanceSummary(periodStart || undefined, periodEnd || undefined);
   const createRun = useCreatePayrollRun();
 
   const activeEmployees = useMemo(() =>
     employees?.filter((e: any) => (e.status || "active") === "active") || [],
     [employees]
+  );
+
+  const summaryMap = useMemo(
+    () => new Map((attendanceSummary || []).map((s) => [s.employee_id, s])),
+    [attendanceSummary]
   );
 
   const handleNext = () => {
@@ -63,6 +89,13 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
         other_deductions: 0,
         payment_method: e.bank_account_no ? "bank_transfer" : "cash",
         selected: true,
+        working_days: 0,
+        days_present: 0,
+        paid_leave_days: 0,
+        unpaid_absent_days: 0,
+        attendance_deduction: 0,
+        attendance_override: false,
+        has_attendance: false,
       }));
       setItems(empItems);
       setStep(2);
@@ -71,28 +104,70 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
     }
   };
 
+  // Merge attendance summary into items once available. A fully-unmarked
+  // employee is treated as full attendance (deduction 0) with a warning badge;
+  // unmarked days for partially-marked employees count as present (the summary
+  // RPC only reports explicit absences/unpaid leave as unpaid_absent_days).
+  useEffect(() => {
+    if (!attendanceSummary || step < 2) return;
+    setItems((prev) => prev.map((item) => {
+      const s = summaryMap.get(item.employee_id);
+      if (!s) return item;
+      const hasAttendance = Number(s.days_present) + Number(s.paid_leave_days) + Number(s.unpaid_absent_days) > 0;
+      const merged = {
+        ...item,
+        working_days: Number(s.working_days),
+        days_present: Number(s.days_present),
+        paid_leave_days: Number(s.paid_leave_days),
+        unpaid_absent_days: Number(s.unpaid_absent_days),
+        has_attendance: hasAttendance,
+      };
+      if (!item.attendance_override) {
+        merged.attendance_deduction = hasAttendance
+          ? computeAttendanceDeduction(merged.basic_salary, merged.working_days, merged.unpaid_absent_days)
+          : 0;
+      }
+      return merged;
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attendanceSummary, step]);
+
   const updateItem = (idx: number, field: keyof EmployeePayItem, value: any) => {
-    setItems((prev) => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
+    setItems((prev) => prev.map((item, i) => {
+      if (i !== idx) return item;
+      const next = { ...item, [field]: value };
+      // Re-derive the default deduction when basic changes, unless manually overridden
+      if (field === "basic_salary" && !next.attendance_override && next.has_attendance) {
+        next.attendance_deduction = computeAttendanceDeduction(Number(value) || 0, next.working_days, next.unpaid_absent_days);
+      }
+      if (field === "attendance_deduction") {
+        next.attendance_override = true;
+      }
+      return next;
+    }));
   };
 
   const selectedItems = items.filter((i) => i.selected);
 
   const totals = useMemo(() => {
-    let gross = 0, epfEmp = 0, epfEr = 0, etfEr = 0, otherDed = 0, net = 0;
+    let gross = 0, epfEmp = 0, epfEr = 0, etfEr = 0, otherDed = 0, net = 0, attDed = 0;
     selectedItems.forEach((item) => {
-      const g = item.basic_salary + item.overtime_pay + item.bonuses + item.allowances;
-      const eEpf = Math.round(item.basic_salary * EPF_EMPLOYEE_RATE * 100) / 100;
-      const erEpf = Math.round(item.basic_salary * EPF_EMPLOYER_RATE * 100) / 100;
-      const erEtf = Math.round(item.basic_salary * ETF_EMPLOYER_RATE * 100) / 100;
+      // EPF/ETF and gross are computed on the EARNED basic (post attendance deduction)
+      const earned = earnedBasic(item);
+      const g = earned + item.overtime_pay + item.bonuses + item.allowances;
+      const eEpf = Math.round(earned * EPF_EMPLOYEE_RATE * 100) / 100;
+      const erEpf = Math.round(earned * EPF_EMPLOYER_RATE * 100) / 100;
+      const erEtf = Math.round(earned * ETF_EMPLOYER_RATE * 100) / 100;
       const n = g - eEpf - item.other_deductions;
       gross += g;
       epfEmp += eEpf;
       epfEr += erEpf;
       etfEr += erEtf;
       otherDed += item.other_deductions;
+      attDed += item.attendance_deduction;
       net += n;
     });
-    return { gross, epfEmp, epfEr, etfEr, otherDed, net };
+    return { gross, epfEmp, epfEr, etfEr, otherDed, net, attDed };
   }, [selectedItems]);
 
   const handleSubmit = async () => {
@@ -111,6 +186,11 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
         allowances: item.allowances,
         other_deductions: item.other_deductions,
         payment_method: item.payment_method,
+        working_days: item.working_days,
+        days_present: item.days_present,
+        paid_leave_days: item.paid_leave_days,
+        unpaid_absent_days: item.unpaid_absent_days,
+        attendance_deduction: item.attendance_deduction,
       })),
     };
     await createRun.mutateAsync(input);
@@ -130,7 +210,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) resetForm(); }}>
-      <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-6xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Calculator className="w-5 h-5" />
@@ -206,13 +286,18 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
               </label>
             </div>
 
-            <div className="border border-border rounded-lg overflow-hidden">
+            <div className="border border-border rounded-lg overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-muted/50">
                   <tr>
                     <th className="px-3 py-2 text-left font-medium text-muted-foreground w-8"></th>
                     <th className="px-3 py-2 text-left font-medium text-muted-foreground">Employee</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground">Basic Salary</th>
+                    <th className="px-2 py-2 text-right font-medium text-muted-foreground" title="Working days in period">WD</th>
+                    <th className="px-2 py-2 text-right font-medium text-muted-foreground" title="Days present">Pres.</th>
+                    <th className="px-2 py-2 text-right font-medium text-muted-foreground" title="Unpaid absent days">Unpaid Abs.</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground" title="Pro-rata no-pay deduction — editable">Att. Ded.</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground" title="Earned basic = Basic − Attendance Deduction">Earned Basic</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground">OT Pay</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground">Bonuses</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground">Allowances</th>
@@ -226,13 +311,29 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                         <Checkbox checked={item.selected} onCheckedChange={(c) => updateItem(idx, "selected", !!c)} />
                       </td>
                       <td className="px-3 py-2">
-                        <div className="font-medium text-foreground">{item.name}</div>
+                        <div className="font-medium text-foreground whitespace-nowrap">{item.name}</div>
                         <div className="text-xs text-muted-foreground">{item.department}</div>
+                        {!item.has_attendance && (
+                          <Badge variant="outline" className="mt-0.5 text-[10px] text-yellow-700 dark:text-yellow-400 border-yellow-300 dark:border-yellow-700">
+                            <AlertTriangle className="w-2.5 h-2.5 mr-0.5" /> No attendance data
+                          </Badge>
+                        )}
                       </td>
                       <td className="px-3 py-2">
                         <input type="number" value={item.basic_salary || ""} onChange={(e) => updateItem(idx, "basic_salary", Number(e.target.value))}
                           className="w-24 text-right text-sm border border-input rounded px-2 py-1 bg-background text-foreground" />
                       </td>
+                      <td className="px-2 py-2 text-right text-muted-foreground">{item.has_attendance ? item.working_days : "—"}</td>
+                      <td className="px-2 py-2 text-right text-muted-foreground">{item.has_attendance ? item.days_present : "—"}</td>
+                      <td className={`px-2 py-2 text-right ${item.unpaid_absent_days > 0 ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+                        {item.has_attendance ? item.unpaid_absent_days : "—"}
+                      </td>
+                      <td className="px-3 py-2">
+                        <input type="number" value={item.attendance_deduction || ""} onChange={(e) => updateItem(idx, "attendance_deduction", Number(e.target.value))}
+                          title={item.attendance_override ? "Manually overridden" : "Auto: (basic ÷ working days) × unpaid absent days"}
+                          className={`w-20 text-right text-sm border rounded px-2 py-1 bg-background text-foreground ${item.attendance_override ? "border-primary" : "border-input"}`} />
+                      </td>
+                      <td className="px-3 py-2 text-right font-medium text-foreground">{formatCurrency(earnedBasic(item))}</td>
                       <td className="px-3 py-2">
                         <input type="number" value={item.overtime_pay || ""} onChange={(e) => updateItem(idx, "overtime_pay", Number(e.target.value))}
                           className="w-20 text-right text-sm border border-input rounded px-2 py-1 bg-background text-foreground" />
@@ -282,8 +383,21 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
               </div>
             </div>
 
+            {totals.attDed > 0 && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-md px-3 py-2">
+                <AlertTriangle className="w-4 h-4" />
+                Attendance (no-pay) deductions of {formatCurrency(totals.attDed)} applied — gross, EPF and ETF are computed on earned basic.
+              </div>
+            )}
+
             <div className="border border-border rounded-lg p-4 space-y-2">
-              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Total Gross Pay</span><span className="font-semibold text-foreground">{formatCurrency(totals.gross)}</span></div>
+              {totals.attDed > 0 && (
+                <>
+                  <div className="flex justify-between text-sm"><span className="text-muted-foreground">Contractual Basic + Earnings</span><span className="text-foreground">{formatCurrency(totals.gross + totals.attDed)}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-muted-foreground">Less: No-Pay (Attendance) Deduction</span><span className="text-destructive">-{formatCurrency(totals.attDed)}</span></div>
+                </>
+              )}
+              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Total Gross Pay (earned)</span><span className="font-semibold text-foreground">{formatCurrency(totals.gross)}</span></div>
               <div className="border-t border-border pt-2 space-y-1">
                 <p className="text-xs font-semibold text-muted-foreground uppercase">Employee Deductions</p>
                 <div className="flex justify-between text-sm"><span className="text-muted-foreground">EPF (Employee 8%)</span><span className="text-destructive">-{formatCurrency(totals.epfEmp)}</span></div>
@@ -313,7 +427,8 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                   <thead className="bg-muted/50">
                     <tr>
                       <th className="px-3 py-2 text-left text-muted-foreground">Employee</th>
-                      <th className="px-3 py-2 text-right text-muted-foreground">Gross</th>
+                      <th className="px-3 py-2 text-right text-muted-foreground">No-Pay Ded.</th>
+                      <th className="px-3 py-2 text-right text-muted-foreground">Gross (earned)</th>
                       <th className="px-3 py-2 text-right text-muted-foreground">EPF 8%</th>
                       <th className="px-3 py-2 text-right text-muted-foreground">Other Ded.</th>
                       <th className="px-3 py-2 text-right text-muted-foreground">Net Pay</th>
@@ -321,12 +436,14 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                   </thead>
                   <tbody>
                     {selectedItems.map((item) => {
-                      const gross = item.basic_salary + item.overtime_pay + item.bonuses + item.allowances;
-                      const epf = Math.round(item.basic_salary * EPF_EMPLOYEE_RATE * 100) / 100;
+                      const earned = earnedBasic(item);
+                      const gross = earned + item.overtime_pay + item.bonuses + item.allowances;
+                      const epf = Math.round(earned * EPF_EMPLOYEE_RATE * 100) / 100;
                       const net = gross - epf - item.other_deductions;
                       return (
                         <tr key={item.employee_id} className="border-t border-border">
                           <td className="px-3 py-1.5 text-foreground">{item.name}</td>
+                          <td className="px-3 py-1.5 text-right text-destructive">{item.attendance_deduction > 0 ? `-${formatCurrency(item.attendance_deduction)}` : "—"}</td>
                           <td className="px-3 py-1.5 text-right">{formatCurrency(gross)}</td>
                           <td className="px-3 py-1.5 text-right text-destructive">-{formatCurrency(epf)}</td>
                           <td className="px-3 py-1.5 text-right text-destructive">-{formatCurrency(item.other_deductions)}</td>

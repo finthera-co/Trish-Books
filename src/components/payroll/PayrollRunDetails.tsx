@@ -124,7 +124,8 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
   const handleExportCsv = () => {
     if (!items?.length) return;
     const headers = [
-      "Employee", "Department", "EPF No.", "Basic Salary", "Overtime Pay", "Bonuses",
+      "Employee", "Department", "EPF No.", "Basic Salary", "Working Days", "Days Present",
+      "Unpaid Absent", "No-Pay Deduction", "Overtime Pay", "Bonuses",
       "Allowances", "Gross Pay", "Employee EPF (8%)", "Employer EPF (12%)", "Employer ETF (3%)",
       "Other Deductions", "Net Pay", "Payment Method",
     ];
@@ -133,6 +134,10 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
       (item.employees as any)?.department || "",
       (item.employees as any)?.epf_number || "",
       Number(item.basic_salary).toFixed(2),
+      item.working_days != null ? Number(item.working_days) : "",
+      item.days_present != null ? Number(item.days_present) : "",
+      item.unpaid_absent_days != null ? Number(item.unpaid_absent_days) : "",
+      Number(item.attendance_deduction || 0).toFixed(2),
       Number(item.overtime_pay).toFixed(2),
       Number(item.bonuses).toFixed(2),
       Number(item.allowances).toFixed(2),
@@ -214,6 +219,7 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
                   <th className="px-3 py-2 text-left font-medium text-muted-foreground">Employee</th>
                   <th className="px-3 py-2 text-left font-medium text-muted-foreground">Dept</th>
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">Basic</th>
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground" title="Pro-rata no-pay attendance deduction">No-Pay</th>
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">OT</th>
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">Bonus</th>
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">Allow.</th>
@@ -226,7 +232,7 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={11} className="text-center py-4 text-muted-foreground">Loading...</td></tr>
+                  <tr><td colSpan={12} className="text-center py-4 text-muted-foreground">Loading...</td></tr>
                 ) : items?.map((item: any) => (
                   <tr key={item.id} className="border-t border-border">
                     <td className="px-3 py-2 font-medium text-foreground">
@@ -234,6 +240,13 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">{(item.employees as any)?.department || "-"}</td>
                     <td className="px-3 py-2 text-right">{formatCurrency(Number(item.basic_salary))}</td>
+                    <td className="px-3 py-2 text-right text-destructive">
+                      {Number(item.attendance_deduction) > 0
+                        ? <span title={item.unpaid_absent_days != null ? `${Number(item.unpaid_absent_days)} unpaid absent day(s) of ${Number(item.working_days)} working days` : undefined}>
+                            -{formatCurrency(Number(item.attendance_deduction))}
+                          </span>
+                        : "-"}
+                    </td>
                     <td className="px-3 py-2 text-right">{Number(item.overtime_pay) > 0 ? formatCurrency(Number(item.overtime_pay)) : "-"}</td>
                     <td className="px-3 py-2 text-right">{Number(item.bonuses) > 0 ? formatCurrency(Number(item.bonuses)) : "-"}</td>
                     <td className="px-3 py-2 text-right">{Number(item.allowances) > 0 ? formatCurrency(Number(item.allowances)) : "-"}</td>

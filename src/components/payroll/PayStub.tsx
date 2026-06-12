@@ -16,8 +16,11 @@ const ETF_EMPLOYER_RATE = 0.03;
 export default function PayStub({ item, run, open, onOpenChange }: Props) {
   if (!item || !run) return null;
 
-  const employerEpf = Math.round(Number(item.basic_salary) * EPF_EMPLOYER_RATE * 100) / 100;
-  const employerEtf = Math.round(Number(item.basic_salary) * ETF_EMPLOYER_RATE * 100) / 100;
+  // Employer contributions are based on the EARNED basic (after no-pay deduction)
+  const attendanceDeduction = Number(item.attendance_deduction || 0);
+  const earnedBasic = Number(item.basic_salary) - attendanceDeduction;
+  const employerEpf = Number(item.employer_epf) || Math.round(earnedBasic * EPF_EMPLOYER_RATE * 100) / 100;
+  const employerEtf = Number(item.employer_etf) || Math.round(earnedBasic * ETF_EMPLOYER_RATE * 100) / 100;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -59,6 +62,12 @@ export default function PayStub({ item, run, open, onOpenChange }: Props) {
             <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-1">Earnings</h4>
             <div className="space-y-1 text-sm">
               <div className="flex justify-between"><span className="text-foreground">Basic Salary</span><span>{formatCurrency(Number(item.basic_salary))}</span></div>
+              {attendanceDeduction > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-foreground">Less: No-Pay Deduction{Number(item.unpaid_absent_days) > 0 ? ` (${Number(item.unpaid_absent_days)} day${Number(item.unpaid_absent_days) === 1 ? "" : "s"})` : ""}</span>
+                  <span className="text-destructive">-{formatCurrency(attendanceDeduction)}</span>
+                </div>
+              )}
               {Number(item.overtime_pay) > 0 && <div className="flex justify-between"><span className="text-foreground">Overtime</span><span>{formatCurrency(Number(item.overtime_pay))}</span></div>}
               {Number(item.bonuses) > 0 && <div className="flex justify-between"><span className="text-foreground">Bonuses</span><span>{formatCurrency(Number(item.bonuses))}</span></div>}
               {Number(item.allowances) > 0 && <div className="flex justify-between"><span className="text-foreground">Allowances</span><span>{formatCurrency(Number(item.allowances))}</span></div>}
