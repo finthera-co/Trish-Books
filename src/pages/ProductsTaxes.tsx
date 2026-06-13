@@ -3,8 +3,10 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useProducts, useCreateProduct, useTaxes, useAccounts } from "@/hooks/useData";
+import { useUpsertInventoryItem } from "@/hooks/useProcurement";
 import { useTaxGroups, useTaxCodes } from "@/hooks/useTaxEngine";
 import { useInventoryRealtime } from "@/hooks/useInventoryRealtime";
+import { toast } from "sonner";
 import AccountSelector from "@/components/shared/AccountSelector";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -34,6 +36,7 @@ export default function ProductsTaxes() {
   const { data: taxCodes } = useTaxCodes();
   const { data: accounts } = useAccounts();
   const createProduct = useCreateProduct();
+  const upsertInventoryItem = useUpsertInventoryItem();
 
   const revenueAccounts = accounts?.filter((a) => a.account_type === "Revenue") || [];
   const activeGroups = (taxGroups || []).filter((g) => g.is_active);
@@ -42,17 +45,47 @@ export default function ProductsTaxes() {
   const handleCreateProduct = async () => {
     const default_tax_group_id = defaultTax.startsWith("g:") ? defaultTax.slice(2) : null;
     const default_tax_code_id = defaultTax.startsWith("c:") ? defaultTax.slice(2) : null;
-    await createProduct.mutateAsync({
-      name: productName,
-      description: productDesc || undefined,
-      price: productPrice,
-      default_tax_group_id,
-      default_tax_code_id,
-      income_account_id: productAccountId || undefined,
-      type: productType,
-      expense_account_id: productExpenseAccountId || undefined,
-      asset_account_id: productAssetAccountId || undefined,
-    });
+
+    if (productType === "inventory") {
+      if (!productName || !productAssetAccountId || !productExpenseAccountId) {
+        toast.error("Inventory products require a name, an inventory asset account, and a COGS account.");
+        return;
+      }
+      // 1. Create the inventory_items master row (links asset + COGS accounts so the
+      //    activation trigger is satisfied and the post-invoice edge function can
+      //    resolve COGS/stock). 2. Create the products row linked to it.
+      const invId = await upsertInventoryItem.mutateAsync({
+        item_name: productName,
+        selling_price: productPrice,
+        unit_cost: 0,
+        account_id: productAssetAccountId,
+        cogs_account_id: productExpenseAccountId,
+        is_active: true,
+      });
+      await createProduct.mutateAsync({
+        name: productName,
+        description: productDesc || undefined,
+        price: productPrice,
+        default_tax_group_id,
+        default_tax_code_id,
+        income_account_id: productAccountId || undefined,
+        expense_account_id: productExpenseAccountId,
+        asset_account_id: productAssetAccountId,
+        type: "inventory",
+        inventory_item_id: invId,
+      });
+    } else {
+      await createProduct.mutateAsync({
+        name: productName,
+        description: productDesc || undefined,
+        price: productPrice,
+        default_tax_group_id,
+        default_tax_code_id,
+        income_account_id: productAccountId || undefined,
+        type: productType,
+        expense_account_id: productExpenseAccountId || undefined,
+      });
+    }
     setProductOpen(false);
     setProductName("");
     setProductDesc("");
