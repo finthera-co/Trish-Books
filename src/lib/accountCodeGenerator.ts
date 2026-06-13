@@ -1,4 +1,4 @@
-import { ACCOUNT_NUMBER_RANGES } from "./accountTypes";
+import { ACCOUNT_NUMBER_RANGES, getSubtypeBand } from "./accountTypes";
 
 interface AccountForCodeGen {
   id: string;
@@ -66,4 +66,42 @@ export function generateAccountCode(
 
   const maxSibling = Math.max(...siblings);
   return String(maxSibling + step);
+}
+
+/**
+ * Subtype-aware code generator (QuickBooks-style).
+ * Places a new TOP-LEVEL account inside the sub-band for its subtype, stepping
+ * by 10 within the band so there's room to insert later. Falls back to the
+ * broad type range (existing behaviour) when the subtype has no mapped band.
+ *
+ * Always returns the lowest free code >= band.min that isn't already used.
+ */
+export function generateAccountCodeBanded(
+  accountType: string,
+  subtype: string | null | undefined,
+  allAccounts: AccountForCodeGen[]
+): string {
+  const band = getSubtypeBand(subtype);
+
+  // No mapped band → preserve legacy behaviour exactly.
+  if (!band) {
+    return generateAccountCode(accountType, null, allAccounts);
+  }
+
+  const used = new Set(
+    allAccounts
+      .map(a => parseInt(a.account_code, 10))
+      .filter(n => !isNaN(n))
+  );
+
+  // Walk the band in steps of 10 and return the first free slot.
+  for (let code = band.min; code <= band.max; code += 10) {
+    if (!used.has(code)) return String(code);
+  }
+  // Band saturated in 10-steps → fall back to 1-steps within the band.
+  for (let code = band.min; code <= band.max; code += 1) {
+    if (!used.has(code)) return String(code);
+  }
+  // Band completely full (extremely unlikely) → next free in the type range.
+  return generateAccountCode(accountType, null, allAccounts);
 }

@@ -237,6 +237,96 @@ export const ACCOUNT_NUMBER_RANGES: Record<string, { min: number; max: number }>
   "Other Expense": { min: 9000, max: 9999 },
 };
 
+// QuickBooks-style sub-bands WITHIN each account type, keyed by subtype.
+// [min, max] inclusive. Top-level accounts step by 100, children by 10,
+// so there is always room to insert a new account between two existing ones.
+export const ACCOUNT_SUBTYPE_BANDS: Record<string, { min: number; max: number }> = {
+  // ── Assets 1000–1999 ──────────────────────────────────────────────
+  // Current assets 1000–1499
+  "Cash on Hand":            { min: 1000, max: 1049 },
+  "Checking":                { min: 1050, max: 1099 },
+  "Savings":                 { min: 1100, max: 1149 },
+  "Bank":                    { min: 1100, max: 1149 },
+  "Accounts Receivable":     { min: 1200, max: 1249 },
+  "Inventory":               { min: 1300, max: 1349 },
+  "Prepaid Expenses":        { min: 1400, max: 1449 },
+  "Other Current Assets":    { min: 1450, max: 1499 },
+  // Long-term / fixed assets 1500–1999
+  "Fixed Assets":            { min: 1500, max: 1549 },
+  "Furniture & Equipment":   { min: 1550, max: 1599 },
+  "Vehicles":                { min: 1600, max: 1649 },
+  "Buildings":               { min: 1700, max: 1749 },
+  "Accumulated Depreciation":{ min: 1800, max: 1849 },
+  "Intangible Assets":       { min: 1900, max: 1949 },
+
+  // ── Liabilities 2000–2999 ─────────────────────────────────────────
+  // Current liabilities 2000–2499
+  "Accounts Payable":        { min: 2000, max: 2049 },
+  "Credit Card":             { min: 2100, max: 2149 },
+  "Payroll Liability":       { min: 2200, max: 2299 },
+  "Sales Tax Payable":       { min: 2300, max: 2349 },
+  "Other Current Liability": { min: 2350, max: 2499 },
+  // Long-term liabilities 2500–2999
+  "Long-term Liability":     { min: 2500, max: 2699 },
+  "Long-Term Loan":          { min: 2700, max: 2899 },
+
+  // ── Equity 3000–3999 ──────────────────────────────────────────────
+  "Owner's Equity":          { min: 3000, max: 3099 },
+  "Partner's Equity":        { min: 3100, max: 3199 },
+  "Retained Earnings":       { min: 3200, max: 3299 },
+  "Dividends":               { min: 3300, max: 3399 },
+  "Opening Balance Equity":  { min: 3900, max: 3900 }, // fixed, by convention
+
+  // ── Income 4000–4999 ──────────────────────────────────────────────
+  "Sales of Product":        { min: 4000, max: 4199 },
+  "Sales Revenue":           { min: 4000, max: 4199 },
+  "Service Income":          { min: 4200, max: 4399 },
+  "Service Revenue":         { min: 4200, max: 4399 },
+  "Discount":                { min: 4800, max: 4849 },
+  "Other Revenue":           { min: 4850, max: 4999 },
+
+  // ── Cost of Goods Sold 5000–5999 ──────────────────────────────────
+  "Cost of Materials":       { min: 5000, max: 5199 },
+  "Cost of Labour":          { min: 5200, max: 5399 },
+  "Shipping & Delivery":     { min: 5400, max: 5499 },
+  "Other COGS":              { min: 5500, max: 5999 },
+
+  // ── Expenses 6000–7999 ────────────────────────────────────────────
+  "Advertising":             { min: 6000, max: 6049 },
+  "Bank Charges":            { min: 6050, max: 6099 },
+  "Rent":                    { min: 6100, max: 6149 },
+  "Utilities":               { min: 6150, max: 6199 },
+  "Supplies":                { min: 6200, max: 6249 },
+  "Office Supplies":         { min: 6200, max: 6249 },
+  "Insurance":               { min: 6300, max: 6349 },
+  "Payroll Expenses":        { min: 6400, max: 6599 },
+  "Professional Fees":       { min: 6600, max: 6649 },
+  "Travel & Transport":      { min: 6700, max: 6749 },
+  "Depreciation":            { min: 6800, max: 6849 },
+  "Repairs & Maintenance":   { min: 6900, max: 6949 },
+  "Taxes & Licences":        { min: 7000, max: 7049 },
+  "Meals & Entertainment":   { min: 7100, max: 7149 },
+  "Other Expense":           { min: 7800, max: 7999 },
+
+  // ── Other Income 8000–8999 ────────────────────────────────────────
+  "Interest Earned":         { min: 8000, max: 8199 },
+  "Dividend Income":         { min: 8200, max: 8399 },
+  "Gain on Sale of Assets":  { min: 8400, max: 8599 },
+  "Miscellaneous Income":    { min: 8600, max: 8999 },
+
+  // ── Other Expense 9000–9999 ───────────────────────────────────────
+  "Interest Expense":        { min: 9000, max: 9199 },
+  "Loss on Sale of Assets":  { min: 9200, max: 9399 },
+  "Penalties & Fines":       { min: 9400, max: 9599 },
+  "Miscellaneous Expense":   { min: 9600, max: 9999 },
+};
+
+/** Return the sub-band for a subtype, or null if none is mapped. */
+export function getSubtypeBand(subtype: string | null | undefined): { min: number; max: number } | null {
+  if (!subtype) return null;
+  return ACCOUNT_SUBTYPE_BANDS[subtype] || null;
+}
+
 /**
  * Suggest a sensible default detail type (subtype) based on the account
  * number range and account type. Used by the "Quick Setup" action in the

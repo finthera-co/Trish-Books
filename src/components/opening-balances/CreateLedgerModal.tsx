@@ -9,8 +9,9 @@ import {
   getNormalBalance,
   getStatementPlacement,
   isOpeningBalanceEligible,
+  suggestSubtypeFromCode,
 } from "@/lib/accountTypes";
-import { generateAccountCode } from "@/lib/accountCodeGenerator";
+import { generateAccountCode, generateAccountCodeBanded } from "@/lib/accountCodeGenerator";
 import { useAccounts, useCreateAccount } from "@/hooks/useData";
 import { useAccountCategories, useCreateAccountCategory } from "@/hooks/useAccountCategories";
 import { toast } from "sonner";
@@ -71,8 +72,19 @@ export default function CreateLedgerModal({ open, onOpenChange, onCreated }: Cre
   }, [allAccounts]);
 
   const autoCode = useMemo(() => {
-    return generateAccountCode(accountType, parentId || null, accountsForCodeGen);
-  }, [accountType, parentId, accountsForCodeGen]);
+    if (parentId) {
+      return generateAccountCode(accountType, parentId, accountsForCodeGen);
+    }
+    const effectiveSubtype =
+      accountSubtype ||
+      suggestSubtypeFromCode(
+        generateAccountCode(accountType, null, accountsForCodeGen),
+        accountType
+      ) ||
+      (ACCOUNT_SUBTYPES[accountType] || [])[0] ||
+      "";
+    return generateAccountCodeBanded(accountType, effectiveSubtype, accountsForCodeGen);
+  }, [accountType, parentId, accountSubtype, accountsForCodeGen]);
 
   const filteredCategories = useMemo(() => {
     return (categories || []).filter(c => c.account_type === accountType);

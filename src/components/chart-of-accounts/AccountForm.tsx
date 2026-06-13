@@ -14,7 +14,7 @@ import {
   suggestSubtypeFromCode,
 } from "@/lib/accountTypes";
 import { Sparkles } from "lucide-react";
-import { generateAccountCode } from "@/lib/accountCodeGenerator";
+import { generateAccountCode, generateAccountCodeBanded } from "@/lib/accountCodeGenerator";
 import {
   buildAccountsMap,
   canCreateChildUnder,
@@ -94,15 +94,32 @@ export default function AccountForm({
     setNewCategoryName("");
   }, [editAccount, open]);
 
-  // Auto-generate account code when type or parent changes (only for new accounts)
+  // Auto-generate account code (new accounts only).
+  // Top-level → QuickBooks-style sub-band by subtype.
+  // Sub-account → preserve inherited child-stepping under the parent.
   useEffect(() => {
-    if (editAccount) return; // Don't auto-generate for edits
+    if (editAccount) return;
     if (!open) return;
-    const code = generateAccountCode(accountType, parentId || null, accounts);
-    setAccountCode(code);
-    // Auto-suggest a detail type based on the new code so new accounts are never uncategorized
-    setAccountSubtype(prev => prev || suggestSubtypeFromCode(code, accountType) || "");
-  }, [accountType, parentId, accounts, editAccount, open]);
+
+    if (parentId) {
+      // Child account: keep existing hierarchy stepping, unchanged.
+      const code = generateAccountCode(accountType, parentId, accounts);
+      setAccountCode(code);
+      setAccountSubtype(prev => prev || suggestSubtypeFromCode(code, accountType) || "");
+    } else {
+      // Top-level: band by subtype. First ensure we have a subtype to band on.
+      const effectiveSubtype =
+        accountSubtype || suggestSubtypeFromCode(
+          generateAccountCode(accountType, null, accounts),
+          accountType
+        ) || (ACCOUNT_SUBTYPES[accountType] || [])[0] || "";
+      if (!accountSubtype && effectiveSubtype) {
+        setAccountSubtype(effectiveSubtype);
+      }
+      const code = generateAccountCodeBanded(accountType, effectiveSubtype, accounts);
+      setAccountCode(code);
+    }
+  }, [accountType, parentId, accountSubtype, accounts, editAccount, open]);
 
   const filteredCategories = categories.filter(c => c.account_type === accountType);
   const subtypes = ACCOUNT_SUBTYPES[accountType] || [];
