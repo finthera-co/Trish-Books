@@ -77,6 +77,7 @@ export function useEnsureOBEAccount() {
         normal_balance: "credit",
         is_system: true,
         is_active: true,
+        is_locked: true,
       });
       if (error) throw error;
 

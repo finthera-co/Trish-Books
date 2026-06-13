@@ -678,6 +678,7 @@ async function getOBEAccountId(tenantId: string): Promise<string> {
       account_subtype: "Opening Balance Equity",
       normal_balance: "credit",
       is_system: true,
+      is_active: true,
       is_locked: true,
     })
     .select("id")

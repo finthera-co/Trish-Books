@@ -24,6 +24,7 @@ async function ensureOBEAccount(tenantId: string): Promise<string> {
     normal_balance: "credit",
     is_system: true,
     is_active: true,
+    is_locked: true,
   }).select("id").single();
   if (error) throw error;
   return data.id;

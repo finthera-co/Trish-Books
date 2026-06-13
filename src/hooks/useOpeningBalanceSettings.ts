@@ -137,8 +137,10 @@ async function ensureOBEAccount(tenantId: string): Promise<string> {
     account_code: "3900",
     account_type: "Equity",
     account_subtype: "Opening Balance Equity",
+    normal_balance: "credit",
     is_system: true,
     is_active: true,
+    is_locked: true,
   }).select("id").single();
   if (error) throw error;
   return data.id;
