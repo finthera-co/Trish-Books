@@ -648,7 +648,7 @@ export function useProducts() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("products")
-        .select("*, taxes(tax_name, tax_rate)")
+        .select("*, taxes(tax_name, tax_rate), inventory_item:inventory_items(quantity_on_hand, selling_price)")
         .order("name");
       if (error) throw error;
       return data;

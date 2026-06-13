@@ -79,6 +79,24 @@ export default function CreateInvoice() {
     [accounts]
   );
 
+  const productsById = useMemo(
+    () => new Map((products || []).map((p: any) => [p.id, p])),
+    [products]
+  );
+
+  // Inventory-awareness helpers for invoice lines. A product is stock-moving only
+  // when it's an inventory type, tracked, and linked to an inventory_items row.
+  const isTracked = useCallback((p: any) =>
+    !!p && p.type === "inventory" && p.is_tracked && !!p.inventory_item_id, []);
+  const onHandOf = useCallback((p: any) =>
+    isTracked(p) ? Number(p.inventory_item?.quantity_on_hand) || 0 : null, [isTracked]);
+  const typeLabel = useCallback((p: any) => {
+    if (!p) return null;
+    if (isTracked(p)) return "Stock";
+    if (p.type === "service") return "Service";
+    return "Non-inv";
+  }, [isTracked]);
+
   const codesById = useMemo(() => new Map((taxCodes || []).map((c) => [c.id, c])), [taxCodes]);
   const vatRegistered = !!taxProfile?.is_vat_registered;
   const ssclLiable = !!taxProfile?.is_sscl_liable;
@@ -148,7 +166,10 @@ export default function CreateInvoice() {
           const product: any = products.find((p: any) => p.id === value);
           if (product) {
             updated.description = product.description || product.name;
-            updated.rate = Number(product.price) || 0;
+            // Stocked goods default to inventory selling_price when set; otherwise
+            // the product master price (current behavior for services/non-inventory).
+            const sellPrice = product.inventory_item?.selling_price;
+            updated.rate = Number(sellPrice ?? product.price) || 0;
             // Default tax from the product (group preferred, then code)
             if (product.default_tax_group_id) updated.tax_sel = `g:${product.default_tax_group_id}`;
             else if (product.default_tax_code_id) updated.tax_sel = `c:${product.default_tax_code_id}`;
@@ -365,23 +386,45 @@ export default function CreateInvoice() {
                     </tr>
                   </thead>
                   <tbody>
-                    {lines.map((line, idx) => (
+                    {lines.map((line, idx) => {
+                      const lineProduct = line.product_id ? productsById.get(line.product_id) : null;
+                      const lineOnHand = onHandOf(lineProduct);
+                      const lineBadge = typeLabel(lineProduct);
+                      const overStock = lineOnHand !== null && line.qty > lineOnHand;
+                      return (
                       <tr key={line.id} className="border-t border-border">
                         <td className="px-3 py-2">
                           <div className="space-y-1">
                             <Select value={line.product_id} onValueChange={(v) => updateLine(line.id, "product_id", v)}>
                               <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select product..." /></SelectTrigger>
                               <SelectContent>
-                                {products?.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                                {products?.map((p: any) => {
+                                  const oh = onHandOf(p);
+                                  return (
+                                    <SelectItem key={p.id} value={p.id}>
+                                      {p.name}{oh !== null ? ` — ${oh} in stock` : ""}
+                                    </SelectItem>
+                                  );
+                                })}
                               </SelectContent>
                             </Select>
                             <Input className="h-8 text-xs" placeholder="Description" value={line.description}
                               onChange={(e) => updateLine(line.id, "description", e.target.value)} />
+                            {lineBadge && (
+                              <span className="inline-block text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                                {lineBadge}
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="px-3 py-2">
-                          <Input type="number" className="h-8 text-xs text-center" value={line.qty || ""}
+                          <Input type="number"
+                            className={`h-8 text-xs text-center${overStock ? " border-destructive focus-visible:ring-destructive" : ""}`}
+                            value={line.qty || ""}
                             onChange={(e) => updateLine(line.id, "qty", Number(e.target.value))} min={1} />
+                          {overStock && (
+                            <p className="text-[10px] text-destructive mt-0.5">Only {lineOnHand} in stock</p>
+                          )}
                         </td>
                         <td className="px-3 py-2">
                           <Input type="number" className="h-8 text-xs text-right" value={line.rate || ""}
@@ -436,7 +479,8 @@ export default function CreateInvoice() {
                           )}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
