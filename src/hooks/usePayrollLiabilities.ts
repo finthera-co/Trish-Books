@@ -72,12 +72,16 @@ function r2(n: number) { return Math.round(n * 100) / 100; }
 
 // ─── 2a. Aggregate summaries from payroll_liability_summary view ─────────────
 export function usePayrollLiabilities() {
+  const { appUser } = useAuth();
+  const tenantId = appUser?.tenant_id;
   return useQuery({
-    queryKey: ["payroll_liabilities"],
+    queryKey: ["payroll_liabilities", tenantId],
+    enabled: !!tenantId,
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from("payroll_liability_summary")
-        .select("*");
+        .select("*")
+        .eq("tenant_id", tenantId);
       if (error) throw error;
 
       type Agg = {
@@ -124,12 +128,16 @@ export function usePayrollLiabilities() {
 
 // ─── 2b. Per-period rows from the view ──────────────────────────────────────
 export function usePayrollLiabilityByPeriod() {
+  const { appUser } = useAuth();
+  const tenantId = appUser?.tenant_id;
   return useQuery({
-    queryKey: ["payroll_liability_by_period"],
+    queryKey: ["payroll_liability_by_period", tenantId],
+    enabled: !!tenantId,
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from("payroll_liability_summary")
         .select("*")
+        .eq("tenant_id", tenantId)
         .order("period", { ascending: false });
       if (error) throw error;
       return (data || []) as PeriodLiabilityRow[];
@@ -139,17 +147,22 @@ export function usePayrollLiabilityByPeriod() {
 
 // ─── 2c. Per-run breakdown with remittance status ────────────────────────────
 export function usePayrollLiabilityByRun() {
+  const { appUser } = useAuth();
+  const tenantId = appUser?.tenant_id;
   return useQuery({
-    queryKey: ["payroll_liability_by_run"],
+    queryKey: ["payroll_liability_by_run", tenantId],
+    enabled: !!tenantId,
     queryFn: async () => {
       const [{ data: results, error: resErr }, { data: remittances }] = await Promise.all([
         supabase
           .from("payroll_results")
           .select("component_code, value, run_id, payroll_runs(run_number, period_start, period_end, status)")
+          .eq("tenant_id", tenantId)
           .in("component_code", ["EPF_EMPLOYEE", "EPF_EMPLOYER", "ETF_EMPLOYER"]),
         (supabase as any)
           .from("payroll_remittances")
           .select("payroll_run_id, remittance_type, amount")
+          .eq("tenant_id", tenantId)
           .eq("status", "posted")
           .not("payroll_run_id", "is", null),
       ]);
