@@ -146,6 +146,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "Budgets", path: "/reports/budgets", icon: TrendingUp },
       { label: "Data Exports", path: "/reports/exports", icon: FileArchive },
       { label: "Forecasting", path: "/reports/forecasting", icon: TrendingUp },
+      { label: "Tax Center", path: "/tax", icon: Landmark },
     ],
   },
   assets: {
@@ -173,6 +174,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "Account Mapping", path: "/settings/account-mapping", icon: Settings },
       { label: "Posting Profiles", path: "/settings/posting-profiles", icon: Zap },
       { label: "Payroll GL Mapping", path: "/settings/payroll-gl-mapping", icon: FileText },
+      { label: "Tax Configuration", path: "/settings/tax", icon: Landmark },
       { label: "Users", path: "/settings/users", icon: Users },
     ],
   },

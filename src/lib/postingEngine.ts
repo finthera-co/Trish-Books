@@ -409,28 +409,50 @@ export async function postInvoice(params: {
 /**
  * Post a payment received: Dr Bank / Cr AR + AR subledger (credit)
  */
+/** WHT the customer deducted from their payment to us (AIT receivable). */
+export interface PaymentReceivedWht {
+  amount: number;
+  tax_code_id: string;
+  wht_receivable_account_id: string;
+  rate: number;
+}
+
+/**
+ * Post a payment received. Without WHT: Dr Bank / Cr AR.
+ * When the customer withholds tax: Dr Bank (net) / Dr WHT Receivable /
+ * Cr AR (gross) — and a wht_receivable row in the tax sub-ledger.
+ */
 export async function postPaymentReceived(params: {
   tenant_id: string;
   payment_id: string;
   customer_id: string;
-  amount: number;
+  amount: number;          // gross AR settled
   payment_date: string;
   bank_account_id: string;
   ar_account_id: string;
   reference?: string;
   invoice_id?: string;
+  wht?: PaymentReceivedWht | null;
 }): Promise<PostingResult> {
-  return post({
+  const wht = params.wht && params.wht.amount > 0 ? params.wht : null;
+  const netBank = Math.round((params.amount - (wht?.amount || 0)) * 100) / 100;
+
+  const lines: PostingLine[] = [
+    { account_id: params.bank_account_id, debit: netBank, credit: 0 },
+    { account_id: params.ar_account_id, debit: 0, credit: params.amount, customer_id: params.customer_id },
+  ];
+  if (wht) {
+    lines.splice(1, 0, { account_id: wht.wht_receivable_account_id, debit: wht.amount, credit: 0 });
+  }
+
+  const result = await post({
     tenant_id: params.tenant_id,
     entry_date: params.payment_date,
-    description: `Payment received${params.reference ? ` - ${params.reference}` : ""}`,
+    description: `Payment received${params.reference ? ` - ${params.reference}` : ""}${wht ? " (customer withheld tax)" : ""}`,
     source_type: "payment_received",
     source_id: params.payment_id,
     reference: params.reference,
-    lines: [
-      { account_id: params.bank_account_id, debit: params.amount, credit: 0 },
-      { account_id: params.ar_account_id, debit: 0, credit: params.amount, customer_id: params.customer_id },
-    ],
+    lines,
     subledger_entries: [
       {
         type: "ar",
@@ -442,6 +464,27 @@ export async function postPaymentReceived(params: {
       },
     ],
   });
+
+  if (wht) {
+    const { error } = await supabase.from("tax_transactions").insert({
+      tenant_id: params.tenant_id,
+      tax_code_id: wht.tax_code_id,
+      direction: "wht_receivable",
+      source_type: "payment_received",
+      source_id: params.payment_id,
+      base_amount: params.amount,
+      tax_amount: wht.amount, // TODO(multi-currency): convert at payment FX rate once FX infrastructure exists
+      tax_amount_txn_currency: wht.amount,
+      currency: "LKR",
+      fx_rate: 1,
+      rate_applied: wht.rate,
+      transaction_date: params.payment_date,
+      journal_entry_id: result.journal_entry_id,
+    });
+    if (error) throw new Error(`WHT sub-ledger insert failed: ${error.message}`);
+  }
+
+  return result;
 }
 
 /**
@@ -521,30 +564,55 @@ export async function postBill(params: {
   });
 }
 
+/** WHT withheld from a vendor at settlement (AIT, settlement-based). */
+export interface BillPaymentWht {
+  amount: number;
+  base_amount: number;
+  rate: number;
+  tax_code_id: string;
+  wht_payable_account_id: string;
+  rule_id: string | null;
+  certificate_no: string | null;
+  /** Set when the user manually overrode the computed WHT — audited. */
+  override_reason?: string;
+}
+
 /**
- * Post a bill payment: Dr AP / Cr Bank + AP subledger (debit)
+ * Post a bill payment. Without WHT: Dr AP / Cr Bank.
+ * With WHT (settlement-based AIT): Dr AP (gross settled) / Cr Bank (net) /
+ * Cr WHT Payable — and a wht_payable row in the tax sub-ledger linked to
+ * the JE. Partial payments each carry their own WHT row.
  */
 export async function postBillPayment(params: {
   tenant_id: string;
   payment_id: string;
   vendor_id: string;
-  amount: number;
+  amount: number;          // gross AP settled
   payment_date: string;
   bank_account_id: string;
   ap_account_id: string;
   reference?: string;
+  wht?: BillPaymentWht | null;
 }): Promise<PostingResult> {
-  return post({
+  const wht = params.wht && params.wht.amount > 0 ? params.wht : null;
+  const netBank = Math.round((params.amount - (wht?.amount || 0)) * 100) / 100;
+
+  const lines: PostingLine[] = [
+    { account_id: params.ap_account_id, debit: params.amount, credit: 0, vendor_id: params.vendor_id },
+    { account_id: params.bank_account_id, debit: 0, credit: netBank },
+  ];
+  if (wht) {
+    lines.push({ account_id: wht.wht_payable_account_id, debit: 0, credit: wht.amount });
+  }
+
+  const result = await post({
     tenant_id: params.tenant_id,
     entry_date: params.payment_date,
-    description: `Bill payment${params.reference ? ` - ${params.reference}` : ""}`,
+    description: `Bill payment${params.reference ? ` - ${params.reference}` : ""}${wht ? ` (WHT ${wht.certificate_no ?? ""})` : ""}`,
     source_type: "bill_payment",
     source_id: params.payment_id,
     reference: params.reference,
-    lines: [
-      { account_id: params.ap_account_id, debit: params.amount, credit: 0, vendor_id: params.vendor_id },
-      { account_id: params.bank_account_id, debit: 0, credit: params.amount },
-    ],
+    lines,
     subledger_entries: [
       {
         type: "ap",
@@ -556,6 +624,29 @@ export async function postBillPayment(params: {
       },
     ],
   });
+
+  if (wht) {
+    const { error } = await supabase.from("tax_transactions").insert({
+      tenant_id: params.tenant_id,
+      tax_code_id: wht.tax_code_id,
+      direction: "wht_payable",
+      source_type: "bill_payment",
+      source_id: params.payment_id,
+      base_amount: wht.base_amount,
+      tax_amount: wht.amount, // TODO(multi-currency): convert at payment FX rate once FX infrastructure exists
+      tax_amount_txn_currency: wht.amount,
+      currency: "LKR",
+      fx_rate: 1,
+      rate_applied: wht.rate,
+      transaction_date: params.payment_date,
+      journal_entry_id: result.journal_entry_id,
+      wht_certificate_no: wht.certificate_no,
+      note: wht.override_reason ? `Manual WHT override: ${wht.override_reason}` : null,
+    });
+    if (error) throw new Error(`WHT sub-ledger insert failed: ${error.message}`);
+  }
+
+  return result;
 }
 
 // ═══════════════════════════════════════════════════════════

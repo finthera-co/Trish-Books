@@ -9,6 +9,36 @@ import {
   type PayrollRule,
   type EmployeePayrollInput,
 } from "@/lib/payrollRuleEngine";
+import { calculateApit, type ApitSchedule } from "@/lib/taxEngine";
+
+/**
+ * Effective APIT schedule for a pay date: tenant override first, system
+ * default (tenant_id NULL) otherwise. Returns null when none configured —
+ * PAYE is then skipped entirely.
+ */
+async function loadApitSchedule(tenantId: string, asOf: string): Promise<ApitSchedule | null> {
+  const { data: schedules } = await supabase
+    .from("apit_schedules" as any)
+    .select("id, tenant_id, annual_relief, effective_from, effective_to, apit_brackets(id, bracket_order, annual_amount_up_to, rate)")
+    .lte("effective_from", asOf)
+    .or(`effective_to.is.null,effective_to.gte.${asOf}`);
+  const rows = ((schedules as any[]) || []).filter(
+    (s) => s.tenant_id === tenantId || s.tenant_id === null
+  );
+  // tenant-specific schedule wins over the system default
+  const chosen =
+    rows.find((s) => s.tenant_id === tenantId) ?? rows.find((s) => s.tenant_id === null);
+  if (!chosen || !chosen.apit_brackets?.length) return null;
+  return {
+    id: chosen.id,
+    annualRelief: Number(chosen.annual_relief),
+    brackets: chosen.apit_brackets.map((b: any) => ({
+      bracketOrder: b.bracket_order,
+      annualAmountUpTo: b.annual_amount_up_to === null ? null : Number(b.annual_amount_up_to),
+      rate: Number(b.rate),
+    })),
+  };
+}
 
 // ===== Rule Engine Hooks =====
 export function usePayrollComponents() {
@@ -211,12 +241,13 @@ export function useCreatePayrollRun() {
       const { count } = await supabase.from("payroll_runs").select("*", { count: "exact", head: true });
       const runNumber = `PR-${String((count || 0) + 1).padStart(5, "0")}`;
 
-      // Load rule engine config + employee statutory flags
-      const [config, empRes] = await Promise.all([
+      // Load rule engine config + employee statutory flags + APIT schedule
+      const [config, empRes, apitSchedule] = await Promise.all([
         loadEngineConfig(),
         supabase.from("employees")
           .select("id,is_epf_applicable,is_etf_applicable,is_paye_applicable,employment_type")
           .in("id", input.employees.map((e) => e.employee_id)),
+        loadApitSchedule(appUser!.tenant_id, input.period_end),
       ]);
       if (empRes.error) throw empRes.error;
       const empMap = new Map((empRes.data || []).map((e: any) => [e.id, e]));
@@ -257,6 +288,30 @@ export function useCreatePayrollRun() {
         };
 
         const result = runPayrollForEmployee(engineInput, config.rules, config.components);
+
+        // APIT (PAYE): bracket schedules cannot be expressed in the rule
+        // formula types, so it is computed by the shared tax engine and
+        // injected as the PAYE component with a compatible trace. Credit-side
+        // deduction only (like EPF Employee).
+        let payeAmount = 0;
+        if (engineInput.is_paye_applicable && apitSchedule) {
+          const apit = calculateApit(result.gross_pay, apitSchedule);
+          payeAmount = apit.monthlyApit;
+          if (payeAmount > 0) {
+            result.traces["PAYE"] = apit.trace as any;
+            result.total_deductions += payeAmount;
+            result.net_pay -= payeAmount;
+            const netTrace = result.traces["NET_PAY"] as any;
+            if (netTrace) {
+              netTrace.result = result.net_pay;
+              netTrace.evaluation_steps = [
+                ...(netTrace.evaluation_steps || []),
+                `Less APIT (PAYE) ${payeAmount} → ${result.net_pay}`,
+              ];
+            }
+          }
+        }
+
         perEmployeeTraces.push({ employee_id: emp.employee_id, engineInput, traces: result.traces });
 
         totalGross += result.gross_pay;

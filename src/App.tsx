@@ -37,6 +37,8 @@ import PettyCashLedger from "./pages/PettyCashLedger";
 import Invoices from "./pages/Invoices";
 import CreateInvoice from "./pages/CreateInvoice";
 import ProductsTaxes from "./pages/ProductsTaxes";
+import TaxCenter from "./pages/TaxCenter";
+import TaxSettings from "./pages/TaxSettings";
 import Expenses from "./pages/Expenses";
 import Payroll from "./pages/Payroll";
 import PayrollGLMapping from "./pages/PayrollGLMapping";
@@ -196,6 +198,7 @@ const App = () => (
                     <Route path="/reports/exports" element={<DataExports />} />
                     <Route path="/reports/anomalies" element={<AnomalyDashboard />} />
                     <Route path="/reports/forecasting" element={<ForecastDashboard />} />
+                    <Route path="/tax" element={<TaxCenter />} />
                   </Route>
 
                   {/* Fixed Assets module */}
@@ -217,6 +220,7 @@ const App = () => (
                     <Route path="/settings/account-mapping" element={<AccountMapping />} />
                     <Route path="/settings/posting-profiles" element={<PostingProfiles />} />
                     <Route path="/settings/payroll-gl-mapping" element={<PayrollGLMapping />} />
+                    <Route path="/settings/tax" element={<TaxSettings />} />
                   </Route>
                 </Route>
               </Route>

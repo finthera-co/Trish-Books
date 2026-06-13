@@ -2,7 +2,111 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { postBillPayment, post } from "@/lib/postingEngine";
+import { postBillPayment, post, type BillPaymentWht } from "@/lib/postingEngine";
+import { calculateWht, type WhtRuleInput } from "@/lib/taxEngine";
+
+/**
+ * Settlement-based AIT computation for a bill payment. Pure data assembly
+ * around the shared engine: vendor attributes + effective wht_rules +
+ * month-to-date paid drive the threshold semantics. Returns null when no
+ * WHT applies (tenant not a WHT agent, vendor exempt, below threshold...).
+ * Exported so the payment dialog can preview the exact posting amounts.
+ */
+export async function computeBillPaymentWht(args: {
+  tenantId: string;
+  vendorId: string;
+  amount: number;
+  paymentDate: string;
+  paymentNature?: string;
+  override?: { amount: number; reason: string } | null;
+}): Promise<BillPaymentWht | null> {
+  const { data: profile } = await supabase
+    .from("tenant_tax_profiles" as any)
+    .select("wht_agent")
+    .eq("tenant_id", args.tenantId)
+    .maybeSingle();
+  if (profile && !(profile as any).wht_agent) return null;
+
+  const { data: vendor } = await supabase
+    .from("vendors")
+    .select("payee_type, default_payment_nature, wht_exempt")
+    .eq("id", args.vendorId)
+    .single();
+  if (!vendor) return null;
+
+  const { data: ruleRows } = await supabase
+    .from("wht_rules" as any)
+    .select("*, tax_codes(id, code, wht_payable_account_id)")
+    .eq("tenant_id", args.tenantId);
+  const rules: WhtRuleInput[] = ((ruleRows as any[]) || []).map((r) => ({
+    id: r.id,
+    taxCodeId: r.tax_code_id,
+    paymentNature: r.payment_nature,
+    payeeType: r.payee_type,
+    rate: Number(r.rate),
+    thresholdAmount: r.threshold_amount === null ? null : Number(r.threshold_amount),
+    thresholdPeriod: r.threshold_period,
+    effectiveFrom: r.effective_from,
+    effectiveTo: r.effective_to,
+    certificateRequired: r.certificate_required,
+  }));
+
+  // Month-to-date paid to this vendor (settlement basis, excludes this payment)
+  const monthStart = args.paymentDate.slice(0, 8) + "01";
+  const { data: mtdRows } = await supabase
+    .from("bill_payments" as any)
+    .select("amount")
+    .eq("tenant_id", args.tenantId)
+    .eq("vendor_id", args.vendorId)
+    .eq("status", "posted")
+    .gte("payment_date", monthStart)
+    .lte("payment_date", args.paymentDate);
+  const monthToDatePaid = ((mtdRows as any[]) || []).reduce((s, r) => s + Number(r.amount), 0);
+
+  const computed = calculateWht(
+    args.amount,
+    {
+      payeeType: (vendor as any).payee_type,
+      defaultPaymentNature: (vendor as any).default_payment_nature,
+      whtExempt: !!(vendor as any).wht_exempt,
+    },
+    rules,
+    args.paymentDate,
+    monthToDatePaid,
+    args.paymentNature
+  );
+  if (!computed && !args.override) return null;
+
+  const ruleRow = computed
+    ? ((ruleRows as any[]) || []).find((r) => r.id === computed.ruleId)
+    : ((ruleRows as any[]) || []).find((r) => r.tax_codes?.wht_payable_account_id);
+  const whtAccount = ruleRow?.tax_codes?.wht_payable_account_id as string | undefined;
+  const taxCodeId = (computed?.taxCodeId ?? ruleRow?.tax_code_id) as string | undefined;
+  const finalAmount = args.override ? args.override.amount : computed!.whtAmount;
+  if (!finalAmount || finalAmount <= 0) return null;
+  if (!whtAccount || !taxCodeId) {
+    throw new Error("WHT applies to this payment but the WHT tax code has no WHT Payable account mapped (Settings → Tax Configuration)");
+  }
+
+  let certificateNo: string | null = null;
+  if (ruleRow?.certificate_required !== false) {
+    const { data: cert } = await supabase.rpc("generate_wht_certificate_no" as any, {
+      p_tenant_id: args.tenantId,
+    });
+    certificateNo = (cert as any) ?? null;
+  }
+
+  return {
+    amount: finalAmount,
+    base_amount: computed?.taxableAmount ?? args.amount,
+    rate: computed?.rate ?? (ruleRow ? Number(ruleRow.rate) : 0),
+    tax_code_id: taxCodeId,
+    wht_payable_account_id: whtAccount,
+    rule_id: computed?.ruleId ?? ruleRow?.id ?? null,
+    certificate_no: certificateNo,
+    override_reason: args.override?.reason,
+  };
+}
 
 export type APAgingRow = {
   vendor_id: string;
@@ -207,8 +311,23 @@ export function useRecordBillPayment() {
       reference?: string;
       notes?: string;
       allocations: { bill_id: string; amount_applied: number }[];
+      payment_nature?: string;
+      /** Manual WHT override — requires a reason, audited in the sub-ledger. */
+      wht_override?: { amount: number; reason: string } | null;
     }) => {
       const tenantId = appUser!.tenant_id;
+
+      // 0. WHT at settlement (AIT). Computed per PAYMENT amount with the
+      //    vendor's month-to-date paid (threshold semantics live in the
+      //    shared engine). Skipped when the tenant is not a WHT agent.
+      const wht = await computeBillPaymentWht({
+        tenantId,
+        vendorId: params.vendor_id,
+        amount: params.amount,
+        paymentDate: params.payment_date,
+        paymentNature: params.payment_nature,
+        override: params.wht_override ?? null,
+      });
 
       // 1. Insert payment record
       const { data: payment, error: pmtErr } = await supabase
@@ -223,6 +342,11 @@ export function useRecordBillPayment() {
           reference: params.reference || null,
           notes: params.notes || null,
           status: "posted",
+          wht_amount: wht?.amount ?? 0,
+          wht_rule_id: wht?.rule_id ?? null,
+          wht_certificate_no: wht?.certificate_no ?? null,
+          wht_override_reason: wht?.override_reason ?? null,
+          payment_nature: params.payment_nature ?? null,
         } as any)
         .select()
         .single();
@@ -245,7 +369,7 @@ export function useRecordBillPayment() {
         if (allocErr) throw allocErr;
       }
 
-      // 3. Post GL: Dr AP / Cr Bank
+      // 3. Post GL: Dr AP (gross) / Cr Bank (net) / Cr WHT Payable
       const result = await postBillPayment({
         tenant_id: tenantId,
         payment_id: pmtId,
@@ -255,6 +379,7 @@ export function useRecordBillPayment() {
         bank_account_id: params.bank_account_id,
         ap_account_id: params.ap_account_id,
         reference: params.reference,
+        wht,
       });
 
       // 4. Link journal entry to payment

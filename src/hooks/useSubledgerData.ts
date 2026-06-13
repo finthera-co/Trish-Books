@@ -105,6 +105,8 @@ export function useCreateCustomerWithOB() {
       opening_balance?: number;
       credit_limit?: number;
       payment_terms?: string;
+      tin?: string | null;
+      withholds_tax?: boolean;
     }) => {
       const tenantId = appUser!.tenant_id;
 
@@ -119,8 +121,10 @@ export function useCreateCustomerWithOB() {
           opening_balance: customer.opening_balance || 0,
           credit_limit: customer.credit_limit || 0,
           payment_terms: customer.payment_terms || "net_30",
+          tin: customer.tin || null,
+          withholds_tax: customer.withholds_tax ?? false,
           tenant_id: tenantId,
-        })
+        } as any)
         .select()
         .single();
       if (error) throw error;
@@ -157,7 +161,7 @@ export function useCreateCustomerWithOB() {
 export function useUpdateCustomer() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...updates }: { id: string; name?: string; email?: string; phone?: string; address?: string; credit_limit?: number; payment_terms?: string }) => {
+    mutationFn: async ({ id, ...updates }: { id: string; name?: string; email?: string; phone?: string; address?: string; credit_limit?: number; payment_terms?: string; tin?: string | null; withholds_tax?: boolean }) => {
       // Don't allow changing opening_balance via update - it's managed by subledger
       const { opening_balance, ...safeUpdates } = updates as any;
       const { error } = await supabase.from("customers").update(safeUpdates).eq("id", id);
@@ -244,6 +248,11 @@ export function useCreateVendorWithOB() {
       phone?: string;
       address?: string;
       opening_balance?: number;
+      payee_type?: string | null;
+      default_payment_nature?: string | null;
+      tin?: string | null;
+      wht_exempt?: boolean;
+      wht_exemption_ref?: string | null;
     }) => {
       const tenantId = appUser!.tenant_id;
 
@@ -255,8 +264,13 @@ export function useCreateVendorWithOB() {
           phone: vendor.phone || null,
           address: vendor.address || null,
           opening_balance: vendor.opening_balance || 0,
+          payee_type: vendor.payee_type || null,
+          default_payment_nature: vendor.default_payment_nature || null,
+          tin: vendor.tin || null,
+          wht_exempt: vendor.wht_exempt ?? false,
+          wht_exemption_ref: vendor.wht_exemption_ref || null,
           tenant_id: tenantId,
-        })
+        } as any)
         .select()
         .single();
       if (error) throw error;
@@ -292,7 +306,7 @@ export function useCreateVendorWithOB() {
 export function useUpdateVendor() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...updates }: { id: string; name?: string; email?: string; phone?: string; address?: string }) => {
+    mutationFn: async ({ id, ...updates }: { id: string; name?: string; email?: string; phone?: string; address?: string; payee_type?: string | null; default_payment_nature?: string | null; tin?: string | null; wht_exempt?: boolean; wht_exemption_ref?: string | null }) => {
       const { opening_balance, ...safeUpdates } = updates as any;
       const { error } = await supabase.from("vendors").update(safeUpdates).eq("id", id);
       if (error) throw error;
@@ -362,6 +376,8 @@ export function useCreateInventoryItemEnhanced() {
       unit_cost?: number;
       quantity_on_hand?: number;
       account_id?: string;
+      default_purchase_tax_code_id?: string | null;
+      default_purchase_tax_group_id?: string | null;
     }) => {
       const tenantId = appUser!.tenant_id;
       const qty = item.quantity_on_hand || 0;
@@ -382,8 +398,10 @@ export function useCreateInventoryItemEnhanced() {
           unit_cost: cost,
           quantity_on_hand: qty,
           account_id: accountId,
+          default_purchase_tax_code_id: item.default_purchase_tax_code_id || null,
+          default_purchase_tax_group_id: item.default_purchase_tax_group_id || null,
           tenant_id: tenantId,
-        })
+        } as any)
         .select()
         .single();
       if (error) throw error;
@@ -403,8 +421,8 @@ export function useCreateInventoryItemEnhanced() {
 export function useUpdateInventoryItem() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...updates }: { id: string; item_name?: string; sku?: string; description?: string; unit_cost?: number; quantity_on_hand?: number }) => {
-      const { error } = await supabase.from("inventory_items").update(updates).eq("id", id);
+    mutationFn: async ({ id, ...updates }: { id: string; item_name?: string; sku?: string; description?: string; unit_cost?: number; quantity_on_hand?: number; default_purchase_tax_code_id?: string | null; default_purchase_tax_group_id?: string | null }) => {
+      const { error } = await supabase.from("inventory_items").update(updates as any).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {

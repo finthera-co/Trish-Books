@@ -1,18 +1,24 @@
 import { useState, useMemo } from "react";
 import { format } from "date-fns";
+import { useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/currency";
-import { useSupplierBillsForVendor, useRecordBillPayment } from "@/hooks/useAPModule";
+import { useSupplierBillsForVendor, useRecordBillPayment, computeBillPaymentWht } from "@/hooks/useAPModule";
 import { useAccountSettings } from "@/hooks/useAccountSettings";
 import { useAccounts } from "@/hooks/useData";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+
+const NATURES = ["service_fee", "rent", "interest", "dividend", "royalty", "contractor", "other"];
+const prettify = (s: string) => s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
 interface Props {
   open: boolean;
@@ -23,6 +29,7 @@ interface Props {
 }
 
 export default function PayBillsDialog({ open, onOpenChange, vendorId, vendorName, preselectedBillId }: Props) {
+  const { appUser } = useAuth();
   const { data: bills } = useSupplierBillsForVendor(vendorId);
   const { data: accountSettings } = useAccountSettings();
   const { data: accounts } = useAccounts();
@@ -32,6 +39,10 @@ export default function PayBillsDialog({ open, onOpenChange, vendorId, vendorNam
   const [paymentDate, setPaymentDate] = useState(today);
   const [bankAccountId, setBankAccountId] = useState("");
   const [reference, setReference] = useState("");
+  const [paymentNature, setPaymentNature] = useState("");
+  const [overrideOn, setOverrideOn] = useState(false);
+  const [overrideAmount, setOverrideAmount] = useState("");
+  const [overrideReason, setOverrideReason] = useState("");
   const [appliedAmounts, setAppliedAmounts] = useState<Record<string, string>>({});
   const [selectedBillIds, setSelectedBillIds] = useState<Set<string>>(
     preselectedBillId ? new Set([preselectedBillId]) : new Set()
@@ -60,6 +71,23 @@ export default function PayBillsDialog({ open, onOpenChange, vendorId, vendorNam
     Array.from(selectedBillIds).reduce((s, id) => s + (parseFloat(appliedAmounts[id] || "0") || 0), 0),
     [selectedBillIds, appliedAmounts]
   );
+
+  // Live WHT (AIT) preview — recomputed by the shared engine. Display-only;
+  // the hook recomputes server-side on submit. Disabled while overriding.
+  const { data: whtPreview } = useQuery({
+    queryKey: ["wht_preview", appUser?.tenant_id, vendorId, totalApplied, paymentDate, paymentNature],
+    enabled: !!appUser?.tenant_id && totalApplied > 0 && !overrideOn,
+    queryFn: () => computeBillPaymentWht({
+      tenantId: appUser!.tenant_id,
+      vendorId,
+      amount: totalApplied,
+      paymentDate,
+      paymentNature: paymentNature || undefined,
+    }),
+  });
+
+  const effectiveWht = overrideOn ? (parseFloat(overrideAmount || "0") || 0) : (whtPreview?.amount ?? 0);
+  const netBank = Math.round((totalApplied - effectiveWht) * 100) / 100;
 
   const toggleBill = (billId: string) => {
     setSelectedBillIds((prev) => {
@@ -100,6 +128,11 @@ export default function PayBillsDialog({ open, onOpenChange, vendorId, vendorNam
       }
     }
 
+    if (overrideOn && !overrideReason.trim()) {
+      toast.error("A reason is required to override the computed WHT");
+      return;
+    }
+
     await recordPayment.mutateAsync({
       vendor_id: vendorId,
       payment_date: paymentDate,
@@ -108,11 +141,19 @@ export default function PayBillsDialog({ open, onOpenChange, vendorId, vendorNam
       ap_account_id: apAccountId,
       reference: reference || undefined,
       allocations,
+      payment_nature: paymentNature || undefined,
+      wht_override: overrideOn
+        ? { amount: parseFloat(overrideAmount || "0") || 0, reason: overrideReason.trim() }
+        : null,
     });
 
     setAppliedAmounts({});
     setSelectedBillIds(new Set());
     setReference("");
+    setPaymentNature("");
+    setOverrideOn(false);
+    setOverrideAmount("");
+    setOverrideReason("");
     onOpenChange(false);
   };
 
@@ -206,6 +247,48 @@ export default function PayBillsDialog({ open, onOpenChange, vendorId, vendorNam
               </Table>
             )}
           </div>
+
+          {/* Payment nature drives WHT rule selection */}
+          <div>
+            <Label>Payment Nature (for WHT)</Label>
+            <Select value={paymentNature || "auto"} onValueChange={(v) => setPaymentNature(v === "auto" ? "" : v)}>
+              <SelectTrigger><SelectValue placeholder="Use vendor default" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Use vendor default</SelectItem>
+                {NATURES.map((n) => <SelectItem key={n} value={n}>{prettify(n)}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* WHT computed panel: Gross / WHT / Net bank */}
+          {(effectiveWht > 0 || overrideOn) && (
+            <div className="p-3 rounded-lg border bg-muted/30 space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">Gross settled</span><span className="font-mono">{formatCurrency(totalApplied)}</span></div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">
+                  WHT {whtPreview && !overrideOn ? `(${whtPreview.rate}%)` : "(manual)"}
+                </span>
+                <span className="font-mono text-destructive">-{formatCurrency(effectiveWht)}</span>
+              </div>
+              <div className="flex justify-between font-semibold border-t pt-1">
+                <span>Net bank amount</span><span className="font-mono">{formatCurrency(netBank)}</span>
+              </div>
+              {whtPreview?.certificate_no && !overrideOn && (
+                <p className="text-xs text-muted-foreground">WHT certificate {whtPreview.certificate_no} will be issued.</p>
+              )}
+              <div className="flex items-center justify-between pt-1">
+                <Label className="text-xs">Override WHT manually</Label>
+                <Switch checked={overrideOn} onCheckedChange={setOverrideOn} />
+              </div>
+              {overrideOn && (
+                <div className="grid grid-cols-2 gap-2">
+                  <Input type="number" step="0.01" min="0" placeholder="WHT amount"
+                    value={overrideAmount} onChange={(e) => setOverrideAmount(e.target.value)} />
+                  <Input placeholder="Reason (required)" value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} />
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex items-center justify-between p-3 rounded-lg bg-muted/40 border">
             <span className="font-medium">Total Being Paid</span>

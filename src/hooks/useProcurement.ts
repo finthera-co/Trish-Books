@@ -35,6 +35,8 @@ export interface InventoryItemMaster {
   sales_return_account_id: string | null;
   adjustment_account_id: string | null;
   tax_id: string | null;
+  default_purchase_tax_code_id: string | null;
+  default_purchase_tax_group_id: string | null;
   is_active: boolean;
   notes: string | null;
 }
@@ -90,6 +92,9 @@ export interface POLineInput {
   description?: string;
   qty_ordered: number;
   unit_cost: number;
+  tax_code_id?: string | null;
+  tax_group_id?: string | null;
+  is_tax_inclusive?: boolean;
 }
 
 export function usePurchaseOrders() {
@@ -168,6 +173,9 @@ export function useCreatePurchaseOrder() {
         qty_ordered: l.qty_ordered,
         unit_cost: l.unit_cost,
         line_total: Math.round(l.qty_ordered * l.unit_cost * 100) / 100,
+        tax_code_id: l.tax_code_id || null,
+        tax_group_id: l.tax_group_id || null,
+        is_tax_inclusive: l.is_tax_inclusive ?? false,
       }));
       const { error: le } = await supabase.from("purchase_order_lines" as any).insert(lines as any);
       if (le) throw le;
@@ -333,6 +341,9 @@ export interface BillLineInput {
   description?: string;
   qty: number;
   unit_cost: number;
+  tax_code_id?: string | null;
+  tax_group_id?: string | null;
+  is_tax_inclusive?: boolean;
 }
 
 export function useSupplierBills() {
@@ -441,6 +452,11 @@ export function useCreateSupplierBill() {
         qty: l.qty,
         unit_cost: l.unit_cost,
         line_total: Math.round(l.qty * l.unit_cost * 100) / 100,
+        // When grn_line_id is set, the bill_line_carry_tax trigger fills tax
+        // from the GRN line; an explicit selection here overrides it.
+        tax_code_id: l.tax_code_id || null,
+        tax_group_id: l.tax_group_id || null,
+        is_tax_inclusive: l.is_tax_inclusive ?? false,
       }));
       const { error: le } = await supabase.from("supplier_bill_lines" as any).insert(lines as any);
       if (le) throw le;

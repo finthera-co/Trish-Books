@@ -3,13 +3,16 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectGroup, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { ArrowLeft, Plus, Trash2, Send, Save } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useCustomers, useAccounts, useProducts, useTaxes } from "@/hooks/useData";
+import { useCustomers, useAccounts, useProducts } from "@/hooks/useData";
+import { useTaxProfile, useTaxGroups, useTaxCodes, currentRate } from "@/hooks/useTaxEngine";
+import { calculateLineTax, type TaxMemberInput } from "@/lib/taxEngine";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCurrency } from "@/lib/currency";
 import { toast } from "sonner";
@@ -23,10 +26,10 @@ interface LineItem {
   description: string;
   qty: number;
   rate: number;
-  tax_id: string;
-  tax_rate: number;
+  /** Encoded tax selection: "g:<groupId>" | "c:<codeId>" | "" (none). */
+  tax_sel: string;
+  inclusive: boolean;
   discount: number;
-  amount: number;
 }
 
 const emptyLine = (): LineItem => ({
@@ -35,10 +38,9 @@ const emptyLine = (): LineItem => ({
   description: "",
   qty: 1,
   rate: 0,
-  tax_id: "",
-  tax_rate: 0,
+  tax_sel: "",
+  inclusive: false,
   discount: 0,
-  amount: 0,
 });
 
 export default function CreateInvoice() {
@@ -48,7 +50,9 @@ export default function CreateInvoice() {
   const { data: customers } = useCustomers();
   const { data: accounts } = useAccounts();
   const { data: products } = useProducts();
-  const { data: taxes } = useTaxes();
+  const { data: taxProfile } = useTaxProfile();
+  const { data: taxGroups } = useTaxGroups();
+  const { data: taxCodes } = useTaxCodes();
   const postInvoiceFn = usePostInvoice();
 
   const [customerId, setCustomerId] = useState("");
@@ -61,14 +65,11 @@ export default function CreateInvoice() {
   const [saving, setSaving] = useState(false);
   const [posting, setPosting] = useState(false);
 
-  // Auto-generate invoice number
   useEffect(() => {
-    if (!invoiceNumber) {
-      setInvoiceNumber(`INV-${Date.now().toString().slice(-6)}`);
-    }
+    if (!invoiceNumber) setInvoiceNumber(`INV-${Date.now().toString().slice(-6)}`);
   }, []);
 
-  // Account lookups
+  // Account lookups (for journal preview only)
   const arAccount = useMemo(
     () => accounts?.find((a) => a.account_subtype === "Accounts Receivable" || a.account_name?.toLowerCase().includes("accounts receivable")),
     [accounts]
@@ -77,21 +78,66 @@ export default function CreateInvoice() {
     () => accounts?.find((a) => a.account_type === "Revenue" && !a.account_name?.toLowerCase().includes("return")),
     [accounts]
   );
-  const taxPayableAccount = useMemo(
-    () => accounts?.find((a) => a.account_name?.toLowerCase().includes("tax payable") || a.account_subtype === "Tax Payable"),
-    [accounts]
+
+  const codesById = useMemo(() => new Map((taxCodes || []).map((c) => [c.id, c])), [taxCodes]);
+  const vatRegistered = !!taxProfile?.is_vat_registered;
+  const ssclLiable = !!taxProfile?.is_sscl_liable;
+
+  // A code is selectable on a SALES invoice only when it is output-mode and
+  // its tax type is allowed by the tenant profile (VAT hidden if not
+  // registered; SSCL hidden if not liable).
+  const codeAllowed = useCallback((c: any) => {
+    if (c.collection_mode !== "output") return false;
+    if (c.tax_type === "VAT" && !vatRegistered) return false;
+    if (c.tax_type === "SSCL" && !ssclLiable) return false;
+    return true;
+  }, [vatRegistered, ssclLiable]);
+
+  const sellableCodes = useMemo(
+    () => (taxCodes || []).filter((c) => c.is_active && codeAllowed(c)),
+    [taxCodes, codeAllowed]
   );
-  const discountAccount = useMemo(
-    () => accounts?.find((a) => a.account_name?.toLowerCase().includes("discount") && a.account_type === "Expense"),
-    [accounts]
+  // A group is offered only if every member is allowed by the profile.
+  const sellableGroups = useMemo(
+    () => (taxGroups || []).filter((g) =>
+      g.is_active &&
+      g.tax_group_members.length > 0 &&
+      g.tax_group_members.every((m) => {
+        const c = codesById.get(m.tax_code_id);
+        return c && codeAllowed(c);
+      })
+    ),
+    [taxGroups, codesById, codeAllowed]
   );
 
-  const recalcLine = useCallback((line: LineItem): LineItem => {
-    const gross = line.qty * line.rate;
-    const afterDiscount = gross - line.discount;
-    const taxAmt = afterDiscount * (line.tax_rate / 100);
-    return { ...line, amount: afterDiscount + taxAmt };
-  }, []);
+  // Resolve a line's encoded selection into engine members at the issue date.
+  const membersFor = useCallback((sel: string): TaxMemberInput[] => {
+    if (sel.startsWith("g:")) {
+      const g = (taxGroups || []).find((x) => x.id === sel.slice(2));
+      if (!g) return [];
+      return [...g.tax_group_members]
+        .sort((a, b) => a.apply_order - b.apply_order)
+        .map((m) => {
+          const c = codesById.get(m.tax_code_id);
+          if (!c) return null;
+          return {
+            taxCodeId: c.id, code: c.code, rate: currentRate(c, issueDate) ?? 0,
+            isCompound: m.compound_on_previous, applyOrder: m.apply_order,
+            collectionMode: c.collection_mode as any,
+          };
+        })
+        .filter(Boolean) as TaxMemberInput[];
+    }
+    if (sel.startsWith("c:")) {
+      const c = codesById.get(sel.slice(2));
+      if (!c) return [];
+      return [{
+        taxCodeId: c.id, code: c.code, rate: currentRate(c, issueDate) ?? 0,
+        isCompound: false, applyOrder: 1, collectionMode: c.collection_mode as any,
+      }];
+    }
+    return [];
+  }, [taxGroups, codesById, issueDate]);
 
   const updateLine = useCallback((id: string, field: string, value: any) => {
     setLines((prev) =>
@@ -99,35 +145,62 @@ export default function CreateInvoice() {
         if (l.id !== id) return l;
         const updated = { ...l, [field]: value };
         if (field === "product_id" && products) {
-          const product = products.find((p: any) => p.id === value);
+          const product: any = products.find((p: any) => p.id === value);
           if (product) {
             updated.description = product.description || product.name;
             updated.rate = Number(product.price) || 0;
-            if (product.tax_id && taxes) {
-              const tax = taxes.find((t: any) => t.id === product.tax_id);
-              if (tax) {
-                updated.tax_id = tax.id;
-                updated.tax_rate = Number(tax.tax_rate) || 0;
-              }
-            }
+            // Default tax from the product (group preferred, then code)
+            if (product.default_tax_group_id) updated.tax_sel = `g:${product.default_tax_group_id}`;
+            else if (product.default_tax_code_id) updated.tax_sel = `c:${product.default_tax_code_id}`;
           }
         }
-        if (field === "tax_id" && taxes) {
-          const tax = taxes.find((t: any) => t.id === value);
-          updated.tax_rate = tax ? Number(tax.tax_rate) : 0;
-        }
-        return recalcLine(updated);
+        return updated;
       })
     );
-  }, [products, taxes, recalcLine]);
+  }, [products]);
 
   const addLine = () => setLines((prev) => [...prev, emptyLine()]);
   const removeLine = (id: string) => setLines((prev) => prev.filter((l) => l.id !== id));
 
-  const subtotal = lines.reduce((s, l) => s + l.qty * l.rate - l.discount, 0);
-  const totalTax = lines.reduce((s, l) => s + (l.qty * l.rate - l.discount) * (l.tax_rate / 100), 0);
-  const totalDiscount = lines.reduce((s, l) => s + l.discount, 0);
-  const total = subtotal + totalTax;
+  // ── Live tax computation via the shared engine ──────────────────────
+  const lineCalcs = useMemo(() => {
+    return lines.map((l) => {
+      const lineAmount = l.qty * l.rate - l.discount;
+      const members = membersFor(l.tax_sel);
+      if (members.length === 0 || lineAmount <= 0) {
+        const base = Math.round(Math.max(0, lineAmount) * 100) / 100;
+        return { exclusiveBase: base, taxes: [] as any[], lineTotal: base };
+      }
+      const first = codesById.get(members[0].taxCodeId);
+      return calculateLineTax({
+        lineAmount,
+        isInclusive: l.inclusive,
+        members,
+        roundingMethod: (first?.rounding_method as any) || "half_up",
+        roundingLevel: "line",
+        documentDate: issueDate,
+      });
+    });
+  }, [lines, membersFor, codesById, issueDate]);
+
+  const subtotal = useMemo(() => Math.round(lineCalcs.reduce((s, c) => s + c.exclusiveBase, 0) * 100) / 100, [lineCalcs]);
+  const totalDiscount = useMemo(() => lines.reduce((s, l) => s + l.discount, 0), [lines]);
+
+  // Aggregate tax per code across lines for the footer ("one row per code")
+  const taxByCode = useMemo(() => {
+    const map = new Map<string, { code: string; rate: number; amount: number }>();
+    for (const c of lineCalcs) {
+      for (const t of c.taxes) {
+        const e = map.get(t.taxCodeId) || { code: t.code, rate: t.rate, amount: 0 };
+        e.amount = Math.round((e.amount + t.amount) * 100) / 100;
+        map.set(t.taxCodeId, e);
+      }
+    }
+    return [...map.values()];
+  }, [lineCalcs]);
+
+  const totalTax = useMemo(() => Math.round(taxByCode.reduce((s, t) => s + t.amount, 0) * 100) / 100, [taxByCode]);
+  const total = Math.round((subtotal + totalTax) * 100) / 100;
 
   const handleSave = async (shouldPost = false) => {
     if (!customerId) return toast.error("Please select a customer");
@@ -166,13 +239,18 @@ export default function CreateInvoice() {
           description: l.description,
           quantity: l.qty,
           unit_price: l.rate,
-          total: l.amount,
+          // total carries the line gross (incl. tax) for display; the server
+          // recomputes tax from qty*unit_price - discount_amount + is_tax_inclusive
+          total: lineCalcs[lines.indexOf(l)]?.lineTotal ?? l.qty * l.rate - l.discount,
           product_id: l.product_id || null,
-          tax_id: l.tax_id || null,
+          discount_amount: l.discount,
+          is_tax_inclusive: l.inclusive,
+          tax_group_id: l.tax_sel.startsWith("g:") ? l.tax_sel.slice(2) : null,
+          tax_code_id: l.tax_sel.startsWith("c:") ? l.tax_sel.slice(2) : null,
         }));
 
       if (itemInserts.length > 0) {
-        const { error: itemErr } = await supabase.from("invoice_items").insert(itemInserts);
+        const { error: itemErr } = await supabase.from("invoice_items").insert(itemInserts as any);
         if (itemErr) throw itemErr;
       }
 
@@ -229,13 +307,9 @@ export default function CreateInvoice() {
                   <Label>Customer *</Label>
                   <div className="flex gap-2 mt-1">
                     <Select value={customerId} onValueChange={setCustomerId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select customer..." />
-                      </SelectTrigger>
+                      <SelectTrigger><SelectValue placeholder="Select customer..." /></SelectTrigger>
                       <SelectContent>
-                        {customers?.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                        ))}
+                        {customers?.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
                     <QuickCustomerDialog onCreated={(id) => setCustomerId(id)} />
@@ -284,85 +358,75 @@ export default function CreateInvoice() {
                       <th className="px-3 py-2 text-left font-medium text-muted-foreground">Product / Description</th>
                       <th className="px-3 py-2 text-center font-medium text-muted-foreground w-20">Qty</th>
                       <th className="px-3 py-2 text-right font-medium text-muted-foreground w-28">Rate</th>
-                      <th className="px-3 py-2 text-center font-medium text-muted-foreground w-32">Tax</th>
+                      <th className="px-3 py-2 text-center font-medium text-muted-foreground w-40">Tax</th>
                       <th className="px-3 py-2 text-right font-medium text-muted-foreground w-24">Discount</th>
                       <th className="px-3 py-2 text-right font-medium text-muted-foreground w-28">Amount</th>
                       <th className="px-3 py-2 w-10"></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {lines.map((line) => (
+                    {lines.map((line, idx) => (
                       <tr key={line.id} className="border-t border-border">
                         <td className="px-3 py-2">
                           <div className="space-y-1">
-                            <Select
-                              value={line.product_id}
-                              onValueChange={(v) => updateLine(line.id, "product_id", v)}
-                            >
-                              <SelectTrigger className="h-8 text-xs">
-                                <SelectValue placeholder="Select product..." />
-                              </SelectTrigger>
+                            <Select value={line.product_id} onValueChange={(v) => updateLine(line.id, "product_id", v)}>
+                              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select product..." /></SelectTrigger>
                               <SelectContent>
-                                {products?.map((p: any) => (
-                                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                                ))}
+                                {products?.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                               </SelectContent>
                             </Select>
-                            <Input
-                              className="h-8 text-xs"
-                              placeholder="Description"
-                              value={line.description}
-                              onChange={(e) => updateLine(line.id, "description", e.target.value)}
-                            />
+                            <Input className="h-8 text-xs" placeholder="Description" value={line.description}
+                              onChange={(e) => updateLine(line.id, "description", e.target.value)} />
                           </div>
                         </td>
                         <td className="px-3 py-2">
-                          <Input
-                            type="number"
-                            className="h-8 text-xs text-center"
-                            value={line.qty || ""}
-                            onChange={(e) => updateLine(line.id, "qty", Number(e.target.value))}
-                            min={1}
-                          />
+                          <Input type="number" className="h-8 text-xs text-center" value={line.qty || ""}
+                            onChange={(e) => updateLine(line.id, "qty", Number(e.target.value))} min={1} />
                         </td>
                         <td className="px-3 py-2">
-                          <Input
-                            type="number"
-                            className="h-8 text-xs text-right"
-                            value={line.rate || ""}
-                            onChange={(e) => updateLine(line.id, "rate", Number(e.target.value))}
-                            min={0}
-                          />
+                          <Input type="number" className="h-8 text-xs text-right" value={line.rate || ""}
+                            onChange={(e) => updateLine(line.id, "rate", Number(e.target.value))} min={0} />
                         </td>
                         <td className="px-3 py-2">
-                          <Select
-                            value={line.tax_id}
-                            onValueChange={(v) => updateLine(line.id, "tax_id", v)}
-                          >
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue placeholder="No tax" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">No Tax</SelectItem>
-                              {taxes?.map((t: any) => (
-                                <SelectItem key={t.id} value={t.id}>
-                                  {t.tax_name} ({t.tax_rate}%)
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <div className="space-y-1">
+                            <Select value={line.tax_sel || "none"}
+                              onValueChange={(v) => updateLine(line.id, "tax_sel", v === "none" ? "" : v)}>
+                              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="No tax" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">No Tax</SelectItem>
+                                {sellableGroups.length > 0 && (
+                                  <SelectGroup>
+                                    <SelectLabel>Groups</SelectLabel>
+                                    {sellableGroups.map((g) => <SelectItem key={g.id} value={`g:${g.id}`}>{g.code}</SelectItem>)}
+                                  </SelectGroup>
+                                )}
+                                {sellableCodes.length > 0 && (
+                                  <SelectGroup>
+                                    <SelectLabel>Codes</SelectLabel>
+                                    {sellableCodes.map((c) => (
+                                      <SelectItem key={c.id} value={`c:${c.id}`}>
+                                        {c.code} ({currentRate(c, issueDate) ?? 0}%)
+                                      </SelectItem>
+                                    ))}
+                                  </SelectGroup>
+                                )}
+                              </SelectContent>
+                            </Select>
+                            {line.tax_sel && (
+                              <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                                <Switch className="scale-75" checked={line.inclusive}
+                                  onCheckedChange={(v) => updateLine(line.id, "inclusive", v)} />
+                                Incl.
+                              </label>
+                            )}
+                          </div>
                         </td>
                         <td className="px-3 py-2">
-                          <Input
-                            type="number"
-                            className="h-8 text-xs text-right"
-                            value={line.discount || ""}
-                            onChange={(e) => updateLine(line.id, "discount", Number(e.target.value))}
-                            min={0}
-                          />
+                          <Input type="number" className="h-8 text-xs text-right" value={line.discount || ""}
+                            onChange={(e) => updateLine(line.id, "discount", Number(e.target.value))} min={0} />
                         </td>
                         <td className="px-3 py-2 text-right font-medium text-foreground">
-                          {formatCurrency(line.amount)}
+                          {formatCurrency(lineCalcs[idx]?.lineTotal ?? 0)}
                         </td>
                         <td className="px-3 py-2">
                           {lines.length > 1 && (
@@ -388,7 +452,7 @@ export default function CreateInvoice() {
                   <Textarea className="mt-1" rows={3} placeholder="Notes visible on invoice..." value={notes} onChange={(e) => setNotes(e.target.value)} />
                 </div>
                 <div>
-                  <Label>Terms & Conditions</Label>
+                  <Label>Terms &amp; Conditions</Label>
                   <Textarea className="mt-1" rows={3} placeholder="Payment terms..." value={terms} onChange={(e) => setTerms(e.target.value)} />
                 </div>
               </div>
@@ -399,9 +463,7 @@ export default function CreateInvoice() {
         {/* Sidebar - Totals & Journal Preview */}
         <div className="space-y-6">
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Invoice Summary</CardTitle>
-            </CardHeader>
+            <CardHeader className="pb-3"><CardTitle className="text-base">Invoice Summary</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Subtotal</span>
@@ -413,12 +475,13 @@ export default function CreateInvoice() {
                   <span className="font-medium text-destructive">-{formatCurrency(totalDiscount)}</span>
                 </div>
               )}
-              {totalTax > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Tax</span>
-                  <span className="font-medium">{formatCurrency(totalTax)}</span>
+              {/* One row per tax code */}
+              {taxByCode.map((t) => (
+                <div key={t.code} className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">{t.code} {t.rate}%</span>
+                  <span className="font-medium">{formatCurrency(t.amount)}</span>
                 </div>
-              )}
+              ))}
               <Separator />
               <div className="flex justify-between text-lg font-bold">
                 <span>Total</span>
@@ -429,9 +492,7 @@ export default function CreateInvoice() {
 
           {/* Journal Preview */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Journal Preview</CardTitle>
-            </CardHeader>
+            <CardHeader className="pb-3"><CardTitle className="text-base">Journal Preview</CardTitle></CardHeader>
             <CardContent>
               {total > 0 ? (
                 <div className="space-y-2 text-xs">
@@ -441,22 +502,18 @@ export default function CreateInvoice() {
                   </div>
                   <div className="flex justify-between pl-4">
                     <span className="text-muted-foreground">Cr {revenueAccount?.account_name || "Revenue"}</span>
-                    <span className="font-mono">{formatCurrency(totalDiscount > 0 ? subtotal + totalDiscount : subtotal)}</span>
+                    <span className="font-mono">{formatCurrency(subtotal)}</span>
                   </div>
-                  {totalTax > 0 && (
-                    <div className="flex justify-between pl-4">
-                      <span className="text-muted-foreground">Cr {taxPayableAccount?.account_name || "Tax Payable"}</span>
-                      <span className="font-mono">{formatCurrency(totalTax)}</span>
+                  {taxByCode.map((t) => (
+                    <div key={t.code} className="flex justify-between pl-4">
+                      <span className="text-muted-foreground">Cr {t.code} Payable</span>
+                      <span className="font-mono">{formatCurrency(t.amount)}</span>
                     </div>
-                  )}
-                  {totalDiscount > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Dr {discountAccount?.account_name || "Discount"}</span>
-                      <span className="font-mono">{formatCurrency(totalDiscount)}</span>
-                    </div>
-                  )}
+                  ))}
                   <Separator className="my-2" />
-                  <p className="text-[10px] text-muted-foreground">AR subledger entry will be created for the selected customer.</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    Each tax code posts to its own liability account; the server recomputes tax and rejects mismatches.
+                  </p>
                 </div>
               ) : (
                 <p className="text-xs text-muted-foreground">Add line items to preview journal entries</p>

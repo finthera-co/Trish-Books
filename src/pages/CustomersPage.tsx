@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/currency";
@@ -23,10 +24,11 @@ export default function CustomersPage() {
   const [form, setForm] = useState({
     name: "", email: "", phone: "", address: "",
     opening_balance: "", credit_limit: "", payment_terms: "net_30",
+    tin: "", withholds_tax: false,
   });
 
   const resetForm = () => {
-    setForm({ name: "", email: "", phone: "", address: "", opening_balance: "", credit_limit: "", payment_terms: "net_30" });
+    setForm({ name: "", email: "", phone: "", address: "", opening_balance: "", credit_limit: "", payment_terms: "net_30", tin: "", withholds_tax: false });
     setEditId(null);
   };
 
@@ -39,6 +41,8 @@ export default function CustomersPage() {
       opening_balance: parseFloat(form.opening_balance) || 0,
       credit_limit: parseFloat(form.credit_limit) || 0,
       payment_terms: form.payment_terms,
+      tin: form.tin || null,
+      withholds_tax: form.withholds_tax,
     };
     if (editId) {
       updateMutation.mutate({ id: editId, ...payload }, { onSuccess: () => { setOpen(false); resetForm(); } });
@@ -57,6 +61,8 @@ export default function CustomersPage() {
       opening_balance: "", // Don't allow editing OB - managed by subledger
       credit_limit: String(c.credit_limit || ""),
       payment_terms: c.payment_terms || "net_30",
+      tin: c.tin || "",
+      withholds_tax: !!c.withholds_tax,
     });
     setOpen(true);
   };
@@ -86,7 +92,7 @@ export default function CustomersPage() {
           <DialogTrigger asChild>
             <Button><Plus className="w-4 h-4 mr-2" /> New Customer</Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-h-[90vh] overflow-y-auto">
             <DialogHeader><DialogTitle>{editId ? "Edit" : "New"} Customer</DialogTitle></DialogHeader>
             <div className="space-y-4">
               <div><Label>Customer Name *</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
@@ -115,6 +121,20 @@ export default function CustomersPage() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Tax attributes */}
+              <div className="border-t pt-3 space-y-3">
+                <p className="text-sm font-medium">Tax</p>
+                <div><Label>TIN</Label><Input value={form.tin} onChange={(e) => setForm({ ...form, tin: e.target.value })} /></div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>Withholds tax on payments</Label>
+                    <p className="text-xs text-muted-foreground">Customer deducts WHT when paying us</p>
+                  </div>
+                  <Switch checked={form.withholds_tax} onCheckedChange={(v) => setForm({ ...form, withholds_tax: v })} />
+                </div>
+              </div>
+
               <Button className="w-full" onClick={handleSubmit} disabled={!form.name || createMutation.isPending || updateMutation.isPending}>
                 {editId ? "Update" : "Create"} Customer
               </Button>

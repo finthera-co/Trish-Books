@@ -225,6 +225,50 @@ Deno.serve(async (req) => {
       .update({ status: "processed", journal_entry_id: je.id })
       .eq("id", run_id);
 
+    // 8b. Tax sub-ledger: APIT (PAYE) withheld from employees this run.
+    // One wht_payable row per employee so the APIT remittance report can
+    // list employee-level amounts.
+    const payeRows = results.filter(
+      (r: any) => r.component_code === "PAYE" && Number(r.value || 0) > 0
+    );
+    if (payeRows.length > 0) {
+      const { data: apitCode } = await admin
+        .from("tax_codes")
+        .select("id")
+        .eq("tenant_id", appUser.tenant_id)
+        .eq("code", "APIT")
+        .maybeSingle();
+      if (apitCode) {
+        const grossByEmployee = new Map<string, number>();
+        for (const r of results) {
+          if (r.component_code === "GROSS_PAY") {
+            grossByEmployee.set(r.employee_id, Number(r.value || 0));
+          }
+        }
+        const txnDate = run.payment_date || run.period_end;
+        const { error: taxErr } = await admin.from("tax_transactions").insert(
+          payeRows.map((r: any) => ({
+            tenant_id: appUser.tenant_id,
+            tax_code_id: apitCode.id,
+            direction: "wht_payable",
+            source_type: "payroll_run",
+            source_id: run_id,
+            source_line_id: r.employee_id, // employee for drill-down
+            base_amount: grossByEmployee.get(r.employee_id) ?? 0,
+            tax_amount: Number(r.value),
+            currency: "LKR",
+            fx_rate: 1,
+            rate_applied: 0, // bracket-based; trace lives in payroll_results
+            transaction_date: txnDate,
+            journal_entry_id: je.id,
+          }))
+        );
+        if (taxErr) console.error("APIT tax_transactions insert failed:", taxErr.message);
+      } else {
+        console.error("PAYE posted but no APIT tax code exists for tenant — sub-ledger rows skipped");
+      }
+    }
+
     // 9. Audit
     await admin.from("audit_logs").insert({
       action: "Payroll Posted to GL",

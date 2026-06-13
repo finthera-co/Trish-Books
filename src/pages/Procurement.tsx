@@ -35,6 +35,38 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { CheckCircle2, XCircle, Lock } from "lucide-react";
 import PayBillsDialog from "@/components/ap/PayBillsDialog";
 import { computeBillStatus } from "@/lib/billStatus";
+import { useTaxGroups, useTaxCodes, currentRate } from "@/hooks/useTaxEngine";
+
+// Encoded purchase-tax value: "g:<groupId>" | "c:<codeId>" | "".
+// Only input / reverse-charge codes (and groups) are valid on the purchase side.
+function PurchaseTaxSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { data: groups } = useTaxGroups();
+  const { data: codes } = useTaxCodes();
+  const purchaseCodes = (codes || []).filter((c) => c.is_active && ["input", "reverse_charge"].includes(c.collection_mode));
+  const purchaseGroups = (groups || []).filter((g) => g.is_active);
+  return (
+    <Select value={value || "none"} onValueChange={(v) => onChange(v === "none" ? "" : v)}>
+      <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="No tax" /></SelectTrigger>
+      <SelectContent>
+        <SelectItem value="none">No tax</SelectItem>
+        {purchaseGroups.map((g) => <SelectItem key={g.id} value={`g:${g.id}`}>Group · {g.code}</SelectItem>)}
+        {purchaseCodes.map((c) => <SelectItem key={c.id} value={`c:${c.id}`}>{c.code} ({currentRate(c) ?? 0}%)</SelectItem>)}
+      </SelectContent>
+    </Select>
+  );
+}
+
+// Encode an inventory item's default purchase tax into the select value.
+function itemPurchaseTaxValue(it: any): string {
+  if (!it) return "";
+  if (it.default_purchase_tax_group_id) return `g:${it.default_purchase_tax_group_id}`;
+  if (it.default_purchase_tax_code_id) return `c:${it.default_purchase_tax_code_id}`;
+  return "";
+}
+const decodeTax = (v: string) => ({
+  tax_group_id: v.startsWith("g:") ? v.slice(2) : null,
+  tax_code_id: v.startsWith("c:") ? v.slice(2) : null,
+});
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -327,7 +359,7 @@ function POCreateDialog({ onClose }: { onClose: () => void }) {
             <Table>
               <TableHeader><TableRow>
                 <TableHead>Item</TableHead><TableHead className="w-24">Qty</TableHead>
-                <TableHead className="w-32">Unit Cost</TableHead><TableHead className="text-right w-32">Total</TableHead><TableHead className="w-10" />
+                <TableHead className="w-32">Unit Cost</TableHead><TableHead className="w-36">Tax</TableHead><TableHead className="text-right w-32">Total</TableHead><TableHead className="w-10" />
               </TableRow></TableHeader>
               <TableBody>
                 {lines.map((l, i) => (
@@ -335,7 +367,12 @@ function POCreateDialog({ onClose }: { onClose: () => void }) {
                     <TableCell>
                       <Select value={l.item_id} onValueChange={(v) => {
                         const it = (items || []).find((x) => x.id === v);
-                        updateLine(i, { item_id: v, unit_cost: it?.last_purchase_price ?? it?.standard_cost ?? 0 });
+                        // Default the purchase tax from the chosen inventory item
+                        updateLine(i, {
+                          item_id: v,
+                          unit_cost: it?.last_purchase_price ?? it?.standard_cost ?? 0,
+                          ...decodeTax(itemPurchaseTaxValue(it)),
+                        });
                       }}>
                         <SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger>
                         <SelectContent>{(items || []).filter((x) => x.is_active).map((x) => (
@@ -345,6 +382,12 @@ function POCreateDialog({ onClose }: { onClose: () => void }) {
                     </TableCell>
                     <TableCell><Input type="number" step="0.0001" value={l.qty_ordered} onChange={(e) => updateLine(i, { qty_ordered: Number(e.target.value) })} /></TableCell>
                     <TableCell><Input type="number" step="0.01" value={l.unit_cost} onChange={(e) => updateLine(i, { unit_cost: Number(e.target.value) })} /></TableCell>
+                    <TableCell>
+                      <PurchaseTaxSelect
+                        value={l.tax_group_id ? `g:${l.tax_group_id}` : l.tax_code_id ? `c:${l.tax_code_id}` : ""}
+                        onChange={(v) => updateLine(i, decodeTax(v))}
+                      />
+                    </TableCell>
                     <TableCell className="text-right font-mono">{formatCurrency(l.qty_ordered * l.unit_cost)}</TableCell>
                     <TableCell><Button size="icon" variant="ghost" onClick={() => removeLine(i)}><Trash2 className="w-4 h-4 text-destructive" /></Button></TableCell>
                   </TableRow>

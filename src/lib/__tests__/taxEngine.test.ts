@@ -1,0 +1,222 @@
+import { describe, it, expect } from "vitest";
+import {
+  calculateLineTax,
+  calculateWht,
+  calculateReverseCharge,
+  calculateApit,
+  allocateDocumentRounding,
+  type TaxMemberInput,
+  type WhtRuleInput,
+  type ApitSchedule,
+} from "../taxEngine";
+
+const SSCL: TaxMemberInput = {
+  taxCodeId: "sscl",
+  code: "SSCL",
+  rate: 2.5,
+  isCompound: false,
+  applyOrder: 1,
+  collectionMode: "output",
+};
+const VAT: TaxMemberInput = {
+  taxCodeId: "vat",
+  code: "VAT18",
+  rate: 18,
+  isCompound: true,
+  applyOrder: 2,
+  collectionMode: "output",
+};
+
+const slMembers = [SSCL, VAT];
+
+describe("calculateLineTax — compound SL case", () => {
+  it("computes the canonical 100,000 → 120,950 chain", () => {
+    const r = calculateLineTax({
+      lineAmount: 100000,
+      isInclusive: false,
+      members: slMembers,
+      roundingMethod: "half_up",
+      roundingLevel: "line",
+      documentDate: "2026-06-13",
+    });
+    expect(r.exclusiveBase).toBe(100000);
+    expect(r.taxes.find((t) => t.code === "SSCL")!.amount).toBe(2500);
+    const vat = r.taxes.find((t) => t.code === "VAT18")!;
+    expect(vat.base).toBe(102500);
+    expect(vat.amount).toBe(18450);
+    expect(r.lineTotal).toBe(120950);
+  });
+
+  it("applies members by apply_order regardless of input order", () => {
+    const r = calculateLineTax({
+      lineAmount: 100000,
+      isInclusive: false,
+      members: [VAT, SSCL],
+      roundingMethod: "half_up",
+      roundingLevel: "line",
+      documentDate: "2026-06-13",
+    });
+    expect(r.lineTotal).toBe(120950);
+  });
+});
+
+describe("calculateLineTax — inclusive round-trip", () => {
+  it("back-calculates the exclusive base algebraically", () => {
+    // 120,950 inclusive must round-trip to base 100,000
+    const r = calculateLineTax({
+      lineAmount: 120950,
+      isInclusive: true,
+      members: slMembers,
+      roundingMethod: "half_up",
+      roundingLevel: "line",
+      documentDate: "2026-06-13",
+    });
+    expect(r.exclusiveBase).toBe(100000);
+    expect(r.taxes.find((t) => t.code === "SSCL")!.amount).toBe(2500);
+    expect(r.taxes.find((t) => t.code === "VAT18")!.amount).toBe(18450);
+    expect(r.lineTotal).toBe(120950);
+  });
+
+  it("single-code inclusive: 118 inclusive of VAT 18% → base 100", () => {
+    const r = calculateLineTax({
+      lineAmount: 118,
+      isInclusive: true,
+      members: [{ ...VAT, isCompound: false, applyOrder: 1 }],
+      roundingMethod: "half_up",
+      roundingLevel: "line",
+      documentDate: "2026-06-13",
+    });
+    expect(r.exclusiveBase).toBe(100);
+    expect(r.taxes[0].amount).toBe(18);
+    expect(r.lineTotal).toBe(118);
+  });
+});
+
+describe("document-level rounding reconciliation", () => {
+  it("rounds once at document level and pushes drift onto the largest line", () => {
+    // Three lines whose individually-rounded taxes drift from the document round
+    const unrounded = [10.005, 10.005, 33.335];
+    const { perLine, documentTotal } = allocateDocumentRounding(unrounded, "half_up");
+    expect(documentTotal).toBe(53.35);
+    expect(roundTo2(perLine.reduce((s, a) => s + a, 0))).toBe(documentTotal);
+    // drift landed on the largest line
+    expect(perLine[2]).not.toBe(33.34);
+  });
+
+  function roundTo2(n: number) {
+    return Math.round(n * 100) / 100;
+  }
+});
+
+describe("calculateWht — AIT thresholds (settlement-based)", () => {
+  const rule: WhtRuleInput = {
+    id: "r1",
+    taxCodeId: "wht-svc",
+    paymentNature: "service_fee",
+    payeeType: "resident_individual",
+    rate: 5,
+    thresholdAmount: 100000,
+    thresholdPeriod: "per_month",
+    effectiveFrom: "2025-01-01",
+    effectiveTo: null,
+    certificateRequired: true,
+  };
+  const vendor = {
+    payeeType: "resident_individual",
+    defaultPaymentNature: "service_fee",
+    whtExempt: false,
+  };
+
+  it("returns null at 99,999 (below threshold)", () => {
+    expect(calculateWht(99999, vendor, [rule], "2026-06-13", 0)).toBeNull();
+  });
+
+  it("withholds only on the excess at 100,001", () => {
+    const r = calculateWht(100001, vendor, [rule], "2026-06-13", 0)!;
+    expect(r.taxableAmount).toBe(1);
+    expect(r.whtAmount).toBe(0.05);
+    expect(r.netPayable).toBe(100000.95);
+  });
+
+  it("withholds subsequent payments in full once the threshold is crossed", () => {
+    const r = calculateWht(50000, vendor, [rule], "2026-06-13", 120000)!;
+    expect(r.taxableAmount).toBe(50000);
+    expect(r.whtAmount).toBe(2500);
+    expect(r.netPayable).toBe(47500);
+  });
+
+  it("partial payments: WHT per payment, crossing mid-stream", () => {
+    // Bill 150k paid 80k then 70k. First: 80k ≤ 100k → null.
+    expect(calculateWht(80000, vendor, [rule], "2026-06-13", 0)).toBeNull();
+    // Second: cumulative 150k → taxable portion 50k.
+    const second = calculateWht(70000, vendor, [rule], "2026-06-13", 80000)!;
+    expect(second.taxableAmount).toBe(50000);
+    expect(second.whtAmount).toBe(2500);
+  });
+
+  it("respects vendor wht_exempt", () => {
+    expect(
+      calculateWht(500000, { ...vendor, whtExempt: true }, [rule], "2026-06-13", 0)
+    ).toBeNull();
+  });
+
+  it("ignores rules outside their effective window", () => {
+    const expired = { ...rule, effectiveTo: "2025-12-31" };
+    expect(calculateWht(200000, vendor, [expired], "2026-06-13", 0)).toBeNull();
+  });
+});
+
+describe("calculateReverseCharge", () => {
+  it("emits symmetric output and input legs", () => {
+    const { outputTax, inputTax } = calculateReverseCharge(100000, 18);
+    expect(outputTax).toBe(18000);
+    expect(inputTax).toBe(18000);
+    expect(outputTax).toBe(inputTax);
+  });
+});
+
+describe("calculateApit — 2025/26 indicative schedule", () => {
+  const schedule: ApitSchedule = {
+    id: "s1",
+    annualRelief: 1800000,
+    brackets: [
+      { bracketOrder: 1, annualAmountUpTo: 1000000, rate: 6 },
+      { bracketOrder: 2, annualAmountUpTo: 1500000, rate: 18 },
+      { bracketOrder: 3, annualAmountUpTo: 2000000, rate: 24 },
+      { bracketOrder: 4, annualAmountUpTo: 2500000, rate: 30 },
+      { bracketOrder: 5, annualAmountUpTo: null, rate: 36 },
+    ],
+  };
+
+  it("is zero at the relief boundary (150,000/month = 1.8M/yr)", () => {
+    const r = calculateApit(150000, schedule);
+    expect(r.annualTaxable).toBe(0);
+    expect(r.monthlyApit).toBe(0);
+  });
+
+  it("taxes only the first slice just above relief", () => {
+    // 200,000/month → annual 2.4M − 1.8M relief = 600k taxable @6% = 36k/yr = 3k/month
+    const r = calculateApit(200000, schedule);
+    expect(r.annualTaxable).toBe(600000);
+    expect(r.annualTax).toBe(36000);
+    expect(r.monthlyApit).toBe(3000);
+  });
+
+  it("reaches the top bracket for high earners", () => {
+    // 500,000/month → annual 6M − 1.8M = 4.2M taxable
+    // 1M@6%=60k + 500k@18%=90k + 500k@24%=120k + 500k@30%=150k + 1.7M@36%=612k = 1,032k
+    const r = calculateApit(500000, schedule);
+    expect(r.annualTaxable).toBe(4200000);
+    expect(r.annualTax).toBe(1032000);
+    expect(r.monthlyApit).toBe(86000);
+    expect(r.trace.evaluation_steps.some((s) => s.includes("top bracket"))).toBe(true);
+  });
+
+  it("emits a payroll-compatible trace", () => {
+    const r = calculateApit(300000, schedule);
+    expect(r.trace.formula_type).toBe("CONDITIONAL");
+    expect(r.trace.base_component).toBe("GROSS_PAY");
+    expect(r.trace.result).toBe(r.monthlyApit);
+    expect(r.trace.evaluation_steps.length).toBeGreaterThan(2);
+  });
+});

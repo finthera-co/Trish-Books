@@ -11,19 +11,28 @@ import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/currency";
 import { useInventoryItemsEnhanced, useCreateInventoryItemEnhanced, useUpdateInventoryItem, useDeleteInventoryItem } from "@/hooks/useSubledgerData";
 import { useInventoryRealtime } from "@/hooks/useInventoryRealtime";
+import { useTaxGroups, useTaxCodes, currentRate } from "@/hooks/useTaxEngine";
 
 export default function InventoryPage() {
   useInventoryRealtime();
   const { data: items, isLoading } = useInventoryItemsEnhanced();
+  const { data: taxGroups } = useTaxGroups();
+  const { data: taxCodes } = useTaxCodes();
   const createMutation = useCreateInventoryItemEnhanced();
   const updateMutation = useUpdateInventoryItem();
   const deleteMutation = useDeleteInventoryItem();
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [form, setForm] = useState({ item_name: "", sku: "", description: "", unit_cost: "", quantity_on_hand: "", valuation_method: "wac" as "wac" | "fifo" });
+  // purchase_tax encodes the input-side default: "g:<id>" | "c:<id>" | ""
+  const [form, setForm] = useState({ item_name: "", sku: "", description: "", unit_cost: "", quantity_on_hand: "", valuation_method: "wac" as "wac" | "fifo", purchase_tax: "" });
+
+  // Only input / reverse-charge codes (and groups built from them) are valid
+  // purchase-side defaults — output VAT belongs on the product (sales side).
+  const purchaseCodes = (taxCodes || []).filter((c) => c.is_active && ["input", "reverse_charge"].includes(c.collection_mode));
+  const purchaseGroups = (taxGroups || []).filter((g) => g.is_active);
 
   const resetForm = () => {
-    setForm({ item_name: "", sku: "", description: "", unit_cost: "", quantity_on_hand: "", valuation_method: "wac" });
+    setForm({ item_name: "", sku: "", description: "", unit_cost: "", quantity_on_hand: "", valuation_method: "wac", purchase_tax: "" });
     setEditId(null);
   };
 
@@ -35,6 +44,8 @@ export default function InventoryPage() {
       unit_cost: parseFloat(form.unit_cost) || 0,
       quantity_on_hand: parseFloat(form.quantity_on_hand) || 0,
       valuation_method: form.valuation_method,
+      default_purchase_tax_group_id: form.purchase_tax.startsWith("g:") ? form.purchase_tax.slice(2) : null,
+      default_purchase_tax_code_id: form.purchase_tax.startsWith("c:") ? form.purchase_tax.slice(2) : null,
     };
     if (editId) {
       updateMutation.mutate({ id: editId, ...payload }, { onSuccess: () => { setOpen(false); resetForm(); } });
@@ -52,6 +63,8 @@ export default function InventoryPage() {
       unit_cost: String(item.unit_cost || ""),
       quantity_on_hand: String(item.quantity_on_hand || ""),
       valuation_method: (item.valuation_method as "wac" | "fifo") || "wac",
+      purchase_tax: item.default_purchase_tax_group_id ? `g:${item.default_purchase_tax_group_id}`
+        : item.default_purchase_tax_code_id ? `c:${item.default_purchase_tax_code_id}` : "",
     });
     setOpen(true);
   };
@@ -94,6 +107,22 @@ export default function InventoryPage() {
                 </div>
               </div>
               <div><Label>Description</Label><Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+              <div>
+                <Label>Default purchase tax (input VAT)</Label>
+                <p className="text-xs text-muted-foreground mb-1">Tax suppliers charge on this item — used on POs and bills. Distinct from the product's sales tax.</p>
+                <Select value={form.purchase_tax || "none"} onValueChange={(v) => setForm({ ...form, purchase_tax: v === "none" ? "" : v })}>
+                  <SelectTrigger><SelectValue placeholder="No purchase tax" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No purchase tax</SelectItem>
+                    {purchaseGroups.length > 0 && purchaseGroups.map((g) => (
+                      <SelectItem key={g.id} value={`g:${g.id}`}>Group · {g.code}</SelectItem>
+                    ))}
+                    {purchaseCodes.map((c) => (
+                      <SelectItem key={c.id} value={`c:${c.id}`}>{c.code} ({currentRate(c) ?? 0}%)</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <Button className="w-full" onClick={handleSubmit} disabled={!form.item_name || createMutation.isPending || updateMutation.isPending}>
                 {editId ? "Update" : "Create"} Item
               </Button>

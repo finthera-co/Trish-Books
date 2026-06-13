@@ -129,8 +129,32 @@ export function useReceivePaymentWithGL() {
       reference?: string;
       bank_account_id: string;
       ar_account_id: string;
+      /** Tax the customer withheld from this payment (AIT receivable). */
+      wht_amount?: number;
     }) => {
       const tenantId = appUser!.tenant_id;
+
+      // Customer-side WHT: resolve the withholding_receivable tax code
+      let wht: { amount: number; tax_code_id: string; wht_receivable_account_id: string; rate: number } | null = null;
+      if (params.wht_amount && params.wht_amount > 0) {
+        const { data: whtCode } = await supabase
+          .from("tax_codes" as any)
+          .select("id, code, wht_receivable_account_id")
+          .eq("tenant_id", tenantId)
+          .eq("collection_mode", "withholding_receivable")
+          .eq("is_active", true)
+          .limit(1)
+          .maybeSingle();
+        if (!whtCode || !(whtCode as any).wht_receivable_account_id) {
+          throw new Error("No active withholding-receivable tax code with a WHT Receivable account is configured (Settings → Tax Configuration)");
+        }
+        wht = {
+          amount: params.wht_amount,
+          tax_code_id: (whtCode as any).id,
+          wht_receivable_account_id: (whtCode as any).wht_receivable_account_id,
+          rate: params.amount > 0 ? Math.round((params.wht_amount / params.amount) * 10000) / 100 : 0,
+        };
+      }
 
       // 1. Record payment first to get ID
       const { data: pmt, error } = await supabase
@@ -143,12 +167,13 @@ export function useReceivePaymentWithGL() {
           reference: params.reference || null,
           bank_account_id: params.bank_account_id,
           ar_account_id: params.ar_account_id,
-        })
+          wht_amount: params.wht_amount ?? 0,
+        } as any)
         .select()
         .single();
       if (error) throw error;
 
-      // 2. Post via posting engine: Dr Bank / Cr AR + AR subledger
+      // 2. Post: Dr Bank (net) / Dr WHT Receivable / Cr AR (gross)
       const result = await postPaymentReceived({
         tenant_id: tenantId,
         payment_id: pmt.id,
@@ -159,6 +184,7 @@ export function useReceivePaymentWithGL() {
         ar_account_id: params.ar_account_id,
         reference: params.reference,
         invoice_id: params.invoice_id,
+        wht,
       });
 
       // 3. Link journal entry to payment

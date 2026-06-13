@@ -27,6 +27,7 @@ export default function ReceivePayment() {
   const [paymentMethod, setPaymentMethod] = useState("bank_transfer");
   const [reference, setReference] = useState("");
   const [selectedInvoices, setSelectedInvoices] = useState<Record<string, number>>({});
+  const [withheldAmount, setWithheldAmount] = useState("");
 
   // Auto-select first AR and bank accounts
   useState(() => {
@@ -40,9 +41,26 @@ export default function ReceivePayment() {
 
   const totalPayment = Object.values(selectedInvoices).reduce((s, v) => s + v, 0);
 
+  const customer = (customers || []).find((c: any) => c.id === customerId) as any;
+  const customerWithholds = !!customer?.withholds_tax;
+  const totalWithheld = customerWithholds ? Math.min(parseFloat(withheldAmount || "0") || 0, totalPayment) : 0;
+  const netBank = Math.round((totalPayment - totalWithheld) * 100) / 100;
+
   const handleApply = async () => {
-    for (const [invoiceId, amount] of Object.entries(selectedInvoices)) {
-      if (amount <= 0) continue;
+    // Distribute the customer-withheld amount proportionally across the
+    // selected invoices; push any rounding remainder onto the last one so
+    // the sum of per-invoice WHT equals the entered total.
+    const entries = Object.entries(selectedInvoices).filter(([, a]) => a > 0);
+    let allocatedWht = 0;
+    for (let i = 0; i < entries.length; i++) {
+      const [invoiceId, amount] = entries[i];
+      const isLast = i === entries.length - 1;
+      const wht = totalWithheld > 0
+        ? (isLast
+            ? Math.round((totalWithheld - allocatedWht) * 100) / 100
+            : Math.round((totalWithheld * amount / totalPayment) * 100) / 100)
+        : 0;
+      allocatedWht += wht;
       await receivePayment.mutateAsync({
         invoice_id: invoiceId,
         customer_id: customerId,
@@ -52,6 +70,7 @@ export default function ReceivePayment() {
         reference,
         bank_account_id: bankAccountId,
         ar_account_id: arAccountId,
+        wht_amount: wht > 0 ? wht : undefined,
       });
     }
     navigate("/accounting/customers/" + customerId);
@@ -140,6 +159,23 @@ export default function ReceivePayment() {
               <Label>Reference / Check #</Label>
               <Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. CHK-001" />
             </div>
+
+            {customerWithholds && (
+              <div className="pt-3 border-t border-border space-y-2">
+                <div>
+                  <Label>Tax withheld by customer</Label>
+                  <Input type="number" step="0.01" min="0" value={withheldAmount}
+                    onChange={(e) => setWithheldAmount(e.target.value)} placeholder="0.00" />
+                </div>
+                {totalWithheld > 0 && (
+                  <div className="p-2 rounded-md bg-muted/30 text-sm space-y-1">
+                    <div className="flex justify-between"><span className="text-muted-foreground">Gross AR settled</span><span className="font-mono">{formatCurrency(totalPayment)}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Withheld</span><span className="font-mono text-destructive">-{formatCurrency(totalWithheld)}</span></div>
+                    <div className="flex justify-between font-semibold border-t pt-1"><span>Net bank</span><span className="font-mono">{formatCurrency(netBank)}</span></div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="pt-4 border-t border-border">
               <p className="text-sm text-muted-foreground">Total Payment</p>

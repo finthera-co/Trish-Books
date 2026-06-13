@@ -1,4 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  calculateLineTax,
+  type TaxMemberInput,
+  type CollectionMode,
+} from "../_shared/taxEngine.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -60,6 +65,13 @@ Deno.serve(async (req) => {
       .eq("tenant_id", appUser.tenant_id)
       .single();
     if (invErr || !invoice) return json({ ok: false, error: "Invoice not found" }, 200);
+
+    // ── Tenant tax profile (drives engine behavior) ───────────────────
+    const { data: taxProfile } = await admin
+      .from("tenant_tax_profiles")
+      .select("*")
+      .eq("tenant_id", appUser.tenant_id)
+      .maybeSingle();
 
     // ═══════════════════════════════════════════════════════════════════
     // VOID FLOW
@@ -141,6 +153,18 @@ Deno.serve(async (req) => {
         await admin.from("stock_movements").insert(reversals);
       }
 
+      // Tax sub-ledger: mirror every original row with negated amounts
+      // (source_type='reversal', reversal_of_id set); originals flagged
+      // is_reversed. Never deletes or mutates original rows.
+      const { error: taxRevErr } = await admin.rpc("reverse_tax_transactions", {
+        p_tenant_id: appUser.tenant_id,
+        p_source_type: "invoice",
+        p_source_id: invoice_id,
+        p_reversal_journal_id: revJE.id,
+        p_reversal_date: new Date().toISOString().slice(0, 10),
+      });
+      if (taxRevErr) console.error("Tax reversal rows failed:", taxRevErr.message);
+
       await admin
         .from("invoices")
         .update({
@@ -201,7 +225,182 @@ Deno.serve(async (req) => {
 
     if (!arAccountId) errors.push("Accounts Receivable not configured (Settings → Account Mapping)");
     if (!defaultSalesId) errors.push("Default Sales Revenue not configured");
-    if (Number(invoice.tax_amount || 0) > 0 && !taxPayableId) {
+
+    // ═════════ Tax engine: per-line computation at ISSUE DATE rates ═════════
+    const warnings: string[] = [];
+    const itemsAll = invoice.invoice_items || [];
+    const usesTaxEngine = itemsAll.some((it: any) => it.tax_code_id || it.tax_group_id);
+
+    type CodeMeta = {
+      id: string; code: string; tax_type: string; collection_mode: CollectionMode;
+      is_recoverable: boolean; rounding_method: string; rounding_level: string;
+      output_liability_account_id: string | null;
+    };
+    // taxCodeId → aggregated output tax + resolved account
+    const taxByCode = new Map<string, { meta: CodeMeta; amount: number; base: number; rate: number; account: string }>();
+    // per (line, code) rows for the sub-ledger
+    const taxTxnRows: any[] = [];
+    // line id → net revenue base
+    const lineNetById = new Map<string, number>();
+    let computedSubtotal = 0;
+    let computedTax = 0;
+
+    if (usesTaxEngine) {
+      const codeIds = new Set<string>();
+      const groupIds = new Set<string>();
+      for (const it of itemsAll) {
+        if (it.tax_code_id) codeIds.add(it.tax_code_id);
+        if (it.tax_group_id) groupIds.add(it.tax_group_id);
+      }
+
+      const { data: groupMembers } = groupIds.size
+        ? await admin
+            .from("tax_group_members")
+            .select("tax_group_id, tax_code_id, apply_order, compound_on_previous")
+            .in("tax_group_id", [...groupIds])
+        : { data: [] as any[] };
+      for (const gm of groupMembers || []) codeIds.add(gm.tax_code_id);
+
+      const { data: codes } = await admin
+        .from("tax_codes")
+        .select("id, code, tax_type, collection_mode, is_recoverable, is_active, rounding_method, rounding_level, output_liability_account_id, tenant_id")
+        .in("id", [...codeIds]);
+      const codeById = new Map<string, any>((codes || []).map((c: any) => [c.id, c]));
+
+      const { data: rates } = await admin
+        .from("tax_code_rates")
+        .select("tax_code_id, rate, effective_from, effective_to")
+        .in("tax_code_id", [...codeIds]);
+      const issue = invoice.issue_date as string;
+      const rateFor = (codeId: string): number | null => {
+        const candidates = (rates || [])
+          .filter((r: any) => r.tax_code_id === codeId && r.effective_from <= issue && (!r.effective_to || r.effective_to >= issue))
+          .sort((a: any, b: any) => (a.effective_from < b.effective_from ? 1 : -1));
+        return candidates.length ? Number(candidates[0].rate) : null;
+      };
+
+      // Tenant profile enforcement (engine semantics)
+      for (const c of codes || []) {
+        if (c.tenant_id !== appUser.tenant_id) errors.push(`Tax code ${c.code} belongs to another tenant`);
+        if (!c.is_active) errors.push(`Tax code ${c.code} is inactive`);
+        if (c.tax_type === "VAT" && !taxProfile?.is_vat_registered) {
+          errors.push(`Cannot charge ${c.code}: tenant is not VAT-registered (Settings → Tax Configuration)`);
+        }
+        if (c.tax_type === "SSCL" && !taxProfile?.is_sscl_liable) {
+          errors.push(`Cannot charge ${c.code}: tenant is not SSCL-liable (Settings → Tax Configuration)`);
+        }
+        if (c.collection_mode !== "output") {
+          errors.push(`Tax code ${c.code} (${c.collection_mode}) cannot be used on a sales invoice`);
+        }
+      }
+
+      if (errors.length === 0) {
+        for (const it of itemsAll) {
+          const lineAmount =
+            Number(it.quantity) * Number(it.unit_price) - Number(it.discount_amount || 0);
+          if (!it.tax_code_id && !it.tax_group_id) {
+            const net = Math.round(lineAmount * 100) / 100;
+            lineNetById.set(it.id, net);
+            computedSubtotal += net;
+            continue;
+          }
+          const memberDefs = it.tax_group_id
+            ? (groupMembers || [])
+                .filter((gm: any) => gm.tax_group_id === it.tax_group_id)
+                .map((gm: any) => ({ codeId: gm.tax_code_id, order: gm.apply_order, compound: gm.compound_on_previous }))
+            : [{ codeId: it.tax_code_id, order: 1, compound: false }];
+
+          const members: TaxMemberInput[] = [];
+          for (const md of memberDefs) {
+            const c = codeById.get(md.codeId);
+            const rate = rateFor(md.codeId);
+            if (!c) { errors.push(`Tax code ${md.codeId} not found`); continue; }
+            if (rate === null) { errors.push(`No ${c.code} rate effective on ${issue}`); continue; }
+            members.push({
+              taxCodeId: c.id, code: c.code, rate,
+              isCompound: md.compound, applyOrder: md.order,
+              collectionMode: c.collection_mode,
+            });
+          }
+          if (errors.length > 0) break;
+
+          const first = codeById.get(members[0].taxCodeId);
+          const result = calculateLineTax({
+            lineAmount,
+            isInclusive: !!it.is_tax_inclusive,
+            members,
+            roundingMethod: (first?.rounding_method as any) || "half_up",
+            roundingLevel: "line",
+            documentDate: issue,
+          });
+
+          lineNetById.set(it.id, result.exclusiveBase);
+          computedSubtotal += result.exclusiveBase;
+          for (const t of result.taxes) {
+            computedTax += t.amount;
+            const meta = codeById.get(t.taxCodeId) as CodeMeta;
+            // Three-tier resolution: code-level account → global fallback
+            let acct = meta.output_liability_account_id;
+            if (!acct) {
+              acct = taxPayableId ?? null;
+              if (acct) warnings.push(`Tax code ${meta.code} has no output liability account; used global Tax Payable fallback`);
+            }
+            if (!acct) {
+              errors.push(`Tax code ${meta.code} has no output liability account mapped and no global Tax Payable fallback`);
+              continue;
+            }
+            const agg = taxByCode.get(t.taxCodeId) || { meta, amount: 0, base: 0, rate: t.rate, account: acct };
+            agg.amount = Math.round((agg.amount + t.amount) * 100) / 100;
+            agg.base = Math.round((agg.base + t.base) * 100) / 100;
+            taxByCode.set(t.taxCodeId, agg);
+            taxTxnRows.push({
+              tenant_id: appUser.tenant_id,
+              tax_code_id: t.taxCodeId,
+              direction: "output",
+              source_type: "invoice",
+              source_id: invoice_id,
+              source_line_id: it.id,
+              base_amount: t.base,
+              tax_amount: t.amount, // TODO(multi-currency): convert at document FX rate once FX infrastructure exists
+              tax_amount_txn_currency: t.amount,
+              currency: invoice.currency || "LKR",
+              fx_rate: 1,
+              rate_applied: t.rate,
+              transaction_date: issue,
+            });
+          }
+        }
+      }
+
+      computedSubtotal = Math.round(computedSubtotal * 100) / 100;
+      computedTax = Math.round(computedTax * 100) / 100;
+      const computedTotal = Math.round((computedSubtotal + computedTax) * 100) / 100;
+
+      // Never trust client-computed tax: reject mismatches beyond a cent
+      if (errors.length === 0 && Math.abs(computedTotal - Number(invoice.total_amount || 0)) > 0.01) {
+        errors.push(
+          `Tax recalculated server-side differs from submitted values. ` +
+          `(server total ${computedTotal.toFixed(2)} vs submitted ${Number(invoice.total_amount).toFixed(2)})`
+        );
+      }
+
+      // Filed tax period guard (pre-check; the DB trigger is the backstop)
+      if (errors.length === 0 && taxTxnRows.length > 0) {
+        const taxTypes = [...new Set([...taxByCode.values()].map((v) => v.meta.tax_type))];
+        const { data: filedPeriods } = await admin
+          .from("tax_periods")
+          .select("tax_type, period_start, period_end")
+          .eq("tenant_id", appUser.tenant_id)
+          .eq("status", "filed")
+          .in("tax_type", taxTypes);
+        for (const p of filedPeriods || []) {
+          if (issue >= p.period_start && issue <= p.period_end) {
+            errors.push(`The ${p.tax_type} period covering ${issue} is already filed. Use a different issue date or amend via credit note.`);
+          }
+        }
+      }
+    } else if (Number(invoice.tax_amount || 0) > 0 && !taxPayableId) {
+      // Legacy invoices (no line tax codes) keep the old single-account path
       errors.push("Tax Payable account not configured (required because invoice has tax)");
     }
 
@@ -249,15 +448,18 @@ Deno.serve(async (req) => {
     // ── Build journal lines ─────────────────────────────────────────
     const items = invoice.invoice_items || [];
 
-    // Group revenue by account
+    // Group revenue by account. Tax-engine lines credit revenue NET of tax
+    // (the engine's exclusive base); legacy lines keep their stored total.
     const revenueByAccount = new Map<string, number>();
     for (const item of items) {
       const acctId = item.account_id || defaultSalesId!;
-      const lineAmt = Number(item.total || (Number(item.quantity) * Number(item.unit_price)));
+      const lineAmt = usesTaxEngine
+        ? (lineNetById.get(item.id) ?? Number(item.quantity) * Number(item.unit_price) - Number(item.discount_amount || 0))
+        : Number(item.total || (Number(item.quantity) * Number(item.unit_price)));
       revenueByAccount.set(acctId, (revenueByAccount.get(acctId) || 0) + lineAmt);
     }
 
-    const taxAmount = Number(invoice.tax_amount || 0);
+    const taxAmount = usesTaxEngine ? 0 : Number(invoice.tax_amount || 0);
 
     // ── COGS / Inventory validation for tracked products ────────────
     type CogsItem = { item_id: string; qty: number; avg_cost: number; cogs_acct: string; asset_acct: string; line_total: number; name: string };
@@ -334,9 +536,17 @@ Deno.serve(async (req) => {
       if (amt > 0) journalLines.push({ account_id: acctId, debit: 0, credit: amt });
     }
 
-    // Cr Tax Payable
+    // Cr Tax Payable (legacy header-tax path only)
     if (taxAmount > 0 && taxPayableId) {
       journalLines.push({ account_id: taxPayableId, debit: 0, credit: taxAmount });
+    }
+
+    // Cr each tax code's output liability account separately (aggregated
+    // per code across lines) — tax engine path
+    for (const [, agg] of taxByCode) {
+      if (agg.amount > 0) {
+        journalLines.push({ account_id: agg.account, debit: 0, credit: agg.amount });
+      }
     }
 
     // Dr COGS / Cr Inventory (grouped by accounts)
@@ -395,6 +605,29 @@ Deno.serve(async (req) => {
     if (linesErr) {
       await admin.from("journal_entries").delete().eq("id", je.id);
       return json({ ok: false, error: `Failed to insert lines: ${linesErr.message}` }, 200);
+    }
+
+    // ── Tax sub-ledger: same logical operation as the JE ─────────────
+    if (taxTxnRows.length > 0) {
+      const { error: taxTxnErr } = await admin
+        .from("tax_transactions")
+        .insert(taxTxnRows.map((r) => ({ ...r, journal_entry_id: je.id })));
+      if (taxTxnErr) {
+        // Roll the JE back — tax must never post without its sub-ledger rows
+        await admin.from("journal_lines").delete().eq("journal_entry_id", je.id);
+        await admin.from("journal_entries").delete().eq("id", je.id);
+        return json({ ok: false, error: `Tax sub-ledger insert failed: ${taxTxnErr.message}` }, 200);
+      }
+
+      // DEPRECATED: legacy tax_records kept for backward compatibility with
+      // old reports. New code must read tax_transactions. Only written when
+      // a line still carries a legacy taxes.tax_id.
+      const legacyRecords = items
+        .filter((it: any) => it.tax_id && Number(it.tax_amount_line || 0) > 0)
+        .map((it: any) => ({ invoice_id: invoice_id, tax_id: it.tax_id, tax_amount: Number(it.tax_amount_line) }));
+      if (legacyRecords.length > 0) {
+        await admin.from("tax_records").insert(legacyRecords);
+      }
     }
 
     // Post the JE
@@ -490,7 +723,14 @@ Deno.serve(async (req) => {
       },
     });
 
-    return json({ ok: true, message: "Invoice posted", journal_id: je.id, lines: journalLines.length });
+    return json({
+      ok: true,
+      message: "Invoice posted",
+      journal_id: je.id,
+      lines: journalLines.length,
+      tax_transactions: taxTxnRows.length,
+      warnings: warnings.length ? warnings : undefined,
+    });
   } catch (err: any) {
     return json({ ok: false, error: err?.message || "Internal error" }, 200);
   }

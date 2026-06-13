@@ -660,7 +660,7 @@ export function useCreateProduct() {
   const queryClient = useQueryClient();
   const { appUser } = useAuth();
   return useMutation({
-    mutationFn: async (product: { name: string; description?: string; price: number; tax_id?: string; income_account_id?: string; expense_account_id?: string; asset_account_id?: string; type?: string }) => {
+    mutationFn: async (product: { name: string; description?: string; price: number; tax_id?: string; default_tax_group_id?: string | null; default_tax_code_id?: string | null; income_account_id?: string; expense_account_id?: string; asset_account_id?: string; type?: string }) => {
       const { data, error } = await supabase.from("products").insert({
         ...product,
         tenant_id: appUser?.tenant_id,

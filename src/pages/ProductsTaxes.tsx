@@ -1,11 +1,19 @@
-import { Plus } from "lucide-react";
+import { Plus, ArrowRight, Lock } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
-import { useProducts, useCreateProduct, useTaxes, useCreateTax, useAccounts } from "@/hooks/useData";
+import { useProducts, useCreateProduct, useTaxes, useAccounts } from "@/hooks/useData";
+import { useTaxGroups, useTaxCodes } from "@/hooks/useTaxEngine";
 import { useInventoryRealtime } from "@/hooks/useInventoryRealtime";
 import AccountSelector from "@/components/shared/AccountSelector";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+
+// A product's default tax is now either a group or a single code. We encode
+// the Select value as "g:<id>" / "c:<id>" / "" so one control covers both.
+type DefaultTaxValue = string;
 
 export default function ProductsTaxes() {
   useInventoryRealtime();
@@ -14,31 +22,32 @@ export default function ProductsTaxes() {
   const [productName, setProductName] = useState("");
   const [productDesc, setProductDesc] = useState("");
   const [productPrice, setProductPrice] = useState(0);
-  const [productTaxId, setProductTaxId] = useState("");
+  const [defaultTax, setDefaultTax] = useState<DefaultTaxValue>("");
   const [productAccountId, setProductAccountId] = useState("");
   const [productExpenseAccountId, setProductExpenseAccountId] = useState("");
   const [productAssetAccountId, setProductAssetAccountId] = useState("");
   const [productType, setProductType] = useState<"service" | "non_inventory" | "inventory">("service");
 
-  // Tax form
-  const [taxOpen, setTaxOpen] = useState(false);
-  const [taxName, setTaxName] = useState("");
-  const [taxRate, setTaxRate] = useState(0);
-
   const { data: products, isLoading: productsLoading } = useProducts();
   const { data: taxes, isLoading: taxesLoading } = useTaxes();
+  const { data: taxGroups } = useTaxGroups();
+  const { data: taxCodes } = useTaxCodes();
   const { data: accounts } = useAccounts();
   const createProduct = useCreateProduct();
-  const createTax = useCreateTax();
 
-  const revenueAccounts = accounts?.filter(a => a.account_type === "Revenue") || [];
+  const revenueAccounts = accounts?.filter((a) => a.account_type === "Revenue") || [];
+  const activeGroups = (taxGroups || []).filter((g) => g.is_active);
+  const activeCodes = (taxCodes || []).filter((c) => c.is_active);
 
   const handleCreateProduct = async () => {
+    const default_tax_group_id = defaultTax.startsWith("g:") ? defaultTax.slice(2) : null;
+    const default_tax_code_id = defaultTax.startsWith("c:") ? defaultTax.slice(2) : null;
     await createProduct.mutateAsync({
       name: productName,
       description: productDesc || undefined,
       price: productPrice,
-      tax_id: productTaxId || undefined,
+      default_tax_group_id,
+      default_tax_code_id,
       income_account_id: productAccountId || undefined,
       type: productType,
       expense_account_id: productExpenseAccountId || undefined,
@@ -48,33 +57,26 @@ export default function ProductsTaxes() {
     setProductName("");
     setProductDesc("");
     setProductPrice(0);
-    setProductTaxId("");
+    setDefaultTax("");
     setProductAccountId("");
     setProductType("service");
     setProductExpenseAccountId("");
     setProductAssetAccountId("");
   };
 
-  const handleCreateTax = async () => {
-    await createTax.mutateAsync({ tax_name: taxName, tax_rate: taxRate });
-    setTaxOpen(false);
-    setTaxName("");
-    setTaxRate(0);
-  };
-
   return (
     <div className="space-y-6">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Products & Taxes</h1>
-          <p className="page-description">Manage products/services and tax rates</p>
+          <h1 className="page-title">Products &amp; Taxes</h1>
+          <p className="page-description">Manage products/services. Tax codes have moved to Tax Configuration.</p>
         </div>
       </div>
 
       <Tabs defaultValue="products">
         <TabsList>
           <TabsTrigger value="products">Products</TabsTrigger>
-          <TabsTrigger value="taxes">Tax Rates</TabsTrigger>
+          <TabsTrigger value="taxes">Tax Rates (legacy)</TabsTrigger>
         </TabsList>
 
         <TabsContent value="products" className="space-y-4 mt-4">
@@ -103,11 +105,21 @@ export default function ProductsTaxes() {
                         className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" />
                     </div>
                     <div>
-                      <label className="text-sm font-medium">Tax Rate</label>
-                      <select value={productTaxId} onChange={(e) => setProductTaxId(e.target.value)}
+                      <label className="text-sm font-medium">Default sales tax (output VAT)</label>
+                      {/* groups first, then codes (grouped sections) */}
+                      <select value={defaultTax} onChange={(e) => setDefaultTax(e.target.value)}
                         className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground">
                         <option value="">No tax</option>
-                        {taxes?.map(t => <option key={t.id} value={t.id}>{t.tax_name} ({Number(t.tax_rate)}%)</option>)}
+                        {activeGroups.length > 0 && (
+                          <optgroup label="Tax Groups">
+                            {activeGroups.map((g) => <option key={g.id} value={`g:${g.id}`}>{g.code} — {g.name}</option>)}
+                          </optgroup>
+                        )}
+                        {activeCodes.length > 0 && (
+                          <optgroup label="Tax Codes">
+                            {activeCodes.map((c) => <option key={c.id} value={`c:${c.id}`}>{c.code} — {c.name}</option>)}
+                          </optgroup>
+                        )}
                       </select>
                     </div>
                   </div>
@@ -116,7 +128,7 @@ export default function ProductsTaxes() {
                     <select value={productAccountId} onChange={(e) => setProductAccountId(e.target.value)}
                       className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground">
                       <option value="">Select account...</option>
-                      {revenueAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} - {a.account_name}</option>)}
+                      {revenueAccounts.map((a) => <option key={a.id} value={a.id}>{a.account_code} - {a.account_name}</option>)}
                     </select>
                   </div>
                   <div>
@@ -132,24 +144,16 @@ export default function ProductsTaxes() {
                     <div>
                       <label className="text-sm font-medium">COGS / Expense Account</label>
                       <p className="text-xs text-muted-foreground mt-0.5 mb-1">Debited when this product is sold</p>
-                      <AccountSelector
-                        value={productExpenseAccountId}
-                        onChange={(id) => setProductExpenseAccountId(id)}
-                        types={["Cost of Goods Sold", "Expense"]}
-                        placeholder="Search account…"
-                      />
+                      <AccountSelector value={productExpenseAccountId} onChange={(id) => setProductExpenseAccountId(id)}
+                        types={["Cost of Goods Sold", "Expense"]} placeholder="Search account…" />
                     </div>
                   )}
                   {productType === "inventory" && (
                     <div>
                       <label className="text-sm font-medium">Inventory Asset Account</label>
                       <p className="text-xs text-muted-foreground mt-0.5 mb-1">Stock-on-hand balance sheet account</p>
-                      <AccountSelector
-                        value={productAssetAccountId}
-                        onChange={(id) => setProductAssetAccountId(id)}
-                        types={["Asset"]}
-                        placeholder="Search account…"
-                      />
+                      <AccountSelector value={productAssetAccountId} onChange={(id) => setProductAssetAccountId(id)}
+                        types={["Asset"]} placeholder="Search account…" />
                     </div>
                   )}
                   <Button onClick={handleCreateProduct} disabled={!productName || createProduct.isPending} className="w-full">
@@ -167,7 +171,7 @@ export default function ProductsTaxes() {
               <p className="text-center py-8 text-muted-foreground">No products found. Create your first product.</p>
             ) : (
               <table className="data-table">
-                <thead><tr><th>Name</th><th>Description</th><th>Tax</th><th className="text-right">Price</th></tr></thead>
+                <thead><tr><th>Name</th><th>Description</th><th>Default Tax</th><th className="text-right">Price</th></tr></thead>
                 <tbody>
                   {products.map((p) => (
                     <tr key={p.id}>
@@ -175,7 +179,14 @@ export default function ProductsTaxes() {
                       <td className="text-muted-foreground">{p.description || "-"}</td>
                       <td>
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-secondary text-secondary-foreground">
-                          {(p.taxes as any)?.tax_name ? `${(p.taxes as any).tax_name} (${Number((p.taxes as any).tax_rate)}%)` : "No tax"}
+                          {(() => {
+                            const gid = (p as any).default_tax_group_id;
+                            const cid = (p as any).default_tax_code_id;
+                            if (gid) return activeGroups.find((g) => g.id === gid)?.code ?? "Group";
+                            if (cid) return activeCodes.find((c) => c.id === cid)?.code ?? "Code";
+                            if ((p.taxes as any)?.tax_name) return `${(p.taxes as any).tax_name} (legacy)`;
+                            return "No tax";
+                          })()}
                         </span>
                       </td>
                       <td className="text-right font-medium text-foreground">LKR {Number(p.price).toLocaleString()}</td>
@@ -188,51 +199,42 @@ export default function ProductsTaxes() {
         </TabsContent>
 
         <TabsContent value="taxes" className="space-y-4 mt-4">
-          <div className="flex justify-end">
-            <Dialog open={taxOpen} onOpenChange={setTaxOpen}>
-              <DialogTrigger asChild>
-                <Button><Plus className="w-4 h-4" />Add Tax Rate</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader><DialogTitle>Create Tax Rate</DialogTitle></DialogHeader>
-                <div className="space-y-4 pt-4">
-                  <div>
-                    <label className="text-sm font-medium">Tax Name</label>
-                    <input type="text" value={taxName} onChange={(e) => setTaxName(e.target.value)}
-                      className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" placeholder="VAT" />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">Rate (%)</label>
-                    <input type="number" value={taxRate || ""} onChange={(e) => setTaxRate(Number(e.target.value))}
-                      className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" placeholder="15" />
-                  </div>
-                  <Button onClick={handleCreateTax} disabled={!taxName || createTax.isPending} className="w-full">
-                    {createTax.isPending ? "Creating..." : "Create Tax Rate"}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </div>
+          <Alert>
+            <ArrowRight className="h-4 w-4" />
+            <AlertDescription>
+              Tax codes have moved to{" "}
+              <Link to="/settings/tax" className="font-medium underline">Tax Configuration</Link>. The list below is the
+              legacy tax-rate table, kept read-only for reference — new sales and purchases use effective-dated tax codes
+              and groups.
+            </AlertDescription>
+          </Alert>
 
-          <div className="stat-card">
-            {taxesLoading ? (
-              <p className="text-center py-8 text-muted-foreground">Loading...</p>
-            ) : !taxes?.length ? (
-              <p className="text-center py-8 text-muted-foreground">No tax rates found. Create your first tax rate.</p>
-            ) : (
-              <table className="data-table">
-                <thead><tr><th>Tax Name</th><th className="text-right">Rate</th></tr></thead>
-                <tbody>
-                  {taxes.map((t) => (
-                    <tr key={t.id}>
-                      <td className="font-medium text-foreground">{t.tax_name}</td>
-                      <td className="text-right font-medium text-foreground">{Number(t.tax_rate)}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Lock className="w-4 h-4 text-muted-foreground" /> Legacy tax rates (read-only)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {taxesLoading ? (
+                <p className="text-center py-8 text-muted-foreground">Loading...</p>
+              ) : !taxes?.length ? (
+                <p className="text-center py-8 text-muted-foreground">No legacy tax rates.</p>
+              ) : (
+                <table className="data-table w-full">
+                  <thead><tr><th>Tax Name</th><th className="text-right">Rate</th></tr></thead>
+                  <tbody>
+                    {taxes.map((t) => (
+                      <tr key={t.id}>
+                        <td className="font-medium text-foreground">{t.tax_name}</td>
+                        <td className="text-right font-medium text-foreground">{Number(t.tax_rate)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
