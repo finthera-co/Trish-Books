@@ -105,7 +105,8 @@ Deno.serve(async (req) => {
       throw new Error(`User error: ${userError.message}`);
     }
 
-    // 5. Seed default Chart of Accounts
+    // 5. Seed Chart of Accounts
+    // Creates only the system Opening Balance Equity account (no default COA).
     try {
       const seedRes = await fetch(`${supabaseUrl}/functions/v1/seed-chart-of-accounts`, {
         method: "POST",

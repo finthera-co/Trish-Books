@@ -1,10 +1,10 @@
-import { Plus, Search, Download, BookOpen, ChevronRight, Edit2, Power, Sprout, Trash2, LayoutList, LayoutGrid, FileText, ExternalLink, Lock, ShieldCheck } from "lucide-react";
+import { Plus, Search, Download, BookOpen, ChevronRight, Edit2, Power, Trash2, LayoutList, LayoutGrid, FileText, ExternalLink, Lock, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAccounts, useCreateAccount, useUpdateAccount } from "@/hooks/useData";
 import { formatCurrency } from "@/lib/currency";
-import { useAccountCategories, useCreateAccountCategory, useSeedDefaultAccounts } from "@/hooks/useAccountCategories";
+import { useAccountCategories, useCreateAccountCategory, useEnsureOBEAccount } from "@/hooks/useAccountCategories";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMyPermissions } from "@/hooks/usePermissions";
 import { useOBEBalance } from "@/hooks/useOpeningBalanceEquity";
@@ -756,7 +756,7 @@ export default function ChartOfAccounts() {
   const { data: categories } = useAccountCategories();
   const createAccount = useCreateAccount();
   const updateAccount = useUpdateAccount();
-  const seedDefaults = useSeedDefaultAccounts();
+  const ensureOBE = useEnsureOBEAccount();
   const createCategory = useCreateAccountCategory();
 
   const { data: obStatus } = useSystemSetting("opening_balance_status");
@@ -775,14 +775,14 @@ export default function ChartOfAccounts() {
     }
   }, [periods, selectedPeriodId]);
 
-  // Auto-seed default COA if tenant has no accounts
-  const [autoSeeded, setAutoSeeded] = useState(false);
+  // Ensure the single system account (Opening Balance Equity) exists. No bulk seeding.
+  const [obeEnsured, setObeEnsured] = useState(false);
   useEffect(() => {
-    if (!isLoading && accounts && (accounts as Account[]).length === 0 && !autoSeeded && !seedDefaults.isPending) {
-      setAutoSeeded(true);
-      seedDefaults.mutate();
+    if (!isLoading && accounts && (accounts as Account[]).length === 0 && !obeEnsured) {
+      setObeEnsured(true);
+      ensureOBE.mutate();
     }
-  }, [isLoading, accounts, autoSeeded, seedDefaults]);
+  }, [isLoading, accounts, obeEnsured]);
 
   const selectedPeriod = periods?.find((p: any) => p.id === selectedPeriodId) as any;
   const isPeriodClosed = selectedPeriod?.status === "closed";
@@ -939,15 +939,6 @@ export default function ChartOfAccounts() {
             </button>
           </div>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => seedDefaults.mutate()}
-            disabled={seedDefaults.isPending}
-          >
-            <Sprout className="w-4 h-4 mr-1" />
-            {seedDefaults.isPending ? "Seeding..." : "Seed Defaults"}
-          </Button>
           <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={!accounts?.length}>
             <Download className="w-4 h-4 mr-1" /> Export
           </Button>
@@ -1022,7 +1013,7 @@ export default function ChartOfAccounts() {
               {search || filterType !== "all" ? "No matching accounts" : "No accounts yet"}
             </p>
             <p className="text-sm text-muted-foreground mt-1">
-              {search || filterType !== "all" ? "Try adjusting your filters." : "Click 'Seed Defaults' to create a standard chart of accounts, or add accounts manually."}
+              {search || filterType !== "all" ? "Try adjusting your filters." : "No accounts yet. Add your first account to begin."}
             </p>
           </div>
         ) : viewMode === "quickbooks" ? (
