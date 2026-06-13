@@ -197,7 +197,15 @@ export function useCreateAccount() {
       queryClient.invalidateQueries({ queryKey: ["trial_balance"] });
       toast.success("Account created");
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: any) => {
+      const code = e?.code;
+      const msg = String(e?.message || "");
+      if (code === "23505" || msg.includes("accounts_tenant_code_unique") || msg.toLowerCase().includes("duplicate key")) {
+        toast.error("That account code already exists. Please use a different code.");
+        return;
+      }
+      toast.error(e?.message || "Failed to create account");
+    },
   });
 }
 

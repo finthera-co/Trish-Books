@@ -19,7 +19,9 @@ export interface AccountSettings {
   // Core — required for invoice/bill/payment posting
   ar_account_id:                        string | null;
   sales_account_id:                     string | null;
-  tax_payable_account_id:               string | null;
+  tax_payable_account_id:               string | null;   // DEPRECATED: legacy shared VAT account; superseded by the two below
+  vat_output_payable_account_id:        string | null;   // Cr on sales (liability)
+  vat_input_receivable_account_id:      string | null;   // Dr on purchases (asset)
   ap_account_id:                        string | null;
   bank_account_id:                      string | null;
   // Inventory & Procurement

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { executeRuleAction, ruleConditionMatches, ruleWillPost } from "../_shared/ruleActions.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -72,11 +73,18 @@ async function checkPeriodLock(supabase: any, tenantId: string, statementDate: s
 }
 
 // ─── Step 2: Rule Engine (runs FIRST) ───
+// Uses the SHARED rule engine (../_shared/ruleActions.ts) so the primary
+// "AI Match" path executes rule actions with EXACTLY the same logic as
+// "Engine Match". When a rule with action_create_expense=true (+ account) fires
+// on an unmatched line, executeRuleAction posts a balanced JE and clears it
+// (RULE_AUTO). Rules without the create-expense action keep the legacy
+// rule_matched stamp (suggest-only; behaviour unchanged).
 async function applyRules(
   supabase: any,
+  recon: { id: string; tenant_id: string; bank_account_id: string },
   bankFeeds: BankFeed[],
   usedBank: Set<string>
-): Promise<{ applied: number; ruleMatchedIds: Set<string> }> {
+): Promise<{ applied: number; posted: number; ruleMatchedIds: Set<string> }> {
   const { data: rules } = await supabase
     .from("reconciliation_rules")
     .select("*")
@@ -84,39 +92,36 @@ async function applyRules(
     .order("priority", { ascending: false });
 
   let applied = 0;
+  let posted = 0;
   const ruleMatchedIds = new Set<string>();
 
   for (const bf of bankFeeds) {
     if (usedBank.has(bf.id)) continue;
     for (const rule of (rules || [])) {
-      let met = false;
-      const desc = (bf.description || "").toLowerCase();
-      const val = (rule.condition_value || "").toLowerCase();
+      if (!ruleConditionMatches(rule, bf as any)) continue;
 
-      if (rule.condition_field === "description") {
-        if (rule.condition_operator === "contains" && desc.includes(val)) met = true;
-        if (rule.condition_operator === "equals" && desc === val) met = true;
-      }
-      if (rule.condition_field === "amount") {
-        const amt = Math.abs(bf.amount);
-        if (rule.condition_operator === "range" && rule.condition_amount_min != null && rule.condition_amount_max != null) {
-          met = amt >= rule.condition_amount_min && amt <= rule.condition_amount_max;
+      if (ruleWillPost(rule)) {
+        const outcome = await executeRuleAction(supabase, recon, bf as any, rule);
+        if (outcome.kind === "posted") {
+          usedBank.add(bf.id);
+          ruleMatchedIds.add(bf.id);
+          applied++;
+          posted++;
+          break;
         }
-        if (rule.condition_operator === "equals" && Math.abs(amt - parseFloat(val)) < 0.01) met = true;
-      }
-
-      if (met) {
+        // Gate/guard blocked posting (sign mismatch, locked period, missing tax
+        // account…): leave it as a suggestion with the reason so it's flagged for
+        // review instead of silently auto-clearing.
         await supabase
           .from("bank_feed_transactions")
           .update({
-            status: "rule_matched",
-            match_type: "rule",
+            status: "suggested",
+            match_type: "RULE_ONLY",
             match_metadata: {
               method: "rule",
-              confidence: 100,
-              reasons: [`Rule "${rule.name}" matched`],
-              timestamp: new Date().toISOString(),
+              reasons: [`Rule "${rule.name}" matched but not auto-posted: ${outcome.reason}`],
               rule_id: rule.id,
+              timestamp: new Date().toISOString(),
             },
           })
           .eq("id", bf.id);
@@ -125,9 +130,28 @@ async function applyRules(
         applied++;
         break;
       }
+
+      await supabase
+        .from("bank_feed_transactions")
+        .update({
+          status: "rule_matched",
+          match_type: "rule",
+          match_metadata: {
+            method: "rule",
+            confidence: 100,
+            reasons: [`Rule "${rule.name}" matched`],
+            timestamp: new Date().toISOString(),
+            rule_id: rule.id,
+          },
+        })
+        .eq("id", bf.id);
+      usedBank.add(bf.id);
+      ruleMatchedIds.add(bf.id);
+      applied++;
+      break;
     }
   }
-  return { applied, ruleMatchedIds };
+  return { applied, posted, ruleMatchedIds };
 }
 
 // ─── Step 3: Source-Based Matching (100% confidence) ───
@@ -1089,7 +1113,12 @@ serve(async (req) => {
     const allMatches: MatchResult[] = [];
 
     // ─── STEP 2: Rule Engine FIRST ───
-    const { applied: rulesApplied } = await applyRules(supabase, bankFeeds || [], usedBank);
+    const { applied: rulesApplied, posted: rulesPosted } = await applyRules(
+      supabase,
+      { id: reconciliation_id, tenant_id: recon.tenant_id, bank_account_id },
+      bankFeeds || [],
+      usedBank
+    );
 
     // ─── STEP 3: Source-Based Matching ───
     const sourceMatches = sourceMatch(bankFeeds || [], ledgerEntries, usedBank, usedLedger);
@@ -1189,6 +1218,7 @@ serve(async (req) => {
       auto_matched: autoMatched,
       suggested,
       rules_applied: rulesApplied,
+      rules_posted: rulesPosted,
       breakdown: {
         source: sourceMatches.length,
         module: moduleMatches.length,

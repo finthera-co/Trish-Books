@@ -165,6 +165,30 @@ Deno.serve(async (req) => {
       });
       if (taxRevErr) console.error("Tax reversal rows failed:", taxRevErr.message);
 
+      // Legacy GL-linked tax_records (non-engine output VAT): insert a
+      // negating row so net tax for this invoice returns to zero. Engine
+      // rows are handled by reverse_tax_transactions above.
+      const { data: legacyTaxRecs } = await admin
+        .from("tax_records")
+        .select("tax_amount")
+        .eq("source_type", "invoice")
+        .eq("source_id", invoice_id)
+        .eq("direction", "output");
+      const legacyTaxNet = (legacyTaxRecs || []).reduce((s: number, r: any) => s + Number(r.tax_amount || 0), 0);
+      if (legacyTaxNet > 0) {
+        await admin.from("tax_records").insert({
+          tenant_id: appUser.tenant_id,
+          invoice_id: invoice_id,
+          tax_id: null,
+          tax_amount: -legacyTaxNet,
+          journal_entry_id: revJE.id,
+          direction: "output",
+          source_type: "invoice",
+          source_id: invoice_id,
+          transaction_date: new Date().toISOString().slice(0, 10),
+        });
+      }
+
       await admin
         .from("invoices")
         .update({
@@ -215,13 +239,16 @@ Deno.serve(async (req) => {
     // ── Resolve account settings ────────────────────────────────────
     const { data: settings } = await admin
       .from("account_settings")
-      .select("ar_account_id, sales_account_id, tax_payable_account_id, cogs_account_id, inventory_asset_account_id")
+      .select("ar_account_id, sales_account_id, tax_payable_account_id, vat_output_payable_account_id, cogs_account_id, inventory_asset_account_id")
       .eq("tenant_id", appUser.tenant_id)
       .maybeSingle();
 
     const arAccountId = invoice.ar_account_id || settings?.ar_account_id;
     const defaultSalesId = invoice.revenue_account_id || settings?.sales_account_id;
-    const taxPayableId = settings?.tax_payable_account_id;
+    // Output VAT (sales) credits the dedicated VAT Output Payable account;
+    // fall back to the deprecated shared tax_payable_account_id for tenants
+    // not yet migrated. Input VAT lives on the bill side (post_supplier_bill).
+    const taxPayableId = settings?.vat_output_payable_account_id ?? settings?.tax_payable_account_id;
 
     if (!arAccountId) errors.push("Accounts Receivable not configured (Settings → Account Mapping)");
     if (!defaultSalesId) errors.push("Default Sales Revenue not configured");
@@ -628,6 +655,23 @@ Deno.serve(async (req) => {
       if (legacyRecords.length > 0) {
         await admin.from("tax_records").insert(legacyRecords);
       }
+    }
+
+    // GL-linked output-VAT record for the LEGACY header-tax path (no tax
+    // engine). Engine invoices are reconciled via tax_transactions above.
+    if (!usesTaxEngine && taxAmount > 0) {
+      const { error: taxRecErr } = await admin.from("tax_records").insert({
+        tenant_id: appUser.tenant_id,
+        invoice_id: invoice_id,
+        tax_id: null,
+        tax_amount: taxAmount,
+        journal_entry_id: je.id,
+        direction: "output",
+        source_type: "invoice",
+        source_id: invoice_id,
+        transaction_date: invoice.issue_date,
+      });
+      if (taxRecErr) console.error("Output tax_records insert failed:", taxRecErr.message);
     }
 
     // Post the JE

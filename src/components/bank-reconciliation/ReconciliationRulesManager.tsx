@@ -30,14 +30,37 @@ export default function ReconciliationRulesManager() {
   const [actionType, setActionType] = useState("auto_match");
   const [actionAccountId, setActionAccountId] = useState("");
   const [priority, setPriority] = useState("0");
+  // Rule action execution (auto-post a JE for rule-only matches)
+  const [createExpense, setCreateExpense] = useState(false);
+  const [direction, setDirection] = useState("outflow");
+  const [taxAccountId, setTaxAccountId] = useState("");
+  const [taxRatePct, setTaxRatePct] = useState("");
+  const [counterparty, setCounterparty] = useState("");
+  const [formError, setFormError] = useState("");
 
   const resetForm = () => {
     setName(""); setCondField("description"); setCondOp("contains"); setCondVal("");
     setAmtMin(""); setAmtMax(""); setActionType("auto_match"); setActionAccountId(""); setPriority("0");
+    setCreateExpense(false); setDirection("outflow"); setTaxAccountId(""); setTaxRatePct(""); setCounterparty("");
+    setFormError("");
   };
+
+  const accountLabel =
+    direction === "inflow" ? "Income account" : direction === "outflow" ? "Expense/Fee account" : "Account";
 
   const handleCreate = async () => {
     if (!name || !condVal) return;
+    // Validation for action execution
+    if (createExpense && !actionAccountId) {
+      setFormError(`Select an ${accountLabel.toLowerCase()} — required to auto-create the journal entry.`);
+      return;
+    }
+    const ratePct = taxRatePct ? parseFloat(taxRatePct) : 0;
+    if (createExpense && ratePct > 0 && !taxAccountId) {
+      setFormError("A tax rate is set but no tax account is selected.");
+      return;
+    }
+    setFormError("");
     await createRule.mutateAsync({
       name,
       condition_field: condField,
@@ -45,8 +68,13 @@ export default function ReconciliationRulesManager() {
       condition_value: condVal,
       condition_amount_min: amtMin ? parseFloat(amtMin) : undefined,
       condition_amount_max: amtMax ? parseFloat(amtMax) : undefined,
-      action_type: actionType,
+      action_type: createExpense ? "create_expense" : actionType,
       action_account_id: actionAccountId || undefined,
+      action_create_expense: createExpense,
+      action_direction: createExpense ? direction : undefined,
+      tax_account_id: createExpense && taxAccountId ? taxAccountId : undefined,
+      tax_rate: createExpense && ratePct > 0 ? ratePct / 100 : undefined,
+      counterparty_name: createExpense && counterparty ? counterparty : undefined,
       priority: parseInt(priority) || 0,
     });
     resetForm();
@@ -95,8 +123,13 @@ export default function ReconciliationRulesManager() {
                         {r.condition_operator} "{r.condition_value}"
                       </TableCell>
                       <TableCell className="text-xs">
-                        <Badge variant="secondary">{r.action_type.replace("_", " ")}</Badge>
+                        {r.action_create_expense
+                          ? <Badge className="bg-purple-600">Auto-post {r.action_direction || "outflow"}</Badge>
+                          : <Badge variant="secondary">{r.action_type.replace("_", " ")}</Badge>}
                         {r.accounts && <span className="ml-1">→ {r.accounts.account_name}</span>}
+                        {r.action_create_expense && Number(r.tax_rate) > 0 && (
+                          <span className="ml-1 text-muted-foreground">+{(Number(r.tax_rate) * 100).toFixed(0)}% tax</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Switch
@@ -177,32 +210,106 @@ export default function ReconciliationRulesManager() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
+              {/* Auto-post toggle: master switch for rule action execution */}
+              <div className="flex items-center justify-between rounded-md border p-3">
                 <div>
-                  <Label className="text-xs">Action</Label>
-                  <Select value={actionType} onValueChange={setActionType}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="auto_match">Auto Match</SelectItem>
-                      <SelectItem value="assign_account">Assign Account</SelectItem>
-                      <SelectItem value="create_expense">Create Expense</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-xs font-medium">Auto-create journal entry</Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    Post a balanced JE and clear the bank line when this rule matches an unmatched transaction.
+                  </p>
                 </div>
-                {(actionType === "assign_account" || actionType === "create_expense") && (
+                <Switch checked={createExpense} onCheckedChange={setCreateExpense} />
+              </div>
+
+              {!createExpense ? (
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label className="text-xs">Target Account</Label>
-                    <Select value={actionAccountId} onValueChange={setActionAccountId}>
-                      <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
+                    <Label className="text-xs">Action</Label>
+                    <Select value={actionType} onValueChange={setActionType}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {(accounts || []).map((a: any) => (
-                          <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
-                        ))}
+                        <SelectItem value="auto_match">Auto Match</SelectItem>
+                        <SelectItem value="assign_account">Assign Account</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                )}
-              </div>
+                  {actionType === "assign_account" && (
+                    <div>
+                      <Label className="text-xs">Target Account</Label>
+                      <Select value={actionAccountId} onValueChange={setActionAccountId}>
+                        <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
+                        <SelectContent>
+                          {(accounts || []).map((a: any) => (
+                            <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3 rounded-md border bg-muted/20 p-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs">Direction</Label>
+                      <Select value={direction} onValueChange={setDirection}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="outflow">Outflow (money out — fee/expense)</SelectItem>
+                          <SelectItem value="inflow">Inflow (money in — income)</SelectItem>
+                          <SelectItem value="either">Either (decide by sign)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs">{accountLabel} <span className="text-destructive">*</span></Label>
+                      <Select value={actionAccountId} onValueChange={setActionAccountId}>
+                        <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
+                        <SelectContent>
+                          {(accounts || []).map((a: any) => (
+                            <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs">Tax account <span className="text-muted-foreground">(optional)</span></Label>
+                      <Select value={taxAccountId} onValueChange={setTaxAccountId}>
+                        <SelectTrigger><SelectValue placeholder="No tax" /></SelectTrigger>
+                        <SelectContent>
+                          {(accounts || []).map((a: any) => (
+                            <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs">Tax rate %</Label>
+                      <Input
+                        type="number" min="0" max="99" step="0.01"
+                        value={taxRatePct} onChange={(e) => setTaxRatePct(e.target.value)}
+                        placeholder="e.g. 18"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className="text-xs">Counterparty / Payee <span className="text-muted-foreground">(optional)</span></Label>
+                    <Input value={counterparty} onChange={(e) => setCounterparty(e.target.value)} placeholder="e.g. Acme Bank" />
+                  </div>
+
+                  <p className="text-[11px] text-muted-foreground">
+                    Amount is treated as tax-inclusive. {direction === "inflow"
+                      ? "Dr Bank / Cr income (and Cr tax)."
+                      : "Dr expense (and Dr tax) / Cr Bank."}
+                  </p>
+                </div>
+              )}
+
+              {formError && <p className="text-[11px] text-destructive">{formError}</p>}
 
               <Button onClick={handleCreate} disabled={!name || !condVal || createRule.isPending} size="sm">
                 {createRule.isPending ? "Creating..." : "Create Rule"}

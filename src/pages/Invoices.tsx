@@ -60,7 +60,8 @@ export default function Invoices() {
   const { data: settings } = useAccountSettings();
   const { data: arAccountData }       = useAccountById(settings?.ar_account_id       ?? null);
   const { data: salesAccountData }    = useAccountById(settings?.sales_account_id    ?? null);
-  const { data: taxPayableAccountData }= useAccountById(settings?.tax_payable_account_id ?? null);
+  const outputVatAccountId = settings?.vat_output_payable_account_id ?? settings?.tax_payable_account_id ?? null;
+  const { data: taxPayableAccountData }= useAccountById(outputVatAccountId);
 
   const previewLines = useMemo((): JournalPreviewLine[] => {
     const inv = postConfirmInvoice;
@@ -90,9 +91,9 @@ export default function Invoices() {
     if (Number(inv.tax_amount || 0) > 0) {
       lines.push({
         side: "Cr",
-        role: "Tax Payable",
+        role: "VAT Output Payable",
         accountName: taxPayableAccountData?.account_name ?? null,
-        isMissing: !settings.tax_payable_account_id,
+        isMissing: !outputVatAccountId,
         amount: Number(inv.tax_amount),
       });
     }

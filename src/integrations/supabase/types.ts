@@ -103,6 +103,8 @@ export type Database = {
           tax_payable_account_id: string | null
           tenant_id: string
           updated_at: string
+          vat_input_receivable_account_id: string | null
+          vat_output_payable_account_id: string | null
           wages_expense_account_id: string | null
         }
         Insert: {
@@ -133,6 +135,8 @@ export type Database = {
           tax_payable_account_id?: string | null
           tenant_id: string
           updated_at?: string
+          vat_input_receivable_account_id?: string | null
+          vat_output_payable_account_id?: string | null
           wages_expense_account_id?: string | null
         }
         Update: {
@@ -163,6 +167,8 @@ export type Database = {
           tax_payable_account_id?: string | null
           tenant_id?: string
           updated_at?: string
+          vat_input_receivable_account_id?: string | null
+          vat_output_payable_account_id?: string | null
           wages_expense_account_id?: string | null
         }
         Relationships: [
@@ -325,6 +331,20 @@ export type Database = {
             columns: ["tenant_id"]
             isOneToOne: true
             referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_vat_input_receivable_account_id_fkey"
+            columns: ["vat_input_receivable_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_settings_vat_output_payable_account_id_fkey"
+            columns: ["vat_output_payable_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
             referencedColumns: ["id"]
           },
           {
@@ -7089,51 +7109,63 @@ export type Database = {
         Row: {
           action_account_id: string | null
           action_create_expense: boolean
+          action_direction: string
           action_type: string
           condition_amount_max: number | null
           condition_amount_min: number | null
           condition_field: string
           condition_operator: string
           condition_value: string
+          counterparty_name: string | null
           created_at: string
           id: string
           is_active: boolean
           name: string
           priority: number
+          tax_account_id: string | null
+          tax_rate: number
           tenant_id: string
           updated_at: string
         }
         Insert: {
           action_account_id?: string | null
           action_create_expense?: boolean
+          action_direction?: string
           action_type?: string
           condition_amount_max?: number | null
           condition_amount_min?: number | null
           condition_field?: string
           condition_operator?: string
           condition_value: string
+          counterparty_name?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
           name: string
           priority?: number
+          tax_account_id?: string | null
+          tax_rate?: number
           tenant_id: string
           updated_at?: string
         }
         Update: {
           action_account_id?: string | null
           action_create_expense?: boolean
+          action_direction?: string
           action_type?: string
           condition_amount_max?: number | null
           condition_amount_min?: number | null
           condition_field?: string
           condition_operator?: string
           condition_value?: string
+          counterparty_name?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
           name?: string
           priority?: number
+          tax_account_id?: string | null
+          tax_rate?: number
           tenant_id?: string
           updated_at?: string
         }
@@ -7141,6 +7173,13 @@ export type Database = {
           {
             foreignKeyName: "reconciliation_rules_action_account_id_fkey"
             columns: ["action_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_rules_tax_account_id_fkey"
+            columns: ["tax_account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
             referencedColumns: ["id"]
@@ -8993,22 +9032,40 @@ export type Database = {
       }
       tax_records: {
         Row: {
+          direction: string | null
           id: string
-          invoice_id: string
+          invoice_id: string | null
+          journal_entry_id: string | null
+          source_id: string | null
+          source_type: string | null
           tax_amount: number
-          tax_id: string
+          tax_id: string | null
+          tenant_id: string | null
+          transaction_date: string | null
         }
         Insert: {
+          direction?: string | null
           id?: string
-          invoice_id: string
+          invoice_id?: string | null
+          journal_entry_id?: string | null
+          source_id?: string | null
+          source_type?: string | null
           tax_amount?: number
-          tax_id: string
+          tax_id?: string | null
+          tenant_id?: string | null
+          transaction_date?: string | null
         }
         Update: {
+          direction?: string | null
           id?: string
-          invoice_id?: string
+          invoice_id?: string | null
+          journal_entry_id?: string | null
+          source_id?: string | null
+          source_type?: string | null
           tax_amount?: number
-          tax_id?: string
+          tax_id?: string | null
+          tenant_id?: string | null
+          transaction_date?: string | null
         }
         Relationships: [
           {
@@ -9019,10 +9076,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "tax_records_journal_entry_id_fkey"
+            columns: ["journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "tax_records_tax_id_fkey"
             columns: ["tax_id"]
             isOneToOne: false
             referencedRelation: "taxes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tax_records_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
         ]
@@ -10184,6 +10255,7 @@ export type Database = {
         }
         Returns: Json
       }
+      reconcile_inventory_qty: { Args: { p_item_id?: string }; Returns: Json }
       reject_leave_request: {
         Args: { p_reason?: string; p_request_id: string }
         Returns: undefined

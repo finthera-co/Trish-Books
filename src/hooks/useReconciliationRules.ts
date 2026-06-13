@@ -31,6 +31,10 @@ export function useCreateRule() {
       action_type: string;
       action_account_id?: string;
       action_create_expense?: boolean;
+      action_direction?: string;
+      tax_account_id?: string;
+      tax_rate?: number;
+      counterparty_name?: string;
       priority?: number;
     }) => {
       const { data, error } = await supabase
@@ -52,7 +56,24 @@ export function useCreateRule() {
 export function useUpdateRule() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...updates }: { id: string; is_active?: boolean }) => {
+    mutationFn: async ({ id, ...updates }: {
+      id: string;
+      is_active?: boolean;
+      name?: string;
+      condition_field?: string;
+      condition_operator?: string;
+      condition_value?: string;
+      condition_amount_min?: number;
+      condition_amount_max?: number;
+      action_type?: string;
+      action_account_id?: string | null;
+      action_create_expense?: boolean;
+      action_direction?: string;
+      tax_account_id?: string | null;
+      tax_rate?: number;
+      counterparty_name?: string | null;
+      priority?: number;
+    }) => {
       const { error } = await supabase
         .from("reconciliation_rules")
         .update(updates)

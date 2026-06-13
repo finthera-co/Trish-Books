@@ -290,6 +290,7 @@ export function useRunAIMatching() {
       if (result.auto_matched > 0) parts.push(`${result.auto_matched} auto-matched`);
       if (result.suggested > 0) parts.push(`${result.suggested} suggested`);
       if (result.rules_applied > 0) parts.push(`${result.rules_applied} rules applied`);
+      if (result.rules_posted > 0) parts.push(`${result.rules_posted} rule-posted JEs`);
       const breakdown = result.breakdown;
       const methods = [];
       if (breakdown?.source > 0) methods.push(`source:${breakdown.source}`);

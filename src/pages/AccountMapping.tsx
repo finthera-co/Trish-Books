@@ -6,6 +6,7 @@ import {
   type AccountSettings,
 } from "@/hooks/useAccountSettings";
 import AccountSelector from "@/components/shared/AccountSelector";
+import QuickAddAccount from "@/components/shared/QuickAddAccount";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -48,11 +49,26 @@ interface FieldRowProps {
   badge: React.ReactNode;
   types: string[];
   hint: string;
+  // Smart defaults for the inline "New" account creator (type stays editable).
+  quickType: string;
+  quickSubtype?: string;
+  quickName: string;
   form: Partial<AccountSettings>;
   set: (key: keyof AccountSettings) => (val: string) => void;
 }
 
-function FieldRow({ fieldKey, label, badge, types, hint, form, set }: FieldRowProps) {
+function FieldRow({
+  fieldKey,
+  label,
+  badge,
+  types,
+  hint,
+  quickType,
+  quickSubtype,
+  quickName,
+  form,
+  set,
+}: FieldRowProps) {
   return (
     <div className="flex items-start gap-3 py-3 border-b border-border/50 last:border-0">
       <div className="flex-1 space-y-1.5">
@@ -60,12 +76,22 @@ function FieldRow({ fieldKey, label, badge, types, hint, form, set }: FieldRowPr
           <Label className="text-sm font-medium">{label}</Label>
           {badge}
         </div>
-        <AccountSelector
-          value={(form[fieldKey] as string | null) ?? ""}
-          onChange={set(fieldKey)}
-          types={types}
-          placeholder="Search account…"
-        />
+        <div className="flex items-start gap-2">
+          <div className="flex-1">
+            <AccountSelector
+              value={(form[fieldKey] as string | null) ?? ""}
+              onChange={set(fieldKey)}
+              types={types}
+              placeholder="Search account…"
+            />
+          </div>
+          <QuickAddAccount
+            accountType={quickType}
+            defaultSubtype={quickSubtype}
+            defaultName={quickName}
+            onCreated={(id) => set(fieldKey)(id)}
+          />
+        </div>
         <p className="text-xs text-muted-foreground italic">{hint}</p>
       </div>
     </div>
@@ -264,22 +290,37 @@ export default function AccountMapping() {
               <FieldRow fieldKey="ar_account_id" label="Accounts Receivable" badge={<Dr />}
                 types={["Asset"]}
                 hint="Debited on invoice post; credited on payment receipt."
+                quickType="Asset" quickSubtype="Accounts Receivable" quickName="Accounts Receivable"
                 {...sharedProps} />
               <FieldRow fieldKey="sales_account_id" label="Default Sales Revenue" badge={<Cr />}
                 types={["Income", "Revenue"]}
                 hint="Credited on invoice lines with no specific revenue account."
+                quickType="Income" quickSubtype="Sales Revenue" quickName="Sales Revenue"
                 {...sharedProps} />
-              <FieldRow fieldKey="tax_payable_account_id" label="Tax Payable" badge={<Cr />}
+              <FieldRow fieldKey="vat_output_payable_account_id" label="VAT Output Payable" badge={<Cr />}
                 types={["Liability"]}
-                hint="Credited for the tax portion of every posted invoice and bill."
+                hint="Credited for output VAT on posted sales invoices (a liability owed)."
+                quickType="Liability" quickSubtype="Sales Tax Payable" quickName="VAT Output Payable"
+                {...sharedProps} />
+              <FieldRow fieldKey="vat_input_receivable_account_id" label="VAT Input Receivable" badge={<Dr />}
+                types={["Asset"]}
+                hint="Debited for input VAT on posted supplier bills (a reclaimable asset)."
+                quickType="Asset" quickSubtype="Other Current Assets" quickName="VAT Input Receivable"
+                {...sharedProps} />
+              <FieldRow fieldKey="tax_payable_account_id" label="Tax Payable (deprecated)" badge={<Cr />}
+                types={["Liability"]}
+                hint="DEPRECATED legacy shared VAT account. Used only as a fallback for output VAT until VAT Output Payable is set above."
+                quickType="Liability" quickSubtype="Sales Tax Payable" quickName="VAT Payable"
                 {...sharedProps} />
               <FieldRow fieldKey="ap_account_id" label="Accounts Payable" badge={<Cr />}
                 types={["Liability"]}
                 hint="Credited on bill post; debited on supplier payment."
+                quickType="Liability" quickSubtype="Accounts Payable" quickName="Accounts Payable"
                 {...sharedProps} />
               <FieldRow fieldKey="bank_account_id" label="Default Bank / Cash" badge={<DrCr />}
                 types={["Asset"]}
                 hint="Debited on payment receipt; credited on supplier payment."
+                quickType="Asset" quickSubtype="Bank" quickName="Bank Account"
                 {...sharedProps} />
               <SampleJournal
                 tabKey="core"
@@ -287,7 +328,7 @@ export default function AccountMapping() {
                 rows={[
                   { account: "Accounts Receivable", dr: "1,150.00" },
                   { account: "Sales Revenue", cr: "1,000.00", indent: true },
-                  { account: "Tax Payable", cr: "150.00", indent: true },
+                  { account: "VAT Output Payable", cr: "150.00", indent: true },
                 ]}
                 previewOpen={previewOpen}
                 setPreviewOpen={setPreviewOpen}
@@ -309,18 +350,22 @@ export default function AccountMapping() {
               <FieldRow fieldKey="inventory_account_id" label="Inventory / Stock Control" badge={<Dr />}
                 types={["Asset"]}
                 hint="Debited on GRN receipt; credited on COGS entry at sale."
+                quickType="Asset" quickSubtype="Inventory" quickName="Inventory"
                 {...sharedProps} />
               <FieldRow fieldKey="cogs_account_id" label="Cost of Goods Sold" badge={<Dr />}
                 types={["Cost of Goods Sold", "Expense"]}
                 hint="Debited when an invoiced tracked product is issued from stock."
+                quickType="Cost of Goods Sold" quickSubtype="Cost of Materials" quickName="Cost of Goods Sold"
                 {...sharedProps} />
               <FieldRow fieldKey="grni_clearing_account_id" label="Goods Received Not Invoiced" badge={<DrCr />}
                 types={["Liability"]}
                 hint="Credited on GRN (accrual); debited when supplier bill is posted."
+                quickType="Liability" quickSubtype="Other Current Liability" quickName="GRNI Clearing"
                 {...sharedProps} />
               <FieldRow fieldKey="purchase_price_variance_account_id" label="Purchase Price Variance (PPV)" badge={<DrCr />}
                 types={["Expense", "Cost of Goods Sold"]}
                 hint="Captures cost difference between PO/GRN cost and actual bill cost."
+                quickType="Cost of Goods Sold" quickSubtype="Other COGS" quickName="Purchase Price Variance"
                 {...sharedProps} />
               <SampleJournal
                 tabKey="inventory"
@@ -350,18 +395,22 @@ export default function AccountMapping() {
               <FieldRow fieldKey="depreciation_expense_account_id" label="Depreciation Expense" badge={<Dr />}
                 types={["Expense"]}
                 hint="Debited on each monthly depreciation journal (IAS 16)."
+                quickType="Expense" quickSubtype="Depreciation" quickName="Depreciation Expense"
                 {...sharedProps} />
               <FieldRow fieldKey="accumulated_depreciation_account_id" label="Accumulated Depreciation" badge={<Cr />}
                 types={["Asset"]}
                 hint="Credited on depreciation. Contra-asset account."
+                quickType="Asset" quickSubtype="Accumulated Depreciation" quickName="Accumulated Depreciation"
                 {...sharedProps} />
               <FieldRow fieldKey="disposal_gain_account_id" label="Gain on Asset Disposal" badge={<Cr />}
                 types={["Income", "Other Income"]}
                 hint="Credited when sale proceeds exceed Net Book Value (IAS 16)."
+                quickType="Other Income" quickSubtype="Gain on Sale of Assets" quickName="Gain on Disposal of Assets"
                 {...sharedProps} />
               <FieldRow fieldKey="disposal_loss_account_id" label="Loss on Asset Disposal" badge={<Dr />}
                 types={["Expense", "Other Expense"]}
                 hint="Debited when sale proceeds are below Net Book Value (IAS 16)."
+                quickType="Other Expense" quickSubtype="Loss on Sale of Assets" quickName="Loss on Disposal of Assets"
                 {...sharedProps} />
               <SampleJournal
                 tabKey="assets"
@@ -388,14 +437,17 @@ export default function AccountMapping() {
               <FieldRow fieldKey="retained_earnings_account_id" label="Retained Earnings" badge={<DrCr />}
                 types={["Equity"]}
                 hint="Net income transferred here on period close. Required for year-end closing journals."
+                quickType="Equity" quickSubtype="Retained Earnings" quickName="Retained Earnings"
                 {...sharedProps} />
               <FieldRow fieldKey="fx_gain_account_id" label="FX Gain (IAS 21)" badge={<Cr />}
                 types={["Income", "Other Income"]}
                 hint="Credited on favourable foreign currency re-measurement at period-end."
+                quickType="Other Income" quickSubtype="Miscellaneous Income" quickName="Foreign Exchange Gain"
                 {...sharedProps} />
               <FieldRow fieldKey="fx_loss_account_id" label="FX Loss (IAS 21)" badge={<Dr />}
                 types={["Expense", "Other Expense"]}
                 hint="Debited on adverse foreign currency re-measurement at period-end."
+                quickType="Other Expense" quickSubtype="Miscellaneous Expense" quickName="Foreign Exchange Loss"
                 {...sharedProps} />
               <SampleJournal
                 tabKey="equity"
@@ -425,10 +477,12 @@ export default function AccountMapping() {
               <FieldRow fieldKey="wages_expense_account_id" label="Salaries & Wages Expense" badge={<Dr />}
                 types={["Expense"]}
                 hint="Debited for gross payroll when no component-level mapping exists."
+                quickType="Expense" quickSubtype="Payroll Expenses" quickName="Wages & Salaries Expense"
                 {...sharedProps} />
               <FieldRow fieldKey="payroll_clearing_account_id" label="Payroll Clearing" badge={<Cr />}
                 types={["Liability"]}
                 hint="Credited for net pay amounts pending bank transfer."
+                quickType="Liability" quickSubtype="Payroll Liability" quickName="Salaries Payable"
                 {...sharedProps} />
               <SampleJournal
                 tabKey="payroll"

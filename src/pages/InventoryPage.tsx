@@ -46,6 +46,7 @@ export default function InventoryPage() {
       valuation_method: form.valuation_method,
       default_purchase_tax_group_id: form.purchase_tax.startsWith("g:") ? form.purchase_tax.slice(2) : null,
       default_purchase_tax_code_id: form.purchase_tax.startsWith("c:") ? form.purchase_tax.slice(2) : null,
+      tax_id: form.purchase_tax ? form.purchase_tax.slice(2) : undefined,
     };
     if (editId) {
       updateMutation.mutate({ id: editId, ...payload }, { onSuccess: () => { setOpen(false); resetForm(); } });

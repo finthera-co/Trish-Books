@@ -376,6 +376,8 @@ export function useCreateInventoryItemEnhanced() {
       unit_cost?: number;
       quantity_on_hand?: number;
       account_id?: string;
+      cogs_account_id?: string;
+      tax_id?: string;
       default_purchase_tax_code_id?: string | null;
       default_purchase_tax_group_id?: string | null;
     }) => {
@@ -383,10 +385,39 @@ export function useCreateInventoryItemEnhanced() {
       const qty = item.quantity_on_hand || 0;
       const cost = item.unit_cost || 0;
 
-      // Auto-link to inventory control account if not specified
-      let accountId = item.account_id || null;
-      if (!accountId) {
-        accountId = await findInventoryControlAccountId(tenantId);
+      // The validate_inventory_item_mappings trigger requires BOTH an Inventory
+      // Asset account and a COGS account whenever is_active = true. Resolve both
+      // from the tenant's GL Account Mapping so the create form never has to
+      // surface them. Three-tier fallback: explicit → account_settings → COA.
+      const { data: settings } = await supabase
+        .from("account_settings")
+        .select("inventory_account_id, cogs_account_id")
+        .eq("tenant_id", tenantId)
+        .maybeSingle();
+
+      // Inventory Asset account
+      let accountId =
+        item.account_id ||
+        settings?.inventory_account_id ||
+        (await findInventoryControlAccountId(tenantId));
+
+      // COGS account
+      let cogsAccountId = item.cogs_account_id || settings?.cogs_account_id || null;
+      if (!cogsAccountId) {
+        const { data: cogsAccount } = await supabase
+          .from("accounts")
+          .select("id")
+          .eq("tenant_id", tenantId)
+          .in("account_code", ["5000", "5010"])
+          .limit(1)
+          .maybeSingle();
+        cogsAccountId = cogsAccount?.id || null;
+      }
+
+      if (!accountId || !cogsAccountId) {
+        throw new Error(
+          "Configure the Inventory Asset and COGS accounts in Settings → GL Account Mapping before creating items.",
+        );
       }
 
       const { data, error } = await supabase
@@ -398,6 +429,8 @@ export function useCreateInventoryItemEnhanced() {
           unit_cost: cost,
           quantity_on_hand: qty,
           account_id: accountId,
+          cogs_account_id: cogsAccountId,
+          tax_id: item.tax_id || null,
           default_purchase_tax_code_id: item.default_purchase_tax_code_id || null,
           default_purchase_tax_group_id: item.default_purchase_tax_group_id || null,
           tenant_id: tenantId,
