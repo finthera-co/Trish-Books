@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import { postFixedAssetOpeningBalanceWithCreate } from "@/lib/postingEngine";
 
 // ─── Vendors ───────────────────────────────────────────────
 
@@ -119,6 +120,76 @@ export function useCreateFixedAsset() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["fixed_assets"] });
       toast.success("Fixed asset created");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+/**
+ * Create a MIGRATED fixed asset and post its opening balance from within the
+ * Opening Balances sub-ledger breakdown — the single entry point for pre-go-live
+ * assets. Posts only opening journals (no acquisition), then records the
+ * opening_balance_details allocation (amount = gross cost) so the new asset shows
+ * as allocated against the control balance.
+ */
+export function useCreateMigratedAsset() {
+  const { appUser } = useAuth();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: {
+      account_id: string;            // OB control account (asset cost, e.g. 1710)
+      asset_name: string;
+      description?: string;
+      category_id?: string;
+      accumulated_depreciation_account_id: string;
+      depreciation_method?: string;
+      cost: number;
+      opening_accum_dep: number;
+      salvage_value?: number;
+      useful_life_months: number;
+      acquisition_date: string;
+      as_of_date: string;
+    }) => {
+      if (!appUser?.tenant_id) throw new Error("No tenant");
+
+      const result = await postFixedAssetOpeningBalanceWithCreate({
+        tenant_id: appUser.tenant_id,
+        asset_name: params.asset_name,
+        description: params.description,
+        category_id: params.category_id,
+        asset_account_id: params.account_id,
+        accumulated_depreciation_account_id: params.accumulated_depreciation_account_id,
+        depreciation_method: params.depreciation_method,
+        cost: params.cost,
+        opening_accum_dep: params.opening_accum_dep,
+        salvage_value: params.salvage_value,
+        useful_life_months: params.useful_life_months,
+        acquisition_date: params.acquisition_date,
+        as_of_date: params.as_of_date,
+      });
+
+      // Record the sub-ledger allocation (gross cost) so the asset shows allocated.
+      const { error } = await supabase
+        .from("opening_balance_details")
+        .upsert(
+          {
+            account_id: params.account_id,
+            entity_type: "fixed_asset",
+            entity_id: result.asset_id,
+            amount: params.cost,
+            tenant_id: appUser.tenant_id,
+          },
+          { onConflict: "account_id,entity_type,entity_id" }
+        );
+      if (error) throw error;
+
+      return result;
+    },
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ["fixed_assets"] });
+      qc.invalidateQueries({ queryKey: ["opening_balance_details", vars.account_id] });
+      qc.invalidateQueries({ queryKey: ["journal_entries"] });
+      toast.success("Migrated asset created and opening balance posted");
     },
     onError: (e: Error) => toast.error(e.message),
   });

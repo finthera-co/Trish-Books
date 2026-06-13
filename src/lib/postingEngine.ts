@@ -11,6 +11,7 @@
  */
 
 import { supabase } from "@/integrations/supabase/client";
+import { generateRemainingLifeSchedule } from "@/lib/depreciation";
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -850,6 +851,179 @@ export async function postAssetOpeningBalance(params: {
       },
     ],
   });
+}
+
+/**
+ * Create a MIGRATED fixed asset and post ONLY its opening balance — the single
+ * entry point for assets that existed before go-live.
+ *
+ * Unlike the Assets-page acquisition flow (post-asset-transaction), this does NOT
+ * post an acquisition journal (Dr Asset / Cr Payment) and does NOT seed a fresh
+ * full-life depreciation schedule. Instead it:
+ *   a. inserts the fixed_assets row directly (carrying opening accumulated dep),
+ *   b. posts only opening journals — Dr Cost / Cr OBE, plus Dr OBE / Cr Accum Dep
+ *      when opening accum dep > 0 (net OBE impact = opening NBV),
+ *   c. writes one asset_subledger "opening_balance" row,
+ *   d. seeds a REMAINING-LIFE depreciation schedule (not a full one).
+ */
+export async function postFixedAssetOpeningBalanceWithCreate(params: {
+  tenant_id: string;
+  asset_name: string;
+  description?: string;
+  category_id?: string;
+  asset_account_id: string;          // the OB control account (e.g. 1710)
+  accumulated_depreciation_account_id: string;
+  depreciation_method?: string;
+  cost: number;                      // gross
+  opening_accum_dep: number;         // accumulated depreciation to date
+  salvage_value?: number;
+  useful_life_months: number;
+  acquisition_date: string;          // original
+  as_of_date: string;                // OB date
+}): Promise<{ asset_id: string; journal_entry_id: string }> {
+  const {
+    tenant_id,
+    asset_name,
+    description,
+    category_id,
+    asset_account_id,
+    accumulated_depreciation_account_id,
+    depreciation_method,
+    cost,
+    opening_accum_dep,
+    salvage_value = 0,
+    useful_life_months,
+    acquisition_date,
+    as_of_date,
+  } = params;
+
+  // ── Validation ──
+  if (cost < 0) throw new Error("Cost must be ≥ 0");
+  if (opening_accum_dep < 0) throw new Error("Accumulated depreciation must be ≥ 0");
+  if (salvage_value < 0) throw new Error("Salvage value must be ≥ 0");
+  if (useful_life_months <= 0) throw new Error("Useful life (months) must be > 0");
+  if (opening_accum_dep > cost - salvage_value + 0.005) {
+    throw new Error("Accumulated depreciation cannot exceed cost minus salvage value");
+  }
+
+  // ── Resolve depreciation accounts/method (category overrides the param) ──
+  let accumDepAccountId = accumulated_depreciation_account_id;
+  let deprExpenseAccountId: string | null = null;
+  let method = depreciation_method || "straight_line";
+
+  if (category_id) {
+    const { data: cat, error: catErr } = await supabase
+      .from("asset_categories")
+      .select("accumulated_depreciation_account_id, depreciation_expense_account_id, depreciation_method")
+      .eq("id", category_id)
+      .eq("tenant_id", tenant_id)
+      .maybeSingle();
+    if (catErr) throw new Error(`Failed to load asset category: ${catErr.message}`);
+    if (cat) {
+      accumDepAccountId = cat.accumulated_depreciation_account_id || accumDepAccountId;
+      deprExpenseAccountId = cat.depreciation_expense_account_id || null;
+      method = cat.depreciation_method || method;
+    }
+  }
+
+  if (!accumDepAccountId) {
+    throw new Error("Accumulated depreciation account is required");
+  }
+
+  // ── a. Insert the migrated fixed_assets row directly (NOT via post-asset-transaction) ──
+  const { data: asset, error: assetErr } = await supabase
+    .from("fixed_assets")
+    .insert({
+      tenant_id,
+      asset_name,
+      description: description || null,
+      category_id: category_id || null,
+      asset_account_id,
+      depreciation_account_id: accumDepAccountId,
+      depr_expense_account_id: deprExpenseAccountId,
+      cost,
+      salvage_value,
+      useful_life_months,
+      depreciation_method: method,
+      acquisition_date,
+      start_date: acquisition_date,
+      accumulated_depreciation: opening_accum_dep, // ← KEY: opening accum dep
+      status: "active",
+    })
+    .select("id")
+    .single();
+  if (assetErr) throw new Error(`Failed to create migrated asset: ${assetErr.message}`);
+  const assetId = asset.id;
+
+  // ── b. Post the opening journal (no acquisition journal) ──
+  const obeAccountId = await getOBEAccountId(tenant_id);
+  const lines: PostingLine[] = [
+    { account_id: asset_account_id, debit: cost, credit: 0, asset_id: assetId },
+    { account_id: obeAccountId, debit: 0, credit: cost },
+  ];
+  if (opening_accum_dep > 0) {
+    lines.push({ account_id: obeAccountId, debit: opening_accum_dep, credit: 0 });
+    lines.push({ account_id: accumDepAccountId, debit: 0, credit: opening_accum_dep, asset_id: assetId });
+  }
+
+  const result = await post({
+    tenant_id,
+    entry_date: as_of_date,
+    description: `Opening Balance - ${asset_name}`,
+    source_type: "opening_balance",
+    source_id: assetId,
+    reference: `OB-ASSET-${asset_name}`,
+    entry_type: "opening_balance",
+    lines,
+  });
+
+  // ── c. One asset_subledger "opening_balance" row (matches post-asset-transaction shape) ──
+  const { error: slErr } = await supabase.from("asset_subledger").insert({
+    tenant_id,
+    asset_id: assetId,
+    journal_line_id: result.journal_line_ids[0], // the Dr Cost line
+    journal_id: result.journal_entry_id,
+    document_type: "opening_balance",
+    document_id: assetId,
+    debit: cost,
+    credit: 0,
+    amount: cost,
+    balance: cost,
+    cost,
+    salvage: salvage_value,
+    life_years: Math.round(useful_life_months / 12),
+    transaction_type: "opening_balance",
+  } as any);
+  if (slErr) throw new Error(`Asset subledger insert failed: ${slErr.message}`);
+
+  // ── d. Seed a REMAINING-LIFE schedule (not a fresh full schedule) ──
+  const schedule = generateRemainingLifeSchedule(
+    {
+      id: assetId,
+      cost,
+      salvage_value,
+      useful_life_months,
+      start_date: acquisition_date,
+      status: "active",
+    },
+    opening_accum_dep,
+    as_of_date.slice(0, 7) // YYYY-MM
+  );
+  if (schedule.length > 0) {
+    const rows = schedule.map((r) => ({
+      tenant_id,
+      asset_id: assetId,
+      period: r.period,
+      depreciation_amount: r.depreciation_amount,
+      accumulated_depreciation: r.accumulated_depreciation,
+      net_book_value: r.net_book_value,
+      status: "pending",
+    }));
+    const { error: schedErr } = await supabase.from("asset_depreciation").insert(rows);
+    if (schedErr) throw new Error(`Depreciation schedule insert failed: ${schedErr.message}`);
+  }
+
+  return { asset_id: assetId, journal_entry_id: result.journal_entry_id };
 }
 
 // ─── Convenience Helpers ──────────────────────────────────

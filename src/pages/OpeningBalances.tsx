@@ -453,6 +453,7 @@ export default function OpeningBalances() {
                 accountId={formAccountId}
                 accountSubtype={selectedAccount?.account_subtype}
                 controlTotal={parseFloat(formAmount)}
+                asOfDate={formDate}
                 onValidChange={setSubledgerValid}
               />
             )}

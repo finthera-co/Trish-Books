@@ -158,6 +158,49 @@ export function useSaveQuickBooksOB() {
       const posting = computePosting(normalBalance, params.amountSigned);
       const absAmount = Math.abs(params.amountSigned);
 
+      // ── Migrated fixed-asset guard ──
+      // A Fixed Asset control account whose opening balance was built via the
+      // inline "New Asset (migrated)" flow is ALREADY posted to the GL by the
+      // per-asset opening journals (Dr Cost / Cr OBE, and Dr OBE / Cr Accum Dep).
+      // Posting a competing Dr Control / Cr OBE here would double-count the cost,
+      // and the void-existing block below would destroy those asset journals
+      // (they are entry_type 'opening_balance' and touch this control account).
+      // So when fixed-asset sub-ledger detail exists, skip GL posting and just
+      // sync the account's opening-balance metadata.
+      const { data: assetDetail } = await supabase
+        .from("opening_balance_details")
+        .select("id")
+        .eq("tenant_id", appUser.tenant_id)
+        .eq("account_id", params.accountId)
+        .eq("entity_type", "fixed_asset")
+        .limit(1);
+
+      if (assetDetail && assetDetail.length > 0) {
+        await supabase
+          .from("accounts")
+          .update({
+            opening_balance: absAmount,
+            opening_balance_type: posting.accountDebit > 0 ? "debit" : "credit",
+          })
+          .eq("id", params.accountId)
+          .eq("tenant_id", appUser.tenant_id);
+
+        await supabase.from("audit_logs").insert({
+          action: "Opening Balance (Fixed Asset sub-ledger) Synced",
+          table_name: "accounts",
+          record_id: params.accountId,
+          user_id: appUser.id,
+          tenant_id: appUser.tenant_id,
+          details: {
+            account_id: params.accountId,
+            amount_signed: params.amountSigned,
+            note: "Control journal skipped — migrated-asset opening journals already posted to GL",
+          },
+        });
+
+        return { id: null, skipped_control_journal: true } as any;
+      }
+
       // If editing, void the old entry first
       if (params.editEntryId) {
         await supabase
