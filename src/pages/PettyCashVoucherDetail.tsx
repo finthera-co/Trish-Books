@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { ReimbursementBadge } from "@/components/petty-cash/ReimbursementBadge";
 import {
   usePCVoucher,
   usePCVoucherLines,
@@ -100,6 +101,7 @@ export default function PettyCashVoucherDetail() {
         <Badge className={sc.color}>
           <StatusIcon className="w-3.5 h-3.5 mr-1" /> {voucher.status}
         </Badge>
+        <ReimbursementBadge status={voucher.status} replenishmentId={(voucher as any).replenishment_id} />
       </div>
 
       {/* ─── PRINTABLE VOUCHER ─── */}

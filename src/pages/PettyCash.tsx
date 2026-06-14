@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { usePettyCashAccounts, useCreatePCAccount, useCashAccounts, usePCBalance } from "@/hooks/usePettyCash";
+import { ReimbursementBadge } from "@/components/petty-cash/ReimbursementBadge";
 import { useMyPermissions } from "@/hooks/usePermissions";
 import { formatCurrency } from "@/lib/currency";
 import { useNavigate } from "react-router-dom";
@@ -188,6 +189,7 @@ function VouchersList() {
                 <th>Account</th>
                 <th className="text-right">Amount</th>
                 <th>Status</th>
+                <th>Reimbursement</th>
               </tr>
             </thead>
             <tbody>
@@ -201,6 +203,7 @@ function VouchersList() {
                   <td>
                     <Badge className={statusColor[v.status] || ""}>{v.status}</Badge>
                   </td>
+                  <td><ReimbursementBadge status={v.status} replenishmentId={v.replenishment_id} /></td>
                 </tr>
               ))}
             </tbody>

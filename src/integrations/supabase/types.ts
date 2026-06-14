@@ -6489,6 +6489,7 @@ export type Database = {
           petty_cash_account_id: string
           prepared_by: string | null
           receipt_urls: string[] | null
+          replenishment_id: string | null
           reversal_voucher_id: string | null
           reversed_at: string | null
           status: string
@@ -6507,6 +6508,7 @@ export type Database = {
           petty_cash_account_id: string
           prepared_by?: string | null
           receipt_urls?: string[] | null
+          replenishment_id?: string | null
           reversal_voucher_id?: string | null
           reversed_at?: string | null
           status?: string
@@ -6525,6 +6527,7 @@ export type Database = {
           petty_cash_account_id?: string
           prepared_by?: string | null
           receipt_urls?: string[] | null
+          replenishment_id?: string | null
           reversal_voucher_id?: string | null
           reversed_at?: string | null
           status?: string
@@ -6559,6 +6562,13 @@ export type Database = {
             columns: ["prepared_by"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "petty_cash_vouchers_replenishment_id_fkey"
+            columns: ["replenishment_id"]
+            isOneToOne: false
+            referencedRelation: "petty_cash_replenishments"
             referencedColumns: ["id"]
           },
           {
@@ -10379,9 +10389,29 @@ export type Database = {
         Args: { p_doc_type: string; p_tenant_id: string }
         Returns: string
       }
+      pc_unreimbursed_vouchers: {
+        Args: { p_pc_account_id: string }
+        Returns: {
+          paid_to: string
+          total_amount: number
+          voucher_date: string
+          voucher_id: string
+          voucher_number: string
+        }[]
+      }
       post_assembly_order: { Args: { p_ao_id: string }; Returns: Json }
       post_delivery_note: { Args: { p_id: string }; Returns: Json }
       post_grn: { Args: { p_grn_id: string }; Returns: Json }
+      post_imprest_replenishment: {
+        Args: {
+          p_allow_partial?: boolean
+          p_bank_account_id: string
+          p_date?: string
+          p_pc_account_id: string
+          p_voucher_ids?: string[]
+        }
+        Returns: Json
+      }
       post_landed_cost_voucher: {
         Args: { p_voucher_id: string }
         Returns: Json

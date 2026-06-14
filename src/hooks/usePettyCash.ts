@@ -22,6 +22,22 @@ function humanizePcError(raw: string): string {
   return msg.replace(/^[A-Z_]+:\s*/, ""); // strip the code prefix as a fallback
 }
 
+// Friendly messages for the imprest replenishment RPC error codes.
+function humanizeReplError(raw: string): string {
+  const msg = raw || "";
+  if (msg.includes("NO_VOUCHERS"))
+    return "No approved, unreimbursed vouchers to replenish. Approve some vouchers first.";
+  if (msg.includes("IMPREST_MISMATCH"))
+    return "The fund won't return to its exact float — there may be an unposted cash-count variance. Reconcile first, or confirm a partial top-up.";
+  if (msg.includes("VOUCHER_INELIGIBLE"))
+    return "One or more selected vouchers are no longer eligible (already reimbursed or not approved).";
+  if (msg.includes("PERIOD_LOCKED"))
+    return "The date falls in a closed fiscal period.";
+  if (msg.includes("BANK_NOT_FOUND"))
+    return "Select a valid bank account to fund the replenishment.";
+  return msg.replace(/^[A-Z_]+:\s*/, "");
+}
+
 // ─── Petty Cash Accounts ───
 export function usePettyCashAccounts() {
   return useQuery({
@@ -543,7 +559,7 @@ export function usePCReplenishments(pcAccountId?: string) {
     queryFn: async () => {
       let query = supabase
         .from("petty_cash_replenishments")
-        .select("*, petty_cash_accounts(account_name), bank_account:bank_account_id(account_name, account_code)")
+        .select("*, petty_cash_accounts(account_name), bank_account:bank_account_id(account_name, account_code), reimbursed:petty_cash_vouchers!replenishment_id(count)")
         .order("created_at", { ascending: false });
       if (pcAccountId) query = query.eq("petty_cash_account_id", pcAccountId);
       const { data, error } = await query;
@@ -608,6 +624,73 @@ export function useApproveReplenishment() {
       qc.invalidateQueries({ queryKey: ["pc_replenishments"] });
       qc.invalidateQueries({ queryKey: ["pc_balance"] });
       toast.success("Replenishment approved & journal entry created");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ─── True Imprest Replenishment ───
+// Lists approved vouchers awaiting reimbursement for a fund (drives the preview)
+export function useUnreimbursedVouchers(pcAccountId?: string) {
+  return useQuery({
+    queryKey: ["pc_unreimbursed", pcAccountId],
+    queryFn: async () => {
+      if (!pcAccountId) return [];
+      const { data, error } = await supabase.rpc("pc_unreimbursed_vouchers", {
+        p_pc_account_id: pcAccountId,
+      });
+      if (error) throw error;
+      return data as {
+        voucher_id: string;
+        voucher_number: string;
+        voucher_date: string;
+        paid_to: string | null;
+        total_amount: number;
+      }[];
+    },
+    enabled: !!pcAccountId,
+  });
+}
+
+// Builds + posts a true imprest replenishment from the unreimbursed voucher batch
+export function usePostImprestReplenishment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      pc_account_id: string;
+      bank_account_id: string;
+      date: string;
+      voucher_ids?: string[];     // omit/undefined = reimburse ALL
+      allow_partial?: boolean;
+    }) => {
+      const { data, error } = await supabase.rpc("post_imprest_replenishment", {
+        p_pc_account_id: input.pc_account_id,
+        p_bank_account_id: input.bank_account_id,
+        p_date: input.date,
+        p_voucher_ids: input.voucher_ids ?? null,
+        p_allow_partial: input.allow_partial ?? false,
+      });
+      if (error) throw new Error(humanizeReplError(error.message));
+      return data as unknown as {
+        replenishment_id: string;
+        replenishment_number: string;
+        journal_entry_id: string;
+        voucher_count: number;
+        amount: number;
+        balance_before: number;
+        balance_after: number;
+        float: number;
+      };
+    },
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["pc_replenishments"] });
+      qc.invalidateQueries({ queryKey: ["pc_unreimbursed"] });
+      qc.invalidateQueries({ queryKey: ["pc_balance"] });
+      qc.invalidateQueries({ queryKey: ["pc_ledger"] });
+      qc.invalidateQueries({ queryKey: ["pc_vouchers"] });
+      toast.success(
+        `Replenishment ${res.replenishment_number} posted — reimbursed ${res.voucher_count} voucher(s), fund restored to ${res.float.toFixed(2)}`
+      );
     },
     onError: (e: Error) => toast.error(e.message),
   });
