@@ -272,6 +272,7 @@ export function useSaveAccountOpeningBalance() {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["accounts_active"] });
       queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
       queryClient.invalidateQueries({ queryKey: ["obe_balance"] });
       toast.success("Opening balance saved with journal entry");
     },

@@ -144,6 +144,7 @@ export default function EditTransactionModal({
     onSuccess: () => {
       toast.success("Transaction updated successfully");
       queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
       queryClient.invalidateQueries({ queryKey: ["journal_entry_edit", journalEntryId] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["transactions"] });

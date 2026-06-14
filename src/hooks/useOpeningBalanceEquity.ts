@@ -220,6 +220,7 @@ export function useVoidOBEJournalEntry() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
       queryClient.invalidateQueries({ queryKey: ["obe_balance"] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["accounts_active"] });
@@ -308,6 +309,7 @@ export function useCloseOBE() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
       queryClient.invalidateQueries({ queryKey: ["obe_balance"] });
       queryClient.invalidateQueries({ queryKey: ["system_setting"] });
       toast.success("Opening Balance Equity closed successfully");

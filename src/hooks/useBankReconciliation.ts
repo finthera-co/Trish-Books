@@ -370,6 +370,7 @@ export function useCreateReconciliationAdjustment() {
       queryClient.invalidateQueries({ queryKey: ["reconciliation_transactions", variables.reconciliation_id] });
       queryClient.invalidateQueries({ queryKey: ["reconciliation_adjustments", variables.reconciliation_id] });
       queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
       toast.success("Adjustment added");
     },
     onError: (e: Error) => toast.error(e.message),

@@ -552,6 +552,7 @@ export function useProcessPayrollRun() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["payroll_runs"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
+      qc.invalidateQueries({ queryKey: ["period_account_movements"] });
       toast.success("Payroll posted to General Ledger");
     },
     onError: (e: Error) => toast.error(e.message),

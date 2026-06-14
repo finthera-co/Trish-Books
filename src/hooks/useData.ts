@@ -283,6 +283,7 @@ export function useCreateJournalEntry() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
       toast.success("Journal entry created");
     },
     onError: (e: Error) => toast.error(e.message),

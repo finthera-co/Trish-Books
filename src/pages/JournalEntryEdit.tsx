@@ -232,6 +232,7 @@ export default function JournalEntryEdit() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
       queryClient.invalidateQueries({ queryKey: ["journal_entry", id] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       toast.success("Journal Entry updated successfully");

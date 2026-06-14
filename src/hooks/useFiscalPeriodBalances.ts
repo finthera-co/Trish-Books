@@ -44,6 +44,51 @@ export function usePeriodOpeningBalances(fiscalPeriodId: string | null) {
   });
 }
 
+/**
+ * Sum POSTED, non-voided journal-line movements per account within a fiscal
+ * period's date window. Returns Map<account_id, { debit, credit }>.
+ *
+ * Date / status / void filtering is pushed to the server (join to
+ * journal_entries!inner, filter tenant_id + status='posted' + voided_at is
+ * null + entry_date between period bounds) so we never fetch the full ledger
+ * and trim it client-side. Combined with usePeriodOpeningBalances this yields
+ * each account's period closing balance via netAccountBalance().
+ */
+export function usePeriodAccountMovements(
+  period: { id: string; period_start: string; period_end: string } | null
+) {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["period_account_movements", appUser?.tenant_id, period?.id],
+    queryFn: async () => {
+      const map = new Map<string, { debit: number; credit: number }>();
+      if (!period || !appUser?.tenant_id) return map;
+
+      const { data, error } = await supabase
+        .from("journal_lines")
+        .select(
+          "account_id, debit, credit, journal_entries!inner(entry_date, status, tenant_id, voided_at)"
+        )
+        .eq("journal_entries.tenant_id", appUser.tenant_id)
+        .eq("journal_entries.status", "posted")
+        .is("journal_entries.voided_at", null)
+        .gte("journal_entries.entry_date", period.period_start)
+        .lte("journal_entries.entry_date", period.period_end);
+      if (error) throw error;
+
+      for (const line of (data || []) as any[]) {
+        const existing = map.get(line.account_id) || { debit: 0, credit: 0 };
+        existing.debit += Number(line.debit) || 0;
+        existing.credit += Number(line.credit) || 0;
+        map.set(line.account_id, existing);
+      }
+      return map;
+    },
+    enabled: !!period && !!appUser?.tenant_id,
+    staleTime: 30_000,
+  });
+}
+
 /** Save opening balances for a specific fiscal period */
 export function useSavePeriodOpeningBalances() {
   const { appUser } = useAuth();

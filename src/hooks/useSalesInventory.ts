@@ -80,6 +80,7 @@ export function usePostDeliveryNote() {
       qc.invalidateQueries({ queryKey: ["inventory_items"] });
       qc.invalidateQueries({ queryKey: ["stock_movements"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
+      qc.invalidateQueries({ queryKey: ["period_account_movements"] });
       toast.success("Delivery Note posted — COGS recorded");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -164,6 +165,7 @@ export function usePostSalesReturn() {
       qc.invalidateQueries({ queryKey: ["inventory_items"] });
       qc.invalidateQueries({ queryKey: ["stock_movements"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
+      qc.invalidateQueries({ queryKey: ["period_account_movements"] });
       toast.success("Sales Return posted");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -249,6 +251,7 @@ export function usePostPurchaseReturn() {
       qc.invalidateQueries({ queryKey: ["inventory_items"] });
       qc.invalidateQueries({ queryKey: ["stock_movements"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
+      qc.invalidateQueries({ queryKey: ["period_account_movements"] });
       toast.success("Purchase Return posted");
     },
     onError: (e: Error) => toast.error(e.message),

@@ -546,6 +546,7 @@ export function useTransferPettyCash() {
       qc.invalidateQueries({ queryKey: ["pc_balance"] });
       qc.invalidateQueries({ queryKey: ["pc_ledger"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
+      qc.invalidateQueries({ queryKey: ["period_account_movements"] });
       toast.success("Petty cash transfer posted");
     },
     onError: (e: Error) => toast.error(e.message),

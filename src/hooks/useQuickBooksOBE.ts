@@ -309,6 +309,7 @@ export function useSaveQuickBooksOB() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["qb_ob_entries"] });
       queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
       queryClient.invalidateQueries({ queryKey: ["obe_balance"] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["accounts_active"] });
@@ -384,6 +385,7 @@ export function useVoidOBEntry() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["qb_ob_entries"] });
       queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
       queryClient.invalidateQueries({ queryKey: ["obe_balance"] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["accounts_active"] });
@@ -461,6 +463,7 @@ export function useDeleteOBEntry() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["qb_ob_entries"] });
       queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
       queryClient.invalidateQueries({ queryKey: ["obe_balance"] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["accounts_active"] });

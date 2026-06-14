@@ -302,6 +302,7 @@ export function useVoidRemittance() {
       qc.invalidateQueries({ queryKey: ["payroll_liability_by_run"] });
       qc.invalidateQueries({ queryKey: ["payroll_liability_by_period"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
+      qc.invalidateQueries({ queryKey: ["period_account_movements"] });
       toast.success("Remittance voided — reversal journal entry created");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -395,6 +396,7 @@ export function useRecordRemittance() {
       qc.invalidateQueries({ queryKey: ["payroll_liability_by_period"] });
       qc.invalidateQueries({ queryKey: ["payroll_liability_by_run"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
+      qc.invalidateQueries({ queryKey: ["period_account_movements"] });
       toast.success("Remittance recorded and posted to GL");
     },
     onError: (e: Error) => toast.error(e.message),

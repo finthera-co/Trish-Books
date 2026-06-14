@@ -189,6 +189,7 @@ export function useCreateMigratedAsset() {
       qc.invalidateQueries({ queryKey: ["fixed_assets"] });
       qc.invalidateQueries({ queryKey: ["opening_balance_details", vars.account_id] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
+      qc.invalidateQueries({ queryKey: ["period_account_movements"] });
       toast.success("Migrated asset created and opening balance posted");
     },
     onError: (e: Error) => toast.error(e.message),

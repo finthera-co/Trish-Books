@@ -95,6 +95,7 @@ export function useCreatePaymentVoucher() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["payment_vouchers"] });
       queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       toast.success("Payment voucher created");
     },

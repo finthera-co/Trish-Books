@@ -27,6 +27,7 @@ import {
 import { format } from "date-fns";
 import { formatCurrency } from "@/lib/currency";
 import { isDebitNormal, getNormalBalance, getTypeLabel, getStatementPlacement, isOpeningBalanceEquityAccount, isPeriodBasedAccount, typeColors } from "@/lib/accountTypes";
+import { netAccountBalance } from "@/lib/accountBalances";
 import EditTransactionModal from "@/components/account-report/EditTransactionModal";
 
 interface TransactionRow {
@@ -108,20 +109,36 @@ export default function AccountReport() {
       (entry: any) => entry.status === "posted" && !entry.voided_at
     );
 
+    // Express a {debit, credit} pair as a signed balance in the account's normal
+    // direction (positive = normal side) using the shared calculator. AccountReport
+    // shows the raw account-type direction, so isContra is false here — behaviour
+    // is identical to the previous inline `debitNormal ? d - c : c - d`.
+    const toSigned = (sides: { debit: number; credit: number }) => {
+      const calc = netAccountBalance({
+        accountType: account.account_type,
+        isContra: false,
+        opening: sides,
+        movements: { debit: 0, credit: 0 },
+      });
+      return calc.type === (debitNormal ? "debit" : "credit") ? calc.balance : -calc.balance;
+    };
+
     // For Balance Sheet accounts only: sum of all journal lines BEFORE dateFrom.
     // For P&L accounts: opening balance is conceptually zero (period-based).
-    const historicalOpening = periodBased
-      ? 0
+    const openingSides = periodBased
+      ? { debit: 0, credit: 0 }
       : postedEntries
           .filter((entry: any) => entry.entry_date < dateFrom)
           .flatMap((entry: any) => ((entry.journal_lines as any[]) || []).filter((line: any) => line.account_id === account.id))
-          .reduce((sum: number, line: any) => {
-            const debit = Number(line.debit) || 0;
-            const credit = Number(line.credit) || 0;
-            return sum + (debitNormal ? debit - credit : credit - debit);
-          }, 0);
+          .reduce(
+            (acc: { debit: number; credit: number }, line: any) => ({
+              debit: acc.debit + (Number(line.debit) || 0),
+              credit: acc.credit + (Number(line.credit) || 0),
+            }),
+            { debit: 0, credit: 0 }
+          );
 
-    const opening = historicalOpening;
+    const opening = toSigned(openingSides);
 
     const txRows: TransactionRow[] = postedEntries
       .filter((entry: any) => {
@@ -180,12 +197,20 @@ export default function AccountReport() {
     const tDebit = txRows.reduce((s, r) => s + r.debit, 0);
     const tCredit = txRows.reduce((s, r) => s + r.credit, 0);
 
+    // Closing balance = opening + window movements, through the shared calculator.
+    // Equals the final running-balance `bal`; sourced from the helper so the three
+    // screens share one balance authority.
+    const closingBalance = toSigned({
+      debit: openingSides.debit + tDebit,
+      credit: openingSides.credit + tCredit,
+    });
+
     return {
       rows: filtered,
       openingBalance: opening,
       totalDebit: tDebit,
       totalCredit: tCredit,
-      closingBalance: bal,
+      closingBalance,
       isPeriodBased: periodBased,
     };
   }, [account, journalEntries, dateFrom, dateTo, search, typeFilter, matchingPeriod, openingBalances, accounts, isOBEAccount]);
@@ -201,6 +226,7 @@ export default function AccountReport() {
 
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+    queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
     queryClient.invalidateQueries({ queryKey: ["accounts"] });
     queryClient.invalidateQueries({ queryKey: ["opening_balances"] });
   };

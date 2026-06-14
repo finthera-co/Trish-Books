@@ -242,6 +242,7 @@ export default function JournalEntries() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
       toast.success("Journal entry posted successfully");
       setOpen(false);
       resetForm();
@@ -284,6 +285,7 @@ export default function JournalEntries() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
       toast.success("Journal entry voided");
       setVoidDialogId(null);
       setVoidReason("");
@@ -325,6 +327,7 @@ export default function JournalEntries() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
       toast.success("Reversal entry created and posted");
       setReverseDialogId(null);
     },

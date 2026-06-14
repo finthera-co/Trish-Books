@@ -143,6 +143,7 @@ export function usePostInvoice() {
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
+      qc.invalidateQueries({ queryKey: ["period_account_movements"] });
       toast.success(data?.message || "Done");
     },
     onError: (e: Error) => toast.error(e.message),
