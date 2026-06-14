@@ -354,10 +354,15 @@ function generateDepreciationSchedule(
 // ─── EVENT: ASSET_CREATED ───
 
 async function handleAssetCreated(db: any, tenantId: string, body: any, userId: string) {
-  const { name, category_id, cost, salvage_value, useful_life_months, purchase_date, depreciation_start_date, payment_account_id, description } = body;
+  const {
+    name, category_id, cost, salvage_value, useful_life_months, purchase_date,
+    depreciation_start_date, payment_account_id, description,
+    asset_account_id, accumulated_depreciation_account_id, depreciation_expense_account_id,
+    depreciation_method, disposal_gain_account_id, disposal_loss_account_id,
+  } = body;
 
-  if (!name || !category_id || !cost || !payment_account_id) {
-    return errorResponse("Required: name, category_id, cost, payment_account_id");
+  if (!name || !cost || !payment_account_id) {
+    return errorResponse("Required: name, cost, payment_account_id");
   }
   if (cost <= 0) return errorResponse("Cost must be > 0");
   const sv = salvage_value ?? 0;
@@ -367,31 +372,60 @@ async function handleAssetCreated(db: any, tenantId: string, body: any, userId: 
   const pDate = purchase_date || new Date().toISOString().split("T")[0];
   const dStart = depreciation_start_date || pDate;
 
-  // Validate category + all accounts
-  const cat = await validateCategory(db, category_id);
-  await validateAccountActive(db, cat.asset_account_id, "Asset");
-  await validateAccountActive(db, cat.accumulated_depreciation_account_id, "Accum. Depreciation");
-  await validateAccountActive(db, cat.depreciation_expense_account_id, "Depreciation Expense");
+  // Resolve accounts + method: from category when present, otherwise directly from body.
+  let assetAcct: string;
+  let accumAcct: string;
+  let exprAcct: string;
+  let method: string;
+  let dispGain: string | null;
+  let dispLoss: string | null;
+
+  if (category_id) {
+    const cat = await validateCategory(db, category_id);
+    assetAcct = cat.asset_account_id;
+    accumAcct = cat.accumulated_depreciation_account_id;
+    exprAcct = cat.depreciation_expense_account_id;
+    method = cat.depreciation_method;
+    dispGain = cat.disposal_gain_account_id ?? null;
+    dispLoss = cat.disposal_loss_account_id ?? null;
+  } else {
+    if (!asset_account_id || !accumulated_depreciation_account_id || !depreciation_expense_account_id) {
+      return errorResponse("Required when no category: asset_account_id, accumulated_depreciation_account_id, depreciation_expense_account_id");
+    }
+    assetAcct = asset_account_id;
+    accumAcct = accumulated_depreciation_account_id;
+    exprAcct = depreciation_expense_account_id;
+    method = depreciation_method || "straight_line";
+    dispGain = disposal_gain_account_id ?? null;
+    dispLoss = disposal_loss_account_id ?? null;
+  }
+
+  // Validate resolved accounts
+  await validateAccountActive(db, assetAcct, "Asset");
+  await validateAccountActive(db, accumAcct, "Accum. Depreciation");
+  await validateAccountActive(db, exprAcct, "Depreciation Expense");
   await validateAccountActive(db, payment_account_id, "Payment");
-  if (cat.disposal_gain_account_id) await validateAccountActive(db, cat.disposal_gain_account_id, "Disposal Gain");
-  if (cat.disposal_loss_account_id) await validateAccountActive(db, cat.disposal_loss_account_id, "Disposal Loss");
+  if (dispGain) await validateAccountActive(db, dispGain, "Disposal Gain");
+  if (dispLoss) await validateAccountActive(db, dispLoss, "Disposal Loss");
   await validatePeriodOpen(db, tenantId, pDate);
 
-  // 1. Create asset — accounts resolved from category, NOT stored from user
+  // 1. Create asset — snapshot the resolved accounts onto the asset row
   const { data: asset, error: assetErr } = await db
     .from("fixed_assets")
     .insert({
       tenant_id: tenantId,
       asset_name: name,
       description: description || null,
-      category_id,
-      asset_account_id: cat.asset_account_id,
-      depreciation_account_id: cat.accumulated_depreciation_account_id,
-      depr_expense_account_id: cat.depreciation_expense_account_id,
+      category_id: category_id || null,
+      asset_account_id: assetAcct,
+      depreciation_account_id: accumAcct,
+      depr_expense_account_id: exprAcct,
+      disposal_gain_account_id: dispGain,
+      disposal_loss_account_id: dispLoss,
       cost,
       salvage_value: sv,
       useful_life_months: lifeMonths,
-      depreciation_method: cat.depreciation_method,
+      depreciation_method: method,
       acquisition_date: pDate,
       start_date: dStart,
       status: "active",
@@ -409,7 +443,7 @@ async function handleAssetCreated(db: any, tenantId: string, body: any, userId: 
     sourceId: asset.id,
     createdBy: userId,
     lines: [
-      { account_id: cat.asset_account_id, debit: cost, credit: 0, asset_id: asset.id },
+      { account_id: assetAcct, debit: cost, credit: 0, asset_id: asset.id },
       { account_id: payment_account_id, debit: 0, credit: cost },
     ],
   });
@@ -439,7 +473,7 @@ async function handleAssetCreated(db: any, tenantId: string, body: any, userId: 
   } as any);
 
   // 4. Generate full depreciation schedule
-  const schedule = generateDepreciationSchedule(asset.id, tenantId, cost, sv, lifeMonths, dStart, cat.depreciation_method);
+  const schedule = generateDepreciationSchedule(asset.id, tenantId, cost, sv, lifeMonths, dStart, method);
 
   if (schedule.length > 0) {
     const { error: schedErr } = await db.from("asset_depreciation").insert(schedule);
@@ -453,7 +487,7 @@ async function handleAssetCreated(db: any, tenantId: string, body: any, userId: 
   });
 
   // 6. Non-blocking reconciliation check
-  try { await reconcileAssetGL(db, tenantId, cat.asset_account_id); } catch (_) {}
+  try { await reconcileAssetGL(db, tenantId, assetAcct); } catch (_) {}
 
   return jsonResponse({
     success: true,
@@ -708,8 +742,10 @@ async function handleAssetDisposed(db: any, tenantId: string, body: any, userId:
     ?? globalSettings?.accum_depreciation_account_id
     ?? globalSettings?.accumulated_depreciation_account_id
     ?? null;
-  let gainAccountId: string | null = globalSettings?.gain_on_disposal_account_id ?? null;
-  let lossAccountId: string | null = globalSettings?.loss_on_disposal_account_id ?? null;
+  let gainAccountId: string | null =
+    asset.disposal_gain_account_id ?? globalSettings?.gain_on_disposal_account_id ?? null;
+  let lossAccountId: string | null =
+    asset.disposal_loss_account_id ?? globalSettings?.loss_on_disposal_account_id ?? null;
 
   if (asset.category_id) {
     const cat = await validateCategory(db, asset.category_id);
@@ -720,8 +756,8 @@ async function handleAssetDisposed(db: any, tenantId: string, body: any, userId:
       ?? globalSettings?.accum_depreciation_account_id
       ?? globalSettings?.accumulated_depreciation_account_id
       ?? null;
-    gainAccountId  = cat.disposal_gain_account_id ?? globalSettings?.gain_on_disposal_account_id ?? null;
-    lossAccountId  = cat.disposal_loss_account_id ?? globalSettings?.loss_on_disposal_account_id ?? null;
+    gainAccountId  = asset.disposal_gain_account_id ?? cat.disposal_gain_account_id ?? globalSettings?.gain_on_disposal_account_id ?? null;
+    lossAccountId  = asset.disposal_loss_account_id ?? cat.disposal_loss_account_id ?? globalSettings?.loss_on_disposal_account_id ?? null;
   }
 
   if (!assetAccountId) return errorResponse("Asset account not configured");
@@ -829,8 +865,11 @@ async function handleAssetAdjusted(db: any, tenantId: string, body: any, userId:
   const today = new Date().toISOString().split("T")[0];
   await validatePeriodOpen(db, tenantId, today);
 
-  if (!asset.category_id) return errorResponse("Asset has no category");
-  const cat = await validateCategory(db, asset.category_id);
+  // Resolve accounts + method: from category when present, otherwise from asset snapshot.
+  const cat = asset.category_id ? await validateCategory(db, asset.category_id) : null;
+  const assetAcct = cat?.asset_account_id ?? asset.asset_account_id;
+  const method = cat?.depreciation_method ?? asset.depreciation_method ?? "straight_line";
+  if (!assetAcct) return errorResponse("Asset has no asset account configured");
 
   if (adjustment_type === "revaluation") {
     // Revalue asset cost — Dr/Cr Asset Account, offset to equity/revaluation surplus
@@ -839,11 +878,11 @@ async function handleAssetAdjusted(db: any, tenantId: string, body: any, userId:
 
     const lines = diff > 0
       ? [
-          { account_id: cat.asset_account_id, debit: diff, credit: 0, asset_id },
-          { account_id: cat.asset_account_id, debit: 0, credit: 0 }, // placeholder
+          { account_id: assetAcct, debit: diff, credit: 0, asset_id },
+          { account_id: assetAcct, debit: 0, credit: 0 }, // placeholder
         ]
       : [
-          { account_id: cat.asset_account_id, debit: 0, credit: Math.abs(diff), asset_id },
+          { account_id: assetAcct, debit: 0, credit: Math.abs(diff), asset_id },
         ];
 
     // For a proper revaluation, you'd credit a Revaluation Surplus equity account
@@ -855,7 +894,7 @@ async function handleAssetAdjusted(db: any, tenantId: string, body: any, userId:
     const newSchedule = generateDepreciationSchedule(
       asset_id, tenantId, amount, asset.salvage_value,
       asset.useful_life_months, asset.start_date || today,
-      cat.depreciation_method
+      method
     );
     // Filter out already-posted periods
     const { data: postedPeriods } = await db.from("asset_depreciation")

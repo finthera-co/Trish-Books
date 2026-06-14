@@ -116,7 +116,7 @@ export function useCreateAsset() {
   return useMutation({
     mutationFn: async (asset: {
       name: string;
-      category_id: string;
+      category_id?: string;
       cost: number;
       salvage_value?: number;
       useful_life_months?: number;
@@ -124,6 +124,12 @@ export function useCreateAsset() {
       depreciation_start_date?: string;
       payment_account_id: string;
       description?: string;
+      asset_account_id?: string;
+      accumulated_depreciation_account_id?: string;
+      depreciation_expense_account_id?: string;
+      depreciation_method?: string;
+      disposal_gain_account_id?: string;
+      disposal_loss_account_id?: string;
     }) => {
       return callAssetEngine({ event_type: "ASSET_CREATED", ...asset });
     },

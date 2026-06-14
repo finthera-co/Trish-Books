@@ -3204,6 +3204,8 @@ export type Database = {
           depreciation_account_id: string | null
           depreciation_method: string
           description: string | null
+          disposal_gain_account_id: string | null
+          disposal_loss_account_id: string | null
           id: string
           salvage_value: number
           start_date: string | null
@@ -3224,6 +3226,8 @@ export type Database = {
           depreciation_account_id?: string | null
           depreciation_method?: string
           description?: string | null
+          disposal_gain_account_id?: string | null
+          disposal_loss_account_id?: string | null
           id?: string
           salvage_value?: number
           start_date?: string | null
@@ -3244,6 +3248,8 @@ export type Database = {
           depreciation_account_id?: string | null
           depreciation_method?: string
           description?: string | null
+          disposal_gain_account_id?: string | null
+          disposal_loss_account_id?: string | null
           id?: string
           salvage_value?: number
           start_date?: string | null
@@ -3277,6 +3283,20 @@ export type Database = {
           {
             foreignKeyName: "fixed_assets_depreciation_account_id_fkey"
             columns: ["depreciation_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixed_assets_disposal_gain_account_id_fkey"
+            columns: ["disposal_gain_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixed_assets_disposal_loss_account_id_fkey"
+            columns: ["disposal_loss_account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
             referencedColumns: ["id"]
