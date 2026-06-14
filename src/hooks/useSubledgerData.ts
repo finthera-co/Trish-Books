@@ -438,12 +438,38 @@ export function useCreateInventoryItemEnhanced() {
         .select()
         .single();
       if (error) throw error;
+
+      // Create the matching sales-side product so this item shows up on invoices
+      // and decrements stock when posted. The products validation trigger sets
+      // is_tracked=true for type='inventory'. Asset/COGS accounts mirror the
+      // inventory item so the post-invoice edge function can resolve COGS.
+      // Price seeds from unit cost (no selling price on this form); editable on
+      // the product or the invoice line.
+      const { error: prodErr } = await supabase
+        .from("products")
+        .insert({
+          name: item.item_name,
+          description: item.description || null,
+          price: cost,
+          type: "inventory",
+          inventory_item_id: data.id,
+          expense_account_id: cogsAccountId,
+          asset_account_id: accountId,
+          tenant_id: tenantId,
+        } as any);
+      if (prodErr) {
+        // Roll back the inventory item so we never leave an orphan that can't
+        // reach invoices (the original bug state).
+        await supabase.from("inventory_items").delete().eq("id", data.id);
+        throw prodErr;
+      }
       return data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["inventory_items_enhanced"] });
       qc.invalidateQueries({ queryKey: ["inventory_items"] });
       qc.invalidateQueries({ queryKey: ["inventory_subledger"] });
+      qc.invalidateQueries({ queryKey: ["products"] });
       COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Inventory item created");
     },
