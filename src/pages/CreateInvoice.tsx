@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePostInvoice } from "@/hooks/useAccountSettings";
 import { QuickCustomerDialog } from "@/components/invoices/QuickCustomerDialog";
+import { useSetHideSidebar } from "@/stores/useAppStore";
 
 interface LineItem {
   id: string;
@@ -54,6 +55,14 @@ export default function CreateInvoice() {
   const { data: taxGroups } = useTaxGroups();
   const { data: taxCodes } = useTaxCodes();
   const postInvoiceFn = usePostInvoice();
+  const setHideSidebar = useSetHideSidebar();
+
+  // Collapse the module sidebar while drafting an invoice so the line-item
+  // grid has room to breathe; restore it on leave.
+  useEffect(() => {
+    setHideSidebar(true);
+    return () => setHideSidebar(false);
+  }, [setHideSidebar]);
 
   const [customerId, setCustomerId] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
@@ -90,6 +99,13 @@ export default function CreateInvoice() {
     !!p && p.type === "inventory" && p.is_tracked && !!p.inventory_item_id, []);
   const onHandOf = useCallback((p: any) =>
     isTracked(p) ? Number(p.inventory_item?.quantity_on_hand) || 0 : null, [isTracked]);
+  // Current unit cost for a stocked item (moving-average), falling back to the
+  // last purchase price. Null for services / non-inventory items.
+  const costOf = useCallback((p: any) => {
+    if (!isTracked(p)) return null;
+    const c = p.inventory_item?.unit_cost ?? p.inventory_item?.last_purchase_price;
+    return c == null ? null : Number(c) || 0;
+  }, [isTracked]);
   const typeLabel = useCallback((p: any) => {
     if (!p) return null;
     if (isTracked(p)) return "Stock";
@@ -293,7 +309,7 @@ export default function CreateInvoice() {
   const customer = customers?.find((c) => c.id === customerId);
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-7xl mx-auto space-y-8 pb-12">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -317,16 +333,16 @@ export default function CreateInvoice() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         {/* Main Form */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-3 space-y-8">
           {/* Customer & Dates */}
           <Card>
-            <CardContent className="pt-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+            <CardContent className="pt-6 space-y-5">
+              <div className="grid grid-cols-2 gap-6">
                 <div>
                   <Label>Customer *</Label>
-                  <div className="flex gap-2 mt-1">
+                  <div className="flex gap-2 mt-1.5">
                     <Select value={customerId} onValueChange={setCustomerId}>
                       <SelectTrigger><SelectValue placeholder="Select customer..." /></SelectTrigger>
                       <SelectContent>
@@ -338,17 +354,17 @@ export default function CreateInvoice() {
                 </div>
                 <div>
                   <Label>Invoice Number *</Label>
-                  <Input className="mt-1" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
+                  <Input className="mt-1.5" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-6">
                 <div>
                   <Label>Issue Date</Label>
-                  <Input type="date" className="mt-1" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
+                  <Input type="date" className="mt-1.5" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
                 </div>
                 <div>
                   <Label>Due Date</Label>
-                  <Input type="date" className="mt-1" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                  <Input type="date" className="mt-1.5" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
                 </div>
               </div>
               {customer && (
@@ -376,27 +392,33 @@ export default function CreateInvoice() {
                 <table className="w-full text-sm">
                   <thead className="bg-muted/50">
                     <tr>
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground">Product / Description</th>
-                      <th className="px-3 py-2 text-center font-medium text-muted-foreground w-20">Qty</th>
-                      <th className="px-3 py-2 text-right font-medium text-muted-foreground w-28">Rate</th>
-                      <th className="px-3 py-2 text-center font-medium text-muted-foreground w-40">Tax</th>
-                      <th className="px-3 py-2 text-right font-medium text-muted-foreground w-24">Discount</th>
-                      <th className="px-3 py-2 text-right font-medium text-muted-foreground w-28">Amount</th>
-                      <th className="px-3 py-2 w-10"></th>
+                      <th className="px-4 py-3 text-left font-medium text-muted-foreground min-w-[280px]">Product / Description</th>
+                      <th className="px-4 py-3 text-center font-medium text-muted-foreground w-20">Qty</th>
+                      <th className="px-4 py-3 text-right font-medium text-muted-foreground w-24">Unit Cost</th>
+                      <th className="px-4 py-3 text-right font-medium text-muted-foreground w-24">Rate</th>
+                      <th className="px-4 py-3 text-center font-medium text-muted-foreground w-28">Tax</th>
+                      <th className="px-4 py-3 text-right font-medium text-muted-foreground w-20">Discount</th>
+                      <th className="px-4 py-3 text-right font-medium text-muted-foreground w-24">Amount</th>
+                      <th className="px-4 py-3 w-10"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {lines.map((line, idx) => {
                       const lineProduct = line.product_id ? productsById.get(line.product_id) : null;
                       const lineOnHand = onHandOf(lineProduct);
+                      const lineCost = costOf(lineProduct);
                       const lineBadge = typeLabel(lineProduct);
                       const overStock = lineOnHand !== null && line.qty > lineOnHand;
+                      // Gross margin % on the entered rate vs unit cost (stocked items only)
+                      const marginPct = lineCost && line.rate > 0
+                        ? Math.round(((line.rate - lineCost) / line.rate) * 100)
+                        : null;
                       return (
-                      <tr key={line.id} className="border-t border-border">
-                        <td className="px-3 py-2">
-                          <div className="space-y-1">
+                      <tr key={line.id} className="border-t border-border align-top">
+                        <td className="px-4 py-5">
+                          <div className="space-y-3">
                             <Select value={line.product_id} onValueChange={(v) => updateLine(line.id, "product_id", v)}>
-                              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select product..." /></SelectTrigger>
+                              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select product..." /></SelectTrigger>
                               <SelectContent>
                                 {products?.map((p: any) => {
                                   const oh = onHandOf(p);
@@ -408,7 +430,7 @@ export default function CreateInvoice() {
                                 })}
                               </SelectContent>
                             </Select>
-                            <Input className="h-8 text-xs" placeholder="Description" value={line.description}
+                            <Input className="h-9 text-sm" placeholder="Description" value={line.description}
                               onChange={(e) => updateLine(line.id, "description", e.target.value)} />
                             {lineBadge && (
                               <span className="inline-block text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
@@ -417,24 +439,40 @@ export default function CreateInvoice() {
                             )}
                           </div>
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-4 py-5">
                           <Input type="number"
-                            className={`h-8 text-xs text-center${overStock ? " border-destructive focus-visible:ring-destructive" : ""}`}
+                            className={`h-9 text-sm text-center${overStock ? " border-destructive focus-visible:ring-destructive" : ""}`}
                             value={line.qty || ""}
                             onChange={(e) => updateLine(line.id, "qty", Number(e.target.value))} min={1} />
                           {overStock && (
-                            <p className="text-[10px] text-destructive mt-0.5">Only {lineOnHand} in stock</p>
+                            <p className="text-[10px] text-destructive mt-1">Only {lineOnHand} in stock</p>
                           )}
                         </td>
-                        <td className="px-3 py-2">
-                          <Input type="number" className="h-8 text-xs text-right" value={line.rate || ""}
-                            onChange={(e) => updateLine(line.id, "rate", Number(e.target.value))} min={0} />
+                        <td className="px-4 py-5">
+                          <div className="h-9 flex items-center justify-end">
+                            {lineCost !== null ? (
+                              <span className="text-sm font-medium text-muted-foreground tabular-nums">
+                                {formatCurrency(lineCost)}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground/60">—</span>
+                            )}
+                          </div>
                         </td>
-                        <td className="px-3 py-2">
-                          <div className="space-y-1">
+                        <td className="px-4 py-5">
+                          <Input type="number" className="h-9 text-sm text-right" value={line.rate || ""}
+                            onChange={(e) => updateLine(line.id, "rate", Number(e.target.value))} min={0} />
+                          {marginPct !== null && (
+                            <p className={`text-[10px] mt-1 text-right ${marginPct < 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                              {marginPct}% margin
+                            </p>
+                          )}
+                        </td>
+                        <td className="px-4 py-5">
+                          <div className="space-y-2">
                             <Select value={line.tax_sel || "none"}
                               onValueChange={(v) => updateLine(line.id, "tax_sel", v === "none" ? "" : v)}>
-                              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="No tax" /></SelectTrigger>
+                              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="No tax" /></SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="none">No Tax</SelectItem>
                                 {sellableGroups.length > 0 && (
@@ -464,19 +502,23 @@ export default function CreateInvoice() {
                             )}
                           </div>
                         </td>
-                        <td className="px-3 py-2">
-                          <Input type="number" className="h-8 text-xs text-right" value={line.discount || ""}
+                        <td className="px-4 py-5">
+                          <Input type="number" className="h-9 text-sm text-right" value={line.discount || ""}
                             onChange={(e) => updateLine(line.id, "discount", Number(e.target.value))} min={0} />
                         </td>
-                        <td className="px-3 py-2 text-right font-medium text-foreground">
-                          {formatCurrency(lineCalcs[idx]?.lineTotal ?? 0)}
+                        <td className="px-4 py-5">
+                          <div className="h-9 flex items-center justify-end font-medium text-foreground tabular-nums">
+                            {formatCurrency(lineCalcs[idx]?.lineTotal ?? 0)}
+                          </div>
                         </td>
-                        <td className="px-3 py-2">
-                          {lines.length > 1 && (
-                            <Button variant="ghost" size="sm" onClick={() => removeLine(line.id)}>
-                              <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                            </Button>
-                          )}
+                        <td className="px-4 py-5">
+                          <div className="h-9 flex items-center justify-center">
+                            {lines.length > 1 && (
+                              <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => removeLine(line.id)}>
+                                <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                              </Button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                       );
@@ -490,14 +532,14 @@ export default function CreateInvoice() {
           {/* Notes & Terms */}
           <Card>
             <CardContent className="pt-6">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-6">
                 <div>
                   <Label>Notes</Label>
-                  <Textarea className="mt-1" rows={3} placeholder="Notes visible on invoice..." value={notes} onChange={(e) => setNotes(e.target.value)} />
+                  <Textarea className="mt-1.5" rows={4} placeholder="Notes visible on invoice..." value={notes} onChange={(e) => setNotes(e.target.value)} />
                 </div>
                 <div>
                   <Label>Terms &amp; Conditions</Label>
-                  <Textarea className="mt-1" rows={3} placeholder="Payment terms..." value={terms} onChange={(e) => setTerms(e.target.value)} />
+                  <Textarea className="mt-1.5" rows={4} placeholder="Payment terms..." value={terms} onChange={(e) => setTerms(e.target.value)} />
                 </div>
               </div>
             </CardContent>
