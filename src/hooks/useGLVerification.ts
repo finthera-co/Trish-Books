@@ -166,27 +166,62 @@ export function useGLVerification() {
           : `${obeUnbalanced.length} unbalanced OBE journal(s)`,
       });
 
-      // 8. Parent rollups
+      // 8. Parent rollups (posted + opening aware)
+      // The old check compared ONLY opening_balance sums, so it was blind to the
+      // posted-transaction drift that breaks fixed-asset rollups. A non-postable
+      // "summary" parent should never carry a balance of its own — all activity
+      // belongs on its postable leaf descendants and rolls up only for display.
+      // We sum posted + opening per account and flag any non-postable parent that
+      // holds its own non-zero balance.
       const { data: accts } = await supabase
         .from("accounts")
-        .select("id, parent_account_id, opening_balance, opening_balance_type")
+        .select("id, parent_account_id, account_type, normal_balance, is_postable, opening_balance, opening_balance_type")
         .eq("tenant_id", tid)
         .eq("is_active", true);
+
+      // Pull all posted, non-voided journal lines once and bucket by account.
+      const { data: vLines } = await supabase
+        .from("journal_lines")
+        .select("account_id, debit, credit, journal_entries!inner(status, voided_at, tenant_id)")
+        .filter("journal_entries.tenant_id", "eq", tid);
+
+      const postedByAcct = new Map<string, { debit: number; credit: number }>();
+      ((vLines || []) as any[]).forEach((l) => {
+        const e = l.journal_entries;
+        if (!e || e.status !== "posted" || e.voided_at) return;
+        const cur = postedByAcct.get(l.account_id) || { debit: 0, credit: 0 };
+        cur.debit += Number(l.debit) || 0;
+        cur.credit += Number(l.credit) || 0;
+        postedByAcct.set(l.account_id, cur);
+      });
+
+      // Signed (debit-positive) own balance for one account = opening + posted.
+      const signedOwnBalance = (a: any) => {
+        const ob = Number(a.opening_balance || 0);
+        let debit = a.opening_balance_type === "debit" ? ob : 0;
+        let credit = a.opening_balance_type === "credit" ? ob : 0;
+        const posted = postedByAcct.get(a.id);
+        if (posted) {
+          debit += posted.debit;
+          credit += posted.credit;
+        }
+        return debit - credit;
+      };
 
       const parents = (accts || []).filter((a) => (accts || []).some((c) => c.parent_account_id === a.id));
       let rollupIssues = 0;
       parents.forEach((p) => {
-        const children = (accts || []).filter((c) => c.parent_account_id === p.id);
-        const childSum = children.reduce((s, c) => s + Number(c.opening_balance || 0), 0);
-        if (childSum > 0 && Math.abs(Number(p.opening_balance || 0) - childSum) > 0.01) {
+        // Non-postable summary parents must not carry their own balance; all
+        // postings should land on children and roll up for display only.
+        if ((p as any).is_postable === false && Math.abs(signedOwnBalance(p)) > 0.01) {
           rollupIssues++;
         }
       });
       updateCheck("parent_rollups", {
-        status: rollupIssues === 0 ? "pass" : "warn",
+        status: rollupIssues === 0 ? "pass" : "fail",
         detail: rollupIssues === 0
-          ? "Parent account rollups consistent"
-          : `${rollupIssues} parent(s) with mismatched child totals`,
+          ? "Parent balances reconcile to child posted + opening balances"
+          : `${rollupIssues} non-postable parent(s) carry their own balance instead of rolling up`,
       });
 
       // 9. Account types

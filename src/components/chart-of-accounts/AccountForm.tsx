@@ -44,6 +44,8 @@ interface AccountFormProps {
     account_subtype?: string;
     parent_account_id?: string;
     category_id?: string;
+    normal_balance?: string;
+    is_contra?: boolean;
   }) => Promise<void>;
   accounts: Account[];
   categories: AccountCategory[];
@@ -125,6 +127,21 @@ export default function AccountForm({
   const subtypes = ACCOUNT_SUBTYPES[accountType] || [];
   const numberRange = ACCOUNT_NUMBER_RANGES[accountType];
   const accountsMap = useMemo(() => buildAccountsMap(accounts), [accounts]);
+
+  // Fixed-asset detail accounts MUST sit under a control parent so their balance
+  // has somewhere to roll up. Require a parent when creating one of these.
+  const requiresParentLink = useMemo(() => {
+    const st = (accountSubtype || "").toLowerCase();
+    return (
+      st.includes("fixed asset") ||
+      st.includes("furniture") ||
+      st.includes("vehicle") ||
+      st.includes("building") ||
+      st.includes("accumulated depreciation")
+    );
+  }, [accountSubtype]);
+
+  const missingRequiredParent = !editAccount && requiresParentLink && !parentId;
 
   // Validate parent selection
   const parentValidation = useMemo(() => {
@@ -387,6 +404,13 @@ export default function AccountForm({
                 <AlertTriangle className="w-3 h-3" /> {parentValidation.reason}
               </p>
             )}
+            {missingRequiredParent && (
+              <p className="text-[10px] text-destructive mt-1 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                Fixed-asset detail accounts must be linked to a parent control account
+                so their balance rolls up. Select a Fixed Assets / PP&E parent.
+              </p>
+            )}
             <p className="text-[10px] text-muted-foreground mt-1">
               Control accounts (AR, AP, Inventory) cannot have sub-accounts — use their subledger modules instead.
             </p>
@@ -416,7 +440,7 @@ export default function AccountForm({
 
           <Button
             onClick={handleSubmit}
-            disabled={!accountName || !accountCode || !accountSubtype || isCodeDuplicate || isPending}
+            disabled={!accountName || !accountCode || !accountSubtype || isCodeDuplicate || isPending || missingRequiredParent}
             className="w-full"
           >
             {isPending ? "Saving..." : editAccount ? "Update Account" : "Create Account"}

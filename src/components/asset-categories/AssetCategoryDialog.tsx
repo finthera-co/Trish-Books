@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAccounts } from "@/hooks/useData";
 import { useAssetCategories, useCreateAssetCategory, useUpdateAssetCategory } from "@/hooks/useAssetCategories";
+import { toast } from "sonner";
 
 const schema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -83,6 +84,28 @@ export default function AssetCategoryDialog({ open, onOpenChange, editingId }: P
   }, [existing, open]);
 
   const onSubmit = async (values: FormValues) => {
+    // Guard: the chosen GL accounts must be linked under a control parent so the
+    // category's balance can roll up into a Fixed Assets / PP&E group. A root
+    // (parent-less) account would leave the rollup nothing to target.
+    const chosenAsset = assetAccounts.find((a: any) => a.id === values.asset_account_id);
+    if (chosenAsset && !(chosenAsset as any).parent_account_id) {
+      toast.error(
+        "Selected Asset Account is not linked to a parent control account. " +
+        "Pick an account nested under a Fixed Assets / PP&E group so balances roll up."
+      );
+      return;
+    }
+    const chosenAccum = accumDepreciationAccounts.find(
+      (a: any) => a.id === values.accumulated_depreciation_account_id
+    );
+    if (chosenAccum && !(chosenAccum as any).parent_account_id) {
+      toast.error(
+        "Selected Accumulated Depreciation account is not linked to a parent. " +
+        "Nest it under the PP&E control account so it rolls up."
+      );
+      return;
+    }
+
     // Convert empty strings to null for optional UUID fields
     const sanitized = {
       ...values,

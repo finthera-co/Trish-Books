@@ -30,6 +30,7 @@ import InlineOpeningBalance from "@/components/chart-of-accounts/InlineOpeningBa
 import { useSystemSetting } from "@/hooks/useOpeningBalanceSettings";
 import { useFiscalPeriods, usePeriodOpeningBalances } from "@/hooks/useFiscalPeriodBalances";
 import { useInventoryAccountBalanceMap } from "@/hooks/useComputedInventoryValue";
+import { usePostedAccountBalances } from "@/hooks/usePostedAccountBalances";
 import FiscalPeriodSelector from "@/components/FiscalPeriodSelector";
 
 import {
@@ -102,48 +103,84 @@ interface TypeGroup {
   uncategorized: Account[];
 }
 
+type PostedMovement = { debit: number; credit: number };
+
+// True for accounts whose natural balance is on the debit side.
+function isDebitNormalAccount(account: Account): boolean {
+  const nb = (account as any).normal_balance;
+  if (nb === "debit") return true;
+  if (nb === "credit") return false;
+  // Fallback by type when normal_balance is absent.
+  return ["Asset", "Expense", "COGS"].includes(account.account_type);
+}
+
 function getAccountDisplayBalance(
   account: Account,
-  periodOBMap?: Map<string, { debit: number; credit: number }>,
-  computedBalanceMap?: Map<string, number>
+  periodOBMap?: Map<string, PostedMovement>,
+  computedBalanceMap?: Map<string, number>,
+  postedBalanceMap?: Map<string, PostedMovement>
 ): { balance: number; type: string } {
-  // If this account has a computed balance (e.g. Inventory), use it
+  // Inventory (or any explicitly computed) control account overrides everything.
   const computedVal = computedBalanceMap?.get(account.id);
   if (computedVal !== undefined) {
     return { balance: computedVal, type: "debit" };
   }
 
-  const periodOB = periodOBMap?.get(account.id);
+  const debitNormal = isDebitNormalAccount(account);
 
+  // 1. Opening balance contribution (period OB if present, else stored OB).
+  const periodOB = periodOBMap?.get(account.id);
+  let netDebit = 0;
+  let netCredit = 0;
+
+  if (periodOB) {
+    netDebit += periodOB.debit;
+    netCredit += periodOB.credit;
+  } else {
+    const ob = Number((account as any).opening_balance ?? 0);
+    const obType = (account as any).opening_balance_type ?? (debitNormal ? "debit" : "credit");
+    if (obType === "debit") netDebit += ob;
+    else netCredit += ob;
+  }
+
+  // 2. Posted journal movement contribution (the previously-missing piece).
+  const posted = postedBalanceMap?.get(account.id);
+  if (posted) {
+    netDebit += posted.debit;
+    netCredit += posted.credit;
+  }
+
+  // 3. Net to the account's normal side.
+  const net = debitNormal ? netDebit - netCredit : netCredit - netDebit;
   return {
-    balance: periodOB
-      ? (periodOB.debit > periodOB.credit ? periodOB.debit - periodOB.credit : periodOB.credit - periodOB.debit)
-      : (account as any).opening_balance ?? 0,
-    type: periodOB
-      ? (periodOB.debit >= periodOB.credit ? "debit" : "credit")
-      : (account as any).opening_balance_type ?? "debit",
+    balance: Math.abs(net),
+    type: net >= 0 ? (debitNormal ? "debit" : "credit") : (debitNormal ? "credit" : "debit"),
   };
 }
 
-// Recursively sum all leaf-descendant balances for parent (non-postable) accounts.
+// Recursively roll a parent's balance = own posted/opening balance
+// + sum of all descendant balances. Signed net is accumulated as raw
+// debit/credit so credit-normal children (e.g. Accumulated Depreciation)
+// correctly reduce a debit-normal parent group.
 function computeRollupBalance(
   account: Account,
-  periodOBMap?: Map<string, { debit: number; credit: number }>,
-  computedBalanceMap?: Map<string, number>
+  periodOBMap?: Map<string, PostedMovement>,
+  computedBalanceMap?: Map<string, number>,
+  postedBalanceMap?: Map<string, PostedMovement>
 ): { balance: number; type: string } {
-  const children = account.children;
-  if (!children || children.length === 0) {
-    return getAccountDisplayBalance(account, periodOBMap, computedBalanceMap);
+  // Own balance, expressed as a signed debit-positive number.
+  const own = getAccountDisplayBalance(account, periodOBMap, computedBalanceMap, postedBalanceMap);
+  let signedDebitNet = own.type === "debit" ? own.balance : -own.balance;
+
+  for (const child of account.children ?? []) {
+    const childRes = computeRollupBalance(child, periodOBMap, computedBalanceMap, postedBalanceMap);
+    signedDebitNet += childRes.type === "debit" ? childRes.balance : -childRes.balance;
   }
-  let netDebit = 0;
-  let netCredit = 0;
-  for (const child of children) {
-    const { balance, type } = computeRollupBalance(child, periodOBMap, computedBalanceMap);
-    if (type === "debit") netDebit += balance;
-    else netCredit += balance;
-  }
-  const net = netDebit - netCredit;
-  return { balance: Math.abs(net), type: net >= 0 ? "debit" : "credit" };
+
+  return {
+    balance: Math.abs(signedDebitNet),
+    type: signedDebitNet >= 0 ? "debit" : "credit",
+  };
 }
 
 function AccountRow({
@@ -159,6 +196,7 @@ function AccountRow({
   parentIsControl,
   globalAccountsMap,
   computedBalanceMap,
+  postedBalanceMap,
 }: {
   account: Account;
   depth?: number;
@@ -172,6 +210,7 @@ function AccountRow({
   parentIsControl?: boolean;
   globalAccountsMap?: Map<string, MappableAccount>;
   computedBalanceMap?: Map<string, number>;
+  postedBalanceMap?: Map<string, { debit: number; credit: number }>;
 }) {
   const [expanded, setExpanded] = useState(true);
   const navigate = useNavigate();
@@ -184,12 +223,15 @@ function AccountRow({
   const isControlled = isAccountControlled(account, accountsMap);
   const subledgerRoute = isControlled ? mapAccountRoute(account, accountsMap) : null;
   const subledgerModule = getModuleLabel(account, accountsMap);
-  const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap, computedBalanceMap);
+  const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap, computedBalanceMap, postedBalanceMap);
   const isComputedBalance = computedBalanceMap?.has(account.id) ?? false;
 
-  // Parent (non-postable) accounts show a rolled-up sum of all leaf descendants
-  const isParentAccount = account.is_postable === false && (account.children?.length ?? 0) > 0;
-  const rollupResult = isParentAccount ? computeRollupBalance(account, periodOBMap, computedBalanceMap) : null;
+  // Any account with children shows a rolled-up figure. computeRollupBalance
+  // already folds in the account's OWN posted balance, so this is correct even
+  // for postable control accounts (e.g. 1650 Accumulated Depreciation) that
+  // both receive postings and sit above child accounts.
+  const isParentAccount = (account.children?.length ?? 0) > 0;
+  const rollupResult = isParentAccount ? computeRollupBalance(account, periodOBMap, computedBalanceMap, postedBalanceMap) : null;
 
   // Determine if this account inherits control status from parent
   const isInheritedControl = !controlAcct && parentIsControl;
@@ -404,6 +446,7 @@ function AccountRow({
           parentIsControl={controlAcct || parentIsControl}
           globalAccountsMap={accountsMap}
           computedBalanceMap={computedBalanceMap}
+          postedBalanceMap={postedBalanceMap}
         />
       ))}
     </>
@@ -422,6 +465,7 @@ function FlatAccountRow({
   canEdit,
   globalAccountsMap,
   computedBalanceMap,
+  postedBalanceMap,
 }: {
   account: Account;
   onEdit: (a: Account) => void;
@@ -433,6 +477,7 @@ function FlatAccountRow({
   canEdit?: boolean;
   globalAccountsMap?: Map<string, MappableAccount>;
   computedBalanceMap?: Map<string, number>;
+  postedBalanceMap?: Map<string, { debit: number; credit: number }>;
 }) {
   const navigate = useNavigate();
   const accountsMap = globalAccountsMap ?? useMemo(() => buildAccountsMap([account]), [account]);
@@ -440,7 +485,7 @@ function FlatAccountRow({
   const isControlled = isAccountControlled(account, accountsMap);
   const subledgerRoute = isControlled ? mapAccountRoute(account, accountsMap) : null;
   const subledgerModule = getModuleLabel(account, accountsMap);
-  const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap, computedBalanceMap);
+  const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap, computedBalanceMap, postedBalanceMap);
   const isComputedBalance = computedBalanceMap?.has(account.id) ?? false;
 
   return (
@@ -596,6 +641,7 @@ function TypeSection({
   canEdit,
   globalAccountsMap,
   computedBalanceMap,
+  postedBalanceMap,
 }: {
   typeGroup: TypeGroup;
   onEdit: (a: Account) => void;
@@ -607,6 +653,7 @@ function TypeSection({
   canEdit?: boolean;
   globalAccountsMap?: Map<string, MappableAccount>;
   computedBalanceMap?: Map<string, number>;
+  postedBalanceMap?: Map<string, { debit: number; credit: number }>;
 }) {
   const [expanded, setExpanded] = useState(true);
   const totalAccounts = typeGroup.categories.reduce((s, c) => s + c.accounts.length, 0) + typeGroup.uncategorized.length;
@@ -646,6 +693,7 @@ function TypeSection({
           canEdit={canEdit}
           globalAccountsMap={globalAccountsMap}
           computedBalanceMap={computedBalanceMap}
+          postedBalanceMap={postedBalanceMap}
         />
       ))}
       {expanded && typeGroup.uncategorized.length > 0 && (
@@ -669,6 +717,7 @@ function TypeSection({
               canEdit={canEdit}
               globalAccountsMap={globalAccountsMap}
               computedBalanceMap={computedBalanceMap}
+              postedBalanceMap={postedBalanceMap}
             />
           ))}
         </>
@@ -689,6 +738,7 @@ function CategorySection({
   canEdit,
   globalAccountsMap,
   computedBalanceMap,
+  postedBalanceMap,
 }: {
   category: CategoryGroup;
   accountType: string;
@@ -701,6 +751,7 @@ function CategorySection({
   canEdit?: boolean;
   globalAccountsMap?: Map<string, MappableAccount>;
   computedBalanceMap?: Map<string, number>;
+  postedBalanceMap?: Map<string, { debit: number; credit: number }>;
 }) {
   const [expanded, setExpanded] = useState(true);
   const tree = buildTree(category.accounts).sort((a, b) => a.account_code.localeCompare(b.account_code));
@@ -733,6 +784,7 @@ function CategorySection({
           canEdit={canEdit}
           globalAccountsMap={globalAccountsMap}
           computedBalanceMap={computedBalanceMap}
+          postedBalanceMap={postedBalanceMap}
         />
       ))}
     </>
@@ -809,6 +861,17 @@ export default function ChartOfAccounts() {
 
   // Computed inventory balance — never stored, always derived
   const computedBalanceMap = useInventoryAccountBalanceMap(accounts as any[]);
+
+  // Posted journal movement per account — the previously-missing piece that lets
+  // transaction-driven balances (fixed-asset acquisition/depreciation) roll up.
+  // Passing `null` sums all posted lines cumulative-to-date, which is the
+  // correct Balance-Sheet view for PP&E / Accumulated Depreciation control
+  // accounts regardless of the selected period.
+  const { data: postedBalanceMap } = usePostedAccountBalances(
+    selectedPeriod
+      ? { period_start: selectedPeriod.period_start, period_end: selectedPeriod.period_end }
+      : null
+  );
 
   const displayAccounts = useMemo(() => {
     return ((accounts as Account[] | undefined) || []).map((account) =>
@@ -1040,6 +1103,7 @@ export default function ChartOfAccounts() {
                   canEdit={hasEditPermission}
                   globalAccountsMap={globalAccountsMap}
                   computedBalanceMap={computedBalanceMap}
+                  postedBalanceMap={postedBalanceMap}
                 />
               ))}
             </tbody>
@@ -1075,6 +1139,7 @@ export default function ChartOfAccounts() {
                     canEdit={hasEditPermission}
                     globalAccountsMap={globalAccountsMap}
                     computedBalanceMap={computedBalanceMap}
+                    postedBalanceMap={postedBalanceMap}
                   />
                 ))}
             </tbody>
