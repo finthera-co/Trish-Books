@@ -3,6 +3,25 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
+// Maps machine-readable RPC error codes (e.g. "INSUFFICIENT_FUNDS: available 100, required 250")
+// to friendly toast messages.
+function humanizePcError(raw: string): string {
+  const msg = raw || "";
+  if (msg.includes("INSUFFICIENT_FUNDS"))
+    return "Insufficient petty cash funds for this voucher. Replenish the fund first.";
+  if (msg.includes("EXCEEDS_FLOAT"))
+    return "This top-up would push the fund above its defined float.";
+  if (msg.includes("PERIOD_LOCKED"))
+    return "The date falls in a closed fiscal period. Reopen it or change the date.";
+  if (msg.includes("TOTAL_MISMATCH"))
+    return "Voucher line total does not match the header total.";
+  if (msg.includes("INVALID_STATE"))
+    return "This document has already been posted or is not in a draft state.";
+  if (msg.includes("EMPTY_VOUCHER"))
+    return "The voucher has no valid line amounts.";
+  return msg.replace(/^[A-Z_]+:\s*/, ""); // strip the code prefix as a fallback
+}
+
 // ─── Petty Cash Accounts ───
 export function usePettyCashAccounts() {
   return useQuery({
@@ -168,81 +187,19 @@ export function useCreatePCVoucher() {
 
 export function useUpdateVoucherStatus() {
   const qc = useQueryClient();
-  const { appUser } = useAuth();
   return useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
       if (status === "approved") {
-        const { data: voucher } = await supabase
-          .from("petty_cash_vouchers")
-          .select("*, petty_cash_accounts(account_id)")
-          .eq("id", id)
-          .single();
-        if (!voucher) throw new Error("Voucher not found");
-
-        const { data: lines } = await supabase
-          .from("petty_cash_voucher_lines")
-          .select("*")
-          .eq("voucher_id", id);
-        if (!lines?.length) throw new Error("No voucher lines");
-
-        const remaining = await getRemainingCash(voucher.petty_cash_account_id);
-        if (remaining < voucher.total_amount) {
-          throw new Error(`Insufficient petty cash balance. Available: ${remaining.toFixed(2)}, Required: ${voucher.total_amount}`);
-        }
-
-        // Create journal entry with cash_flow_category
-        const { data: je, error: jeErr } = await supabase
-          .from("journal_entries")
-          .insert({
-            tenant_id: appUser!.tenant_id,
-            description: `Petty Cash Voucher ${voucher.voucher_number}`,
-            entry_date: voucher.date,
-            status: "posted",
-            is_system_generated: true,
-            entry_type: "petty_cash",
-            reference: voucher.voucher_number,
-            cash_flow_category: "operating",
-          })
-          .select()
-          .single();
-        if (jeErr) throw jeErr;
-
-        const journalLines = [
-          ...lines.map((l: any) => ({
-            journal_entry_id: je.id,
-            account_id: l.account_id,
-            debit: Number(l.amount),
-            credit: 0,
-          })),
-          {
-            journal_entry_id: je.id,
-            account_id: voucher.petty_cash_accounts?.account_id,
-            debit: 0,
-            credit: Number(voucher.total_amount),
-          },
-        ];
-
-        const { error: jlErr } = await supabase
-          .from("journal_lines")
-          .insert(journalLines);
-        if (jlErr) throw jlErr;
-
-        const { error } = await supabase
-          .from("petty_cash_vouchers")
-          .update({
-            status: "approved",
-            approved_at: new Date().toISOString(),
-            journal_entry_id: je.id,
-          })
-          .eq("id", id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from("petty_cash_vouchers")
-          .update({ status })
-          .eq("id", id);
-        if (error) throw error;
+        const { data, error } = await supabase.rpc("post_pcv", { p_voucher_id: id });
+        if (error) throw new Error(humanizePcError(error.message));
+        return data;
       }
+      // Non-approval status changes (e.g. cancel) stay as a plain update
+      const { error } = await supabase
+        .from("petty_cash_vouchers")
+        .update({ status })
+        .eq("id", id);
+      if (error) throw error;
     },
     onSuccess: (_, { status }) => {
       qc.invalidateQueries({ queryKey: ["pc_vouchers"] });
@@ -641,60 +598,11 @@ export function useCreateReplenishment() {
 
 export function useApproveReplenishment() {
   const qc = useQueryClient();
-  const { appUser } = useAuth();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { data: rep } = await supabase
-        .from("petty_cash_replenishments")
-        .select("*, petty_cash_accounts(account_id, float_amount)")
-        .eq("id", id)
-        .single();
-      if (!rep) throw new Error("Not found");
-
-      const remaining = await getRemainingCash(rep.petty_cash_account_id);
-      const wouldExceed = remaining + Number(rep.amount) > Number(rep.petty_cash_accounts?.float_amount || 0);
-      if (wouldExceed) {
-        throw new Error("Replenishment would exceed defined float amount");
-      }
-
-      // Journal: DR Petty Cash, CR Bank — classified as internal_transfer
-      const { data: je, error: jeErr } = await supabase
-        .from("journal_entries")
-        .insert({
-          tenant_id: appUser!.tenant_id,
-          description: `Petty Cash Replenishment ${rep.replenishment_number}`,
-          entry_date: rep.date,
-          status: "posted",
-          is_system_generated: true,
-          entry_type: "petty_cash_replenishment",
-          reference: rep.replenishment_number,
-          cash_flow_category: "internal_transfer",
-        })
-        .select()
-        .single();
-      if (jeErr) throw jeErr;
-
-      const { error: jlErr } = await supabase.from("journal_lines").insert([
-        {
-          journal_entry_id: je.id,
-          account_id: rep.petty_cash_accounts?.account_id,
-          debit: Number(rep.amount),
-          credit: 0,
-        },
-        {
-          journal_entry_id: je.id,
-          account_id: rep.bank_account_id,
-          debit: 0,
-          credit: Number(rep.amount),
-        },
-      ]);
-      if (jlErr) throw jlErr;
-
-      const { error } = await supabase
-        .from("petty_cash_replenishments")
-        .update({ status: "approved", journal_entry_id: je.id })
-        .eq("id", id);
-      if (error) throw error;
+      const { data, error } = await supabase.rpc("post_pcr", { p_replenishment_id: id });
+      if (error) throw new Error(humanizePcError(error.message));
+      return data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pc_replenishments"] });

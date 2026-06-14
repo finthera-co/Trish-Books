@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Calculator } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +33,9 @@ export default function PettyCashLedger() {
             <p className="page-description">Chronological journal entries derived from the general ledger.</p>
           </div>
         </div>
+        <Button variant="outline" onClick={() => navigate(`/banking/petty-cash/counts/new?account=${id}`)}>
+          <Calculator className="w-4 h-4 mr-2" /> Reconcile / Count Cash
+        </Button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">

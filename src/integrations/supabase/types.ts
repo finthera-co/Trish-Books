@@ -6144,6 +6144,35 @@ export type Database = {
           },
         ]
       }
+      pc_document_counters: {
+        Row: {
+          doc_type: string
+          last_number: number
+          tenant_id: string
+          year: number
+        }
+        Insert: {
+          doc_type: string
+          last_number?: number
+          tenant_id: string
+          year: number
+        }
+        Update: {
+          doc_type?: string
+          last_number?: number
+          tenant_id?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pc_document_counters_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       permissions: {
         Row: {
           description: string | null
@@ -6200,6 +6229,134 @@ export type Database = {
           },
           {
             foreignKeyName: "petty_cash_accounts_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      petty_cash_count_denominations: {
+        Row: {
+          count_id: string
+          denom_type: string
+          denomination: number
+          id: string
+          quantity: number
+          sort_order: number
+          subtotal: number
+        }
+        Insert: {
+          count_id: string
+          denom_type?: string
+          denomination: number
+          id?: string
+          quantity?: number
+          sort_order?: number
+          subtotal?: number
+        }
+        Update: {
+          count_id?: string
+          denom_type?: string
+          denomination?: number
+          id?: string
+          quantity?: number
+          sort_order?: number
+          subtotal?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "petty_cash_count_denominations_count_id_fkey"
+            columns: ["count_id"]
+            isOneToOne: false
+            referencedRelation: "petty_cash_counts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      petty_cash_counts: {
+        Row: {
+          approved_by: string | null
+          book_balance: number
+          count_date: string
+          count_number: string
+          counted_balance: number
+          counted_by: string | null
+          created_at: string
+          id: string
+          journal_entry_id: string | null
+          notes: string | null
+          petty_cash_account_id: string
+          posted_at: string | null
+          status: string
+          tenant_id: string
+          variance: number
+        }
+        Insert: {
+          approved_by?: string | null
+          book_balance?: number
+          count_date?: string
+          count_number: string
+          counted_balance?: number
+          counted_by?: string | null
+          created_at?: string
+          id?: string
+          journal_entry_id?: string | null
+          notes?: string | null
+          petty_cash_account_id: string
+          posted_at?: string | null
+          status?: string
+          tenant_id: string
+          variance?: number
+        }
+        Update: {
+          approved_by?: string | null
+          book_balance?: number
+          count_date?: string
+          count_number?: string
+          counted_balance?: number
+          counted_by?: string | null
+          created_at?: string
+          id?: string
+          journal_entry_id?: string | null
+          notes?: string | null
+          petty_cash_account_id?: string
+          posted_at?: string | null
+          status?: string
+          tenant_id?: string
+          variance?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "petty_cash_counts_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "petty_cash_counts_counted_by_fkey"
+            columns: ["counted_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "petty_cash_counts_journal_entry_id_fkey"
+            columns: ["journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "petty_cash_counts_petty_cash_account_id_fkey"
+            columns: ["petty_cash_account_id"]
+            isOneToOne: false
+            referencedRelation: "petty_cash_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "petty_cash_counts_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -10087,6 +10244,10 @@ export type Database = {
         Args: { p_date: string; p_period_type: string }
         Returns: string
       }
+      ensure_cash_over_short_account: {
+        Args: { p_tenant_id: string }
+        Returns: string
+      }
       ensure_tax_account: {
         Args: {
           p_code: string
@@ -10210,6 +10371,14 @@ export type Database = {
       }
       is_primary_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
+      pc_locked_ledger_balance: {
+        Args: { p_pc_account_id: string; p_tenant_id: string }
+        Returns: number
+      }
+      pc_next_document_number: {
+        Args: { p_doc_type: string; p_tenant_id: string }
+        Returns: string
+      }
       post_assembly_order: { Args: { p_ao_id: string }; Returns: Json }
       post_delivery_note: { Args: { p_id: string }; Returns: Json }
       post_grn: { Args: { p_grn_id: string }; Returns: Json }
@@ -10217,6 +10386,9 @@ export type Database = {
         Args: { p_voucher_id: string }
         Returns: Json
       }
+      post_pc_count: { Args: { p_count_id: string }; Returns: string }
+      post_pcr: { Args: { p_replenishment_id: string }; Returns: string }
+      post_pcv: { Args: { p_voucher_id: string }; Returns: string }
       post_purchase_return: { Args: { p_id: string }; Returns: Json }
       post_sales_return: { Args: { p_id: string }; Returns: Json }
       post_stock_adjustment: {
