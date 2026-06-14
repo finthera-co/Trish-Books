@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, Fragment } from "react";
 import { FileText, TrendingUp, DollarSign, BarChart3, Printer, ArrowLeft, Activity, Warehouse } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAccounts, useJournalEntries, useInvoices, useExpenses, useBudgets } from "@/hooks/useData";
@@ -9,8 +9,9 @@ import { format } from "date-fns";
 import { isDebitNormal as checkDebitNormal } from "@/lib/accountTypes";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { buildScheduleBlocks, deriveFYWindow, fyLabel, type AssetMeta } from "@/lib/ppeSchedule";
 
-type ReportType = "trial-balance" | "pnl" | "balance-sheet" | "cash-flow" | "expense-summary" | "aged-receivables" | "fixed-asset-schedule" | null;
+type ReportType = "trial-balance" | "pnl" | "balance-sheet" | "cash-flow" | "expense-summary" | "aged-receivables" | "fixed-asset-schedule" | "ppe-schedule" | null;
 
 const COLORS = ["hsl(215, 60%, 42%)", "hsl(142, 71%, 35%)", "hsl(38, 92%, 50%)", "hsl(199, 89%, 48%)", "hsl(0, 72%, 51%)", "hsl(270, 60%, 50%)"];
 
@@ -125,6 +126,94 @@ export default function Reports() {
     },
   });
 
+  // PPE Schedule (Excel-style, per-fiscal-year depreciation) data
+  const { data: ppeScheduleData } = useQuery({
+    queryKey: ["ppe_schedule", appUser?.tenant_id, periodTo],
+    enabled: !!appUser?.tenant_id && activeReport === "ppe-schedule",
+    queryFn: async () => {
+      const asOf = periodTo.slice(0, 7);
+
+      const { data: assets, error: aErr } = await supabase
+        .from("fixed_assets")
+        // NB: no `supplier` column on fixed_assets — Supplier renders as "-".
+        .select("id, asset_name, category_id, cost, salvage_value, acquisition_date, start_date, status, accumulated_depreciation, useful_life_months")
+        .eq("tenant_id", appUser!.tenant_id)
+        .order("acquisition_date", { ascending: true });
+      if (aErr) throw aErr;
+
+      const { data: depRows, error: dErr } = await supabase
+        .from("asset_depreciation")
+        .select("asset_id, period, depreciation_amount, accumulated_depreciation")
+        .eq("tenant_id", appUser!.tenant_id)
+        .eq("status", "posted")
+        .lte("period", asOf)
+        .order("period", { ascending: true });
+      if (dErr) throw dErr;
+
+      const { data: categories } = await supabase
+        .from("asset_categories")
+        .select("id, name")
+        .eq("tenant_id", appUser!.tenant_id);
+
+      const { data: disposals } = await supabase
+        .from("asset_disposals")
+        .select("asset_id, disposal_date")
+        .eq("tenant_id", appUser!.tenant_id);
+
+      const postedRows = (depRows ?? []).map((r) => ({
+        asset_id: r.asset_id,
+        period: r.period,
+        depreciation_amount: Number(r.depreciation_amount) || 0,
+        accumulated_depreciation: Number(r.accumulated_depreciation) || 0,
+      }));
+
+      const fyStartYears = deriveFYWindow(postedRows.map((r) => r.period), asOf);
+
+      const assetMeta: AssetMeta[] = (assets ?? []).map((a) => ({
+        id: a.id,
+        asset_name: a.asset_name,
+        category_id: a.category_id,
+        supplier: null,
+        cost: Number(a.cost) || 0,
+        salvage_value: Number(a.salvage_value) || 0,
+        acquisition_date: a.acquisition_date,
+        start_date: a.start_date,
+        status: a.status,
+        accumulated_depreciation: Number(a.accumulated_depreciation) || 0,
+      }));
+
+      const blocks = buildScheduleBlocks({
+        assets: assetMeta,
+        postedRows,
+        categories: (categories ?? []).map((c) => ({ id: c.id, name: c.name })),
+        disposals: (disposals ?? []).map((d) => ({ asset_id: d.asset_id, disposal_date: d.disposal_date })),
+        fyStartYears,
+      });
+
+      // Effective depreciation rate for display only (12 / useful life) — never charge math.
+      const rateMap = new Map<string, number>();
+      (assets ?? []).forEach((a) => rateMap.set(a.id, Number(a.useful_life_months) || 0));
+
+      const fyLabels = fyStartYears.map(fyLabel);
+      const totals = {
+        cost: blocks.reduce((s, b) => s + b.totals.cost, 0),
+        fyCharges: fyLabels.map((_, i) => blocks.reduce((s, b) => s + (b.totals.fyCharges[i] ?? 0), 0)),
+        accumulated: blocks.reduce((s, b) => s + b.totals.accumulated, 0),
+        wdv: blocks.reduce((s, b) => s + b.totals.wdv, 0),
+      };
+
+      return {
+        blocks,
+        fyLabels,
+        rateMap,
+        hasAssets: (assets ?? []).length > 0,
+        hasPosted: postedRows.length > 0,
+        windowStartLabel: `${fyStartYears[0]}/04/01`,
+        totals,
+      };
+    },
+  });
+
   // Find the fiscal period that best matches the report date range
   const matchingPeriod = useMemo(() => {
     if (!fiscalPeriods) return null;
@@ -183,6 +272,7 @@ export default function Reports() {
     { id: "expense-summary" as ReportType, name: "Expense Analysis", description: "Expense breakdown by category, status, and trends", icon: BarChart3, category: "Management" },
     { id: "aged-receivables" as ReportType, name: "Aged Receivables", description: "Outstanding customer invoices analyzed by aging buckets", icon: FileText, category: "Management" },
     { id: "fixed-asset-schedule" as ReportType, name: "Fixed Asset Schedule", description: "Property, plant & equipment — cost, accumulated depreciation and net book value by asset", icon: Warehouse, category: "Fixed Assets" },
+    { id: "ppe-schedule" as ReportType, name: "PPE Schedule", description: "Property, plant & equipment by category with per-fiscal-year depreciation, accumulated depreciation and written-down value (IAS 16)", icon: Warehouse, category: "Fixed Assets" },
   ];
 
   const fmt = (n: number) => {
@@ -958,6 +1048,160 @@ export default function Reports() {
     );
   };
 
+  const renderPpeSchedule = () => {
+    const data = ppeScheduleData;
+    if (!data) {
+      return (
+        <div className="stat-card print:shadow-none">
+          <StatementHeader title="PPE Schedule" subtitle="Property, Plant & Equipment (IAS 16)" />
+          <p className="text-center py-12 text-muted-foreground">Loading…</p>
+        </div>
+      );
+    }
+    const { blocks, fyLabels, rateMap, hasAssets, hasPosted, windowStartLabel, totals } = data;
+    const colCount = 6 + fyLabels.length;
+    const num = (v: number) => (v === 0 ? "-" : fmt(v));
+    const rateOf = (id: string) => {
+      const m = rateMap.get(id);
+      return m && m > 0 ? `${((12 / m) * 100).toFixed(1)}%` : "-";
+    };
+
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[
+            { label: "Total Cost", value: totals.cost, cls: "text-foreground" },
+            { label: "Accumulated Depreciation", value: totals.accumulated, cls: "text-destructive" },
+            { label: "Net Book Value", value: totals.wdv, cls: "text-primary" },
+          ].map(({ label, value, cls }) => (
+            <div key={label} className="stat-card">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
+              <p className={`text-xl font-bold mt-1 ${cls}`}>{fmt(value)}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="stat-card print:shadow-none">
+          <StatementHeader title="PPE Schedule" subtitle="Property, Plant & Equipment (IAS 16)" />
+
+          {!hasAssets ? (
+            <p className="text-center py-12 text-muted-foreground">
+              No assets found. Add assets and run depreciation to populate this schedule.
+            </p>
+          ) : (
+            <>
+              {!hasPosted && (
+                <p className="text-xs text-muted-foreground italic text-center mb-3">
+                  No posted depreciation in this period yet.
+                </p>
+              )}
+              <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th className="sticky left-0 z-10 bg-card text-left">Category / item</th>
+                      <th className="text-left">Supplier</th>
+                      <th className="text-right w-32">Cost</th>
+                      <th className="text-right w-20">Dep. rate</th>
+                      {fyLabels.map((l) => (
+                        <th key={l} className="text-right w-28">{l}</th>
+                      ))}
+                      <th className="text-right w-36">Acc. depreciation</th>
+                      <th className="text-right w-32">W D V</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {blocks.map((block) => (
+                      <Fragment key={block.category}>
+                        <tr className="bg-secondary">
+                          <td colSpan={colCount} className="sticky left-0 bg-secondary font-medium text-secondary-foreground py-1.5 px-2 text-sm">
+                            {block.category}
+                          </td>
+                        </tr>
+
+                        {block.openingRow && (
+                          <tr className="italic text-muted-foreground">
+                            <td className="sticky left-0 bg-card pl-6">
+                              Opening value as at {windowStartLabel}
+                              {block.openingRow.openingEstimated && (
+                                <span
+                                  title="Opening accumulated depreciation taken from asset record; no posted history before this period"
+                                  className="ml-2 not-italic inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground"
+                                >
+                                  estimated
+                                </span>
+                              )}
+                            </td>
+                            <td className="bg-card">-</td>
+                            <td className="text-right font-mono bg-card">{num(block.openingRow.cost)}</td>
+                            <td className="text-right font-mono bg-card">-</td>
+                            {block.openingRow.fyCharges.map((c, i) => (
+                              <td key={i} className="text-right font-mono bg-card">{num(c)}</td>
+                            ))}
+                            <td className="text-right font-mono bg-card">{num(block.openingRow.accumulated)}</td>
+                            <td className="text-right font-mono bg-card">{num(block.openingRow.wdv)}</td>
+                          </tr>
+                        )}
+
+                        {block.rows.map((r) => (
+                          <tr key={r.id}>
+                            <td className="sticky left-0 bg-card pl-6 font-medium text-foreground">
+                              {r.asset_name}
+                              {r.disposed && (
+                                <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
+                                  Disposed{r.disposalDate ? ` (${r.disposalDate})` : ""}
+                                </span>
+                              )}
+                            </td>
+                            <td className="text-muted-foreground text-xs">{r.supplier ?? "-"}</td>
+                            <td className="text-right font-mono">{num(r.cost)}</td>
+                            <td className="text-right font-mono text-muted-foreground">{rateOf(r.id)}</td>
+                            {r.fyCharges.map((c, i) => (
+                              <td key={i} className="text-right font-mono text-muted-foreground">{num(c)}</td>
+                            ))}
+                            <td className="text-right font-mono text-destructive/80">{num(r.accumulated)}</td>
+                            <td className={`text-right font-mono font-semibold ${r.disposed ? "text-muted-foreground line-through" : ""}`}>
+                              {r.disposed ? "-" : num(r.wdv)}
+                            </td>
+                          </tr>
+                        ))}
+
+                        <tr className="font-bold bg-muted border-t border-border/50">
+                          <td className="sticky left-0 bg-muted text-foreground pl-2">Total — {block.category}</td>
+                          <td className="bg-muted" />
+                          <td className="text-right font-mono">{num(block.totals.cost)}</td>
+                          <td className="bg-muted" />
+                          {block.totals.fyCharges.map((c, i) => (
+                            <td key={i} className="text-right font-mono">{num(c)}</td>
+                          ))}
+                          <td className="text-right font-mono text-destructive">{num(block.totals.accumulated)}</td>
+                          <td className="text-right font-mono">{num(block.totals.wdv)}</td>
+                        </tr>
+                      </Fragment>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="font-bold border-t-2 border-foreground/30 bg-muted">
+                      <td className="sticky left-0 bg-muted text-foreground">Grand total</td>
+                      <td className="bg-muted" />
+                      <td className="text-right font-mono">{num(totals.cost)}</td>
+                      <td className="bg-muted" />
+                      {totals.fyCharges.map((c, i) => (
+                        <td key={i} className="text-right font-mono">{num(c)}</td>
+                      ))}
+                      <td className="text-right font-mono text-destructive">{num(totals.accumulated)}</td>
+                      <td className="text-right font-mono">{num(totals.wdv)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderReport = () => {
     switch (activeReport) {
       case "trial-balance": return renderTrialBalance();
@@ -967,6 +1211,7 @@ export default function Reports() {
       case "expense-summary": return renderExpenseSummary();
       case "aged-receivables": return renderAgedReceivables();
       case "fixed-asset-schedule": return renderFixedAssetSchedule();
+      case "ppe-schedule": return renderPpeSchedule();
       default: return null;
     }
   };

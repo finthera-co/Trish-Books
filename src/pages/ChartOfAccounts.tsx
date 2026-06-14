@@ -91,6 +91,15 @@ function buildTree(accounts: Account[]): Account[] {
   return roots;
 }
 
+function sortTreeByName(nodes: Account[]): Account[] {
+  return [...nodes]
+    .sort((a, b) => a.account_name.localeCompare(b.account_name, undefined, { sensitivity: "base" }))
+    .map(n => ({
+      ...n,
+      children: n.children && n.children.length > 0 ? sortTreeByName(n.children) : n.children,
+    }));
+}
+
 interface CategoryGroup {
   id: string;
   name: string;
@@ -703,7 +712,7 @@ function TypeSection({
               <span className="text-xs font-semibold text-muted-foreground italic">Uncategorized</span>
             </td>
           </tr>
-          {buildTree(typeGroup.uncategorized).sort((a, b) => a.account_code.localeCompare(b.account_code)).map(account => (
+          {sortTreeByName(buildTree(typeGroup.uncategorized)).map(account => (
             <AccountRow
               key={account.id}
               account={account}
@@ -754,7 +763,7 @@ function CategorySection({
   postedBalanceMap?: Map<string, { debit: number; credit: number }>;
 }) {
   const [expanded, setExpanded] = useState(true);
-  const tree = buildTree(category.accounts).sort((a, b) => a.account_code.localeCompare(b.account_code));
+  const tree = sortTreeByName(buildTree(category.accounts));
 
   return (
     <>
@@ -911,7 +920,8 @@ export default function ChartOfAccounts() {
           name: cat.name,
           accounts: typeAccounts.filter(a => a.category_id === cat.id),
         }))
-        .filter(g => g.accounts.length > 0);
+        .filter(g => g.accounts.length > 0)
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
       const categorizedIds = new Set(catGroups.flatMap(g => g.accounts.map(a => a.id)));
       const uncategorized = typeAccounts.filter(a => !categorizedIds.has(a.id));
       return { type, categories: catGroups, uncategorized };
