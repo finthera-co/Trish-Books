@@ -107,6 +107,23 @@ export function useCreateCustomerWithOB() {
       payment_terms?: string;
       tin?: string | null;
       withholds_tax?: boolean;
+      // Expanded customer-master fields
+      legal_name?: string | null;
+      customer_code?: string | null;
+      customer_type?: string;
+      status?: string;
+      contact_person?: string | null;
+      mobile?: string | null;
+      website?: string | null;
+      vat_number?: string | null;
+      is_tax_exempt?: boolean;
+      currency?: string;
+      credit_hold?: boolean;
+      default_tax_id?: string | null;
+      ar_account_id?: string | null;
+      revenue_account_id?: string | null;
+      registration_date?: string | null;
+      notes?: string | null;
     }) => {
       const tenantId = appUser!.tenant_id;
 
@@ -123,6 +140,22 @@ export function useCreateCustomerWithOB() {
           payment_terms: customer.payment_terms || "net_30",
           tin: customer.tin || null,
           withholds_tax: customer.withholds_tax ?? false,
+          legal_name: customer.legal_name || null,
+          customer_code: customer.customer_code || null,
+          customer_type: customer.customer_type || "business",
+          status: customer.status || "active",
+          contact_person: customer.contact_person || null,
+          mobile: customer.mobile || null,
+          website: customer.website || null,
+          vat_number: customer.vat_number || null,
+          is_tax_exempt: customer.is_tax_exempt ?? false,
+          currency: customer.currency || "LKR",
+          credit_hold: customer.credit_hold ?? false,
+          default_tax_id: customer.default_tax_id || null,
+          ar_account_id: customer.ar_account_id || null,
+          revenue_account_id: customer.revenue_account_id || null,
+          registration_date: customer.registration_date || null,
+          notes: customer.notes || null,
           tenant_id: tenantId,
         } as any)
         .select()
@@ -161,7 +194,33 @@ export function useCreateCustomerWithOB() {
 export function useUpdateCustomer() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...updates }: { id: string; name?: string; email?: string; phone?: string; address?: string; credit_limit?: number; payment_terms?: string; tin?: string | null; withholds_tax?: boolean }) => {
+    mutationFn: async ({ id, ...updates }: {
+      id: string;
+      name?: string;
+      email?: string;
+      phone?: string;
+      address?: string;
+      credit_limit?: number;
+      payment_terms?: string;
+      tin?: string | null;
+      withholds_tax?: boolean;
+      legal_name?: string | null;
+      customer_code?: string | null;
+      customer_type?: string;
+      status?: string;
+      contact_person?: string | null;
+      mobile?: string | null;
+      website?: string | null;
+      vat_number?: string | null;
+      is_tax_exempt?: boolean;
+      currency?: string;
+      credit_hold?: boolean;
+      default_tax_id?: string | null;
+      ar_account_id?: string | null;
+      revenue_account_id?: string | null;
+      registration_date?: string | null;
+      notes?: string | null;
+    }) => {
       // Don't allow changing opening_balance via update - it's managed by subledger
       const { opening_balance, ...safeUpdates } = updates as any;
       const { error } = await supabase.from("customers").update(safeUpdates).eq("id", id);
