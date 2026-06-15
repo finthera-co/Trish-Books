@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAccounts } from "@/hooks/useData";
+import { sortAccounts } from "@/lib/accountSort";
 import { useAssetCategories, useCreateAssetCategory, useUpdateAssetCategory } from "@/hooks/useAssetCategories";
 import { toast } from "sonner";
 
@@ -39,16 +40,16 @@ export default function AssetCategoryDialog({ open, onOpenChange, editingId }: P
 
   const existing = editingId ? categories?.find((c: any) => c.id === editingId) : null;
 
-  const assetAccounts = (accounts ?? []).filter((a: any) => a.is_active && a.account_type === "Asset");
-  const accumDepreciationAccounts = (accounts ?? []).filter((a: any) =>
+  const assetAccounts = sortAccounts((accounts ?? []).filter((a: any) => a.is_active && a.account_type === "Asset"));
+  const accumDepreciationAccounts = sortAccounts((accounts ?? []).filter((a: any) =>
     a.is_active &&
     a.account_type === "Asset" &&
     (a.account_subtype?.toLowerCase().includes("accumulated depreciation") ||
       a.account_subtype?.toLowerCase().includes("contra") ||
       a.is_contra === true)
-  );
-  const expenseAccounts = (accounts ?? []).filter((a: any) => a.is_active && a.account_type === "Expense");
-  const incomeAccounts = (accounts ?? []).filter((a: any) => a.is_active && (a.account_type === "Revenue" || a.account_type === "Income"));
+  ));
+  const expenseAccounts = sortAccounts((accounts ?? []).filter((a: any) => a.is_active && a.account_type === "Expense"));
+  const incomeAccounts = sortAccounts((accounts ?? []).filter((a: any) => a.is_active && (a.account_type === "Revenue" || a.account_type === "Income")));
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),

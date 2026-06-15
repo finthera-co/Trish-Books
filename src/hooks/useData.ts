@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import { sortAccounts } from "@/lib/accountSort";
 
 // Helper: Write audit log
 async function writeAuditLog(action: string, tableName: string, recordId?: string, details?: Record<string, any>) {
@@ -141,9 +142,9 @@ export function useActiveAccounts() {
         .from("accounts")
         .select("id, account_code, account_name, account_type, account_subtype, is_active")
         .eq("is_active", true)
-        .order("account_code");
+        .order("account_code"); // DB-side fallback
       if (error) throw error;
-      return data;
+      return sortAccounts(data ?? []); // enforce central selector order
     },
   });
 }

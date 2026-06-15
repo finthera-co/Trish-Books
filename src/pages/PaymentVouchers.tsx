@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
+import { sortAccounts } from "@/lib/accountSort";
 import { Plus, Search, Trash2, Eye, Edit, FileText, CalendarIcon, X, SlidersHorizontal } from "lucide-react";
 import { useMyPermissions } from "@/hooks/usePermissions";
 import PaymentVoucherForm from "@/components/payment-vouchers/PaymentVoucherForm";
@@ -56,16 +57,18 @@ export default function PaymentVouchers() {
 
   // Distinct payment accounts present in current voucher set (for the dropdown)
   const paymentAccountOptions = useMemo(() => {
-    const map = new Map<string, string>();
+    const map = new Map<string, { id: string; account_code: string; account_name: string }>();
     vouchers?.forEach((v: any) => {
       const id = v.payment_account_id;
       const acc = v.accounts;
       if (id && acc) {
-        const label = `${acc.account_code} — ${acc.account_name}`;
-        map.set(id, label);
+        map.set(id, { id, account_code: acc.account_code, account_name: acc.account_name });
       }
     });
-    return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
+    return sortAccounts(Array.from(map.values())).map((a) => ({
+      id: a.id,
+      label: `${a.account_code} — ${a.account_name}`,
+    }));
   }, [vouchers]);
 
   // Tenants list — only for Super Admin

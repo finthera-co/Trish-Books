@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { sortAccounts } from "@/lib/accountSort";
 
 export interface AccountSearchResult {
   id: string;
@@ -51,7 +52,7 @@ export function useAccountSearch({
 
       const { data, error } = await q;
       if (error) throw error;
-      return (data || []) as AccountSearchResult[];
+      return sortAccounts((data || []) as AccountSearchResult[]);
     },
   });
 }

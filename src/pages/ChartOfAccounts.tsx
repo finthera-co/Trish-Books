@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/context-menu";
 
 import AccountForm from "@/components/chart-of-accounts/AccountForm";
+import { usePersistedFormState } from "@/hooks/usePersistedFormState";
 import COAHealthCheck from "@/components/chart-of-accounts/COAHealthCheck";
 import DeleteAccountDialog from "@/components/chart-of-accounts/DeleteAccountDialog";
 import {
@@ -794,8 +795,33 @@ export default function ChartOfAccounts() {
   const navigate = useNavigate();
   const { appUser } = useAuth();
   const { canEdit: canEditAccounts } = useMyPermissions();
-  const [formOpen, setFormOpen] = useState(false);
-  const [editAccount, setEditAccount] = useState<Account | null>(null);
+  // Persist whether the create/edit dialog is open (and which account is being
+  // edited) so a browser refresh re-opens it. We store only the id, not the
+  // whole record.
+  const {
+    state: createUi,
+    setState: setCreateUi,
+    clear: clearCreateUi,
+  } = usePersistedFormState<{ open: boolean }>("coa-create-ui", { open: false });
+  const formOpen = createUi.open;
+  const setFormOpen = (open: boolean) => {
+    setCreateUi({ open });
+    if (!open) clearCreateUi();
+  };
+
+  const {
+    state: editUi,
+    setState: setEditUi,
+    clear: clearEditUi,
+  } = usePersistedFormState<{ editId: string | null }>("coa-edit-ui", { editId: null });
+  const setEditAccount = (acc: Account | null) => {
+    if (acc) setEditUi({ editId: acc.id });
+    else {
+      setEditUi({ editId: null });
+      clearEditUi();
+    }
+  };
+
   const [deleteAccount, setDeleteAccount] = useState<Account | null>(null);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
@@ -803,6 +829,18 @@ export default function ChartOfAccounts() {
   const [viewMode, setViewMode] = useState<"quickbooks" | "classic">("quickbooks");
 
   const { data: accounts, isLoading } = useAccounts();
+
+  // Resolve the persisted edit id back to a live account record. If the account
+  // no longer exists (e.g. deleted in another tab), this stays null and the
+  // edit dialog simply won't re-open.
+  const editAccount = useMemo<Account | null>(
+    () =>
+      editUi.editId
+        ? ((accounts as Account[] | undefined)?.find((a) => a.id === editUi.editId) ?? null)
+        : null,
+    [editUi.editId, accounts]
+  );
+
   const { data: obeBalanceData } = useOBEBalance();
   const { data: categories } = useAccountCategories();
   const createAccount = useCreateAccount();

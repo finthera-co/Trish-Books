@@ -26,6 +26,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { sortAccounts } from "@/lib/accountSort";
 
 function useOffsetAccounts() {
   const { appUser } = useAuth();
@@ -40,7 +41,7 @@ function useOffsetAccounts() {
         .in("account_type", ["Liability", "Asset"])
         .order("account_code");
       if (error) throw error;
-      return data || [];
+      return sortAccounts(data || []);
     },
     enabled: !!appUser?.tenant_id,
   });

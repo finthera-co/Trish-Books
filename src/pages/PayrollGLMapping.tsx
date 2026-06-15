@@ -20,6 +20,7 @@ import {
   type PayrollComponentAccount,
 } from "@/hooks/usePayrollGLMapping";
 import { useAccounts } from "@/hooks/useData";
+import { sortAccounts } from "@/lib/accountSort";
 
 const POSTABLE_KINDS = new Set(["base", "earning", "deduction", "employer_contribution"]);
 const ALWAYS_INCLUDE = new Set(["NET_PAY"]);
@@ -131,7 +132,7 @@ export default function PayrollGLMapping() {
   }, [mappings]);
 
   const accountOptions = useMemo(
-    () => (accounts || []).filter((a: any) => a.is_active).sort((a: any, b: any) => a.account_code.localeCompare(b.account_code)),
+    () => sortAccounts((accounts || []).filter((a: any) => a.is_active)),
     [accounts]
   );
 

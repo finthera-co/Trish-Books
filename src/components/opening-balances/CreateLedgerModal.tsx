@@ -13,6 +13,7 @@ import {
 } from "@/lib/accountTypes";
 import { generateAccountCode, generateAccountCodeBanded } from "@/lib/accountCodeGenerator";
 import { useAccounts, useCreateAccount } from "@/hooks/useData";
+import { sortAccounts } from "@/lib/accountSort";
 import { useAccountCategories, useCreateAccountCategory } from "@/hooks/useAccountCategories";
 import { toast } from "sonner";
 
@@ -94,7 +95,7 @@ export default function CreateLedgerModal({ open, onOpenChange, onCreated }: Cre
   const numberRange = ACCOUNT_NUMBER_RANGES[accountType];
 
   const parentAccounts = useMemo(() => {
-    return (allAccounts || []).filter((a: any) => a.account_type === accountType && a.is_active);
+    return sortAccounts((allAccounts || []).filter((a: any) => a.account_type === accountType && a.is_active));
   }, [allAccounts, accountType]);
 
   const existingCodes = useMemo(() => {

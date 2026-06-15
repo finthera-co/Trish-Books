@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { useCreateAsset, useUpdateAsset, useFixedAsset } from "@/hooks/useFixedAssets";
 import { useAssetCategories } from "@/hooks/useAssetCategories";
 import { useAccounts } from "@/hooks/useData";
+import { sortAccounts } from "@/lib/accountSort";
 
 const assetSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -63,7 +64,7 @@ export default function AssetForm() {
   const updateAsset = useUpdateAsset();
 
   // Payment accounts: Cash, Bank, or AP type accounts
-  const paymentAccounts = (accounts ?? []).filter(
+  const paymentAccounts = sortAccounts((accounts ?? []).filter(
     (a: any) => a.is_active && (
       a.account_type === "Asset" && (
         a.account_subtype?.toLowerCase().includes("cash") ||
@@ -77,18 +78,18 @@ export default function AssetForm() {
         a.account_name?.toLowerCase().includes("payable")
       )
     )
-  );
+  ));
 
   // Direct-account lists (mirror AssetCategoryDialog)
-  const assetAccounts = (accounts ?? []).filter((a: any) => a.is_active && a.account_type === "Asset");
-  const accumDepreciationAccounts = (accounts ?? []).filter((a: any) =>
+  const assetAccounts = sortAccounts((accounts ?? []).filter((a: any) => a.is_active && a.account_type === "Asset"));
+  const accumDepreciationAccounts = sortAccounts((accounts ?? []).filter((a: any) =>
     a.is_active &&
     a.account_type === "Asset" &&
     (a.account_subtype?.toLowerCase().includes("accumulated depreciation") ||
       a.account_subtype?.toLowerCase().includes("contra") ||
       a.is_contra === true)
-  );
-  const expenseAccounts = (accounts ?? []).filter((a: any) => a.is_active && a.account_type === "Expense");
+  ));
+  const expenseAccounts = sortAccounts((accounts ?? []).filter((a: any) => a.is_active && a.account_type === "Expense"));
 
   const form = useForm<AssetFormValues>({
     resolver: zodResolver(assetSchema),

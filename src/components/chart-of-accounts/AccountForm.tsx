@@ -22,6 +22,7 @@ import {
   isDirectControl,
   canEditAccountType,
 } from "@/lib/accountMappingEngine";
+import { usePersistedFormState } from "@/hooks/usePersistedFormState";
 
 interface Account {
   id: string;
@@ -55,6 +56,24 @@ interface AccountFormProps {
   onCreateCategory?: (data: { name: string; account_type: string }) => Promise<AccountCategory | undefined>;
 }
 
+type AccountDraft = {
+  accountName: string;
+  accountCode: string;
+  accountType: string;
+  accountSubtype: string;
+  parentId: string;
+  categoryId: string;
+};
+
+const emptyDraft: AccountDraft = {
+  accountName: "",
+  accountCode: "",
+  accountType: "Asset",
+  accountSubtype: "",
+  parentId: "",
+  categoryId: "",
+};
+
 export default function AccountForm({
   open,
   onOpenChange,
@@ -66,34 +85,60 @@ export default function AccountForm({
   existingCodes,
   onCreateCategory,
 }: AccountFormProps) {
-  const [accountName, setAccountName] = useState("");
-  const [accountCode, setAccountCode] = useState("");
-  const [accountType, setAccountType] = useState("Asset");
-  const [accountSubtype, setAccountSubtype] = useState("");
-  const [parentId, setParentId] = useState("");
-  const [categoryId, setCategoryId] = useState("");
+  // User-entered fields live in one persisted draft so a browser refresh
+  // doesn't lose half-filled data. Scope the key per-record: the new-account
+  // draft is separate from each edit draft, so they never bleed into each other.
+  const draftKey = editAccount ? `coa-account:edit:${editAccount.id}` : "coa-account:new";
+  const {
+    state: draft,
+    setState: setDraft,
+    clear: clearDraft,
+  } = usePersistedFormState<AccountDraft>(draftKey, emptyDraft, { enabled: open });
+
+  const setField = <K extends keyof AccountDraft>(k: K, v: AccountDraft[K]) =>
+    setDraft((d) => ({ ...d, [k]: v }));
+
+  // Transient UI state — not worth persisting.
   const [showNewCategory, setShowNewCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [creatingCategory, setCreatingCategory] = useState(false);
 
+  // Clear the draft on any user-initiated close (cancel / X / Escape). A page
+  // refresh does NOT call this, so the draft survives refresh and is only
+  // discarded on an explicit close or a successful submit.
+  const handleOpenChange = (next: boolean) => {
+    if (!next) {
+      clearDraft();
+      setDraft(emptyDraft);
+    }
+    onOpenChange(next);
+  };
+
+  // When opening an EDIT form, seed from the record — but only if the draft is
+  // still empty, so a refresh mid-edit keeps in-progress changes instead of
+  // clobbering them with the original values.
   useEffect(() => {
+    if (!open) return;
     if (editAccount) {
-      setAccountName(editAccount.account_name);
-      setAccountCode(editAccount.account_code);
-      setAccountType(editAccount.account_type);
-      setAccountSubtype(editAccount.account_subtype || "");
-      setParentId(editAccount.parent_account_id || "");
-      setCategoryId(editAccount.category_id || "");
-    } else {
-      setAccountName("");
-      setAccountCode("");
-      setAccountType("Asset");
-      setAccountSubtype("");
-      setParentId("");
-      setCategoryId("");
+      setDraft((d) => {
+        const isEmpty =
+          !d.accountName && !d.accountCode && !d.accountSubtype &&
+          !d.parentId && !d.categoryId;
+        return isEmpty
+          ? {
+              accountName: editAccount.account_name,
+              accountCode: editAccount.account_code,
+              accountType: editAccount.account_type,
+              accountSubtype: editAccount.account_subtype || "",
+              parentId: editAccount.parent_account_id || "",
+              categoryId: editAccount.category_id || "",
+            }
+          : d;
+      });
     }
     setShowNewCategory(false);
     setNewCategoryName("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editAccount, open]);
 
   // Auto-generate account code (new accounts only).
@@ -103,35 +148,38 @@ export default function AccountForm({
     if (editAccount) return;
     if (!open) return;
 
-    if (parentId) {
-      // Child account: keep existing hierarchy stepping, unchanged.
-      const code = generateAccountCode(accountType, parentId, accounts);
-      setAccountCode(code);
-      setAccountSubtype(prev => prev || suggestSubtypeFromCode(code, accountType) || "");
-    } else {
-      // Top-level: band by subtype. First ensure we have a subtype to band on.
-      const effectiveSubtype =
-        accountSubtype || suggestSubtypeFromCode(
-          generateAccountCode(accountType, null, accounts),
-          accountType
-        ) || (ACCOUNT_SUBTYPES[accountType] || [])[0] || "";
-      if (!accountSubtype && effectiveSubtype) {
-        setAccountSubtype(effectiveSubtype);
+    setDraft((d) => {
+      let code: string;
+      let nextSubtype = d.accountSubtype;
+      if (d.parentId) {
+        // Child account: keep existing hierarchy stepping, unchanged.
+        code = generateAccountCode(d.accountType, d.parentId, accounts);
+        nextSubtype = d.accountSubtype || suggestSubtypeFromCode(code, d.accountType) || "";
+      } else {
+        // Top-level: band by subtype. First ensure we have a subtype to band on.
+        const effectiveSubtype =
+          d.accountSubtype || suggestSubtypeFromCode(
+            generateAccountCode(d.accountType, null, accounts),
+            d.accountType
+          ) || (ACCOUNT_SUBTYPES[d.accountType] || [])[0] || "";
+        nextSubtype = d.accountSubtype || effectiveSubtype;
+        code = generateAccountCodeBanded(d.accountType, effectiveSubtype, accounts);
       }
-      const code = generateAccountCodeBanded(accountType, effectiveSubtype, accounts);
-      setAccountCode(code);
-    }
-  }, [accountType, parentId, accountSubtype, accounts, editAccount, open]);
+      if (d.accountCode === code && d.accountSubtype === nextSubtype) return d;
+      return { ...d, accountCode: code, accountSubtype: nextSubtype };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.accountType, draft.parentId, draft.accountSubtype, accounts, editAccount, open]);
 
-  const filteredCategories = categories.filter(c => c.account_type === accountType);
-  const subtypes = ACCOUNT_SUBTYPES[accountType] || [];
-  const numberRange = ACCOUNT_NUMBER_RANGES[accountType];
+  const filteredCategories = categories.filter(c => c.account_type === draft.accountType);
+  const subtypes = ACCOUNT_SUBTYPES[draft.accountType] || [];
+  const numberRange = ACCOUNT_NUMBER_RANGES[draft.accountType];
   const accountsMap = useMemo(() => buildAccountsMap(accounts), [accounts]);
 
   // Fixed-asset detail accounts MUST sit under a control parent so their balance
   // has somewhere to roll up. Require a parent when creating one of these.
   const requiresParentLink = useMemo(() => {
-    const st = (accountSubtype || "").toLowerCase();
+    const st = (draft.accountSubtype || "").toLowerCase();
     return (
       st.includes("fixed asset") ||
       st.includes("furniture") ||
@@ -139,17 +187,17 @@ export default function AccountForm({
       st.includes("building") ||
       st.includes("accumulated depreciation")
     );
-  }, [accountSubtype]);
+  }, [draft.accountSubtype]);
 
-  const missingRequiredParent = !editAccount && requiresParentLink && !parentId;
+  const missingRequiredParent = !editAccount && requiresParentLink && !draft.parentId;
 
   // Validate parent selection
   const parentValidation = useMemo(() => {
-    if (!parentId) return null;
-    const parent = accounts.find(a => a.id === parentId);
+    if (!draft.parentId) return null;
+    const parent = accounts.find(a => a.id === draft.parentId);
     if (!parent) return null;
     return canCreateChildUnder(parent, accountsMap);
-  }, [parentId, accounts, accountsMap]);
+  }, [draft.parentId, accounts, accountsMap]);
 
   // Check if editing a control account (restrict type changes)
   const editTypeRestriction = useMemo(() => {
@@ -159,16 +207,16 @@ export default function AccountForm({
 
   // Account code uniqueness check
   const isCodeDuplicate = existingCodes
-    ? existingCodes.has(accountCode) && (!editAccount || editAccount.account_code !== accountCode)
+    ? existingCodes.has(draft.accountCode) && (!editAccount || editAccount.account_code !== draft.accountCode)
     : false;
 
   const handleAddCategory = async () => {
     if (!newCategoryName.trim() || !onCreateCategory) return;
     setCreatingCategory(true);
     try {
-      const created = await onCreateCategory({ name: newCategoryName.trim(), account_type: accountType });
+      const created = await onCreateCategory({ name: newCategoryName.trim(), account_type: draft.accountType });
       if (created) {
-        setCategoryId(created.id);
+        setField("categoryId", created.id);
       }
       setNewCategoryName("");
       setShowNewCategory(false);
@@ -179,29 +227,25 @@ export default function AccountForm({
 
   const handleSubmit = async () => {
     if (isCodeDuplicate) return;
-    if (!accountSubtype) return;
+    if (!draft.accountSubtype) return;
     await onSubmit({
-      account_name: accountName,
-      account_code: accountCode,
-      account_type: accountType,
-      account_subtype: accountSubtype || undefined,
-      parent_account_id: parentId || undefined,
-      category_id: categoryId || undefined,
-      normal_balance: getNormalBalance(accountType, isContraSubtype(accountSubtype)).toLowerCase(),
-      is_contra: isContraSubtype(accountSubtype),
+      account_name: draft.accountName,
+      account_code: draft.accountCode,
+      account_type: draft.accountType,
+      account_subtype: draft.accountSubtype || undefined,
+      parent_account_id: draft.parentId || undefined,
+      category_id: draft.categoryId || undefined,
+      normal_balance: getNormalBalance(draft.accountType, isContraSubtype(draft.accountSubtype)).toLowerCase(),
+      is_contra: isContraSubtype(draft.accountSubtype),
     });
-    setAccountName("");
-    setAccountCode("");
-    setAccountType("Asset");
-    setAccountSubtype("");
-    setParentId("");
-    setCategoryId("");
+    clearDraft();
+    setDraft(emptyDraft);
   };
 
   const inputClass = "mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20";
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>{editAccount ? "Edit Account" : "Create New Account"}</DialogTitle>
@@ -214,11 +258,9 @@ export default function AccountForm({
           <div>
             <label className="text-sm font-medium">Account Type <span className="text-destructive">*</span></label>
             <select
-              value={accountType}
+              value={draft.accountType}
               onChange={(e) => {
-                setAccountType(e.target.value);
-                setAccountSubtype("");
-                setCategoryId("");
+                setDraft((d) => ({ ...d, accountType: e.target.value, accountSubtype: "", categoryId: "" }));
                 setShowNewCategory(false);
               }}
               disabled={editTypeRestriction !== null && !editTypeRestriction.allowed}
@@ -239,8 +281,8 @@ export default function AccountForm({
             {!showNewCategory ? (
               <div className="flex gap-2">
                 <select
-                  value={categoryId}
-                  onChange={(e) => setCategoryId(e.target.value)}
+                  value={draft.categoryId}
+                  onChange={(e) => setField("categoryId", e.target.value)}
                   className={`${inputClass} flex-1`}
                 >
                   <option value="">— Select category —</option>
@@ -267,7 +309,7 @@ export default function AccountForm({
                   value={newCategoryName}
                   onChange={(e) => setNewCategoryName(e.target.value)}
                   className={`${inputClass} flex-1 !mt-0`}
-                  placeholder={`e.g. Current ${accountType}s`}
+                  placeholder={`e.g. Current ${draft.accountType}s`}
                   autoFocus
                   onKeyDown={(e) => e.key === "Enter" && handleAddCategory()}
                 />
@@ -303,8 +345,8 @@ export default function AccountForm({
                 size="sm"
                 className="h-7 px-2 text-xs gap-1"
                 onClick={() => {
-                  const suggestion = suggestSubtypeFromCode(accountCode, accountType);
-                  if (suggestion) setAccountSubtype(suggestion);
+                  const suggestion = suggestSubtypeFromCode(draft.accountCode, draft.accountType);
+                  if (suggestion) setField("accountSubtype", suggestion);
                 }}
                 title="Auto-assign based on account number range"
               >
@@ -312,21 +354,21 @@ export default function AccountForm({
               </Button>
             </div>
             <select
-              value={accountSubtype}
-              onChange={(e) => setAccountSubtype(e.target.value)}
-              className={`${inputClass} ${!accountSubtype ? "!border-destructive/40" : ""}`}
+              value={draft.accountSubtype}
+              onChange={(e) => setField("accountSubtype", e.target.value)}
+              className={`${inputClass} ${!draft.accountSubtype ? "!border-destructive/40" : ""}`}
             >
               <option value="">— Select detail type —</option>
               {subtypes.map(st => (
                 <option key={st} value={st}>{st}</option>
               ))}
             </select>
-            {!accountSubtype ? (
+            {!draft.accountSubtype ? (
               <p className="text-[10px] text-destructive mt-1 flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
                 Required — drives statement classification, subledger routing & validations. Use Quick Setup to auto-assign.
               </p>
-            ) : deriveAccountFlags(accountSubtype).is_control_account && (
+            ) : deriveAccountFlags(draft.accountSubtype).is_control_account && (
               <p className="text-[10px] text-warning mt-1 flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
                 This detail type creates a control account managed by subledger. Manual posting will be restricted.
@@ -344,7 +386,7 @@ export default function AccountForm({
               </label>
               <input
                 type="text"
-                value={accountCode}
+                value={draft.accountCode}
                 readOnly
                 className={`${inputClass} bg-muted/50 cursor-not-allowed ${isCodeDuplicate ? "!border-destructive !ring-destructive/20" : ""}`}
                 placeholder={numberRange ? `${numberRange.min}–${numberRange.max}` : ""}
@@ -364,8 +406,8 @@ export default function AccountForm({
               <label className="text-sm font-medium">Account Name <span className="text-destructive">*</span></label>
               <input
                 type="text"
-                value={accountName}
-                onChange={(e) => setAccountName(e.target.value)}
+                value={draft.accountName}
+                onChange={(e) => setField("accountName", e.target.value)}
                 className={inputClass}
                 placeholder="e.g. Cash on Hand"
               />
@@ -376,15 +418,15 @@ export default function AccountForm({
           <div>
             <label className="text-sm font-medium">Parent Account (optional)</label>
             <select
-              value={parentId}
-              onChange={(e) => setParentId(e.target.value)}
+              value={draft.parentId}
+              onChange={(e) => setField("parentId", e.target.value)}
               className={inputClass}
             >
               <option value="">None (top-level)</option>
               {accounts
                 ?.filter(a => {
                   if (a.id === editAccount?.id) return false;
-                  if (a.account_type !== accountType) return false;
+                  if (a.account_type !== draft.accountType) return false;
                   const acctMap = buildAccountsMap(accounts);
                   const check = canCreateChildUnder(a, acctMap);
                   return check.allowed;
@@ -420,27 +462,27 @@ export default function AccountForm({
           <div className="bg-muted/50 rounded-lg px-3 py-2.5 text-xs text-muted-foreground space-y-1">
             <div className="flex justify-between">
               <span>Classification:</span>
-              <strong className="text-foreground">{getAccountTypeLabel(accountType, isContraSubtype(accountSubtype))}</strong>
+              <strong className="text-foreground">{getAccountTypeLabel(draft.accountType, isContraSubtype(draft.accountSubtype))}</strong>
             </div>
             <div className="flex justify-between">
               <span>Normal balance:</span>
-              <strong className="text-foreground">{getNormalBalance(accountType, isContraSubtype(accountSubtype))}</strong>
+              <strong className="text-foreground">{getNormalBalance(draft.accountType, isContraSubtype(draft.accountSubtype))}</strong>
             </div>
             <div className="flex justify-between">
               <span>Financial statement:</span>
-              <strong className="text-foreground">{getStatementPlacement(accountType)}</strong>
+              <strong className="text-foreground">{getStatementPlacement(draft.accountType)}</strong>
             </div>
-            {accountSubtype && (
+            {draft.accountSubtype && (
               <div className="flex justify-between">
                 <span>Detail type:</span>
-                <strong className="text-foreground">{accountSubtype}</strong>
+                <strong className="text-foreground">{draft.accountSubtype}</strong>
               </div>
             )}
           </div>
 
           <Button
             onClick={handleSubmit}
-            disabled={!accountName || !accountCode || !accountSubtype || isCodeDuplicate || isPending || missingRequiredParent}
+            disabled={!draft.accountName || !draft.accountCode || !draft.accountSubtype || isCodeDuplicate || isPending || missingRequiredParent}
             className="w-full"
           >
             {isPending ? "Saving..." : editAccount ? "Update Account" : "Create Account"}
