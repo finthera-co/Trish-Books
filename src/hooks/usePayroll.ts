@@ -214,6 +214,7 @@ export interface PayrollRunInput {
   employees: {
     employee_id: string;
     basic_salary: number;
+    hours_worked?: number;
     overtime_hours?: number;
     overtime_pay?: number;
     bonuses?: number;
@@ -323,6 +324,7 @@ export function useCreatePayrollRun() {
         return {
           employee_id: emp.employee_id,
           basic_salary: emp.basic_salary, // full contractual basic — never pro-rated in storage
+          hours_worked: emp.hours_worked ?? null,
           overtime_hours: emp.overtime_hours || 0,
           overtime_pay: emp.overtime_pay || 0,
           gross_pay: result.gross_pay,

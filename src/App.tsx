@@ -47,6 +47,7 @@ import PayrollGLMapping from "./pages/PayrollGLMapping";
 import PayrollLiabilities from "./pages/PayrollLiabilities";
 import Employees from "./pages/Employees";
 import AttendanceRegister from "./pages/AttendanceRegister";
+import AttendanceImport from "./pages/AttendanceImport";
 import LeaveManagement from "./pages/LeaveManagement";
 import Reports from "./pages/Reports";
 import Budgets from "./pages/Budgets";
@@ -190,6 +191,7 @@ const App = () => (
                     <Route path="/payroll/runs" element={<Payroll />} />
                     <Route path="/payroll/employees" element={<Employees />} />
                     <Route path="/payroll/attendance" element={<AttendanceRegister />} />
+                    <Route path="/payroll/attendance-import" element={<AttendanceImport />} />
                     <Route path="/payroll/leave" element={<LeaveManagement />} />
                     <Route path="/payroll/liabilities" element={<PayrollLiabilities />} />
                   </Route>

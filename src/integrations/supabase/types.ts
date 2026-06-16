@@ -1489,6 +1489,273 @@ export type Database = {
           },
         ]
       }
+      attendance_daily: {
+        Row: {
+          batch_id: string | null
+          created_at: string
+          early_leave_minutes: number
+          employee_id: string
+          first_in: string | null
+          id: string
+          last_out: string | null
+          late_minutes: number
+          notes: string | null
+          ot_hours: number
+          shift_id: string | null
+          source: string
+          status: string
+          tenant_id: string
+          updated_at: string
+          work_date: string
+          worked_hours: number
+        }
+        Insert: {
+          batch_id?: string | null
+          created_at?: string
+          early_leave_minutes?: number
+          employee_id: string
+          first_in?: string | null
+          id?: string
+          last_out?: string | null
+          late_minutes?: number
+          notes?: string | null
+          ot_hours?: number
+          shift_id?: string | null
+          source?: string
+          status?: string
+          tenant_id: string
+          updated_at?: string
+          work_date: string
+          worked_hours?: number
+        }
+        Update: {
+          batch_id?: string | null
+          created_at?: string
+          early_leave_minutes?: number
+          employee_id?: string
+          first_in?: string | null
+          id?: string
+          last_out?: string | null
+          late_minutes?: number
+          notes?: string | null
+          ot_hours?: number
+          shift_id?: string | null
+          source?: string
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+          work_date?: string
+          worked_hours?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendance_daily_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "attendance_import_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_daily_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_daily_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "work_shifts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_daily_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      attendance_device_profiles: {
+        Row: {
+          column_mapping: Json
+          created_at: string
+          datetime_format: string | null
+          direction_mode: string
+          file_format: string
+          has_separate_date_time: boolean
+          id: string
+          in_values: string[] | null
+          name: string
+          out_values: string[] | null
+          tenant_id: string
+        }
+        Insert: {
+          column_mapping?: Json
+          created_at?: string
+          datetime_format?: string | null
+          direction_mode?: string
+          file_format?: string
+          has_separate_date_time?: boolean
+          id?: string
+          in_values?: string[] | null
+          name: string
+          out_values?: string[] | null
+          tenant_id: string
+        }
+        Update: {
+          column_mapping?: Json
+          created_at?: string
+          datetime_format?: string | null
+          direction_mode?: string
+          file_format?: string
+          has_separate_date_time?: boolean
+          id?: string
+          in_values?: string[] | null
+          name?: string
+          out_values?: string[] | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendance_device_profiles_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      attendance_import_batches: {
+        Row: {
+          created_at: string
+          device_profile_id: string | null
+          file_name: string
+          id: string
+          imported_by: string | null
+          matched_rows: number
+          period_end: string | null
+          period_start: string | null
+          status: string
+          tenant_id: string
+          total_rows: number
+          unmatched_rows: number
+        }
+        Insert: {
+          created_at?: string
+          device_profile_id?: string | null
+          file_name: string
+          id?: string
+          imported_by?: string | null
+          matched_rows?: number
+          period_end?: string | null
+          period_start?: string | null
+          status?: string
+          tenant_id: string
+          total_rows?: number
+          unmatched_rows?: number
+        }
+        Update: {
+          created_at?: string
+          device_profile_id?: string | null
+          file_name?: string
+          id?: string
+          imported_by?: string | null
+          matched_rows?: number
+          period_end?: string | null
+          period_start?: string | null
+          status?: string
+          tenant_id?: string
+          total_rows?: number
+          unmatched_rows?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendance_import_batches_device_profile_id_fkey"
+            columns: ["device_profile_id"]
+            isOneToOne: false
+            referencedRelation: "attendance_device_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_import_batches_imported_by_fkey"
+            columns: ["imported_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_import_batches_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      attendance_punches: {
+        Row: {
+          batch_id: string
+          created_at: string
+          direction: string
+          employee_id: string | null
+          id: string
+          is_matched: boolean
+          punch_at: string
+          raw_device_id: string
+          raw_row: Json | null
+          tenant_id: string
+        }
+        Insert: {
+          batch_id: string
+          created_at?: string
+          direction?: string
+          employee_id?: string | null
+          id?: string
+          is_matched?: boolean
+          punch_at: string
+          raw_device_id: string
+          raw_row?: Json | null
+          tenant_id: string
+        }
+        Update: {
+          batch_id?: string
+          created_at?: string
+          direction?: string
+          employee_id?: string | null
+          id?: string
+          is_matched?: boolean
+          punch_at?: string
+          raw_device_id?: string
+          raw_row?: Json | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendance_punches_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "attendance_import_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_punches_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_punches_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       attendance_records: {
         Row: {
           attendance_date: string
@@ -2458,27 +2725,45 @@ export type Database = {
       customer_addresses: {
         Row: {
           address_line1: string | null
+          address_line2: string | null
+          address_type: string
           city: string | null
           country: string | null
+          created_at: string
           customer_id: string
           id: string
+          is_primary: boolean
           postal_code: string | null
+          state_province: string | null
+          tenant_id: string | null
         }
         Insert: {
           address_line1?: string | null
+          address_line2?: string | null
+          address_type?: string
           city?: string | null
           country?: string | null
+          created_at?: string
           customer_id: string
           id?: string
+          is_primary?: boolean
           postal_code?: string | null
+          state_province?: string | null
+          tenant_id?: string | null
         }
         Update: {
           address_line1?: string | null
+          address_line2?: string | null
+          address_type?: string
           city?: string | null
           country?: string | null
+          created_at?: string
           customer_id?: string
           id?: string
+          is_primary?: boolean
           postal_code?: string | null
+          state_province?: string | null
+          tenant_id?: string | null
         }
         Relationships: [
           {
@@ -2488,55 +2773,131 @@ export type Database = {
             referencedRelation: "customers"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "customer_addresses_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
         ]
       }
       customers: {
         Row: {
           address: string | null
+          ar_account_id: string | null
+          contact_person: string | null
           created_at: string
+          credit_hold: boolean
           credit_limit: number
+          currency: string
+          customer_code: string | null
+          customer_type: string
+          default_tax_id: string | null
           email: string | null
           id: string
+          is_tax_exempt: boolean
+          legal_name: string | null
+          mobile: string | null
           name: string
+          notes: string | null
           opening_balance: number
           payment_terms: string
           phone: string | null
+          registration_date: string | null
+          revenue_account_id: string | null
+          status: string
           tenant_id: string
           tin: string | null
           updated_at: string
+          vat_number: string | null
+          website: string | null
           withholds_tax: boolean
         }
         Insert: {
           address?: string | null
+          ar_account_id?: string | null
+          contact_person?: string | null
           created_at?: string
+          credit_hold?: boolean
           credit_limit?: number
+          currency?: string
+          customer_code?: string | null
+          customer_type?: string
+          default_tax_id?: string | null
           email?: string | null
           id?: string
+          is_tax_exempt?: boolean
+          legal_name?: string | null
+          mobile?: string | null
           name: string
+          notes?: string | null
           opening_balance?: number
           payment_terms?: string
           phone?: string | null
+          registration_date?: string | null
+          revenue_account_id?: string | null
+          status?: string
           tenant_id: string
           tin?: string | null
           updated_at?: string
+          vat_number?: string | null
+          website?: string | null
           withholds_tax?: boolean
         }
         Update: {
           address?: string | null
+          ar_account_id?: string | null
+          contact_person?: string | null
           created_at?: string
+          credit_hold?: boolean
           credit_limit?: number
+          currency?: string
+          customer_code?: string | null
+          customer_type?: string
+          default_tax_id?: string | null
           email?: string | null
           id?: string
+          is_tax_exempt?: boolean
+          legal_name?: string | null
+          mobile?: string | null
           name?: string
+          notes?: string | null
           opening_balance?: number
           payment_terms?: string
           phone?: string | null
+          registration_date?: string | null
+          revenue_account_id?: string | null
+          status?: string
           tenant_id?: string
           tin?: string | null
           updated_at?: string
+          vat_number?: string | null
+          website?: string | null
           withholds_tax?: boolean
         }
         Relationships: [
+          {
+            foreignKeyName: "customers_ar_account_id_fkey"
+            columns: ["ar_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customers_default_tax_id_fkey"
+            columns: ["default_tax_id"]
+            isOneToOne: false
+            referencedRelation: "taxes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customers_revenue_account_id_fkey"
+            columns: ["revenue_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "customers_tenant_id_fkey"
             columns: ["tenant_id"]
@@ -2789,17 +3150,92 @@ export type Database = {
           },
         ]
       }
+      employee_compensation: {
+        Row: {
+          basic_salary: number
+          created_at: string
+          created_by: string | null
+          effective_from: string
+          employee_id: string
+          id: string
+          is_current: boolean
+          notes: string | null
+          pay_frequency: string
+          pay_rate: number
+          tenant_id: string
+        }
+        Insert: {
+          basic_salary?: number
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          employee_id: string
+          id?: string
+          is_current?: boolean
+          notes?: string | null
+          pay_frequency?: string
+          pay_rate?: number
+          tenant_id: string
+        }
+        Update: {
+          basic_salary?: number
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          employee_id?: string
+          id?: string
+          is_current?: boolean
+          notes?: string | null
+          pay_frequency?: string
+          pay_rate?: number
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "employee_compensation_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employee_compensation_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employee_compensation_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       employees: {
         Row: {
+          address_line1: string | null
+          address_line2: string | null
+          bank_account_name: string | null
           bank_account_no: string | null
           bank_branch: string | null
           bank_name: string | null
+          biometric_id: string | null
+          city: string | null
+          civil_status: string | null
           created_at: string
+          date_of_birth: string | null
           department: string | null
+          designation: string | null
+          district: string | null
           email: string | null
+          employee_number: string | null
           employment_type: string
           epf_number: string | null
           first_name: string
+          gender: string | null
           hire_date: string | null
           id: string
           is_epf_applicable: boolean
@@ -2807,26 +3243,42 @@ export type Database = {
           is_paye_applicable: boolean
           last_name: string
           leave_balance: number
+          manager_id: string | null
           nic_number: string | null
           pay_rate: number | null
           pay_rate_type: string
           pay_schedule_id: string | null
+          personal_phone: string | null
+          postal_code: string | null
           salary: number | null
+          shift_id: string | null
           sick_balance: number
           status: string
           tenant_id: string
+          tin_number: string | null
           vacation_balance: number
         }
         Insert: {
+          address_line1?: string | null
+          address_line2?: string | null
+          bank_account_name?: string | null
           bank_account_no?: string | null
           bank_branch?: string | null
           bank_name?: string | null
+          biometric_id?: string | null
+          city?: string | null
+          civil_status?: string | null
           created_at?: string
+          date_of_birth?: string | null
           department?: string | null
+          designation?: string | null
+          district?: string | null
           email?: string | null
+          employee_number?: string | null
           employment_type?: string
           epf_number?: string | null
           first_name: string
+          gender?: string | null
           hire_date?: string | null
           id?: string
           is_epf_applicable?: boolean
@@ -2834,26 +3286,42 @@ export type Database = {
           is_paye_applicable?: boolean
           last_name: string
           leave_balance?: number
+          manager_id?: string | null
           nic_number?: string | null
           pay_rate?: number | null
           pay_rate_type?: string
           pay_schedule_id?: string | null
+          personal_phone?: string | null
+          postal_code?: string | null
           salary?: number | null
+          shift_id?: string | null
           sick_balance?: number
           status?: string
           tenant_id: string
+          tin_number?: string | null
           vacation_balance?: number
         }
         Update: {
+          address_line1?: string | null
+          address_line2?: string | null
+          bank_account_name?: string | null
           bank_account_no?: string | null
           bank_branch?: string | null
           bank_name?: string | null
+          biometric_id?: string | null
+          city?: string | null
+          civil_status?: string | null
           created_at?: string
+          date_of_birth?: string | null
           department?: string | null
+          designation?: string | null
+          district?: string | null
           email?: string | null
+          employee_number?: string | null
           employment_type?: string
           epf_number?: string | null
           first_name?: string
+          gender?: string | null
           hire_date?: string | null
           id?: string
           is_epf_applicable?: boolean
@@ -2861,22 +3329,41 @@ export type Database = {
           is_paye_applicable?: boolean
           last_name?: string
           leave_balance?: number
+          manager_id?: string | null
           nic_number?: string | null
           pay_rate?: number | null
           pay_rate_type?: string
           pay_schedule_id?: string | null
+          personal_phone?: string | null
+          postal_code?: string | null
           salary?: number | null
+          shift_id?: string | null
           sick_balance?: number
           status?: string
           tenant_id?: string
+          tin_number?: string | null
           vacation_balance?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "employees_manager_id_fkey"
+            columns: ["manager_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "employees_pay_schedule_id_fkey"
             columns: ["pay_schedule_id"]
             isOneToOne: false
             referencedRelation: "pay_schedules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employees_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "work_shifts"
             referencedColumns: ["id"]
           },
           {
@@ -4155,6 +4642,7 @@ export type Database = {
           issue_date: string
           journal_entry_id: string | null
           notes: string | null
+          payment_terms: string
           posted_at: string | null
           posted_by: string | null
           posting_status: string
@@ -4182,6 +4670,7 @@ export type Database = {
           issue_date?: string
           journal_entry_id?: string | null
           notes?: string | null
+          payment_terms?: string
           posted_at?: string | null
           posted_by?: string | null
           posting_status?: string
@@ -4209,6 +4698,7 @@ export type Database = {
           issue_date?: string
           journal_entry_id?: string | null
           notes?: string | null
+          payment_terms?: string
           posted_at?: string | null
           posted_by?: string | null
           posting_status?: string
@@ -9566,6 +10056,32 @@ export type Database = {
           },
         ]
       }
+      tenant_number_counters: {
+        Row: {
+          counter_key: string
+          current_value: number
+          tenant_id: string
+        }
+        Insert: {
+          counter_key: string
+          current_value?: number
+          tenant_id: string
+        }
+        Update: {
+          counter_key?: string
+          current_value?: number
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_number_counters_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenant_tax_profiles: {
         Row: {
           created_at: string
@@ -10090,6 +10606,62 @@ export type Database = {
           },
         ]
       }
+      work_shifts: {
+        Row: {
+          break_minutes: number
+          created_at: string
+          crosses_midnight: boolean
+          end_time: string
+          id: string
+          is_active: boolean
+          is_default: boolean
+          late_grace_minutes: number
+          name: string
+          ot_threshold_hours: number
+          standard_hours: number
+          start_time: string
+          tenant_id: string
+        }
+        Insert: {
+          break_minutes?: number
+          created_at?: string
+          crosses_midnight?: boolean
+          end_time?: string
+          id?: string
+          is_active?: boolean
+          is_default?: boolean
+          late_grace_minutes?: number
+          name: string
+          ot_threshold_hours?: number
+          standard_hours?: number
+          start_time?: string
+          tenant_id: string
+        }
+        Update: {
+          break_minutes?: number
+          created_at?: string
+          crosses_midnight?: boolean
+          end_time?: string
+          id?: string
+          is_active?: boolean
+          is_default?: boolean
+          late_grace_minutes?: number
+          name?: string
+          ot_threshold_hours?: number
+          standard_hours?: number
+          start_time?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "work_shifts_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       cashflow_forecast: {
@@ -10171,6 +10743,12 @@ export type Database = {
       }
     }
     Functions: {
+      aggregate_attendance_batch: {
+        Args: { p_batch_id: string }
+        Returns: {
+          days_written: number
+        }[]
+      }
       ap_aging_report: { Args: { p_as_of_date?: string }; Returns: Json }
       ap_reconciliation_check: {
         Args: { p_as_of_date?: string }
@@ -10401,6 +10979,11 @@ export type Database = {
       }
       is_primary_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
+      next_tenant_number: {
+        Args: { p_key: string; p_tenant_id: string }
+        Returns: number
+      }
+      payment_term_days: { Args: { p_term: string }; Returns: number }
       pc_locked_ledger_balance: {
         Args: { p_pc_account_id: string; p_tenant_id: string }
         Returns: number

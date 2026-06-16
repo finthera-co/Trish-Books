@@ -5,9 +5,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Checkbox } from "@/components/ui/checkbox";
 import { useEmployees } from "@/hooks/useData";
 import { usePaySchedules, useCreatePayrollRun, type PayrollRunInput } from "@/hooks/usePayroll";
-import { useAttendanceSummary } from "@/hooks/useAttendance";
+import { useAttendanceSummary, useAttendanceSummaryForPeriod } from "@/hooks/useAttendance";
 import { formatCurrency } from "@/lib/currency";
-import { ChevronRight, ChevronLeft, Calculator, Users, AlertTriangle } from "lucide-react";
+import { toast } from "sonner";
+import { ChevronRight, ChevronLeft, Calculator, Users, AlertTriangle, CalendarClock } from "lucide-react";
 
 interface Props {
   open: boolean;
@@ -18,11 +19,21 @@ const EPF_EMPLOYEE_RATE = 0.08;
 const EPF_EMPLOYER_RATE = 0.12;
 const ETF_EMPLOYER_RATE = 0.03;
 
+// OT derivation when importing attendance: SL standard overtime = 1.5× the
+// normal hourly rate. For monthly staff the hourly equivalent uses a 240h
+// month (30 days × 8h). Both are starting points — the OT Pay cell stays
+// editable so the preparer can override.
+const OT_MULTIPLIER = 1.5;
+const MONTHLY_HOURS = 240;
+
 interface EmployeePayItem {
   employee_id: string;
   name: string;
   department: string;
+  pay_rate_type: string;       // "monthly" | "hourly"
+  pay_rate: number;            // hourly rate (hourly staff)
   basic_salary: number;
+  hours_worked: number;
   overtime_hours: number;
   overtime_pay: number;
   bonuses: number;
@@ -48,7 +59,18 @@ function computeAttendanceDeduction(basic: number, workingDays: number, unpaidAb
   return round2((basic / workingDays) * unpaidAbsentDays);
 }
 
-const earnedBasic = (item: EmployeePayItem) => item.basic_salary - item.attendance_deduction;
+const isHourly = (item: EmployeePayItem) => item.pay_rate_type === "hourly";
+
+// Earned basic feeds gross, EPF and ETF.
+//   hourly  → hours worked × hourly rate (absence simply means fewer hours)
+//   monthly → full contractual basic minus the pro-rata no-pay deduction
+const earnedBasic = (item: EmployeePayItem) =>
+  isHourly(item)
+    ? round2(item.hours_worked * item.pay_rate)
+    : item.basic_salary - item.attendance_deduction;
+
+const normalHourlyRate = (item: EmployeePayItem) =>
+  isHourly(item) ? item.pay_rate : (item.basic_salary > 0 ? item.basic_salary / MONTHLY_HOURS : 0);
 
 export default function PayrollRunForm({ open, onOpenChange }: Props) {
   const [step, setStep] = useState(1);
@@ -62,6 +84,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
   const { data: employees } = useEmployees();
   const { data: schedules } = usePaySchedules();
   const { data: attendanceSummary } = useAttendanceSummary(periodStart || undefined, periodEnd || undefined);
+  const { data: biometricSummary } = useAttendanceSummaryForPeriod(periodStart || undefined, periodEnd || undefined);
   const createRun = useCreatePayrollRun();
 
   const activeEmployees = useMemo(() =>
@@ -81,7 +104,10 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
         employee_id: e.id,
         name: `${e.first_name} ${e.last_name}`,
         department: e.department || "Unassigned",
+        pay_rate_type: e.pay_rate_type || "monthly",
+        pay_rate: Number(e.pay_rate || 0),
         basic_salary: Number(e.salary || e.pay_rate || 0),
+        hours_worked: 0,
         overtime_hours: 0,
         overtime_pay: 0,
         bonuses: 0,
@@ -147,6 +173,50 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
     }));
   };
 
+  // Phase 9: pull aggregated biometric attendance (attendance_daily) into the
+  // run. Hourly staff are paid on worked hours; monthly staff keep their basic
+  // with OT and unpaid absence flowing through the existing pro-rata logic.
+  // Rows with no attendance data are left untouched (and keep their warning badge).
+  const importAttendance = () => {
+    if (!biometricSummary || Object.keys(biometricSummary).length === 0) {
+      toast.error("No aggregated attendance found for this period. Import & aggregate punches first.");
+      return;
+    }
+    let applied = 0;
+    setItems((prev) => prev.map((item) => {
+      const s = biometricSummary[item.employee_id];
+      if (!s) return item; // untouched → stays badged "no attendance data"
+      applied += 1;
+      const next: EmployeePayItem = {
+        ...item,
+        hours_worked: round2(s.worked),
+        overtime_hours: round2(s.ot),
+        has_attendance: true,
+      };
+      // Derive OT pay from imported OT hours (overridable). Both pay types.
+      if (!item.attendance_override || isHourly(item)) {
+        next.overtime_pay = round2(s.ot * normalHourlyRate(next) * OT_MULTIPLIER);
+      }
+      if (isHourly(item)) {
+        // Hourly: absence = fewer hours; no pro-rata basic deduction.
+        next.working_days = round2(s.present + s.absent);
+        next.days_present = s.present;
+        next.unpaid_absent_days = 0;
+        next.attendance_deduction = 0;
+      } else {
+        // Monthly: absent days drive the no-pay deduction on contractual basic.
+        next.working_days = s.present + s.absent;
+        next.days_present = s.present;
+        next.unpaid_absent_days = s.absent;
+        if (!item.attendance_override) {
+          next.attendance_deduction = computeAttendanceDeduction(next.basic_salary, next.working_days, next.unpaid_absent_days);
+        }
+      }
+      return next;
+    }));
+    toast.success(applied > 0 ? `Attendance applied to ${applied} employee(s)` : "No matching employees for this period's attendance");
+  };
+
   const selectedItems = items.filter((i) => i.selected);
 
   const totals = useMemo(() => {
@@ -179,7 +249,11 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
       notes: notes || undefined,
       employees: selectedItems.map((item) => ({
         employee_id: item.employee_id,
-        basic_salary: item.basic_salary,
+        // Hourly: pass earned (hours × rate) as basic with no pro-rata deduction,
+        // so the engine's "earned basic" equals worked pay. Monthly: full
+        // contractual basic; the engine subtracts attendance_deduction.
+        basic_salary: isHourly(item) ? earnedBasic(item) : item.basic_salary,
+        hours_worked: item.hours_worked,
         overtime_hours: item.overtime_hours,
         overtime_pay: item.overtime_pay,
         bonuses: item.bonuses,
@@ -190,7 +264,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
         days_present: item.days_present,
         paid_leave_days: item.paid_leave_days,
         unpaid_absent_days: item.unpaid_absent_days,
-        attendance_deduction: item.attendance_deduction,
+        attendance_deduction: isHourly(item) ? 0 : item.attendance_deduction,
       })),
     };
     await createRun.mutateAsync(input);
@@ -277,13 +351,18 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                 <Users className="w-4 h-4" />
                 Employees & Earnings ({selectedItems.length} selected)
               </h3>
-              <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
-                <Checkbox
-                  checked={items.every((i) => i.selected)}
-                  onCheckedChange={(checked) => setItems((prev) => prev.map((i) => ({ ...i, selected: !!checked })))}
-                />
-                Select All
-              </label>
+              <div className="flex items-center gap-3">
+                <Button variant="outline" size="sm" onClick={importAttendance}>
+                  <CalendarClock className="w-4 h-4" /> Import attendance for this period
+                </Button>
+                <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                  <Checkbox
+                    checked={items.every((i) => i.selected)}
+                    onCheckedChange={(checked) => setItems((prev) => prev.map((i) => ({ ...i, selected: !!checked })))}
+                  />
+                  Select All
+                </label>
+              </div>
             </div>
 
             <div className="border border-border rounded-lg overflow-x-auto">
@@ -293,7 +372,8 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                     <th className="px-3 py-2 text-left font-medium text-muted-foreground w-8"></th>
                     <th className="px-3 py-2 text-left font-medium text-muted-foreground">Employee</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground">Basic Salary</th>
-                    <th className="px-2 py-2 text-right font-medium text-muted-foreground" title="Working days in period">WD</th>
+                    <th className="px-2 py-2 text-right font-medium text-muted-foreground" title="Hours worked (imported from attendance)">Worked h</th>
+                    <th className="px-2 py-2 text-right font-medium text-muted-foreground" title="Overtime hours (imported from attendance)">OT h</th>
                     <th className="px-2 py-2 text-right font-medium text-muted-foreground" title="Days present">Pres.</th>
                     <th className="px-2 py-2 text-right font-medium text-muted-foreground" title="Unpaid absent days">Unpaid Abs.</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground" title="Pro-rata no-pay deduction — editable">Att. Ded.</th>
@@ -323,7 +403,8 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                         <input type="number" value={item.basic_salary || ""} onChange={(e) => updateItem(idx, "basic_salary", Number(e.target.value))}
                           className="w-24 text-right text-sm border border-input rounded px-2 py-1 bg-background text-foreground" />
                       </td>
-                      <td className="px-2 py-2 text-right text-muted-foreground">{item.has_attendance ? item.working_days : "—"}</td>
+                      <td className="px-2 py-2 text-right text-muted-foreground">{item.has_attendance ? item.hours_worked : "—"}</td>
+                      <td className={`px-2 py-2 text-right ${item.overtime_hours > 0 ? "text-foreground font-medium" : "text-muted-foreground"}`}>{item.has_attendance ? item.overtime_hours : "—"}</td>
                       <td className="px-2 py-2 text-right text-muted-foreground">{item.has_attendance ? item.days_present : "—"}</td>
                       <td className={`px-2 py-2 text-right ${item.unpaid_absent_days > 0 ? "text-destructive font-medium" : "text-muted-foreground"}`}>
                         {item.has_attendance ? item.unpaid_absent_days : "—"}

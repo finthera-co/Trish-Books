@@ -619,7 +619,18 @@ export function useCreateEmployee() {
   const queryClient = useQueryClient();
   const { appUser } = useAuth();
   return useMutation({
-    mutationFn: async (employee: { first_name: string; last_name: string; email?: string; department?: string; salary?: number; hire_date?: string }) => {
+    mutationFn: async (employee: {
+      first_name: string; last_name: string;
+      email?: string; personal_phone?: string;
+      nic_number?: string; tin_number?: string;
+      date_of_birth?: string; gender?: string; civil_status?: string;
+      address_line1?: string; address_line2?: string; city?: string; district?: string; postal_code?: string;
+      designation?: string; department?: string; hire_date?: string;
+      employment_type?: string; pay_rate_type?: string; status?: string;
+      manager_id?: string; biometric_id?: string;
+      epf_number?: string; is_epf_applicable?: boolean; is_etf_applicable?: boolean; is_paye_applicable?: boolean;
+      bank_name?: string; bank_branch?: string; bank_account_no?: string; bank_account_name?: string;
+    }) => {
       const { data, error } = await supabase.from("employees").insert({
         ...employee,
         tenant_id: appUser?.tenant_id,
@@ -639,7 +650,19 @@ export function useCreateEmployee() {
 export function useUpdateEmployee() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...updates }: { id: string; first_name?: string; last_name?: string; email?: string; department?: string; salary?: number }) => {
+    mutationFn: async ({ id, ...updates }: {
+      id: string;
+      first_name?: string; last_name?: string;
+      email?: string; personal_phone?: string;
+      nic_number?: string; tin_number?: string;
+      date_of_birth?: string; gender?: string; civil_status?: string;
+      address_line1?: string; address_line2?: string; city?: string; district?: string; postal_code?: string;
+      designation?: string; department?: string; hire_date?: string;
+      employment_type?: string; pay_rate_type?: string; status?: string;
+      manager_id?: string; biometric_id?: string;
+      epf_number?: string; is_epf_applicable?: boolean; is_etf_applicable?: boolean; is_paye_applicable?: boolean;
+      bank_name?: string; bank_branch?: string; bank_account_no?: string; bank_account_name?: string;
+    }) => {
       const { error } = await supabase.from("employees").update(updates).eq("id", id);
       if (error) throw error;
     },
@@ -745,6 +768,51 @@ export function useCreatePayrollRecord() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["payroll_records"] });
       toast.success("Payroll record created");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// Employee compensation (dated history)
+export function useEmployeeCompensation(employeeId?: string) {
+  return useQuery({
+    queryKey: ["employee_compensation", employeeId],
+    enabled: !!employeeId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("employee_compensation")
+        .select("*")
+        .eq("employee_id", employeeId!)
+        .order("effective_from", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+export function useAddCompensation() {
+  const queryClient = useQueryClient();
+  const { appUser } = useAuth();
+  return useMutation({
+    mutationFn: async (payload: {
+      employee_id: string; effective_from: string;
+      basic_salary: number; pay_rate?: number; pay_frequency?: string; notes?: string;
+    }) => {
+      const { data, error } = await supabase.from("employee_compensation").insert({
+        ...payload,
+        is_current: true,
+        tenant_id: appUser?.tenant_id,
+        created_by: appUser?.id,
+      }).select().single();
+      if (error) throw error;
+      writeAuditLog("Compensation Updated", "employee_compensation", data.id,
+        { employee_id: payload.employee_id, basic_salary: payload.basic_salary });
+      return data;
+    },
+    onSuccess: (_d, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["employee_compensation", vars.employee_id] });
+      queryClient.invalidateQueries({ queryKey: ["employees"] });
+      toast.success("Compensation updated");
     },
     onError: (e: Error) => toast.error(e.message),
   });

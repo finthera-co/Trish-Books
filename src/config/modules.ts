@@ -32,6 +32,7 @@ import {
   Zap,
   CalendarCheck,
   CalendarOff,
+  Upload,
 } from "lucide-react";
 import type { ModuleConfig } from "@/components/layout/ModuleLayout";
 
@@ -130,6 +131,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "Payroll Runs", path: "/payroll/runs", icon: DollarSign },
       { label: "Employees", path: "/payroll/employees", icon: UserCheck },
       { label: "Attendance", path: "/payroll/attendance", icon: CalendarCheck },
+      { label: "Import Attendance", path: "/payroll/attendance-import", icon: Upload },
       { label: "Leave", path: "/payroll/leave", icon: CalendarOff },
       { label: "Liability Tracking", path: "/payroll/liabilities", icon: AlertTriangle },
     ],

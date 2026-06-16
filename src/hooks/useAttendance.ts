@@ -231,3 +231,121 @@ export function isDateLocked(date: string, lockedPeriods?: { period_start: strin
   if (!lockedPeriods?.length) return false;
   return lockedPeriods.some((p) => date >= p.period_start && date <= p.period_end);
 }
+
+// ===== Biometric import pipeline (device profiles → batches → punches) =====
+
+export function useDeviceProfiles() {
+  return useQuery({
+    queryKey: ["attendance_device_profiles"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("attendance_device_profiles").select("*").order("name");
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+export function useSaveDeviceProfile() {
+  const qc = useQueryClient();
+  const { appUser } = useAuth();
+  return useMutation({
+    mutationFn: async (p: any) => {
+      const { data, error } = await supabase.from("attendance_device_profiles")
+        .insert({ ...p, tenant_id: appUser?.tenant_id }).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["attendance_device_profiles"] }); toast.success("Device profile saved"); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useAttendanceBatches() {
+  return useQuery({
+    queryKey: ["attendance_import_batches"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("attendance_import_batches").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+// Persists a parsed+matched batch. `rows` already mapped to {raw_device_id, punch_at, direction, raw_row, employee_id|null}
+export function useImportPunches() {
+  const qc = useQueryClient();
+  const { appUser } = useAuth();
+  return useMutation({
+    mutationFn: async (args: {
+      fileName: string; deviceProfileId?: string;
+      periodStart?: string; periodEnd?: string;
+      rows: { raw_device_id: string; punch_at: string; direction: string; raw_row: any; employee_id: string | null }[];
+    }) => {
+      const matched = args.rows.filter(r => r.employee_id).length;
+      const { data: batch, error: bErr } = await supabase.from("attendance_import_batches").insert({
+        tenant_id: appUser?.tenant_id, device_profile_id: args.deviceProfileId ?? null,
+        file_name: args.fileName, period_start: args.periodStart ?? null, period_end: args.periodEnd ?? null,
+        total_rows: args.rows.length, matched_rows: matched, unmatched_rows: args.rows.length - matched,
+        status: "parsed", imported_by: appUser?.id,
+      }).select().single();
+      if (bErr) throw bErr;
+
+      const punchRows = args.rows.map(r => ({
+        tenant_id: appUser?.tenant_id, batch_id: batch.id,
+        employee_id: r.employee_id, raw_device_id: r.raw_device_id,
+        punch_at: r.punch_at, direction: r.direction,
+        is_matched: !!r.employee_id, raw_row: r.raw_row,
+      }));
+      // chunk to stay under payload limits
+      for (let i = 0; i < punchRows.length; i += 500) {
+        const { error } = await supabase.from("attendance_punches").insert(punchRows.slice(i, i + 500));
+        if (error) throw error;
+      }
+      return batch;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["attendance_import_batches"] }); toast.success("Punches imported"); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// Per-employee totals from aggregated biometric attendance (attendance_daily),
+// used to feed hours/OT into a payroll run. NOTE: distinct query key from
+// useAttendanceSummary() above — that hook returns a different shape from the
+// manual-register RPC; sharing the key would corrupt the React Query cache.
+export function useAttendanceSummaryForPeriod(periodStart?: string, periodEnd?: string) {
+  return useQuery({
+    queryKey: ["attendance_daily_summary", periodStart, periodEnd],
+    enabled: !!periodStart && !!periodEnd,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("attendance_daily")
+        .select("employee_id, worked_hours, ot_hours, status")
+        .gte("work_date", periodStart!)
+        .lte("work_date", periodEnd!);
+      if (error) throw error;
+      // reduce to per-employee totals
+      const map: Record<string, { worked: number; ot: number; absent: number; present: number }> = {};
+      (data ?? []).forEach((d: any) => {
+        const m = (map[d.employee_id] ??= { worked: 0, ot: 0, absent: 0, present: 0 });
+        m.worked += Number(d.worked_hours) || 0;
+        m.ot += Number(d.ot_hours) || 0;
+        if (d.status === "absent") m.absent += 1; else m.present += 1;
+      });
+      return map;
+    },
+  });
+}
+
+// Trigger Phase 8 aggregation for a committed batch
+export function useAggregateBatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (batchId: string) => {
+      const { data, error } = await supabase.rpc("aggregate_attendance_batch", { p_batch_id: batchId });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["attendance_import_batches"] }); toast.success("Attendance aggregated"); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
