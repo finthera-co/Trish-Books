@@ -7,6 +7,7 @@ import ModuleCards from "@/components/dashboard/ModuleCards";
 import OBEBanner from "@/components/dashboard/OBEBanner";
 import PeriodFilter from "@/components/dashboard/PeriodFilter";
 import DashboardCharts from "@/components/dashboard/DashboardCharts";
+import AgingCharts from "@/components/dashboard/AgingCharts";
 import KPICards from "@/components/dashboard/KPICards";
 import SystemHealthCheck from "@/components/dashboard/SystemHealthCheck";
 import RecentTransactions from "@/components/dashboard/RecentTransactions";
@@ -95,6 +96,9 @@ function TenantDashboard() {
         <>
           {/* Charts */}
           <DashboardCharts metrics={metrics} />
+
+          {/* AR/AP Aging */}
+          <AgingCharts />
 
           {/* KPI Cards */}
           <KPICards metrics={metrics} />

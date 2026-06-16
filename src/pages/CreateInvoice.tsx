@@ -44,6 +44,20 @@ const emptyLine = (): LineItem => ({
   discount: 0,
 });
 
+const TERM_OPTIONS = [
+  { value: "due_on_receipt", label: "Due on receipt", days: 0 },
+  { value: "net_15", label: "Net 15", days: 15 },
+  { value: "net_30", label: "Net 30", days: 30 },
+  { value: "net_45", label: "Net 45", days: 45 },
+  { value: "net_60", label: "Net 60", days: 60 },
+];
+const termToDays = (t: string) => TERM_OPTIONS.find((o) => o.value === t)?.days ?? 30;
+const addDays = (isoDate: string, days: number) => {
+  const d = new Date(isoDate);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
+};
+
 export default function CreateInvoice() {
   const navigate = useNavigate();
   const { appUser } = useAuth();
@@ -68,6 +82,7 @@ export default function CreateInvoice() {
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [issueDate, setIssueDate] = useState(new Date().toISOString().split("T")[0]);
   const [dueDate, setDueDate] = useState("");
+  const [paymentTerms, setPaymentTerms] = useState("net_30");
   const [notes, setNotes] = useState("");
   const [terms, setTerms] = useState("");
   const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
@@ -77,6 +92,18 @@ export default function CreateInvoice() {
   useEffect(() => {
     if (!invoiceNumber) setInvoiceNumber(`INV-${Date.now().toString().slice(-6)}`);
   }, []);
+
+  // Inherit the selected customer's default payment term.
+  useEffect(() => {
+    const c = customers?.find((x) => x.id === customerId);
+    if (c?.payment_terms) setPaymentTerms(c.payment_terms);
+  }, [customerId, customers]);
+
+  // Auto-compute due date = issue date + term days. The user can still override
+  // the date manually afterwards.
+  useEffect(() => {
+    if (issueDate) setDueDate(addDays(issueDate, termToDays(paymentTerms)));
+  }, [issueDate, paymentTerms]);
 
   // Account lookups (for journal preview only)
   const arAccount = useMemo(
@@ -256,6 +283,7 @@ export default function CreateInvoice() {
           invoice_number: invoiceNumber,
           issue_date: issueDate,
           due_date: dueDate || null,
+          payment_terms: paymentTerms,
           total_amount: total,
           subtotal,
           tax_amount: totalTax,
@@ -357,10 +385,21 @@ export default function CreateInvoice() {
                   <Input className="mt-1.5" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-3 gap-6">
                 <div>
                   <Label>Issue Date</Label>
                   <Input type="date" className="mt-1.5" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
+                </div>
+                <div>
+                  <Label>Payment Terms</Label>
+                  <Select value={paymentTerms} onValueChange={setPaymentTerms}>
+                    <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {TERM_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label>Due Date</Label>
