@@ -68,6 +68,12 @@ export default function PayStub({ item, run, open, onOpenChange }: Props) {
                   <span className="text-destructive">-{formatCurrency(attendanceDeduction)}</span>
                 </div>
               )}
+              {Number(item.hours_worked) > 0 && (
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Worked hours{Number(item.overtime_hours) > 0 ? ` (incl. ${Number(item.overtime_hours)} OT)` : ""}</span>
+                  <span>{Number(item.hours_worked)} h</span>
+                </div>
+              )}
               {Number(item.overtime_pay) > 0 && <div className="flex justify-between"><span className="text-foreground">Overtime</span><span>{formatCurrency(Number(item.overtime_pay))}</span></div>}
               {Number(item.bonuses) > 0 && <div className="flex justify-between"><span className="text-foreground">Bonuses</span><span>{formatCurrency(Number(item.bonuses))}</span></div>}
               {Number(item.allowances) > 0 && <div className="flex justify-between"><span className="text-foreground">Allowances</span><span>{formatCurrency(Number(item.allowances))}</span></div>}

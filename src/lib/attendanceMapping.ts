@@ -134,3 +134,77 @@ export function debouncePunches<T extends { raw_device_id: string; punch_at: str
   kept.sort((a, b) => a.punch_at.localeCompare(b.punch_at));
   return { kept, collapsed };
 }
+
+// ===== Payroll: turn aggregated attendance into earned pay per pay-rate type =====
+
+export interface PayComputeInput {
+  payRateType: "monthly" | "hourly" | string;
+  contractualBasic: number;   // employees.salary (synced from current compensation)
+  hourlyRate: number;         // employees.pay_rate
+  workedHours: number;
+  otHours: number;
+  absentDays: number;
+  halfDays: number;
+  workingDays: number;        // denominator for salaried pro-rata
+  otMultiplier?: number;      // default 1.5
+}
+
+export interface PayComputeResult {
+  basic_salary: number;       // EARNED basic (pro-rated / hours-based) — engine computes EPF/ETF on this
+  overtime_hours: number;
+  overtime_pay: number;
+  hours_worked: number;
+}
+
+export function computePayFromAttendance(i: PayComputeInput): PayComputeResult {
+  const otMult = i.otMultiplier ?? 1.5;
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  if (i.payRateType === "hourly") {
+    const basic = i.hourlyRate * i.workedHours;
+    const otPay = i.hourlyRate * otMult * i.otHours;
+    return {
+      basic_salary: round2(basic),
+      overtime_hours: round2(i.otHours),
+      overtime_pay: round2(otPay),
+      hours_worked: round2(i.workedHours),
+    };
+  }
+
+  // monthly: pro-rate basic for unpaid absence (half day = 0.5 day lost), add OT on derived daily/hourly rate
+  const lostDays = i.absentDays + i.halfDays * 0.5;
+  const proRataFactor = Math.max(0, (i.workingDays - lostDays) / i.workingDays);
+  const earnedBasic = i.contractualBasic * proRataFactor;
+
+  // derive an hourly rate from monthly basic for OT: basic / (workingDays × stdHoursPerDay)
+  const stdHoursPerDay = 8;
+  const derivedHourly = i.contractualBasic / (i.workingDays * stdHoursPerDay);
+  const otPay = derivedHourly * otMult * i.otHours;
+
+  return {
+    basic_salary: round2(earnedBasic),
+    overtime_hours: round2(i.otHours),
+    overtime_pay: round2(otPay),
+    hours_worked: round2(i.workedHours),
+  };
+}
+
+// Returns the conflicting employee if this device ID is already taken by someone else.
+// `employees` is the list from useEmployees(). `selfId` excludes the row being edited.
+export function findBiometricConflict(
+  employees: Array<{ id: string; biometric_id?: string | null; first_name?: string; last_name?: string; employee_number?: string }>,
+  deviceId: string,
+  selfId?: string,
+): { id: string; name: string; employee_number?: string } | null {
+  const target = (deviceId ?? "").trim();
+  if (!target) return null;
+  const hit = employees.find(
+    (e) => e.id !== selfId && ((e.biometric_id ?? "").trim() === target),
+  );
+  if (!hit) return null;
+  return {
+    id: hit.id,
+    name: `${hit.first_name ?? ""} ${hit.last_name ?? ""}`.trim() || "another employee",
+    employee_number: hit.employee_number ?? undefined,
+  };
+}

@@ -124,7 +124,7 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
   const handleExportCsv = () => {
     if (!items?.length) return;
     const headers = [
-      "Employee", "Department", "EPF No.", "Basic Salary", "Working Days", "Days Present",
+      "Employee", "Department", "EPF No.", "Basic Salary", "Worked Hours", "OT Hours", "Working Days", "Days Present",
       "Unpaid Absent", "No-Pay Deduction", "Overtime Pay", "Bonuses",
       "Allowances", "Gross Pay", "Employee EPF (8%)", "Employer EPF (12%)", "Employer ETF (3%)",
       "Other Deductions", "Net Pay", "Payment Method",
@@ -134,6 +134,8 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
       (item.employees as any)?.department || "",
       (item.employees as any)?.epf_number || "",
       Number(item.basic_salary).toFixed(2),
+      item.hours_worked != null ? Number(item.hours_worked) : "",
+      item.overtime_hours != null ? Number(item.overtime_hours) : "",
       item.working_days != null ? Number(item.working_days) : "",
       item.days_present != null ? Number(item.days_present) : "",
       item.unpaid_absent_days != null ? Number(item.unpaid_absent_days) : "",

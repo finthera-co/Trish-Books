@@ -1,6 +1,8 @@
 import { Plus, Search, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { findBiometricConflict } from "@/lib/attendanceMapping";
+import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 import { useEmployees, useCreateEmployee } from "@/hooks/useData";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useMyPermissions } from "@/hooks/usePermissions";
@@ -19,6 +21,7 @@ const EMPTY_FORM = {
   employment_type: "salaried", pay_rate_type: "monthly", status: "active", manager_id: "",
   epf_number: "", is_epf_applicable: true, is_etf_applicable: true, is_paye_applicable: false,
   bank_name: "", bank_branch: "", bank_account_no: "", bank_account_name: "",
+  biometric_id: "",
 };
 
 export default function Employees() {
@@ -46,9 +49,17 @@ export default function Employees() {
     (e.department || "").toLowerCase().includes(search.toLowerCase())
   ) || [];
 
+  const isFormDirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(EMPTY_FORM), [form]);
+  useUnsavedChangesWarning(open && isFormDirty);
+
   const handleCreate = async () => {
     if (!form.first_name || !form.nic_number || !form.tin_number || !form.designation) {
       toast.error("First name, NIC, TIN, and Designation are required");
+      return;
+    }
+    const bioConflict = findBiometricConflict(employees ?? [], form.biometric_id);
+    if (bioConflict) {
+      toast.error(`Device ID already linked to ${bioConflict.name}`);
       return;
     }
     const payload: any = {};
@@ -177,6 +188,27 @@ export default function Employees() {
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="col-span-2">
+                    <Label>Biometric / Device ID</Label>
+                    <Input
+                      value={form.biometric_id}
+                      onChange={(e) => set("biometric_id", e.target.value)}
+                      placeholder="AC-No as enrolled on the fingerprint scanner (optional)"
+                    />
+                    {(() => {
+                      const conflict = findBiometricConflict(employees ?? [], form.biometric_id);
+                      return conflict ? (
+                        <p className="text-xs text-destructive mt-1">
+                          Device ID already linked to {conflict.employee_number ? conflict.employee_number + " — " : ""}{conflict.name}.
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          The ID this employee is enrolled under on the attendance device. Leave blank if not yet
+                          enrolled — you can link it later when importing attendance.
+                        </p>
+                      );
+                    })()}
                   </div>
                 </div>
               </TabsContent>

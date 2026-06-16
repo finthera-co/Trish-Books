@@ -5,7 +5,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Checkbox } from "@/components/ui/checkbox";
 import { useEmployees } from "@/hooks/useData";
 import { usePaySchedules, useCreatePayrollRun, type PayrollRunInput } from "@/hooks/usePayroll";
-import { useAttendanceSummary, useAttendanceSummaryForPeriod } from "@/hooks/useAttendance";
+import { useAttendanceSummary, useAttendanceSummaryForPeriod, workingDaysInPeriod } from "@/hooks/useAttendance";
+import { computePayFromAttendance } from "@/lib/attendanceMapping";
 import { formatCurrency } from "@/lib/currency";
 import { toast } from "sonner";
 import { ChevronRight, ChevronLeft, Calculator, Users, AlertTriangle, CalendarClock } from "lucide-react";
@@ -18,13 +19,6 @@ interface Props {
 const EPF_EMPLOYEE_RATE = 0.08;
 const EPF_EMPLOYER_RATE = 0.12;
 const ETF_EMPLOYER_RATE = 0.03;
-
-// OT derivation when importing attendance: SL standard overtime = 1.5× the
-// normal hourly rate. For monthly staff the hourly equivalent uses a 240h
-// month (30 days × 8h). Both are starting points — the OT Pay cell stays
-// editable so the preparer can override.
-const OT_MULTIPLIER = 1.5;
-const MONTHLY_HOURS = 240;
 
 interface EmployeePayItem {
   employee_id: string;
@@ -41,8 +35,9 @@ interface EmployeePayItem {
   other_deductions: number;
   payment_method: string;
   selected: boolean;
-  // Attendance pro-rata (basic_salary stays the FULL contractual basic;
-  // the deduction is carried separately for the audit trail)
+  // Attendance pro-rata. After a biometric import, basic_salary holds the
+  // EARNED basic (pro-rated / hours-based) and attendance_deduction is 0;
+  // the manual-register path keeps full basic + a separate deduction.
   working_days: number;
   days_present: number;
   paid_leave_days: number;
@@ -50,6 +45,8 @@ interface EmployeePayItem {
   attendance_deduction: number;
   attendance_override: boolean;
   has_attendance: boolean;
+  attendance_applied?: boolean; // filled from biometric attendance_daily
+  attendance_missing?: boolean; // no aggregated rows for this employee
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -59,18 +56,10 @@ function computeAttendanceDeduction(basic: number, workingDays: number, unpaidAb
   return round2((basic / workingDays) * unpaidAbsentDays);
 }
 
-const isHourly = (item: EmployeePayItem) => item.pay_rate_type === "hourly";
-
-// Earned basic feeds gross, EPF and ETF.
-//   hourly  → hours worked × hourly rate (absence simply means fewer hours)
-//   monthly → full contractual basic minus the pro-rata no-pay deduction
-const earnedBasic = (item: EmployeePayItem) =>
-  isHourly(item)
-    ? round2(item.hours_worked * item.pay_rate)
-    : item.basic_salary - item.attendance_deduction;
-
-const normalHourlyRate = (item: EmployeePayItem) =>
-  isHourly(item) ? item.pay_rate : (item.basic_salary > 0 ? item.basic_salary / MONTHLY_HOURS : 0);
+// Earned basic feeds gross, EPF and ETF. After a biometric import, basic_salary
+// already holds the earned figure (hours×rate for hourly, pro-rated for monthly)
+// with attendance_deduction = 0; the manual-register path subtracts the deduction.
+const earnedBasic = (item: EmployeePayItem) => item.basic_salary - item.attendance_deduction;
 
 export default function PayrollRunForm({ open, onOpenChange }: Props) {
   const [step, setStep] = useState(1);
@@ -84,7 +73,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
   const { data: employees } = useEmployees();
   const { data: schedules } = usePaySchedules();
   const { data: attendanceSummary } = useAttendanceSummary(periodStart || undefined, periodEnd || undefined);
-  const { data: biometricSummary } = useAttendanceSummaryForPeriod(periodStart || undefined, periodEnd || undefined);
+  const { data: biometricSummary, isFetching: loadingAttendance } = useAttendanceSummaryForPeriod(periodStart || undefined, periodEnd || undefined);
   const createRun = useCreatePayrollRun();
 
   const activeEmployees = useMemo(() =>
@@ -122,6 +111,8 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
         attendance_deduction: 0,
         attendance_override: false,
         has_attendance: false,
+        attendance_applied: false,
+        attendance_missing: false,
       }));
       setItems(empItems);
       setStep(2);
@@ -173,46 +164,48 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
     }));
   };
 
-  // Phase 9: pull aggregated biometric attendance (attendance_daily) into the
-  // run. Hourly staff are paid on worked hours; monthly staff keep their basic
-  // with OT and unpaid absence flowing through the existing pro-rata logic.
-  // Rows with no attendance data are left untouched (and keep their warning badge).
+  // Phase 12: pull aggregated biometric attendance (attendance_daily) into the run.
+  // computePayFromAttendance bakes the earned basic into basic_salary (hours×rate for
+  // hourly, pro-rated contractual for monthly) so EPF/ETF compute on it; we zero the
+  // separate attendance_deduction and mark the row overridden so the manual-register
+  // useEffect doesn't double-apply. Rows with no aggregated data are flagged, not zeroed.
   const importAttendance = () => {
     if (!biometricSummary || Object.keys(biometricSummary).length === 0) {
       toast.error("No aggregated attendance found for this period. Import & aggregate punches first.");
       return;
     }
+    const workingDays = workingDaysInPeriod(periodStart, periodEnd); // default Mon–Sat
     let applied = 0;
     setItems((prev) => prev.map((item) => {
+      const emp = activeEmployees.find((e: any) => e.id === item.employee_id);
       const s = biometricSummary[item.employee_id];
-      if (!s) return item; // untouched → stays badged "no attendance data"
+      if (!s) return { ...item, attendance_missing: true, attendance_applied: false };
       applied += 1;
-      const next: EmployeePayItem = {
+      const result = computePayFromAttendance({
+        payRateType: item.pay_rate_type,
+        contractualBasic: Number(emp?.salary ?? item.basic_salary) || 0,
+        hourlyRate: Number(emp?.pay_rate ?? item.pay_rate) || 0,
+        workedHours: s.worked_hours,
+        otHours: s.ot_hours,
+        absentDays: s.absent_days,
+        halfDays: s.half_days,
+        workingDays,
+      });
+      return {
         ...item,
-        hours_worked: round2(s.worked),
-        overtime_hours: round2(s.ot),
+        basic_salary: result.basic_salary,
+        hours_worked: result.hours_worked,
+        overtime_hours: result.overtime_hours,
+        overtime_pay: result.overtime_pay,
+        working_days: workingDays,
+        days_present: s.present_days,
+        unpaid_absent_days: s.absent_days,
+        attendance_deduction: 0,
+        attendance_override: true,
         has_attendance: true,
+        attendance_applied: true,
+        attendance_missing: false,
       };
-      // Derive OT pay from imported OT hours (overridable). Both pay types.
-      if (!item.attendance_override || isHourly(item)) {
-        next.overtime_pay = round2(s.ot * normalHourlyRate(next) * OT_MULTIPLIER);
-      }
-      if (isHourly(item)) {
-        // Hourly: absence = fewer hours; no pro-rata basic deduction.
-        next.working_days = round2(s.present + s.absent);
-        next.days_present = s.present;
-        next.unpaid_absent_days = 0;
-        next.attendance_deduction = 0;
-      } else {
-        // Monthly: absent days drive the no-pay deduction on contractual basic.
-        next.working_days = s.present + s.absent;
-        next.days_present = s.present;
-        next.unpaid_absent_days = s.absent;
-        if (!item.attendance_override) {
-          next.attendance_deduction = computeAttendanceDeduction(next.basic_salary, next.working_days, next.unpaid_absent_days);
-        }
-      }
-      return next;
     }));
     toast.success(applied > 0 ? `Attendance applied to ${applied} employee(s)` : "No matching employees for this period's attendance");
   };
@@ -249,10 +242,9 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
       notes: notes || undefined,
       employees: selectedItems.map((item) => ({
         employee_id: item.employee_id,
-        // Hourly: pass earned (hours × rate) as basic with no pro-rata deduction,
-        // so the engine's "earned basic" equals worked pay. Monthly: full
-        // contractual basic; the engine subtracts attendance_deduction.
-        basic_salary: isHourly(item) ? earnedBasic(item) : item.basic_salary,
+        // basic_salary already holds the earned figure after a biometric import
+        // (deduction zeroed); the manual-register path keeps full basic + deduction.
+        basic_salary: item.basic_salary,
         hours_worked: item.hours_worked,
         overtime_hours: item.overtime_hours,
         overtime_pay: item.overtime_pay,
@@ -264,7 +256,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
         days_present: item.days_present,
         paid_leave_days: item.paid_leave_days,
         unpaid_absent_days: item.unpaid_absent_days,
-        attendance_deduction: isHourly(item) ? 0 : item.attendance_deduction,
+        attendance_deduction: item.attendance_deduction,
       })),
     };
     await createRun.mutateAsync(input);
@@ -352,8 +344,9 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                 Employees & Earnings ({selectedItems.length} selected)
               </h3>
               <div className="flex items-center gap-3">
-                <Button variant="outline" size="sm" onClick={importAttendance}>
-                  <CalendarClock className="w-4 h-4" /> Import attendance for this period
+                <Button variant="outline" size="sm" onClick={importAttendance}
+                  disabled={loadingAttendance || !biometricSummary || Object.keys(biometricSummary).length === 0}>
+                  <CalendarClock className="w-4 h-4" /> {loadingAttendance ? "Loading attendance…" : "Import attendance for this period"}
                 </Button>
                 <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
                   <Checkbox
@@ -364,6 +357,11 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                 </label>
               </div>
             </div>
+            <p className="text-xs text-muted-foreground -mt-2">
+              {biometricSummary && Object.keys(biometricSummary).length > 0
+                ? `${Object.keys(biometricSummary).length} employee(s) have aggregated attendance in ${periodStart} → ${periodEnd}. Salaried basic is pro-rated Mon–Sat; hourly basic = worked hours × rate.`
+                : "No aggregated attendance found for this period. Import & aggregate punches first."}
+            </p>
 
             <div className="border border-border rounded-lg overflow-x-auto">
               <table className="w-full text-sm">
@@ -393,6 +391,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                       <td className="px-3 py-2">
                         <div className="font-medium text-foreground whitespace-nowrap">{item.name}</div>
                         <div className="text-xs text-muted-foreground">{item.department}</div>
+                        {item.attendance_applied && <div className="text-[11px] text-green-600">from attendance</div>}
                         {!item.has_attendance && (
                           <Badge variant="outline" className="mt-0.5 text-[10px] text-yellow-700 dark:text-yellow-400 border-yellow-300 dark:border-yellow-700">
                             <AlertTriangle className="w-2.5 h-2.5 mr-0.5" /> No attendance data

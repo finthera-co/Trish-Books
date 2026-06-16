@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +17,9 @@ import {
   autoDetect, parsePunchAt, resolveDirection, debouncePunches,
   type MappingConfig, type ResolvedDirection,
 } from "@/lib/attendanceMapping";
+import { useDraftPersistence } from "@/hooks/useDraftPersistence";
+import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { Upload, CheckCircle2, AlertTriangle, Sparkles, Wand2 } from "lucide-react";
 
@@ -66,6 +69,30 @@ export default function AttendanceImport() {
   const [committedBatchId, setCommittedBatchId] = useState<string | null>(null);
   const [collapsedCount, setCollapsedCount] = useState(0);
 
+  // Phase 11: warn before unload while a file is parsed but not yet committed,
+  // and persist the (small) mapping config so a refresh + re-upload is pre-filled.
+  const { appUser } = useAuth();
+  const scope = appUser ? `${appUser.tenant_id}:${appUser.id}` : undefined;
+  const { value: savedCfg, setValue: setSavedCfg, clearDraft: clearCfg } =
+    useDraftPersistence<{ cfg: MappingConfig; periodStart: string; periodEnd: string } | null>({
+      page: "attendance-import-config", scope, initial: null,
+    });
+  const [restoredCfg, setRestoredCfg] = useState(false);
+
+  const hasPendingImport = rows.length > 0 && !committedBatchId;
+  useUnsavedChangesWarning(hasPendingImport);
+
+  // Restore the saved mapping once on mount, before any file is loaded.
+  useEffect(() => {
+    if (savedCfg && !cfg) {
+      setCfg(savedCfg.cfg);
+      if (savedCfg.periodStart) setPeriodStart(savedCfg.periodStart);
+      if (savedCfg.periodEnd) setPeriodEnd(savedCfg.periodEnd);
+      setRestoredCfg(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const patchCfg = (patch: Partial<MappingConfig>) => setCfg((c) => (c ? { ...c, ...patch } : c));
   const patchMapping = (patch: Partial<MappingConfig["mapping"]>) =>
     setCfg((c) => (c ? { ...c, mapping: { ...c.mapping, ...patch } } : c));
@@ -80,6 +107,8 @@ export default function AttendanceImport() {
     const applyParsed = (hdrs: string[], data: Record<string, string>[]) => {
       setHeaders(hdrs);
       setRows(data);
+      // Keep a restored mapping (from a prior refresh) instead of re-detecting.
+      if (restoredCfg && cfg) { setRestoredCfg(false); setAutoDetected(false); return; }
       const detected = autoDetect(hdrs);
       setCfg(detected);
       setAutoDetected(true);
@@ -163,6 +192,12 @@ export default function AttendanceImport() {
 
   const { data: overlaps } = useOverlappingBatches(effStart || undefined, effEnd || undefined);
 
+  // Mirror the lightweight config so a refresh restores the mapping (never the rows/file).
+  useEffect(() => {
+    if (cfg && headers.length > 0) setSavedCfg({ cfg, periodStart: effStart, periodEnd: effEnd });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg, effStart, effEnd, headers.length]);
+
   // ---- Validation gates --------------------------------------------------
   const deviceIdMapped = !!cfg?.mapping.device_id;
   const dateMapped = !!cfg && (cfg.has_separate_date_time ? (!!cfg.mapping.date && !!cfg.mapping.time) : !!cfg.mapping.datetime);
@@ -198,6 +233,7 @@ export default function AttendanceImport() {
       periodStart: effStart || undefined, periodEnd: effEnd || undefined, rows: kept,
     });
     setCommittedBatchId(batch.id);
+    clearCfg();
     toast.success("Punches imported");
   };
 
@@ -216,6 +252,12 @@ export default function AttendanceImport() {
 
   const linkEmployee = (deviceId: string, employeeId: string) => {
     if (!employeeId || employeeId === NONE) return;
+    // Guard a silent re-enrollment: the chosen employee is already linked to a different machine ID.
+    const chosen = employees?.find((e: any) => e.id === employeeId);
+    if (chosen?.biometric_id && chosen.biometric_id.trim() !== deviceId.trim()) {
+      toast.error(`${chosen.first_name} is already linked to device ID ${chosen.biometric_id}. Update it on the linking screen if this is a re-enrollment.`);
+      return;
+    }
     setBiometric.mutate({ employeeId, biometricId: deviceId });
   };
 
@@ -265,6 +307,9 @@ export default function AttendanceImport() {
               <Input type="file" accept=".csv,.xlsx,.xls" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
             </div>
           </div>
+          {restoredCfg && !fileName && (
+            <p className="text-sm text-amber-600">Restored your last column mapping — re-select the file to continue.</p>
+          )}
           {fileName && (
             <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
               <span>{fileName} — {rows.length} rows, {headers.length} columns.</span>

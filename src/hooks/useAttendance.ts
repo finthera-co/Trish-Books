@@ -346,31 +346,53 @@ export function useImportPunches() {
 }
 
 // Per-employee totals from aggregated biometric attendance (attendance_daily),
-// used to feed hours/OT into a payroll run. NOTE: distinct query key from
-// useAttendanceSummary() above — that hook returns a different shape from the
-// manual-register RPC; sharing the key would corrupt the React Query cache.
+// used to feed hours/OT into a payroll run.
+export interface AttendanceSummaryRow {
+  worked_hours: number;
+  ot_hours: number;
+  present_days: number;
+  absent_days: number;
+  half_days: number;
+  has_data: boolean;
+}
+
 export function useAttendanceSummaryForPeriod(periodStart?: string, periodEnd?: string) {
   return useQuery({
+    // NOTE: distinct query key from useAttendanceSummary() above — that hook returns a
+    // different shape from the manual-register RPC; sharing the key would corrupt the cache.
     queryKey: ["attendance_daily_summary", periodStart, periodEnd],
     enabled: !!periodStart && !!periodEnd,
-    queryFn: async () => {
+    queryFn: async (): Promise<Record<string, AttendanceSummaryRow>> => {
       const { data, error } = await supabase
         .from("attendance_daily")
-        .select("employee_id, worked_hours, ot_hours, status")
+        .select("employee_id, worked_hours, ot_hours, status, work_date")
         .gte("work_date", periodStart!)
         .lte("work_date", periodEnd!);
       if (error) throw error;
-      // reduce to per-employee totals
-      const map: Record<string, { worked: number; ot: number; absent: number; present: number }> = {};
+      const map: Record<string, AttendanceSummaryRow> = {};
       (data ?? []).forEach((d: any) => {
-        const m = (map[d.employee_id] ??= { worked: 0, ot: 0, absent: 0, present: 0 });
-        m.worked += Number(d.worked_hours) || 0;
-        m.ot += Number(d.ot_hours) || 0;
-        if (d.status === "absent") m.absent += 1; else m.present += 1;
+        const m = (map[d.employee_id] ??= {
+          worked_hours: 0, ot_hours: 0, present_days: 0, absent_days: 0, half_days: 0, has_data: true,
+        });
+        m.worked_hours += Number(d.worked_hours) || 0;
+        m.ot_hours += Number(d.ot_hours) || 0;
+        if (d.status === "absent") m.absent_days += 1;
+        else if (d.status === "half_day") m.half_days += 1;
+        else m.present_days += 1;
       });
       return map;
     },
   });
+}
+
+// Standard working days in [start,end] — Mon–Sat by default (Sri Lanka 6-day week is common).
+export function workingDaysInPeriod(periodStart: string, periodEnd: string, workingDows = [1, 2, 3, 4, 5, 6]) {
+  const s = new Date(periodStart), e = new Date(periodEnd);
+  let n = 0;
+  for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
+    if (workingDows.includes(d.getDay())) n++;
+  }
+  return Math.max(n, 1);
 }
 
 // Trigger Phase 8 aggregation for a committed batch
@@ -383,6 +405,29 @@ export function useAggregateBatch() {
       return data;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["attendance_daily"] }); toast.success("Attendance aggregated"); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// Bulk link/unlink biometric IDs (the cold-start linking screen).
+export function useBulkSetBiometricIds() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (changes: { employeeId: string; biometricId: string | null }[]) => {
+      // sequential to surface per-row unique violations clearly; volumes are small (staff count)
+      const failures: { employeeId: string; message: string }[] = [];
+      for (const c of changes) {
+        const { error } = await supabase.from("employees")
+          .update({ biometric_id: c.biometricId === "" ? null : c.biometricId })
+          .eq("id", c.employeeId);
+        if (error) failures.push({ employeeId: c.employeeId, message: error.message });
+      }
+      if (failures.length) {
+        throw new Error(`${failures.length} row(s) failed — likely a duplicate Device ID. ${failures[0].message}`);
+      }
+      return { updated: changes.length };
+    },
+    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ["employees"] }); toast.success(`Linked ${r.updated} employee(s)`); },
     onError: (e: Error) => toast.error(e.message),
   });
 }

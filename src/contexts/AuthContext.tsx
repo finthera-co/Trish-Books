@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { type User, type Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { clearAllFintheraDrafts } from "@/hooks/useDraftPersistence";
 
 interface AppUser {
   id: string;
@@ -130,6 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    clearAllFintheraDrafts();
     await supabase.auth.signOut();
     setAppUser(null);
   };
