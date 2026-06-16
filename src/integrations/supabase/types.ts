@@ -2635,6 +2635,81 @@ export type Database = {
           },
         ]
       }
+      client_visits: {
+        Row: {
+          check_in_address: string | null
+          check_in_latitude: number | null
+          check_in_longitude: number | null
+          check_in_time: string
+          check_out_address: string | null
+          check_out_latitude: number | null
+          check_out_longitude: number | null
+          check_out_time: string | null
+          client_name: string
+          created_at: string
+          employee_id: string
+          id: string
+          notes: string | null
+          status: string
+          tenant_id: string
+          updated_at: string
+          visit_date: string
+        }
+        Insert: {
+          check_in_address?: string | null
+          check_in_latitude?: number | null
+          check_in_longitude?: number | null
+          check_in_time?: string
+          check_out_address?: string | null
+          check_out_latitude?: number | null
+          check_out_longitude?: number | null
+          check_out_time?: string | null
+          client_name: string
+          created_at?: string
+          employee_id: string
+          id?: string
+          notes?: string | null
+          status?: string
+          tenant_id: string
+          updated_at?: string
+          visit_date?: string
+        }
+        Update: {
+          check_in_address?: string | null
+          check_in_latitude?: number | null
+          check_in_longitude?: number | null
+          check_in_time?: string
+          check_out_address?: string | null
+          check_out_latitude?: number | null
+          check_out_longitude?: number | null
+          check_out_time?: string | null
+          client_name?: string
+          created_at?: string
+          employee_id?: string
+          id?: string
+          notes?: string | null
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+          visit_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_visits_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_visits_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cost_centers: {
         Row: {
           created_at: string
@@ -10624,6 +10699,7 @@ export type Database = {
           standard_hours: number
           start_time: string
           tenant_id: string
+          working_days: number[]
         }
         Insert: {
           break_minutes?: number
@@ -10639,6 +10715,7 @@ export type Database = {
           standard_hours?: number
           start_time?: string
           tenant_id: string
+          working_days?: number[]
         }
         Update: {
           break_minutes?: number
@@ -10654,6 +10731,7 @@ export type Database = {
           standard_hours?: number
           start_time?: string
           tenant_id?: string
+          working_days?: number[]
         }
         Relationships: [
           {
