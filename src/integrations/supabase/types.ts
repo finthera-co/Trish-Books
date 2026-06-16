@@ -1583,6 +1583,7 @@ export type Database = {
           column_mapping: Json
           created_at: string
           datetime_format: string | null
+          debounce_seconds: number
           direction_mode: string
           file_format: string
           has_separate_date_time: boolean
@@ -1596,6 +1597,7 @@ export type Database = {
           column_mapping?: Json
           created_at?: string
           datetime_format?: string | null
+          debounce_seconds?: number
           direction_mode?: string
           file_format?: string
           has_separate_date_time?: boolean
@@ -1609,6 +1611,7 @@ export type Database = {
           column_mapping?: Json
           created_at?: string
           datetime_format?: string | null
+          debounce_seconds?: number
           direction_mode?: string
           file_format?: string
           has_separate_date_time?: boolean

@@ -6,21 +6,40 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   useDeviceProfiles, useSaveDeviceProfile, useImportPunches, useAggregateBatch,
+  useOverlappingBatches, useSetBiometricId,
 } from "@/hooks/useAttendance";
 import { useEmployees } from "@/hooks/useData";
+import {
+  autoDetect, parsePunchAt, resolveDirection, debouncePunches,
+  type MappingConfig, type ResolvedDirection,
+} from "@/lib/attendanceMapping";
 import { toast } from "sonner";
-import { Upload, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Upload, CheckCircle2, AlertTriangle, Sparkles, Wand2 } from "lucide-react";
 
 const NONE = "__none__";
 
-type Mapping = { device_id: string; datetime: string; date: string; time: string; direction: string };
-type BuiltPunch = { raw_device_id: string; punch_at: string; direction: string; raw_row: any; employee_id: string | null };
+interface PunchEntry {
+  raw_device_id: string;
+  punch_at: string | null;
+  direction: ResolvedDirection;
+  raw_row: Record<string, string>;
+  employee_id: string | null;
+}
 
-const DEFAULT_IN = ["in", "i", "0", "checkin", "check-in", "c/in"];
-const DEFAULT_OUT = ["out", "o", "1", "checkout", "check-out", "c/out"];
+// Resolve directions chronologically per device (inferred alternates; explicit reads the column).
+function resolveDirections(entries: PunchEntry[], cfg: MappingConfig): void {
+  const byDevice: Record<string, PunchEntry[]> = {};
+  entries.forEach((e) => { if (e.punch_at) (byDevice[e.raw_device_id] ??= []).push(e); });
+  Object.values(byDevice).forEach((list) => {
+    list.sort((a, b) => (a.punch_at! < b.punch_at! ? -1 : 1));
+    const toggle = { next: "in" as ResolvedDirection };
+    list.forEach((e) => { e.direction = resolveDirection(e.raw_row, cfg, toggle); });
+  });
+}
 
 export default function AttendanceImport() {
   const { data: profiles } = useDeviceProfiles();
@@ -28,235 +47,266 @@ export default function AttendanceImport() {
   const saveProfile = useSaveDeviceProfile();
   const importPunches = useImportPunches();
   const aggregate = useAggregateBatch();
+  const setBiometric = useSetBiometricId();
 
   const [fileName, setFileName] = useState("");
-  const [detectedColumns, setDetectedColumns] = useState<string[]>([]);
-  const [dataRows, setDataRows] = useState<Record<string, string>[]>([]);
+  const [fileFormat, setFileFormat] = useState<"csv" | "xlsx">("csv");
+  const [headers, setHeaders] = useState<string[]>([]);
+  const [rows, setRows] = useState<Record<string, string>[]>([]);
+  const [cfg, setCfg] = useState<MappingConfig | null>(null);
+  const [autoDetected, setAutoDetected] = useState(false);
 
   const [profileId, setProfileId] = useState<string>(NONE);
-  const [mapping, setMapping] = useState<Mapping>({ device_id: "", datetime: "", date: "", time: "", direction: "" });
-  const [hasSeparateDateTime, setHasSeparateDateTime] = useState(false);
-  const [directionMode, setDirectionMode] = useState<"explicit" | "inferred">("inferred");
-  const [inValues, setInValues] = useState<string[]>(DEFAULT_IN);
-  const [outValues, setOutValues] = useState<string[]>(DEFAULT_OUT);
-
-  const [saveAsNew, setSaveAsNew] = useState(false);
-  const [newProfileName, setNewProfileName] = useState("");
-
   const [periodStart, setPeriodStart] = useState("");
   const [periodEnd, setPeriodEnd] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [acknowledgedOverlap, setAcknowledgedOverlap] = useState(false);
 
   const [committedBatchId, setCommittedBatchId] = useState<string | null>(null);
+  const [collapsedCount, setCollapsedCount] = useState(0);
+
+  const patchCfg = (patch: Partial<MappingConfig>) => setCfg((c) => (c ? { ...c, ...patch } : c));
+  const patchMapping = (patch: Partial<MappingConfig["mapping"]>) =>
+    setCfg((c) => (c ? { ...c, mapping: { ...c.mapping, ...patch } } : c));
 
   // ---- File parsing ------------------------------------------------------
   const handleFile = async (file: File) => {
     setCommittedBatchId(null);
+    setAcknowledgedOverlap(false);
+    setProfileId(NONE);
     setFileName(file.name);
     const ext = file.name.split(".").pop()?.toLowerCase();
+    const applyParsed = (hdrs: string[], data: Record<string, string>[]) => {
+      setHeaders(hdrs);
+      setRows(data);
+      const detected = autoDetect(hdrs);
+      setCfg(detected);
+      setAutoDetected(true);
+    };
     try {
       if (ext === "csv") {
+        setFileFormat("csv");
         Papa.parse<Record<string, string>>(file, {
           header: true, skipEmptyLines: true,
-          complete: (res) => {
-            const cols = res.meta.fields || [];
-            setDetectedColumns(cols);
-            setDataRows(res.data as Record<string, string>[]);
-          },
+          complete: (res) => applyParsed(res.meta.fields || [], res.data as Record<string, string>[]),
           error: (err) => toast.error(`CSV parse failed: ${err.message}`),
         });
       } else {
+        setFileFormat("xlsx");
         const buf = await file.arrayBuffer();
         const wb = XLSX.read(buf, { type: "array" });
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const json = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: "", raw: false });
-        const cols = json.length ? Object.keys(json[0]) : [];
-        setDetectedColumns(cols);
-        setDataRows(json.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, String(v ?? "")]))));
+        const hdrs = json.length ? Object.keys(json[0]) : [];
+        applyParsed(hdrs, json.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, String(v ?? "")]))));
       }
     } catch (e: any) {
       toast.error(`Failed to read file: ${e.message}`);
     }
   };
 
-  // ---- Apply a saved profile --------------------------------------------
+  // ---- Apply a saved profile (overrides auto-detect) ---------------------
   const applyProfile = (id: string) => {
     setProfileId(id);
     if (id === NONE) return;
     const p = profiles?.find((x: any) => x.id === id);
     if (!p) return;
-    const cm = (p.column_mapping || {}) as Partial<Mapping>;
-    setMapping({
-      device_id: cm.device_id || "", datetime: cm.datetime || "",
-      date: cm.date || "", time: cm.time || "", direction: cm.direction || "",
+    const cm = (p.column_mapping || {}) as Partial<MappingConfig["mapping"]>;
+    setCfg({
+      mapping: {
+        device_id: cm.device_id ?? null, date: cm.date ?? null, time: cm.time ?? null,
+        datetime: cm.datetime ?? null, direction: cm.direction ?? null,
+      },
+      has_separate_date_time: !!p.has_separate_date_time,
+      direction_mode: p.direction_mode === "explicit" ? "explicit" : "inferred",
+      in_values: p.in_values || [],
+      out_values: p.out_values || [],
+      debounce_seconds: p.debounce_seconds ?? 60,
     });
-    setHasSeparateDateTime(!!p.has_separate_date_time);
-    setDirectionMode(p.direction_mode === "explicit" ? "explicit" : "inferred");
-    setInValues(p.in_values || DEFAULT_IN);
-    setOutValues(p.out_values || DEFAULT_OUT);
+    setAutoDetected(false);
   };
 
   // ---- Employee biometric map -------------------------------------------
   const biometricMap = useMemo(() => {
-    const m = new Map<string, string>();
-    (employees || []).forEach((e: any) => {
-      if (e.biometric_id) m.set(String(e.biometric_id).trim(), e.id);
-    });
+    const m = new Map<string, any>();
+    (employees || []).forEach((e: any) => { if (e.biometric_id) m.set(String(e.biometric_id).trim(), e); });
     return m;
   }, [employees]);
 
-  // ---- Build punches -----------------------------------------------------
-  const { punches, skipped } = useMemo(() => {
-    const out: BuiltPunch[] = [];
-    const skips: { row: number; reason: string }[] = [];
-    if (!mapping.device_id || dataRows.length === 0) return { punches: out, skipped: skips };
-
-    dataRows.forEach((row, idx) => {
-      const rawId = String(row[mapping.device_id] ?? "").trim();
-      if (!rawId) { skips.push({ row: idx + 1, reason: "missing device ID" }); return; }
-
-      let dtStr = "";
-      if (hasSeparateDateTime) {
-        const d = String(row[mapping.date] ?? "").trim();
-        const t = String(row[mapping.time] ?? "").trim();
-        if (!d) { skips.push({ row: idx + 1, reason: "missing date" }); return; }
-        dtStr = t ? `${d} ${t}` : d;
-      } else {
-        dtStr = String(row[mapping.datetime] ?? "").trim();
-        if (!dtStr) { skips.push({ row: idx + 1, reason: "missing datetime" }); return; }
-      }
-      const parsed = new Date(dtStr);
-      if (isNaN(parsed.getTime())) { skips.push({ row: idx + 1, reason: `unparseable date "${dtStr}"` }); return; }
-
-      let direction = "unknown";
-      if (directionMode === "explicit" && mapping.direction) {
-        const cell = String(row[mapping.direction] ?? "").trim().toLowerCase();
-        if (inValues.map((v) => v.toLowerCase()).includes(cell)) direction = "in";
-        else if (outValues.map((v) => v.toLowerCase()).includes(cell)) direction = "out";
-      }
-
-      out.push({
-        raw_device_id: rawId,
-        punch_at: parsed.toISOString(),
-        direction,
-        raw_row: row,
-        employee_id: biometricMap.get(rawId) ?? null,
-      });
+  // ---- Full-file model (drives gates, preview, period) -------------------
+  const model = useMemo(() => {
+    if (!cfg || !cfg.mapping.device_id || rows.length === 0) {
+      return { entries: [] as PunchEntry[], total: 0, failCount: 0, matchedCount: 0, unmatchedIds: [] as string[] };
+    }
+    const entries: PunchEntry[] = rows.map((row) => {
+      const rawId = String(row[cfg.mapping.device_id!] ?? "").trim();
+      const punch_at = parsePunchAt(row, cfg);
+      const emp = rawId ? biometricMap.get(rawId) : undefined;
+      return { raw_device_id: rawId, punch_at, direction: "unknown" as ResolvedDirection, raw_row: row, employee_id: emp?.id ?? null };
     });
-    return { punches: out, skipped: skips };
-  }, [dataRows, mapping, hasSeparateDateTime, directionMode, inValues, outValues, biometricMap]);
+    resolveDirections(entries, cfg);
+    const failCount = entries.filter((e) => !e.punch_at).length;
+    const matchedCount = entries.filter((e) => e.employee_id).length;
+    const unmatchedIds = Array.from(new Set(entries.filter((e) => !e.employee_id && e.raw_device_id).map((e) => e.raw_device_id)));
+    return { entries, total: entries.length, failCount, matchedCount, unmatchedIds };
+  }, [cfg, rows, biometricMap]);
 
-  const matchedCount = punches.filter((p) => p.employee_id).length;
-  const unmatchedIds = useMemo(
-    () => Array.from(new Set(punches.filter((p) => !p.employee_id).map((p) => p.raw_device_id))),
-    [punches],
-  );
-
-  // Derive default period from punch range
+  // Derived period from parsed punches
   const derivedPeriod = useMemo(() => {
-    if (!punches.length) return { start: "", end: "" };
-    const dates = punches.map((p) => p.punch_at.slice(0, 10)).sort();
-    return { start: dates[0], end: dates[dates.length - 1] };
-  }, [punches]);
+    const dates = model.entries.filter((e) => e.punch_at).map((e) => e.punch_at!.slice(0, 10)).sort();
+    return dates.length ? { start: dates[0], end: dates[dates.length - 1] } : { start: "", end: "" };
+  }, [model.entries]);
 
   const effStart = periodStart || derivedPeriod.start;
   const effEnd = periodEnd || derivedPeriod.end;
 
+  const { data: overlaps } = useOverlappingBatches(effStart || undefined, effEnd || undefined);
+
+  // ---- Validation gates --------------------------------------------------
+  const deviceIdMapped = !!cfg?.mapping.device_id;
+  const dateMapped = !!cfg && (cfg.has_separate_date_time ? (!!cfg.mapping.date && !!cfg.mapping.time) : !!cfg.mapping.datetime);
+  const parseFailureRate = model.total > 0 ? model.failCount / model.total : 0;
+  const parseOk = model.total > 0 && parseFailureRate < 0.2;
+  const anyMatched = model.matchedCount > 0;
+  const hasOverlap = !!overlaps && overlaps.length > 0;
+  const overlapOk = !hasOverlap || acknowledgedOverlap;
+  const canImport = deviceIdMapped && dateMapped && parseOk && anyMatched && overlapOk;
+
+  const gateReason = !deviceIdMapped ? "Map the Device ID column."
+    : !dateMapped ? "Map the date/time column(s)."
+    : model.total === 0 ? "No data rows parsed."
+    : !parseOk ? `${model.failCount} of ${model.total} rows have unreadable dates (${Math.round(parseFailureRate * 100)}%) — the date column is likely wrong.`
+    : !anyMatched ? "Zero employees matched — the Device ID column is likely wrong, or no employees have a biometric ID set."
+    : !overlapOk ? "A batch for this period already exists — acknowledge the overlap warning to continue."
+    : "";
+
+  const previewSample = model.entries.slice(0, 10);
+
   // ---- Commit ------------------------------------------------------------
   const handleImport = async () => {
-    if (!punches.length) { toast.error("No valid punches to import"); return; }
-
-    let savedProfileId: string | undefined = profileId !== NONE ? profileId : undefined;
-    if (saveAsNew) {
-      if (!newProfileName.trim()) { toast.error("Enter a name for the new device profile"); return; }
-      const saved = await saveProfile.mutateAsync({
-        name: newProfileName.trim(),
-        file_format: fileName.toLowerCase().endsWith(".csv") ? "csv" : "xlsx",
-        column_mapping: mapping,
-        has_separate_date_time: hasSeparateDateTime,
-        direction_mode: directionMode,
-        in_values: inValues,
-        out_values: outValues,
-      });
-      savedProfileId = saved?.id;
-    }
-
+    if (!cfg) return;
+    const valid: PunchEntry[] = model.entries.filter((e) => e.punch_at);
+    const list = valid.map((e) => ({
+      raw_device_id: e.raw_device_id, punch_at: e.punch_at!, direction: e.direction,
+      raw_row: e.raw_row, employee_id: e.employee_id,
+    }));
+    const { kept, collapsed } = debouncePunches(list, cfg.debounce_seconds);
+    setCollapsedCount(collapsed);
     const batch = await importPunches.mutateAsync({
-      fileName, deviceProfileId: savedProfileId,
-      periodStart: effStart || undefined, periodEnd: effEnd || undefined,
-      rows: punches,
+      fileName, fileFormat, deviceProfileId: profileId !== NONE ? profileId : null,
+      periodStart: effStart || undefined, periodEnd: effEnd || undefined, rows: kept,
     });
     setCommittedBatchId(batch.id);
+    toast.success("Punches imported");
   };
 
-  const columnSelect = (value: string, onChange: (v: string) => void, allowNone = false) => (
-    <Select value={value || (allowNone ? NONE : "")} onValueChange={(v) => onChange(v === NONE ? "" : v)}>
+  const handleSaveProfile = async () => {
+    if (!cfg) return;
+    if (!profileName.trim()) { toast.error("Enter a profile name"); return; }
+    await saveProfile.mutateAsync({
+      name: profileName.trim(), file_format: fileFormat,
+      column_mapping: cfg.mapping, has_separate_date_time: cfg.has_separate_date_time,
+      direction_mode: cfg.direction_mode, in_values: cfg.in_values, out_values: cfg.out_values,
+      debounce_seconds: cfg.debounce_seconds,
+    });
+    setSavingProfile(false);
+    setProfileName("");
+  };
+
+  const linkEmployee = (deviceId: string, employeeId: string) => {
+    if (!employeeId || employeeId === NONE) return;
+    setBiometric.mutate({ employeeId, biometricId: deviceId });
+  };
+
+  const columnSelect = (value: string | null, onChange: (v: string | null) => void, allowNone = false, disabled = false) => (
+    <Select value={value || (allowNone ? NONE : "")} onValueChange={(v) => onChange(v === NONE ? null : v)} disabled={disabled}>
       <SelectTrigger><SelectValue placeholder="Select column" /></SelectTrigger>
       <SelectContent>
         {allowNone && <SelectItem value={NONE}>— none —</SelectItem>}
-        {detectedColumns.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+        {headers.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
       </SelectContent>
     </Select>
   );
+
+  const dirPill = (d: ResolvedDirection) => {
+    const cls = d === "in" ? "bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300"
+      : d === "out" ? "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300"
+      : "bg-muted text-muted-foreground";
+    return <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${cls}`}>{d}</span>;
+  };
 
   return (
     <div className="space-y-6">
       <div className="page-header">
         <div>
           <h1 className="page-title">Import Attendance</h1>
-          <p className="page-description">Upload a biometric device export, map its columns, and match punches to employees.</p>
+          <p className="page-description">Upload a biometric device export — columns are auto-detected, validated, and matched to employees.</p>
         </div>
       </div>
 
-      {/* Step 1 — Upload */}
+      {/* Section A — Upload & profile */}
       <Card>
-        <CardHeader><CardTitle className="text-base flex items-center gap-2"><Upload className="w-4 h-4" />1. Upload file</CardTitle></CardHeader>
-        <CardContent className="space-y-2">
-          <Input type="file" accept=".csv,.xlsx,.xls" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
-          {fileName && <p className="text-sm text-muted-foreground">{fileName} — {dataRows.length} rows, {detectedColumns.length} columns detected.</p>}
+        <CardHeader><CardTitle className="text-base flex items-center gap-2"><Upload className="w-4 h-4" />1. Upload &amp; profile</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Saved device profile</Label>
+              <Select value={profileId} onValueChange={applyProfile}>
+                <SelectTrigger><SelectValue placeholder="None — auto-detect" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>None — auto-detect</SelectItem>
+                  {profiles?.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>File (.csv, .xlsx, .xls)</Label>
+              <Input type="file" accept=".csv,.xlsx,.xls" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
+            </div>
+          </div>
+          {fileName && (
+            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <span>{fileName} — {rows.length} rows, {headers.length} columns.</span>
+              {autoDetected && <Badge variant="outline" className="text-primary border-primary/40"><Sparkles className="w-3 h-3 mr-1" />Auto-detected — please confirm</Badge>}
+              {profileId !== NONE && <Badge variant="secondary">Profile: {profiles?.find((p: any) => p.id === profileId)?.name}</Badge>}
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {detectedColumns.length > 0 && (
+      {cfg && headers.length > 0 && (
         <>
-          {/* Step 2 — Profile + Mapping */}
+          {/* Section B — Mapping controls */}
           <Card>
-            <CardHeader><CardTitle className="text-base">2. Device profile & column mapping</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">2. Column mapping</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Saved profile</Label>
-                  <Select value={profileId} onValueChange={applyProfile}>
-                    <SelectTrigger><SelectValue placeholder="None — map manually" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NONE}>None — map manually</SelectItem>
-                      {profiles?.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div><Label>Device ID column *</Label>{columnSelect(mapping.device_id, (v) => setMapping((m) => ({ ...m, device_id: v })))}</div>
+                <div><Label>Device ID *</Label>{columnSelect(cfg.mapping.device_id, (v) => patchMapping({ device_id: v }))}</div>
                 <div className="flex items-end">
                   <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={hasSeparateDateTime} onChange={(e) => setHasSeparateDateTime(e.target.checked)} />
-                    Date &amp; time are in separate columns
+                    <Checkbox checked={cfg.has_separate_date_time} onCheckedChange={(c) => {
+                      const on = !!c;
+                      if (on && !cfg.mapping.time) { const ad = autoDetect(headers); patchCfg({ has_separate_date_time: true, mapping: { ...cfg.mapping, time: ad.mapping.time } }); }
+                      else patchCfg({ has_separate_date_time: on });
+                    }} />
+                    Date &amp; time in separate columns
                   </label>
                 </div>
-                {hasSeparateDateTime ? (
+                {cfg.has_separate_date_time ? (
                   <>
-                    <div><Label>Date column *</Label>{columnSelect(mapping.date, (v) => setMapping((m) => ({ ...m, date: v })))}</div>
-                    <div><Label>Time column</Label>{columnSelect(mapping.time, (v) => setMapping((m) => ({ ...m, time: v })), true)}</div>
+                    <div><Label>Date *</Label>{columnSelect(cfg.mapping.date, (v) => patchMapping({ date: v }))}</div>
+                    <div><Label>Time *</Label>{columnSelect(cfg.mapping.time, (v) => patchMapping({ time: v }))}</div>
                   </>
                 ) : (
-                  <div><Label>Combined DateTime column *</Label>{columnSelect(mapping.datetime, (v) => setMapping((m) => ({ ...m, datetime: v })))}</div>
+                  <div><Label>Date &amp; time (combined) *</Label>{columnSelect(cfg.mapping.datetime, (v) => patchMapping({ datetime: v }))}</div>
                 )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Direction mode</Label>
-                  <Select value={directionMode} onValueChange={(v) => setDirectionMode(v as any)}>
+                  <Select value={cfg.direction_mode} onValueChange={(v) => patchCfg({ direction_mode: v as any })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="inferred">Inferred (alternating in/out)</SelectItem>
@@ -264,87 +314,132 @@ export default function AttendanceImport() {
                     </SelectContent>
                   </Select>
                 </div>
-                {directionMode === "explicit" && (
-                  <div><Label>Direction column</Label>{columnSelect(mapping.direction, (v) => setMapping((m) => ({ ...m, direction: v })), true)}</div>
-                )}
+                <div><Label>Direction column</Label>{columnSelect(cfg.mapping.direction, (v) => patchMapping({ direction: v }), true, cfg.direction_mode === "inferred")}</div>
               </div>
 
-              <div className="flex items-center gap-4 pt-2 border-t">
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={saveAsNew} onChange={(e) => setSaveAsNew(e.target.checked)} />
-                  Save this mapping as a new profile
-                </label>
-                {saveAsNew && <Input className="max-w-xs" placeholder="Profile name (e.g. ZKTeco K40)" value={newProfileName} onChange={(e) => setNewProfileName(e.target.value)} />}
+              {cfg.direction_mode === "explicit" && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div><Label>"In" values (comma-separated)</Label>
+                    <Input value={cfg.in_values.join(", ")} onChange={(e) => patchCfg({ in_values: e.target.value.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean) })} />
+                  </div>
+                  <div><Label>"Out" values (comma-separated)</Label>
+                    <Input value={cfg.out_values.join(", ")} onChange={(e) => patchCfg({ out_values: e.target.value.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean) })} />
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-4">
+                <div><Label>Debounce (seconds)</Label>
+                  <Input type="number" value={cfg.debounce_seconds} onChange={(e) => patchCfg({ debounce_seconds: Number(e.target.value) })} />
+                  <p className="text-[11px] text-muted-foreground mt-1">Collapse repeat scans within N seconds.</p>
+                </div>
+                <div><Label>Period start</Label><Input type="date" value={effStart} onChange={(e) => setPeriodStart(e.target.value)} /></div>
+                <div><Label>Period end</Label><Input type="date" value={effEnd} onChange={(e) => setPeriodEnd(e.target.value)} /></div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2 border-t">
+                {!savingProfile ? (
+                  <Button variant="outline" size="sm" onClick={() => setSavingProfile(true)}><Wand2 className="w-4 h-4" />Save as profile</Button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Input className="max-w-xs" placeholder="Profile name (e.g. ZKTeco K40)" value={profileName} onChange={(e) => setProfileName(e.target.value)} />
+                    <Button size="sm" onClick={handleSaveProfile} disabled={saveProfile.isPending}>Save</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setSavingProfile(false)}>Cancel</Button>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
 
-          {/* Step 3 — Review */}
-          {mapping.device_id && (hasSeparateDateTime ? mapping.date : mapping.datetime) && (
+          {/* Section C/D/E — Preview, gates, inline resolution */}
+          {deviceIdMapped && dateMapped && (
             <Card>
-              <CardHeader><CardTitle className="text-base">3. Review &amp; import</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="text-base">3. Preview &amp; validate</CardTitle></CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="secondary">{punches.length} valid punches</Badge>
-                  <Badge className="bg-green-600">{matchedCount} matched</Badge>
-                  <Badge variant="destructive">{punches.length - matchedCount} unmatched</Badge>
-                  {skipped.length > 0 && <Badge variant="outline" className="text-amber-600 border-amber-600"><AlertTriangle className="w-3 h-3 mr-1" />{skipped.length} skipped</Badge>}
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <Badge variant="secondary">{model.matchedCount}/{model.total} matched</Badge>
+                  <Badge variant="outline" className="text-amber-600 border-amber-500/50">{model.unmatchedIds.length} device IDs need linking</Badge>
+                  {model.failCount > 0 && <Badge variant="outline" className="text-rose-600 border-rose-500/50">{model.failCount} unreadable dates</Badge>}
+                  <span className="text-[11px] text-muted-foreground">Dates parsed in US (mm/dd) order — if timestamps look wrong, the date column or format is the cause.</span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 max-w-md">
-                  <div><Label>Period start</Label><Input type="date" value={effStart} onChange={(e) => setPeriodStart(e.target.value)} /></div>
-                  <div><Label>Period end</Label><Input type="date" value={effEnd} onChange={(e) => setPeriodEnd(e.target.value)} /></div>
-                </div>
-
-                {unmatchedIds.length > 0 && (
-                  <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-3 text-sm">
-                    <p className="font-medium text-amber-800 dark:text-amber-300">Unmatched device IDs (set <code>biometric_id</code> on these employees):</p>
-                    <p className="text-amber-700 dark:text-amber-400 mt-1 break-words">{unmatchedIds.join(", ")}</p>
+                {hasOverlap && (
+                  <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-3 text-sm space-y-2">
+                    <p className="font-medium text-amber-800 dark:text-amber-300 flex items-center gap-2"><AlertTriangle className="w-4 h-4" />Overlapping batch already imported</p>
+                    <p className="text-amber-700 dark:text-amber-400">
+                      A batch covering this period was already imported on {new Date(overlaps![0].created_at).toLocaleDateString()} ({overlaps![0].file_name}, {overlaps![0].total_rows} rows). Importing again may double-count hours.
+                    </p>
+                    <label className="flex items-center gap-2 text-amber-800 dark:text-amber-300">
+                      <Checkbox checked={acknowledgedOverlap} onCheckedChange={(c) => setAcknowledgedOverlap(!!c)} /> Import anyway
+                    </label>
                   </div>
                 )}
 
-                {skipped.length > 0 && (
-                  <details className="text-sm">
-                    <summary className="cursor-pointer text-muted-foreground">{skipped.length} rows skipped (click to view)</summary>
-                    <ul className="mt-2 max-h-40 overflow-auto list-disc pl-6 text-muted-foreground">
-                      {skipped.slice(0, 100).map((s) => <li key={s.row}>Row {s.row}: {s.reason}</li>)}
-                    </ul>
-                  </details>
-                )}
-
-                {/* Preview */}
-                <div className="rounded-md border overflow-auto max-h-72">
-                  <table className="data-table text-xs">
-                    <thead><tr><th>Device ID</th><th>Punch At</th><th>Direction</th><th>Employee</th></tr></thead>
+                {/* Preview table */}
+                <div className="rounded-md border overflow-x-auto">
+                  <table className="data-table text-xs" style={{ tableLayout: "fixed" }}>
+                    <thead><tr><th>Employee</th><th>Device ID</th><th>Punch timestamp</th><th>Direction</th></tr></thead>
                     <tbody>
-                      {punches.slice(0, 10).map((p, i) => (
-                        <tr key={i}>
-                          <td>{p.raw_device_id}</td>
-                          <td>{new Date(p.punch_at).toLocaleString()}</td>
-                          <td>{p.direction}</td>
-                          <td>{p.employee_id
-                            ? <span className="text-green-600">matched</span>
-                            : <span className="text-destructive">—</span>}</td>
-                        </tr>
-                      ))}
+                      {previewSample.map((e, i) => {
+                        const emp = e.employee_id ? employees?.find((x: any) => x.id === e.employee_id) : null;
+                        return (
+                          <tr key={i}>
+                            <td>{emp ? <span className="text-green-600 inline-flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />{emp.first_name} {emp.last_name}</span>
+                              : <span className="text-amber-600">Unmatched</span>}</td>
+                            <td className="font-mono">{e.raw_device_id || "—"}</td>
+                            <td className={`font-mono ${!e.punch_at ? "text-rose-600" : ""}`}>{e.punch_at ? new Date(e.punch_at).toLocaleString() : "unparseable"}</td>
+                            <td>{dirPill(e.direction)}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
 
+                {/* Inline biometric-ID resolution */}
+                {model.unmatchedIds.length > 0 && (
+                  <div className="rounded-md border p-3 space-y-2">
+                    <p className="text-sm font-medium">Link unmatched device IDs to employees</p>
+                    <p className="text-[11px] text-muted-foreground">Selecting an employee saves their <code>biometric_id</code> — all rows for that device flip to matched, and future imports need no linking.</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {model.unmatchedIds.slice(0, 50).map((did) => (
+                        <div key={did} className="flex items-center gap-2">
+                          <span className="font-mono text-xs w-28 shrink-0 truncate" title={did}>{did}</span>
+                          <Select onValueChange={(v) => linkEmployee(did, v)}>
+                            <SelectTrigger className="h-8"><SelectValue placeholder="Assign employee…" /></SelectTrigger>
+                            <SelectContent>
+                              {employees?.map((emp: any) => (
+                                <SelectItem key={emp.id} value={emp.id}>
+                                  {(emp.employee_number ? `${emp.employee_number} — ` : "")}{emp.first_name} {emp.last_name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Commit */}
                 {!committedBatchId ? (
-                  <div className="flex justify-end">
-                    <Button onClick={handleImport} disabled={importPunches.isPending || saveProfile.isPending || !punches.length}>
-                      {importPunches.isPending ? "Importing..." : `Import ${punches.length} punches`}
+                  <div className="flex items-center justify-end gap-3">
+                    {!canImport && <span className="text-xs text-muted-foreground">{gateReason}</span>}
+                    <Button onClick={handleImport} disabled={!canImport || importPunches.isPending}>
+                      {importPunches.isPending ? "Importing..." : "Import"}
                     </Button>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between rounded-md border border-green-300 bg-green-50 dark:bg-green-950/20 p-3">
-                    <span className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400">
-                      <CheckCircle2 className="w-4 h-4" /> Batch imported. Run aggregation to build daily attendance.
-                    </span>
-                    <Button onClick={() => aggregate.mutate(committedBatchId)} disabled={aggregate.isPending}>
-                      {aggregate.isPending ? "Aggregating..." : "Run aggregation"}
-                    </Button>
+                  <div className="rounded-md border border-green-300 bg-green-50 dark:bg-green-950/20 p-3 space-y-2">
+                    <p className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400"><CheckCircle2 className="w-4 h-4" />Batch imported.</p>
+                    <p className="text-sm text-muted-foreground">
+                      {model.total} rows · {model.matchedCount} matched · {model.total - model.matchedCount} unmatched · {collapsedCount} duplicate scans collapsed.
+                    </p>
+                    <div className="flex justify-end">
+                      <Button onClick={() => aggregate.mutate(committedBatchId)} disabled={aggregate.isPending}>
+                        {aggregate.isPending ? "Aggregating..." : "Run aggregation"}
+                      </Button>
+                    </div>
                   </div>
                 )}
               </CardContent>

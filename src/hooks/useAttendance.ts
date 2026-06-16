@@ -249,13 +249,50 @@ export function useSaveDeviceProfile() {
   const qc = useQueryClient();
   const { appUser } = useAuth();
   return useMutation({
-    mutationFn: async (p: any) => {
+    mutationFn: async (p: {
+      name: string; file_format: string; column_mapping: any;
+      has_separate_date_time: boolean; direction_mode: string;
+      in_values: string[]; out_values: string[]; debounce_seconds: number;
+    }) => {
       const { data, error } = await supabase.from("attendance_device_profiles")
         .insert({ ...p, tenant_id: appUser?.tenant_id }).select().single();
       if (error) throw error;
       return data;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["attendance_device_profiles"] }); toast.success("Device profile saved"); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// Re-import guard: find batches whose period overlaps [start,end].
+export function useOverlappingBatches(periodStart?: string, periodEnd?: string) {
+  return useQuery({
+    queryKey: ["attendance_overlap", periodStart, periodEnd],
+    enabled: !!periodStart && !!periodEnd,
+    queryFn: async () => {
+      // overlap: existing.period_start <= end AND existing.period_end >= start
+      const { data, error } = await supabase
+        .from("attendance_import_batches")
+        .select("id, file_name, period_start, period_end, total_rows, created_at")
+        .lte("period_start", periodEnd!)
+        .gte("period_end", periodStart!)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+// Write a biometric_id back onto an employee (inline resolution).
+export function useSetBiometricId() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ employeeId, biometricId }: { employeeId: string; biometricId: string }) => {
+      const { error } = await supabase.from("employees")
+        .update({ biometric_id: biometricId }).eq("id", employeeId);
+      if (error) throw error;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["employees"] }); toast.success("Linked device ID to employee"); },
     onError: (e: Error) => toast.error(e.message),
   });
 }
@@ -277,7 +314,7 @@ export function useImportPunches() {
   const { appUser } = useAuth();
   return useMutation({
     mutationFn: async (args: {
-      fileName: string; deviceProfileId?: string;
+      fileName: string; fileFormat: string; deviceProfileId?: string | null;
       periodStart?: string; periodEnd?: string;
       rows: { raw_device_id: string; punch_at: string; direction: string; raw_row: any; employee_id: string | null }[];
     }) => {
@@ -303,7 +340,7 @@ export function useImportPunches() {
       }
       return batch;
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["attendance_import_batches"] }); toast.success("Punches imported"); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["attendance_import_batches"] }); },
     onError: (e: Error) => toast.error(e.message),
   });
 }
@@ -345,7 +382,7 @@ export function useAggregateBatch() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["attendance_import_batches"] }); toast.success("Attendance aggregated"); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["attendance_daily"] }); toast.success("Attendance aggregated"); },
     onError: (e: Error) => toast.error(e.message),
   });
 }
