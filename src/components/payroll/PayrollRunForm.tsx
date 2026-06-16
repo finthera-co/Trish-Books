@@ -10,7 +10,7 @@ import { useApprovedLeaveForPeriod } from "@/hooks/useLeave";
 import { computePayFromAttendance } from "@/lib/attendanceMapping";
 import { formatCurrency } from "@/lib/currency";
 import { toast } from "sonner";
-import { ChevronRight, ChevronLeft, Calculator, Users, AlertTriangle, CalendarClock } from "lucide-react";
+import { ChevronRight, ChevronLeft, Calculator, Users, AlertTriangle, CalendarClock, Search } from "lucide-react";
 
 interface Props {
   open: boolean;
@@ -70,6 +70,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
   const [scheduleId, setScheduleId] = useState("");
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<EmployeePayItem[]>([]);
+  const [empSearch, setEmpSearch] = useState("");
 
   const { data: employees } = useEmployees();
   const { data: schedules } = usePaySchedules();
@@ -280,7 +281,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) resetForm(); }}>
-      <DialogContent className={`${step === 2 ? "max-w-6xl" : "max-w-4xl"} max-h-[85vh] overflow-y-auto`}>
+      <DialogContent className={`${step === 2 ? "max-w-[95vw] xl:max-w-7xl" : "max-w-2xl"} max-h-[90vh] overflow-hidden flex flex-col`}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Calculator className="w-5 h-5" />
@@ -341,7 +342,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
 
         {/* Step 2: Select employees & enter pay details */}
         {step === 2 && (
-          <div className="space-y-4">
+          <div className="space-y-4 flex flex-col flex-1 min-h-0">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
                 <Users className="w-4 h-4" />
@@ -367,32 +368,46 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                 : "No aggregated attendance found for this period. Import & aggregate punches first."}
             </p>
 
-            <div className="border border-border rounded-lg overflow-x-auto overflow-y-auto max-h-[55vh]">
-              <table className="w-full text-sm min-w-[860px]">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search employees by name or department..."
+                value={empSearch}
+                onChange={(e) => setEmpSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 text-sm border border-input rounded-md bg-background text-foreground"
+              />
+            </div>
+
+            <div className="border border-border rounded-lg overflow-auto flex-1">
+              <table className="w-full text-sm min-w-[1100px]">
                 <thead className="bg-muted/50 sticky top-0 z-30">
                   <tr>
-                    <th className="px-3 py-2 text-left font-medium text-muted-foreground w-8 sticky left-0 z-20 bg-muted/50"></th>
-                    <th className="px-3 py-2 text-left font-medium text-muted-foreground sticky left-8 z-20 bg-muted/50">Employee</th>
-                    <th className="px-3 py-2 text-right font-medium text-muted-foreground">Basic Salary</th>
-                    <th className="px-2 py-2 text-right font-medium text-muted-foreground" title="Hours worked (imported from attendance)">Worked h</th>
-                    <th className="px-2 py-2 text-right font-medium text-muted-foreground" title="Overtime hours (imported from attendance)">OT h</th>
-                    <th className="px-2 py-2 text-right font-medium text-muted-foreground" title="Days present">Pres.</th>
-                    <th className="px-2 py-2 text-right font-medium text-muted-foreground" title="Unpaid absent days">Unpaid Abs.</th>
-                    <th className="px-3 py-2 text-right font-medium text-muted-foreground" title="Pro-rata no-pay deduction — editable">Att. Ded.</th>
-                    <th className="px-3 py-2 text-right font-medium text-muted-foreground" title="Earned basic = Basic − Attendance Deduction">Earned Basic</th>
-                    <th className="px-3 py-2 text-right font-medium text-muted-foreground">OT Pay</th>
-                    <th className="px-3 py-2 text-right font-medium text-muted-foreground">Bonuses</th>
-                    <th className="px-3 py-2 text-right font-medium text-muted-foreground">Allowances</th>
-                    <th className="px-3 py-2 text-right font-medium text-muted-foreground">Other Ded.</th>
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground w-8 sticky left-0 z-40 bg-muted whitespace-nowrap"></th>
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground sticky left-8 z-40 bg-muted whitespace-nowrap">Employee</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">Basic Salary</th>
+                    <th className="px-2 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Hours worked (imported from attendance)">Worked h</th>
+                    <th className="px-2 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Overtime hours (imported from attendance)">OT h</th>
+                    <th className="px-2 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Days present">Pres.</th>
+                    <th className="px-2 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Unpaid absent days">Unpaid Abs.</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Pro-rata no-pay deduction — editable">Att. Ded.</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Earned basic = Basic − Attendance Deduction">Earned Basic</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">OT Pay</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">Bonuses</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">Allowances</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">Other Ded.</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item, idx) => (
+                  {items.map((item, idx) => {
+                    const q = empSearch.trim().toLowerCase();
+                    if (q && !(`${item.name} ${item.department}`.toLowerCase().includes(q))) return null;
+                    return (
                     <tr key={item.employee_id} className={`border-t border-border ${!item.selected ? "opacity-40" : ""}`}>
-                      <td className="px-3 py-2 sticky left-0 z-10 bg-background">
+                      <td className="px-3 py-2 sticky left-0 z-20 bg-background">
                         <Checkbox checked={item.selected} onCheckedChange={(c) => updateItem(idx, "selected", !!c)} />
                       </td>
-                      <td className="px-3 py-2 sticky left-8 z-10 bg-background">
+                      <td className="px-3 py-2 sticky left-8 z-20 bg-background">
                         <div className="font-medium text-foreground whitespace-nowrap">{item.name}</div>
                         <div className="text-xs text-muted-foreground">{item.department}</div>
                         {item.attendance_applied && <div className="text-[11px] text-green-600">from attendance</div>}
@@ -415,7 +430,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                       <td className="px-3 py-2">
                         <input type="number" value={item.attendance_deduction || ""} onChange={(e) => updateItem(idx, "attendance_deduction", Number(e.target.value))}
                           title={item.attendance_override ? "Manually overridden" : "Auto: (basic ÷ working days) × unpaid absent days"}
-                          className={`w-20 text-right text-sm border rounded px-2 py-1 bg-background text-foreground ${item.attendance_override ? "border-primary" : "border-input"}`} />
+                          className={`w-28 text-right text-sm border rounded px-2 py-1 bg-background text-foreground ${item.attendance_override ? "border-primary" : "border-input"}`} />
                       </td>
                       <td className="px-3 py-2 text-right font-medium text-foreground">{formatCurrency(earnedBasic(item))}</td>
                       <td className="px-3 py-2">
@@ -435,7 +450,8 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                           className="w-28 text-right text-sm border border-input rounded px-2 py-1 bg-background text-foreground" />
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
