@@ -6,6 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useEmployees } from "@/hooks/useData";
 import { usePaySchedules, useCreatePayrollRun, type PayrollRunInput } from "@/hooks/usePayroll";
 import { useAttendanceSummary, useAttendanceSummaryForPeriod, workingDaysInPeriod } from "@/hooks/useAttendance";
+import { useApprovedLeaveForPeriod } from "@/hooks/useLeave";
 import { computePayFromAttendance } from "@/lib/attendanceMapping";
 import { formatCurrency } from "@/lib/currency";
 import { toast } from "sonner";
@@ -74,6 +75,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
   const { data: schedules } = usePaySchedules();
   const { data: attendanceSummary } = useAttendanceSummary(periodStart || undefined, periodEnd || undefined);
   const { data: biometricSummary, isFetching: loadingAttendance } = useAttendanceSummaryForPeriod(periodStart || undefined, periodEnd || undefined);
+  const { data: leaveSummary } = useApprovedLeaveForPeriod(periodStart || undefined, periodEnd || undefined);
   const createRun = useCreatePayrollRun();
 
   const activeEmployees = useMemo(() =>
@@ -181,13 +183,15 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
       const s = biometricSummary[item.employee_id];
       if (!s) return { ...item, attendance_missing: true, attendance_applied: false };
       applied += 1;
+      // Unpaid (no-pay) leave days reduce earned basic just like absences; paid leave does not.
+      const unpaidLeave = leaveSummary?.[item.employee_id]?.unpaid_leave_days ?? 0;
       const result = computePayFromAttendance({
         payRateType: item.pay_rate_type,
         contractualBasic: Number(emp?.salary ?? item.basic_salary) || 0,
         hourlyRate: Number(emp?.pay_rate ?? item.pay_rate) || 0,
         workedHours: s.worked_hours,
         otHours: s.ot_hours,
-        absentDays: s.absent_days,
+        absentDays: s.absent_days + unpaidLeave,
         halfDays: s.half_days,
         workingDays,
       });
@@ -199,7 +203,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
         overtime_pay: result.overtime_pay,
         working_days: workingDays,
         days_present: s.present_days,
-        unpaid_absent_days: s.absent_days,
+        unpaid_absent_days: s.absent_days + unpaidLeave,
         attendance_deduction: 0,
         attendance_override: true,
         has_attendance: true,
@@ -276,7 +280,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) resetForm(); }}>
-      <DialogContent className="max-w-6xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className={`${step === 2 ? "max-w-6xl" : "max-w-4xl"} max-h-[85vh] overflow-y-auto`}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Calculator className="w-5 h-5" />
@@ -363,12 +367,12 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                 : "No aggregated attendance found for this period. Import & aggregate punches first."}
             </p>
 
-            <div className="border border-border rounded-lg overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/50">
+            <div className="border border-border rounded-lg overflow-x-auto overflow-y-auto max-h-[55vh]">
+              <table className="w-full text-sm min-w-[860px]">
+                <thead className="bg-muted/50 sticky top-0 z-30">
                   <tr>
-                    <th className="px-3 py-2 text-left font-medium text-muted-foreground w-8"></th>
-                    <th className="px-3 py-2 text-left font-medium text-muted-foreground">Employee</th>
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground w-8 sticky left-0 z-20 bg-muted/50"></th>
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground sticky left-8 z-20 bg-muted/50">Employee</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground">Basic Salary</th>
                     <th className="px-2 py-2 text-right font-medium text-muted-foreground" title="Hours worked (imported from attendance)">Worked h</th>
                     <th className="px-2 py-2 text-right font-medium text-muted-foreground" title="Overtime hours (imported from attendance)">OT h</th>
@@ -385,10 +389,10 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                 <tbody>
                   {items.map((item, idx) => (
                     <tr key={item.employee_id} className={`border-t border-border ${!item.selected ? "opacity-40" : ""}`}>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 sticky left-0 z-10 bg-background">
                         <Checkbox checked={item.selected} onCheckedChange={(c) => updateItem(idx, "selected", !!c)} />
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 sticky left-8 z-10 bg-background">
                         <div className="font-medium text-foreground whitespace-nowrap">{item.name}</div>
                         <div className="text-xs text-muted-foreground">{item.department}</div>
                         {item.attendance_applied && <div className="text-[11px] text-green-600">from attendance</div>}
@@ -400,7 +404,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                       </td>
                       <td className="px-3 py-2">
                         <input type="number" value={item.basic_salary || ""} onChange={(e) => updateItem(idx, "basic_salary", Number(e.target.value))}
-                          className="w-24 text-right text-sm border border-input rounded px-2 py-1 bg-background text-foreground" />
+                          className="w-32 text-right text-sm border border-input rounded px-2 py-1 bg-background text-foreground" />
                       </td>
                       <td className="px-2 py-2 text-right text-muted-foreground">{item.has_attendance ? item.hours_worked : "—"}</td>
                       <td className={`px-2 py-2 text-right ${item.overtime_hours > 0 ? "text-foreground font-medium" : "text-muted-foreground"}`}>{item.has_attendance ? item.overtime_hours : "—"}</td>
@@ -416,19 +420,19 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                       <td className="px-3 py-2 text-right font-medium text-foreground">{formatCurrency(earnedBasic(item))}</td>
                       <td className="px-3 py-2">
                         <input type="number" value={item.overtime_pay || ""} onChange={(e) => updateItem(idx, "overtime_pay", Number(e.target.value))}
-                          className="w-20 text-right text-sm border border-input rounded px-2 py-1 bg-background text-foreground" />
+                          className="w-28 text-right text-sm border border-input rounded px-2 py-1 bg-background text-foreground" />
                       </td>
                       <td className="px-3 py-2">
                         <input type="number" value={item.bonuses || ""} onChange={(e) => updateItem(idx, "bonuses", Number(e.target.value))}
-                          className="w-20 text-right text-sm border border-input rounded px-2 py-1 bg-background text-foreground" />
+                          className="w-28 text-right text-sm border border-input rounded px-2 py-1 bg-background text-foreground" />
                       </td>
                       <td className="px-3 py-2">
                         <input type="number" value={item.allowances || ""} onChange={(e) => updateItem(idx, "allowances", Number(e.target.value))}
-                          className="w-20 text-right text-sm border border-input rounded px-2 py-1 bg-background text-foreground" />
+                          className="w-28 text-right text-sm border border-input rounded px-2 py-1 bg-background text-foreground" />
                       </td>
                       <td className="px-3 py-2">
                         <input type="number" value={item.other_deductions || ""} onChange={(e) => updateItem(idx, "other_deductions", Number(e.target.value))}
-                          className="w-20 text-right text-sm border border-input rounded px-2 py-1 bg-background text-foreground" />
+                          className="w-28 text-right text-sm border border-input rounded px-2 py-1 bg-background text-foreground" />
                       </td>
                     </tr>
                   ))}

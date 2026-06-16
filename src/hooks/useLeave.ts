@@ -1,40 +1,10 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
-export type LeaveRequestStatus = "pending" | "approved" | "rejected" | "cancelled";
+export type LeaveRequestStatus = "pending" | "approved" | "rejected" | "cancelled" | "settled";
 
-export interface LeaveType {
-  id: string;
-  tenant_id: string;
-  name: string;
-  code: string;
-  is_paid: boolean;
-  annual_entitlement: number;
-  requires_approval: boolean;
-  is_active: boolean;
-}
-
-export interface LeaveRequest {
-  id: string;
-  tenant_id: string;
-  employee_id: string;
-  leave_type_id: string;
-  start_date: string;
-  end_date: string;
-  days: number;
-  is_half_day: boolean;
-  reason: string | null;
-  status: LeaveRequestStatus;
-  approved_at: string | null;
-  rejection_reason: string | null;
-  created_at: string;
-  employees?: { first_name: string; last_name: string; department: string | null };
-  leave_types?: { name: string; code: string; is_paid: boolean };
-}
-
-// Helper: Write audit log
 async function writeAuditLog(action: string, tableName: string, recordId?: string, details?: Record<string, any>) {
   try {
     const { data: { user } } = await supabase.auth.getUser();
@@ -48,167 +18,159 @@ async function writeAuditLog(action: string, tableName: string, recordId?: strin
   } catch { /* silent */ }
 }
 
-function invalidateLeaveQueries(qc: ReturnType<typeof useQueryClient>) {
-  qc.invalidateQueries({ queryKey: ["leave_requests"] });
-  qc.invalidateQueries({ queryKey: ["attendance_records"] });
-  qc.invalidateQueries({ queryKey: ["attendance_summary"] });
-  qc.invalidateQueries({ queryKey: ["employees"] });
-}
-
+// ---- Types ----
 export function useLeaveTypes() {
   return useQuery({
     queryKey: ["leave_types"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("leave_types")
-        .select("*")
-        .eq("is_active", true)
-        .order("name");
-      if (error) throw error;
-      return data as LeaveType[];
+      const { data, error } = await supabase.from("leave_types").select("*").order("name");
+      if (error) throw error; return data;
     },
   });
 }
-
-export function useCreateLeaveType() {
-  const qc = useQueryClient();
-  const { appUser } = useAuth();
+export function useUpsertLeaveType() {
+  const qc = useQueryClient(); const { appUser } = useAuth();
   return useMutation({
-    mutationFn: async (type: { name: string; code: string; is_paid: boolean; annual_entitlement: number }) => {
-      const { data, error } = await supabase
-        .from("leave_types")
-        .insert({ ...type, tenant_id: appUser?.tenant_id })
-        .select()
-        .single();
-      if (error) throw error;
-      writeAuditLog("Leave Type Created", "leave_types", data.id, { name: type.name, code: type.code });
-      return data;
+    mutationFn: async (t: any) => {
+      const row = { ...t, tenant_id: appUser?.tenant_id };
+      const { data, error } = t.id
+        ? await supabase.from("leave_types").update(row).eq("id", t.id).select().single()
+        : await supabase.from("leave_types").insert(row).select().single();
+      if (error) throw error; return data;
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["leave_types"] });
-      toast.success("Leave type created");
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["leave_types"] }); toast.success("Leave type saved"); },
     onError: (e: Error) => toast.error(e.message),
   });
 }
 
-export function useUpdateLeaveType() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id, ...updates }: { id: string; name?: string; is_paid?: boolean; annual_entitlement?: number; is_active?: boolean }) => {
-      const { error } = await supabase.from("leave_types").update(updates).eq("id", id);
-      if (error) throw error;
-      writeAuditLog("Leave Type Updated", "leave_types", id, updates);
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["leave_types"] });
-      toast.success("Leave type updated");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-}
-
-export function useLeaveRequests(statusFilter?: LeaveRequestStatus) {
+// ---- Holidays ----
+export function useHolidays() {
   return useQuery({
-    queryKey: ["leave_requests", statusFilter || "all"],
+    queryKey: ["holidays"],
     queryFn: async () => {
-      let query = supabase
-        .from("leave_requests")
-        .select("*, employees(first_name, last_name, department), leave_types(name, code, is_paid)")
-        .order("created_at", { ascending: false });
-      if (statusFilter) query = query.eq("status", statusFilter);
-      const { data, error } = await query;
-      if (error) throw error;
-      return data as unknown as LeaveRequest[];
+      const { data, error } = await supabase.from("holidays").select("*").order("holiday_date");
+      if (error) throw error; return data;
     },
   });
 }
-
-export function useCreateLeaveRequest() {
-  const qc = useQueryClient();
-  const { appUser } = useAuth();
+export function useCreateHoliday() {
+  const qc = useQueryClient(); const { appUser } = useAuth();
   return useMutation({
-    mutationFn: async (request: {
-      employee_id: string;
-      leave_type_id: string;
-      start_date: string;
-      end_date: string;
-      days: number;
-      is_half_day?: boolean;
-      reason?: string;
-    }) => {
-      const { data, error } = await supabase
-        .from("leave_requests")
-        .insert({
-          ...request,
-          is_half_day: request.is_half_day || false,
-          tenant_id: appUser?.tenant_id,
-          created_by: appUser?.id,
-        })
-        .select()
-        .single();
+    mutationFn: async (h: { holiday_date: string; name: string; is_recurring?: boolean }) => {
+      const { data, error } = await supabase.from("holidays").insert({ ...h, tenant_id: appUser?.tenant_id }).select().single();
+      if (error) throw error; return data;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["holidays"] }); toast.success("Holiday added"); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+export function useDeleteHoliday() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => { const { error } = await supabase.from("holidays").delete().eq("id", id); if (error) throw error; },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["holidays"] }); toast.success("Holiday removed"); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ---- Balances ----
+export function useLeaveBalances(year?: number) {
+  const y = year ?? new Date().getFullYear();
+  return useQuery({
+    queryKey: ["leave_balances", y],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("leave_balances")
+        .select("*, leave_types(name, code, is_paid, color), employees(first_name, last_name, employee_number)")
+        .eq("year", y);
+      if (error) throw error; return data;
+    },
+  });
+}
+export function useAdjustLeaveBalance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, adjustment }: { id: string; adjustment: number }) => {
+      const { error } = await supabase.from("leave_balances").update({ adjustment }).eq("id", id);
       if (error) throw error;
-      writeAuditLog("Leave Request Created", "leave_requests", data.id, {
-        employee_id: request.employee_id, days: request.days,
-        start_date: request.start_date, end_date: request.end_date,
-      });
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["leave_balances"] }); toast.success("Balance adjusted"); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ---- Requests ----
+export function useLeaveRequests(status?: string) {
+  return useQuery({
+    queryKey: ["leave_requests", status ?? "all"],
+    queryFn: async () => {
+      let q = supabase.from("leave_requests")
+        .select("*, leave_types(name, code, is_paid, color), employees(first_name, last_name, employee_number)")
+        .order("created_at", { ascending: false });
+      if (status && status !== "all") q = q.eq("status", status);
+      const { data, error } = await q;
+      if (error) throw error; return data;
+    },
+  });
+}
+export function useCreateLeaveRequest() {
+  const qc = useQueryClient(); const { appUser } = useAuth();
+  return useMutation({
+    mutationFn: async (r: {
+      employee_id: string; leave_type_id: string; start_date: string; end_date: string;
+      is_half_day?: boolean; half_day_period?: string | null; reason?: string;
+    }) => {
+      const { data, error } = await supabase.from("leave_requests")
+        .insert({ ...r, status: "pending", tenant_id: appUser?.tenant_id, created_by: appUser?.id })
+        .select().single();
+      if (error) throw error;
+      writeAuditLog("Leave Requested", "leave_requests", data.id, { employee_id: r.employee_id });
       return data;
     },
-    onSuccess: () => {
-      invalidateLeaveQueries(qc);
-      toast.success("Leave request created");
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["leave_requests"] }); toast.success("Leave request submitted"); },
     onError: (e: Error) => toast.error(e.message),
   });
 }
+function rpcMutation(fn: string, msg: string, buildArgs: (v: any) => any) {
+  return () => {
+    const qc = useQueryClient();
+    return useMutation({
+      mutationFn: async (v: any) => {
+        const { data, error } = await supabase.rpc(fn as any, buildArgs(v));
+        if (error) throw error;
+        if (data && (data as any).ok === false) throw new Error((data as any).error || "Action failed");
+        return data;
+      },
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["leave_requests"] });
+        qc.invalidateQueries({ queryKey: ["leave_balances"] });
+        toast.success(msg);
+      },
+      onError: (e: Error) => toast.error(e.message),
+    });
+  };
+}
+export const useApproveLeaveRequest = rpcMutation("approve_leave_request", "Leave approved", (id: string) => ({ p_request_id: id }));
+export const useCancelLeaveRequest  = rpcMutation("cancel_leave_request",  "Leave cancelled", (id: string) => ({ p_request_id: id }));
+export const useRejectLeaveRequest  = rpcMutation("reject_leave_request",  "Leave rejected",  (v: { id: string; reason: string }) => ({ p_request_id: v.id, p_reason: v.reason }));
 
-export function useApproveLeaveRequest() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (requestId: string) => {
-      const { error } = await supabase.rpc("approve_leave_request", { p_request_id: requestId });
+// ---- For payroll: approved/settled leave days per employee within a period ----
+export function useApprovedLeaveForPeriod(periodStart?: string, periodEnd?: string) {
+  return useQuery({
+    queryKey: ["approved_leave", periodStart, periodEnd],
+    enabled: !!periodStart && !!periodEnd,
+    queryFn: async (): Promise<Record<string, { paid_leave_days: number; unpaid_leave_days: number }>> => {
+      const { data, error } = await supabase.from("leave_requests")
+        .select("employee_id, days, status, start_date, end_date, leave_types(is_paid)")
+        .in("status", ["approved", "settled"])
+        .lte("start_date", periodEnd!).gte("end_date", periodStart!);
       if (error) throw error;
-      writeAuditLog("Leave Request Approved", "leave_requests", requestId);
-    },
-    onSuccess: () => {
-      invalidateLeaveQueries(qc);
-      toast.success("Leave approved — attendance register updated");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-}
-
-export function useRejectLeaveRequest() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ requestId, reason }: { requestId: string; reason: string }) => {
-      const { error } = await supabase.rpc("reject_leave_request", {
-        p_request_id: requestId,
-        p_reason: reason,
+      const map: Record<string, { paid_leave_days: number; unpaid_leave_days: number }> = {};
+      (data ?? []).forEach((r: any) => {
+        const m = (map[r.employee_id] ??= { paid_leave_days: 0, unpaid_leave_days: 0 });
+        if (r.leave_types?.is_paid) m.paid_leave_days += Number(r.days) || 0;
+        else m.unpaid_leave_days += Number(r.days) || 0;
       });
-      if (error) throw error;
-      writeAuditLog("Leave Request Rejected", "leave_requests", requestId, { reason });
+      return map;
     },
-    onSuccess: () => {
-      invalidateLeaveQueries(qc);
-      toast.success("Leave request rejected");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-}
-
-export function useCancelLeaveRequest() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (requestId: string) => {
-      const { error } = await supabase.rpc("cancel_leave_request", { p_request_id: requestId });
-      if (error) throw error;
-      writeAuditLog("Leave Request Cancelled", "leave_requests", requestId);
-    },
-    onSuccess: () => {
-      invalidateLeaveQueries(qc);
-      toast.success("Leave request cancelled — balance restored");
-    },
-    onError: (e: Error) => toast.error(e.message),
   });
 }

@@ -615,6 +615,17 @@ export function useFinalizePayrollRun() {
         finalized_by: appUser?.id,
       }).eq("id", runId);
       if (error) throw error;
+
+      // Settle leave that falls in this run's period (approved -> settled, reserved -> taken).
+      // Idempotent: only touches 'approved' requests.
+      const { data: runRow } = await supabase.from("payroll_runs")
+        .select("period_start, period_end").eq("id", runId).single();
+      if (runRow) {
+        await supabase.rpc("settle_leave_for_period", {
+          p_period_start: runRow.period_start, p_period_end: runRow.period_end, p_run_id: runId,
+        });
+      }
+
       writeAuditLog("Payroll Run Finalized", "payroll_runs", runId);
     },
     onSuccess: () => {

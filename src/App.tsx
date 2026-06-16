@@ -49,7 +49,7 @@ import Employees from "./pages/Employees";
 import AttendanceRegister from "./pages/AttendanceRegister";
 import AttendanceImport from "./pages/AttendanceImport";
 import BiometricLinking from "./pages/BiometricLinking";
-import LeaveManagement from "./pages/LeaveManagement";
+import Leave from "./pages/Leave";
 import Reports from "./pages/Reports";
 import Budgets from "./pages/Budgets";
 import BudgetVsActual from "./pages/BudgetVsActual";
@@ -194,7 +194,7 @@ const App = () => (
                     <Route path="/payroll/attendance" element={<AttendanceRegister />} />
                     <Route path="/payroll/attendance-import" element={<AttendanceImport />} />
                     <Route path="/payroll/biometric-linking" element={<BiometricLinking />} />
-                    <Route path="/payroll/leave" element={<LeaveManagement />} />
+                    <Route path="/payroll/leave" element={<Leave />} />
                     <Route path="/payroll/liabilities" element={<PayrollLiabilities />} />
                   </Route>
 

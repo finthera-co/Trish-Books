@@ -5202,20 +5202,97 @@ export type Database = {
           },
         ]
       }
+      leave_balances: {
+        Row: {
+          adjustment: number
+          available: number | null
+          carried_forward: number
+          created_at: string
+          employee_id: string
+          entitled: number
+          id: string
+          leave_type_id: string
+          reserved: number
+          taken: number
+          tenant_id: string
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          adjustment?: number
+          available?: number | null
+          carried_forward?: number
+          created_at?: string
+          employee_id: string
+          entitled?: number
+          id?: string
+          leave_type_id: string
+          reserved?: number
+          taken?: number
+          tenant_id: string
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          adjustment?: number
+          available?: number | null
+          carried_forward?: number
+          created_at?: string
+          employee_id?: string
+          entitled?: number
+          id?: string
+          leave_type_id?: string
+          reserved?: number
+          taken?: number
+          tenant_id?: string
+          updated_at?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leave_balances_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leave_balances_leave_type_id_fkey"
+            columns: ["leave_type_id"]
+            isOneToOne: false
+            referencedRelation: "leave_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leave_balances_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leave_requests: {
         Row: {
           approved_at: string | null
           approved_by: string | null
+          cancelled_at: string | null
           created_at: string
           created_by: string | null
           days: number
           employee_id: string
           end_date: string
+          half_day_period: string | null
           id: string
           is_half_day: boolean
           leave_type_id: string
           reason: string | null
+          rejected_at: string | null
+          rejected_by: string | null
           rejection_reason: string | null
+          request_number: string | null
+          settled_at: string | null
+          settled_in_run_id: string | null
           start_date: string
           status: string
           tenant_id: string
@@ -5224,16 +5301,23 @@ export type Database = {
         Insert: {
           approved_at?: string | null
           approved_by?: string | null
+          cancelled_at?: string | null
           created_at?: string
           created_by?: string | null
           days: number
           employee_id: string
           end_date: string
+          half_day_period?: string | null
           id?: string
           is_half_day?: boolean
           leave_type_id: string
           reason?: string | null
+          rejected_at?: string | null
+          rejected_by?: string | null
           rejection_reason?: string | null
+          request_number?: string | null
+          settled_at?: string | null
+          settled_in_run_id?: string | null
           start_date: string
           status?: string
           tenant_id: string
@@ -5242,16 +5326,23 @@ export type Database = {
         Update: {
           approved_at?: string | null
           approved_by?: string | null
+          cancelled_at?: string | null
           created_at?: string
           created_by?: string | null
           days?: number
           employee_id?: string
           end_date?: string
+          half_day_period?: string | null
           id?: string
           is_half_day?: boolean
           leave_type_id?: string
           reason?: string | null
+          rejected_at?: string | null
+          rejected_by?: string | null
           rejection_reason?: string | null
+          request_number?: string | null
+          settled_at?: string | null
+          settled_in_run_id?: string | null
           start_date?: string
           status?: string
           tenant_id?: string
@@ -5287,6 +5378,20 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "leave_requests_rejected_by_fkey"
+            columns: ["rejected_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leave_requests_settled_in_run_id_fkey"
+            columns: ["settled_in_run_id"]
+            isOneToOne: false
+            referencedRelation: "payroll_runs"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "leave_requests_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
@@ -5297,34 +5402,46 @@ export type Database = {
       }
       leave_types: {
         Row: {
+          allow_negative_balance: boolean
           annual_entitlement: number
           code: string
+          color: string | null
           created_at: string
+          default_annual_quota: number
           id: string
           is_active: boolean
           is_paid: boolean
+          max_consecutive_days: number | null
           name: string
           requires_approval: boolean
           tenant_id: string
         }
         Insert: {
+          allow_negative_balance?: boolean
           annual_entitlement?: number
           code: string
+          color?: string | null
           created_at?: string
+          default_annual_quota?: number
           id?: string
           is_active?: boolean
           is_paid?: boolean
+          max_consecutive_days?: number | null
           name: string
           requires_approval?: boolean
           tenant_id: string
         }
         Update: {
+          allow_negative_balance?: boolean
           annual_entitlement?: number
           code?: string
+          color?: string | null
           created_at?: string
+          default_annual_quota?: number
           id?: string
           is_active?: boolean
           is_paid?: boolean
+          max_consecutive_days?: number | null
           name?: string
           requires_approval?: boolean
           tenant_id?: string
@@ -10835,10 +10952,7 @@ export type Database = {
         Args: { p_as_of_date?: string }
         Returns: Json
       }
-      approve_leave_request: {
-        Args: { p_request_id: string }
-        Returns: undefined
-      }
+      approve_leave_request: { Args: { p_request_id: string }; Returns: Json }
       approve_stock_adjustment: {
         Args: { p_adjustment_id: string }
         Returns: Json
@@ -10894,10 +11008,7 @@ export type Database = {
           balance: number
         }[]
       }
-      cancel_leave_request: {
-        Args: { p_request_id: string }
-        Returns: undefined
-      }
+      cancel_leave_request: { Args: { p_request_id: string }; Returns: Json }
       cancel_stock_count: { Args: { p_count_id: string }; Returns: Json }
       consume_inventory_fifo: {
         Args: {
@@ -10909,6 +11020,15 @@ export type Database = {
           p_reference_type?: string
         }
         Returns: Json
+      }
+      count_working_days: {
+        Args: {
+          p_end: string
+          p_is_half_day?: boolean
+          p_start: string
+          p_tenant_id: string
+        }
+        Returns: number
       }
       create_payment_voucher: {
         Args: {
@@ -10935,6 +11055,15 @@ export type Database = {
       }
       ensure_cash_over_short_account: {
         Args: { p_tenant_id: string }
+        Returns: string
+      }
+      ensure_leave_balance: {
+        Args: {
+          p_emp: string
+          p_tenant: string
+          p_type: string
+          p_year: number
+        }
         Returns: string
       }
       ensure_tax_account: {
@@ -11143,8 +11272,8 @@ export type Database = {
       }
       reconcile_inventory_qty: { Args: { p_item_id?: string }; Returns: Json }
       reject_leave_request: {
-        Args: { p_reason?: string; p_request_id: string }
-        Returns: undefined
+        Args: { p_reason: string; p_request_id: string }
+        Returns: Json
       }
       reject_stock_adjustment: {
         Args: { p_adjustment_id: string; p_reason: string }
@@ -11188,6 +11317,14 @@ export type Database = {
       seed_tax_engine_for_tenant: {
         Args: { p_tenant_id: string }
         Returns: undefined
+      }
+      settle_leave_for_period: {
+        Args: {
+          p_period_end: string
+          p_period_start: string
+          p_run_id?: string
+        }
+        Returns: Json
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
