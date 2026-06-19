@@ -6594,6 +6594,7 @@ export type Database = {
           days_present: number | null
           employee_epf: number
           employee_id: string
+          employee_paye: number
           employer_epf: number
           employer_etf: number
           gross_pay: number
@@ -6619,6 +6620,7 @@ export type Database = {
           days_present?: number | null
           employee_epf?: number
           employee_id: string
+          employee_paye?: number
           employer_epf?: number
           employer_etf?: number
           gross_pay?: number
@@ -6644,6 +6646,7 @@ export type Database = {
           days_present?: number | null
           employee_epf?: number
           employee_id?: string
+          employee_paye?: number
           employer_epf?: number
           employer_etf?: number
           gross_pay?: number
@@ -6748,6 +6751,7 @@ export type Database = {
           total_employer_etf: number
           total_gross: number
           total_net: number
+          total_paye: number
           updated_at: string
         }
         Insert: {
@@ -6775,6 +6779,7 @@ export type Database = {
           total_employer_etf?: number
           total_gross?: number
           total_net?: number
+          total_paye?: number
           updated_at?: string
         }
         Update: {
@@ -6802,6 +6807,7 @@ export type Database = {
           total_employer_etf?: number
           total_gross?: number
           total_net?: number
+          total_paye?: number
           updated_at?: string
         }
         Relationships: [

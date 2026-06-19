@@ -14,6 +14,7 @@ import PayrollRunDetails from "@/components/payroll/PayrollRunDetails";
 import PayStub from "@/components/payroll/PayStub";
 import PayScheduleManager from "@/components/payroll/PayScheduleManager";
 import { exportToCsv } from "@/lib/csvExport";
+import { buildEpfEtfReturn, buildPayeSchedule, buildBankDisbursement } from "@/lib/statutoryReturns";
 import { useSearchParams } from "react-router-dom";
 
 const statusColors: Record<string, string> = {
@@ -89,14 +90,14 @@ export default function Payroll() {
         "Employee Name", "Department", "EPF No.", "Bank", "Account No.",
         "Basic Salary", "Working Days", "Days Present", "Unpaid Absent", "No-Pay Deduction",
         "Overtime Pay", "Bonuses", "Allowances", "Gross Pay",
-        "Employee EPF (8%)", "Employer EPF (12%)", "Employer ETF (3%)",
+        "Employee EPF (8%)", "Employer EPF (12%)", "Employer ETF (3%)", "PAYE",
         "Other Deductions", "Total Deductions", "Net Pay", "Payment Method",
       ];
 
       const rows = (allItems || []).map((item: any) => {
         const run = runMap[item.run_id];
         const emp = item.employees as any;
-        const totalDed = Number(item.employee_epf) + Number(item.other_deductions);
+        const totalDed = Number(item.employee_epf) + Number(item.employee_paye || 0) + Number(item.other_deductions);
         return [
           run?.run_number || "", run?.period_start || "", run?.period_end || "",
           run?.status || "", run?.payment_date || "",
@@ -115,6 +116,7 @@ export default function Payroll() {
           Number(item.employee_epf).toFixed(2),
           Number(item.employer_epf).toFixed(2),
           Number(item.employer_etf).toFixed(2),
+          Number(item.employee_paye || 0).toFixed(2),
           Number(item.other_deductions).toFixed(2),
           totalDed.toFixed(2),
           Number(item.net_pay).toFixed(2),
@@ -124,6 +126,36 @@ export default function Payroll() {
 
       exportToCsv(`payroll-employee-breakdown-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
       toast.success(`Exported ${rows.length} employee records`);
+    } catch (e: any) {
+      toast.error("Export failed: " + e.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportStatutory = async (kind: "epf" | "paye" | "bank") => {
+    if (!filteredRuns.length) return;
+    setExporting(true);
+    try {
+      const runIds = filteredRuns.map((r: any) => r.id);
+      const { data: items, error } = await supabase
+        .from("payroll_run_items")
+        .select("*, employees(first_name, last_name, nic_number, epf_number, bank_name, bank_branch, bank_account_no, bank_account_name)")
+        .in("run_id", runIds)
+        .order("created_at");
+      if (error) throw error;
+      const tag = filteredRuns.length === 1 ? (filteredRuns[0] as any).run_number : new Date().toISOString().slice(0, 10);
+      if (kind === "epf") {
+        const { headers, rows } = buildEpfEtfReturn(items || []);
+        exportToCsv(`EPF-ETF-Return-${tag}.csv`, headers, rows);
+      } else if (kind === "paye") {
+        const { headers, rows } = buildPayeSchedule(items || []);
+        exportToCsv(`PAYE-Schedule-${tag}.csv`, headers, rows);
+      } else {
+        const { headers, rows } = buildBankDisbursement(items || []);
+        exportToCsv(`Salary-Disbursement-${tag}.csv`, headers, rows);
+      }
+      toast.success("Statutory file exported");
     } catch (e: any) {
       toast.error("Export failed: " + e.message);
     } finally {
@@ -146,6 +178,15 @@ export default function Payroll() {
         <div className="flex gap-2">
           <Button variant="outline" onClick={exportFullBreakdown} disabled={!filteredRuns.length || exporting}>
             <Download className="w-4 h-4" /> {exporting ? "Exporting..." : "Export CSV"}
+          </Button>
+          <Button variant="outline" onClick={() => exportStatutory("epf")} disabled={!filteredRuns.length || exporting}>
+            <FileText className="w-4 h-4" /> EPF/ETF Return
+          </Button>
+          <Button variant="outline" onClick={() => exportStatutory("paye")} disabled={!filteredRuns.length || exporting}>
+            <FileText className="w-4 h-4" /> PAYE Schedule
+          </Button>
+          <Button variant="outline" onClick={() => exportStatutory("bank")} disabled={!filteredRuns.length || exporting}>
+            <Download className="w-4 h-4" /> Bank File
           </Button>
           {canEditPayroll("payroll") && <Button onClick={() => setCreateOpen(true)}>
             <Plus className="w-4 h-4" /> Run Payroll

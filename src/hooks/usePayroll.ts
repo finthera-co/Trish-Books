@@ -253,7 +253,7 @@ export function useCreatePayrollRun() {
       if (empRes.error) throw empRes.error;
       const empMap = new Map((empRes.data || []).map((e: any) => [e.id, e]));
 
-      let totalGross = 0, totalDeductions = 0, totalNet = 0, totalEmployerEpf = 0, totalEmployerEtf = 0;
+      let totalGross = 0, totalDeductions = 0, totalNet = 0, totalEmployerEpf = 0, totalEmployerEtf = 0, totalPaye = 0;
       const ruleSetHash = hashRuleSet(config.rules);
 
       // Capture per-employee traces for the immutable ledger
@@ -320,6 +320,7 @@ export function useCreatePayrollRun() {
         totalNet += result.net_pay;
         totalEmployerEpf += result.employer_epf;
         totalEmployerEtf += result.employer_etf;
+        totalPaye += payeAmount;
 
         return {
           employee_id: emp.employee_id,
@@ -329,6 +330,7 @@ export function useCreatePayrollRun() {
           overtime_pay: emp.overtime_pay || 0,
           gross_pay: result.gross_pay,
           employee_epf: result.employee_epf,
+          employee_paye: payeAmount,
           employer_epf: result.employer_epf,
           employer_etf: result.employer_etf,
           other_deductions: emp.other_deductions || 0,
@@ -359,6 +361,7 @@ export function useCreatePayrollRun() {
         total_net: totalNet,
         total_employer_epf: totalEmployerEpf,
         total_employer_etf: totalEmployerEtf,
+        total_paye: totalPaye,
         notes: input.notes,
         created_by: appUser?.id,
         rule_set_version_hash: ruleSetHash,
@@ -454,8 +457,11 @@ export function useRecalculateDraftRuns() {
         .in("id", empIds);
       const empMap = new Map((emps || []).map((e: any) => [e.id, e]));
 
+      // APIT/PAYE schedule (same source as the create path) so recalc matches.
+      const apitSchedule = await loadApitSchedule(drafts[0].tenant_id, new Date().toISOString().slice(0, 10));
+
       // Recompute each item via the engine
-      const runTotals = new Map<string, { gross: number; ded: number; net: number; eEpf: number; eEtf: number }>();
+      const runTotals = new Map<string, { gross: number; ded: number; net: number; eEpf: number; eEtf: number; paye: number }>();
       let updated = 0;
 
       for (const it of items) {
@@ -473,21 +479,31 @@ export function useRecalculateDraftRuns() {
           other_deductions: Number(it.other_deductions || 0),
         }, config.rules, config.components);
 
+        // APIT/PAYE: bracket lookup outside the rule engine (same as create path).
+        let payeAmount = 0;
+        if (ef.is_paye_applicable && apitSchedule) {
+          payeAmount = calculateApit(result.gross_pay, apitSchedule).monthlyApit || 0;
+        }
+        const netPay = result.net_pay - payeAmount;
+        const totalDed = result.total_deductions + payeAmount;
+
         await supabase.from("payroll_run_items").update({
           gross_pay: result.gross_pay,
           employee_epf: result.employee_epf,
+          employee_paye: payeAmount,
           employer_epf: result.employer_epf,
           employer_etf: result.employer_etf,
-          net_pay: result.net_pay,
+          net_pay: netPay,
         }).eq("id", it.id);
         updated++;
 
-        const t = runTotals.get(it.run_id) || { gross: 0, ded: 0, net: 0, eEpf: 0, eEtf: 0 };
+        const t = runTotals.get(it.run_id) || { gross: 0, ded: 0, net: 0, eEpf: 0, eEtf: 0, paye: 0 };
         t.gross += result.gross_pay;
-        t.ded += result.total_deductions;
-        t.net += result.net_pay;
+        t.ded += totalDed;
+        t.net += netPay;
         t.eEpf += result.employer_epf;
         t.eEtf += result.employer_etf;
+        t.paye += payeAmount;
         runTotals.set(it.run_id, t);
       }
 
@@ -495,7 +511,7 @@ export function useRecalculateDraftRuns() {
       for (const [runId, t] of runTotals) {
         await supabase.from("payroll_runs").update({
           total_gross: t.gross, total_deductions: t.ded, total_net: t.net,
-          total_employer_epf: t.eEpf, total_employer_etf: t.eEtf,
+          total_employer_epf: t.eEpf, total_employer_etf: t.eEtf, total_paye: t.paye,
         }).eq("id", runId);
       }
 

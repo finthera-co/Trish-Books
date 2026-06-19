@@ -23,6 +23,7 @@ export const SUGGESTED_SIDE: Record<string, "debit" | "credit"> = {
   EPF_EMPLOYER: "debit",
   ETF_EMPLOYER: "debit",
   EPF_EMPLOYEE: "credit",
+  PAYE: "credit",
   OTHER_DEDUCTIONS: "credit",
   NET_PAY: "credit",
 };

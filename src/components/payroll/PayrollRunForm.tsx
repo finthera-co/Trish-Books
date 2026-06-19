@@ -220,12 +220,15 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
   const totals = useMemo(() => {
     let gross = 0, epfEmp = 0, epfEr = 0, etfEr = 0, otherDed = 0, net = 0, attDed = 0;
     selectedItems.forEach((item) => {
-      // EPF/ETF and gross are computed on the EARNED basic (post attendance deduction)
+      // Indicative only — the engine is authoritative. EPF/ETF base = earned basic +
+      // allowances (matches EPF_BASE); PAYE is computed by the engine on creation and
+      // is NOT previewed here, so `net` below is pre-PAYE.
       const earned = earnedBasic(item);
+      const epfBase = earned + item.allowances;
       const g = earned + item.overtime_pay + item.bonuses + item.allowances;
-      const eEpf = Math.round(earned * EPF_EMPLOYEE_RATE * 100) / 100;
-      const erEpf = Math.round(earned * EPF_EMPLOYER_RATE * 100) / 100;
-      const erEtf = Math.round(earned * ETF_EMPLOYER_RATE * 100) / 100;
+      const eEpf = Math.round(epfBase * EPF_EMPLOYEE_RATE * 100) / 100;
+      const erEpf = Math.round(epfBase * EPF_EMPLOYER_RATE * 100) / 100;
+      const erEtf = Math.round(epfBase * ETF_EMPLOYER_RATE * 100) / 100;
       const n = g - eEpf - item.other_deductions;
       gross += g;
       epfEmp += eEpf;
@@ -472,6 +475,11 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-foreground">Review Payroll Summary</h3>
 
+            <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/50 rounded-md px-3 py-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>Indicative figures. EPF/ETF, <strong>PAYE/APIT</strong> and final net pay are calculated by the payroll engine when the run is created (EPF on basic + allowances; PAYE per the APIT schedule). The net shown here is <strong>before PAYE</strong> — review the exact figures in the run detail and GL preview before posting.</span>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="stat-card">
                 <p className="text-xs text-muted-foreground">Pay Period</p>
@@ -538,8 +546,8 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                     {selectedItems.map((item) => {
                       const earned = earnedBasic(item);
                       const gross = earned + item.overtime_pay + item.bonuses + item.allowances;
-                      const epf = Math.round(earned * EPF_EMPLOYEE_RATE * 100) / 100;
-                      const net = gross - epf - item.other_deductions;
+                      const epf = Math.round((earned + item.allowances) * EPF_EMPLOYEE_RATE * 100) / 100;
+                      const net = gross - epf - item.other_deductions; // pre-PAYE, indicative
                       return (
                         <tr key={item.employee_id} className="border-t border-border">
                           <td className="px-3 py-1.5 text-foreground">{item.name}</td>

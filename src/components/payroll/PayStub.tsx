@@ -86,10 +86,11 @@ export default function PayStub({ item, run, open, onOpenChange }: Props) {
             <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-1">Deductions</h4>
             <div className="space-y-1 text-sm">
               <div className="flex justify-between"><span className="text-foreground">EPF (Employee 8%)</span><span className="text-destructive">-{formatCurrency(Number(item.employee_epf))}</span></div>
+              {Number(item.employee_paye) > 0 && <div className="flex justify-between"><span className="text-foreground">PAYE / APIT Tax</span><span className="text-destructive">-{formatCurrency(Number(item.employee_paye))}</span></div>}
               {Number(item.other_deductions) > 0 && <div className="flex justify-between"><span className="text-foreground">Other Deductions</span><span className="text-destructive">-{formatCurrency(Number(item.other_deductions))}</span></div>}
               <div className="flex justify-between font-bold border-t border-border pt-1">
                 <span>Total Deductions</span>
-                <span className="text-destructive">-{formatCurrency(Number(item.employee_epf) + Number(item.other_deductions))}</span>
+                <span className="text-destructive">-{formatCurrency(Number(item.employee_epf) + Number(item.employee_paye) + Number(item.other_deductions))}</span>
               </div>
             </div>
           </div>
