@@ -5413,6 +5413,7 @@ export type Database = {
           is_paid: boolean
           max_consecutive_days: number | null
           name: string
+          payroll_treatment: string
           requires_approval: boolean
           tenant_id: string
         }
@@ -5428,6 +5429,7 @@ export type Database = {
           is_paid?: boolean
           max_consecutive_days?: number | null
           name: string
+          payroll_treatment?: string
           requires_approval?: boolean
           tenant_id: string
         }
@@ -5443,6 +5445,7 @@ export type Database = {
           is_paid?: boolean
           max_consecutive_days?: number | null
           name?: string
+          payroll_treatment?: string
           requires_approval?: boolean
           tenant_id?: string
         }
@@ -11303,6 +11306,20 @@ export type Database = {
           p_tenant_id: string
         }
         Returns: number
+      }
+      rpc_period_leave_summary: {
+        Args: {
+          p_employee_ids?: string[]
+          p_period_end: string
+          p_period_start: string
+        }
+        Returns: {
+          days_taken: number
+          employee_id: string
+          leave_code: string
+          leave_name: string
+          treatment: string
+        }[]
       }
       seed_default_leave_types: {
         Args: { p_tenant_id: string }

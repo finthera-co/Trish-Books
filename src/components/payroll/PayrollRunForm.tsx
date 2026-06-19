@@ -4,9 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useEmployees } from "@/hooks/useData";
-import { usePaySchedules, useCreatePayrollRun, type PayrollRunInput } from "@/hooks/usePayroll";
+import { usePaySchedules, useCreatePayrollRun, usePeriodLeaveSummary, type PayrollRunInput } from "@/hooks/usePayroll";
 import { useAttendanceSummary, useAttendanceSummaryForPeriod, workingDaysInPeriod } from "@/hooks/useAttendance";
-import { useApprovedLeaveForPeriod } from "@/hooks/useLeave";
 import { computePayFromAttendance } from "@/lib/attendanceMapping";
 import { formatCurrency } from "@/lib/currency";
 import { toast } from "sonner";
@@ -76,8 +75,24 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
   const { data: schedules } = usePaySchedules();
   const { data: attendanceSummary } = useAttendanceSummary(periodStart || undefined, periodEnd || undefined);
   const { data: biometricSummary, isFetching: loadingAttendance } = useAttendanceSummaryForPeriod(periodStart || undefined, periodEnd || undefined);
-  const { data: leaveSummary } = useApprovedLeaveForPeriod(periodStart || undefined, periodEnd || undefined);
   const createRun = useCreatePayrollRun();
+
+  // Leave taken in the period, grouped by type — drives the grid's leave column.
+  // No-pay days here are PREVIEW only; the authoritative deduction is computed
+  // in useCreatePayrollRun (single source), so we don't fold it into item state.
+  const itemEmpIds = useMemo(() => items.map((i) => i.employee_id), [items]);
+  const { data: leaveSummary, isFetching: leaveLoading } = usePeriodLeaveSummary(
+    periodStart || undefined, periodEnd || undefined, itemEmpIds);
+  const periodWorkingDays = useMemo(
+    () => (periodStart && periodEnd ? workingDaysInPeriod(periodStart, periodEnd) : 0),
+    [periodStart, periodEnd]);
+  const leavePreview = (item: EmployeePayItem) => {
+    const lv = leaveSummary?.[item.employee_id];
+    const unpaidDays = lv?.unpaidDays ?? 0;
+    const ded = item.pay_rate_type === "hourly" || periodWorkingDays <= 0
+      ? 0 : round2((item.basic_salary / periodWorkingDays) * unpaidDays);
+    return { lv, unpaidDays, ded };
+  };
 
   const activeEmployees = useMemo(() =>
     employees?.filter((e: any) => (e.status || "active") === "active") || [],
@@ -184,15 +199,15 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
       const s = biometricSummary[item.employee_id];
       if (!s) return { ...item, attendance_missing: true, attendance_applied: false };
       applied += 1;
-      // Unpaid (no-pay) leave days reduce earned basic just like absences; paid leave does not.
-      const unpaidLeave = leaveSummary?.[item.employee_id]?.unpaid_leave_days ?? 0;
+      // No-pay leave proration is handled centrally in useCreatePayrollRun
+      // (single source); this button only applies biometric attendance.
       const result = computePayFromAttendance({
         payRateType: item.pay_rate_type,
         contractualBasic: Number(emp?.salary ?? item.basic_salary) || 0,
         hourlyRate: Number(emp?.pay_rate ?? item.pay_rate) || 0,
         workedHours: s.worked_hours,
         otHours: s.ot_hours,
-        absentDays: s.absent_days + unpaidLeave,
+        absentDays: s.absent_days,
         halfDays: s.half_days,
         workingDays,
       });
@@ -204,7 +219,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
         overtime_pay: result.overtime_pay,
         working_days: workingDays,
         days_present: s.present_days,
-        unpaid_absent_days: s.absent_days + unpaidLeave,
+        unpaid_absent_days: s.absent_days,
         attendance_deduction: 0,
         attendance_override: true,
         has_attendance: true,
@@ -392,7 +407,8 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                     <th className="px-2 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Hours worked (imported from attendance)">Worked h</th>
                     <th className="px-2 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Overtime hours (imported from attendance)">OT h</th>
                     <th className="px-2 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Days present">Pres.</th>
-                    <th className="px-2 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Unpaid absent days">Unpaid Abs.</th>
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap" title="Approved leave in this period, by type">Leave (period)</th>
+                    <th className="px-2 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Unpaid absent days + no-pay leave">Unpaid Abs.</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Pro-rata no-pay deduction — editable">Att. Ded.</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Earned basic = Basic − Attendance Deduction">Earned Basic</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">OT Pay</th>
@@ -427,15 +443,30 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                       <td className="px-2 py-2 text-right text-muted-foreground">{item.has_attendance ? item.hours_worked : "—"}</td>
                       <td className={`px-2 py-2 text-right ${item.overtime_hours > 0 ? "text-foreground font-medium" : "text-muted-foreground"}`}>{item.has_attendance ? item.overtime_hours : "—"}</td>
                       <td className="px-2 py-2 text-right text-muted-foreground">{item.has_attendance ? item.days_present : "—"}</td>
-                      <td className={`px-2 py-2 text-right ${item.unpaid_absent_days > 0 ? "text-destructive font-medium" : "text-muted-foreground"}`}>
-                        {item.has_attendance ? item.unpaid_absent_days : "—"}
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {(() => {
+                          const { lv } = leavePreview(item);
+                          if (leaveLoading) return <span className="text-xs text-muted-foreground animate-pulse">…</span>;
+                          const codes = lv ? Object.entries(lv.byCode) : [];
+                          if (!codes.length) return <span className="text-muted-foreground">—</span>;
+                          return <span className="flex flex-wrap gap-1">{codes.map(([code, info]) => (
+                            <Badge key={code} variant="outline"
+                              title={`${info.name} — ${info.treatment === "unpaid" ? "No-pay (reduces basic)" : info.treatment === "encashable" ? "Encashable" : "Paid (no salary impact)"}`}
+                              className={`text-[10px] ${info.treatment === "unpaid" ? "text-amber-700 dark:text-amber-400 border-amber-400" : "text-muted-foreground"}`}>
+                              {code} {info.days}
+                            </Badge>
+                          ))}</span>;
+                        })()}
+                      </td>
+                      <td className={`px-2 py-2 text-right ${(item.unpaid_absent_days + leavePreview(item).unpaidDays) > 0 ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+                        {(() => { const u = item.unpaid_absent_days + leavePreview(item).unpaidDays; return (item.has_attendance || u > 0) ? u : "—"; })()}
                       </td>
                       <td className="px-3 py-2">
                         <input type="number" value={item.attendance_deduction || ""} onChange={(e) => updateItem(idx, "attendance_deduction", Number(e.target.value))}
                           title={item.attendance_override ? "Manually overridden" : "Auto: (basic ÷ working days) × unpaid absent days"}
                           className={`w-28 text-right text-sm border rounded px-2 py-1 bg-background text-foreground ${item.attendance_override ? "border-primary" : "border-input"}`} />
                       </td>
-                      <td className="px-3 py-2 text-right font-medium text-foreground">{formatCurrency(earnedBasic(item))}</td>
+                      <td className="px-3 py-2 text-right font-medium text-foreground" title="Basic − attendance deduction − no-pay leave (preview; engine is authoritative)">{formatCurrency(earnedBasic(item) - leavePreview(item).ded)}</td>
                       <td className="px-3 py-2">
                         <input type="number" value={item.overtime_pay || ""} onChange={(e) => updateItem(idx, "overtime_pay", Number(e.target.value))}
                           className="w-28 text-right text-sm border border-input rounded px-2 py-1 bg-background text-foreground" />

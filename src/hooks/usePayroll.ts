@@ -246,12 +246,27 @@ export function useCreatePayrollRun() {
       const [config, empRes, apitSchedule] = await Promise.all([
         loadEngineConfig(),
         supabase.from("employees")
-          .select("id,is_epf_applicable,is_etf_applicable,is_paye_applicable,employment_type")
+          .select("id,is_epf_applicable,is_etf_applicable,is_paye_applicable,employment_type,pay_rate_type")
           .in("id", input.employees.map((e) => e.employee_id)),
         loadApitSchedule(appUser!.tenant_id, input.period_end),
       ]);
       if (empRes.error) throw empRes.error;
       const empMap = new Map((empRes.data || []).map((e: any) => [e.id, e]));
+
+      // No-pay-leave proration (single source). Pull approved leave for the
+      // period grouped by type, plus the period's working-day denominator
+      // (Mon–Sat excl holidays), then prorate basic for unpaid leave days.
+      const r2 = (n: number) => Math.round(n * 100) / 100;
+      const empIdList = input.employees.map((e) => e.employee_id);
+      const [leaveRes, wdRes] = await Promise.all([
+        supabase.rpc("rpc_period_leave_summary", { p_period_start: input.period_start, p_period_end: input.period_end, p_employee_ids: empIdList }),
+        supabase.rpc("count_working_days", { p_tenant_id: appUser!.tenant_id, p_start: input.period_start, p_end: input.period_end, p_is_half_day: false } as any),
+      ]);
+      const workingDays = Number(wdRes.data) || 0;
+      const unpaidLeaveByEmp = new Map<string, number>();
+      ((leaveRes.data as any[]) || []).forEach((r) => {
+        if (r.treatment === "unpaid") unpaidLeaveByEmp.set(r.employee_id, (unpaidLeaveByEmp.get(r.employee_id) || 0) + (Number(r.days_taken) || 0));
+      });
 
       let totalGross = 0, totalDeductions = 0, totalNet = 0, totalEmployerEpf = 0, totalEmployerEtf = 0, totalPaye = 0;
       const ruleSetHash = hashRuleSet(config.rules);
@@ -274,7 +289,13 @@ export function useCreatePayrollRun() {
         // payroll_results) runs on the EARNED basic after the attendance
         // (no-pay) deduction. The full contractual basic is persisted on the
         // run item alongside the deduction.
-        const attendanceDeduction = emp.attendance_deduction || 0;
+        // No-pay leave reduces basic for salaried staff (prorated on working days).
+        // Hourly staff are paid on hours, so leave doesn't cut their basic here.
+        const unpaidLeaveDays = unpaidLeaveByEmp.get(emp.employee_id) || 0;
+        const isHourly = (empFlags.pay_rate_type ?? "monthly") === "hourly";
+        const perDay = workingDays > 0 ? emp.basic_salary / workingDays : 0;
+        const leaveDeduction = isHourly ? 0 : r2(perDay * unpaidLeaveDays);
+        const attendanceDeduction = r2((emp.attendance_deduction || 0) + leaveDeduction);
         const engineInput: EmployeePayrollInput = {
           id: emp.employee_id,
           is_epf_applicable: !!empFlags.is_epf_applicable,
@@ -339,10 +360,10 @@ export function useCreatePayrollRun() {
           net_pay: result.net_pay,
           payment_method: emp.payment_method || "bank_transfer",
           notes: emp.notes,
-          working_days: emp.working_days ?? null,
+          working_days: emp.working_days ?? (workingDays || null),
           days_present: emp.days_present ?? null,
           paid_leave_days: emp.paid_leave_days ?? null,
-          unpaid_absent_days: emp.unpaid_absent_days ?? null,
+          unpaid_absent_days: r2((emp.unpaid_absent_days ?? 0) + (isHourly ? 0 : unpaidLeaveDays)) || null,
           attendance_deduction: attendanceDeduction,
         };
       });
@@ -437,7 +458,7 @@ export function useRecalculateDraftRuns() {
 
       // Get all draft runs and their items
       const { data: drafts, error: dErr } = await supabase
-        .from("payroll_runs").select("id,tenant_id").eq("status", "draft");
+        .from("payroll_runs").select("id,tenant_id,period_start,period_end").eq("status", "draft");
       if (dErr) throw dErr;
       if (!drafts || drafts.length === 0) return { runs: 0, items: 0 };
 
@@ -453,12 +474,28 @@ export function useRecalculateDraftRuns() {
       const empIds = Array.from(new Set(items.map((it) => it.employee_id)));
       const { data: emps } = await supabase
         .from("employees")
-        .select("id,is_epf_applicable,is_etf_applicable,is_paye_applicable,employment_type")
+        .select("id,is_epf_applicable,is_etf_applicable,is_paye_applicable,employment_type,pay_rate_type")
         .in("id", empIds);
       const empMap = new Map((emps || []).map((e: any) => [e.id, e]));
 
       // APIT/PAYE schedule (same source as the create path) so recalc matches.
       const apitSchedule = await loadApitSchedule(drafts[0].tenant_id, new Date().toISOString().slice(0, 10));
+
+      // Per-run no-pay-leave + working-day denominator, re-derived so recalc
+      // reflects leave approved after the draft was created.
+      const r2 = (n: number) => Math.round(n * 100) / 100;
+      const runWorkingDays = new Map<string, number>();
+      const runUnpaidLeave = new Map<string, Map<string, number>>();
+      for (const d of drafts as any[]) {
+        const [lr, wd] = await Promise.all([
+          supabase.rpc("rpc_period_leave_summary", { p_period_start: d.period_start, p_period_end: d.period_end, p_employee_ids: null }),
+          supabase.rpc("count_working_days", { p_tenant_id: d.tenant_id, p_start: d.period_start, p_end: d.period_end, p_is_half_day: false } as any),
+        ]);
+        runWorkingDays.set(d.id, Number(wd.data) || 0);
+        const m = new Map<string, number>();
+        ((lr.data as any[]) || []).forEach((r) => { if (r.treatment === "unpaid") m.set(r.employee_id, (m.get(r.employee_id) || 0) + (Number(r.days_taken) || 0)); });
+        runUnpaidLeave.set(d.id, m);
+      }
 
       // Recompute each item via the engine
       const runTotals = new Map<string, { gross: number; ded: number; net: number; eEpf: number; eEtf: number; paye: number }>();
@@ -466,13 +503,19 @@ export function useRecalculateDraftRuns() {
 
       for (const it of items) {
         const ef = empMap.get(it.employee_id) || { id: it.employee_id, is_epf_applicable: true, is_etf_applicable: true, is_paye_applicable: false };
+        // Re-derive the no-pay-leave deduction for this run's period.
+        const isHourly = (ef.pay_rate_type ?? "monthly") === "hourly";
+        const unpaidLeaveDays = runUnpaidLeave.get(it.run_id)?.get(it.employee_id) || 0;
+        const wd = runWorkingDays.get(it.run_id) || 0;
+        const fullBasic = Number(it.basic_salary || 0);
+        const attendanceDeduction = isHourly ? 0 : r2((wd > 0 ? fullBasic / wd : 0) * unpaidLeaveDays);
         const result = runPayrollForEmployee({
           id: it.employee_id,
           is_epf_applicable: !!ef.is_epf_applicable,
           is_etf_applicable: !!ef.is_etf_applicable,
           is_paye_applicable: !!ef.is_paye_applicable,
           employment_type: ef.employment_type,
-          basic_salary: Number(it.basic_salary || 0) - Number(it.attendance_deduction || 0),
+          basic_salary: fullBasic - attendanceDeduction,
           overtime_pay: Number(it.overtime_pay || 0),
           bonuses: Number(it.bonuses || 0),
           allowances: Number(it.allowances || 0),
@@ -494,6 +537,8 @@ export function useRecalculateDraftRuns() {
           employer_epf: result.employer_epf,
           employer_etf: result.employer_etf,
           net_pay: netPay,
+          attendance_deduction: attendanceDeduction,
+          unpaid_absent_days: isHourly ? 0 : unpaidLeaveDays,
         }).eq("id", it.id);
         updated++;
 
@@ -721,5 +766,30 @@ export function useSimulatePayroll() {
       return data;
     },
     onError: (e: Error) => toast.error(`Simulation failed: ${e.message}`),
+  });
+}
+
+// ===== Period leave-by-type (for the Step-2 grid) =====
+export interface PeriodLeaveByEmployee {
+  byCode: Record<string, { name: string; treatment: string; days: number }>;
+  unpaidDays: number;
+}
+export function usePeriodLeaveSummary(periodStart?: string, periodEnd?: string, employeeIds?: string[]) {
+  return useQuery({
+    queryKey: ["period_leave_summary", periodStart, periodEnd, (employeeIds || []).join(",")],
+    enabled: !!periodStart && !!periodEnd && !!employeeIds && employeeIds.length > 0,
+    queryFn: async (): Promise<Record<string, PeriodLeaveByEmployee>> => {
+      const { data, error } = await supabase.rpc("rpc_period_leave_summary", {
+        p_period_start: periodStart!, p_period_end: periodEnd!, p_employee_ids: employeeIds!,
+      });
+      if (error) throw error;
+      const map: Record<string, PeriodLeaveByEmployee> = {};
+      ((data as any[]) || []).forEach((r) => {
+        const m = (map[r.employee_id] ??= { byCode: {}, unpaidDays: 0 });
+        m.byCode[r.leave_code] = { name: r.leave_name, treatment: r.treatment, days: Number(r.days_taken) || 0 };
+        if (r.treatment === "unpaid") m.unpaidDays += Number(r.days_taken) || 0;
+      });
+      return map;
+    },
   });
 }

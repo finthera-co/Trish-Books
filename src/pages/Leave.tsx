@@ -76,7 +76,7 @@ export default function Leave() {
   };
 
   // ---- Leave type dialog ----
-  const EMPTY_TYPE = { id: undefined as string | undefined, name: "", code: "", is_paid: true, default_annual_quota: 0, requires_approval: true, max_consecutive_days: null as number | null, allow_negative_balance: false, color: "#3b82f6", is_active: true };
+  const EMPTY_TYPE = { id: undefined as string | undefined, name: "", code: "", is_paid: true, payroll_treatment: "paid", default_annual_quota: 0, requires_approval: true, max_consecutive_days: null as number | null, allow_negative_balance: false, color: "#3b82f6", is_active: true };
   const [typeOpen, setTypeOpen] = useState(false);
   const [typeForm, setTypeForm] = useState({ ...EMPTY_TYPE });
   const saveType = async () => {
@@ -181,16 +181,20 @@ export default function Leave() {
           {allowed && <div className="flex justify-end"><Button onClick={() => { setTypeForm({ ...EMPTY_TYPE }); setTypeOpen(true); }}><Plus className="w-4 h-4" />Add Type</Button></div>}
           <Card><CardContent className="pt-6 overflow-x-auto">
             <table className="data-table">
-              <thead><tr><th>Name</th><th>Code</th><th>Paid</th><th className="text-right">Annual Quota</th><th>Active</th>{allowed && <th></th>}</tr></thead>
+              <thead><tr><th>Name</th><th>Code</th><th>Payroll Treatment</th><th className="text-right">Annual Quota</th><th>Active</th>{allowed && <th></th>}</tr></thead>
               <tbody>
                 {(types ?? []).map((t: any) => (
                   <tr key={t.id}>
                     <td><Badge style={{ backgroundColor: t.color || undefined }} className="text-white">{t.name}</Badge></td>
                     <td className="text-muted-foreground">{t.code}</td>
-                    <td>{t.is_paid ? "Yes" : "No"}</td>
+                    <td>
+                      {(() => { const tr = t.payroll_treatment || (t.is_paid ? "paid" : "unpaid");
+                        return <Badge className={tr === "unpaid" ? "bg-amber-600 text-white" : tr === "encashable" ? "bg-sky-600 text-white" : "bg-green-600 text-white"}>
+                          {tr === "unpaid" ? "No-pay" : tr === "encashable" ? "Encashable" : "Paid"}</Badge>; })()}
+                    </td>
                     <td className="text-right">{t.default_annual_quota}</td>
                     <td>{t.is_active ? "Yes" : "No"}</td>
-                    {allowed && <td className="text-right"><Button size="sm" variant="ghost" onClick={() => setTypeForm({ id: t.id, name: t.name, code: t.code, is_paid: t.is_paid, default_annual_quota: Number(t.default_annual_quota), requires_approval: t.requires_approval, max_consecutive_days: t.max_consecutive_days, allow_negative_balance: t.allow_negative_balance, color: t.color || "#3b82f6", is_active: t.is_active }) || setTypeOpen(true)}>Edit</Button></td>}
+                    {allowed && <td className="text-right"><Button size="sm" variant="ghost" onClick={() => setTypeForm({ id: t.id, name: t.name, code: t.code, is_paid: t.is_paid, payroll_treatment: t.payroll_treatment || "paid", default_annual_quota: Number(t.default_annual_quota), requires_approval: t.requires_approval, max_consecutive_days: t.max_consecutive_days, allow_negative_balance: t.allow_negative_balance, color: t.color || "#3b82f6", is_active: t.is_active }) || setTypeOpen(true)}>Edit</Button></td>}
                   </tr>
                 ))}
               </tbody>
@@ -270,9 +274,19 @@ export default function Leave() {
             <div><Label>Annual Quota</Label><Input type="number" value={typeForm.default_annual_quota} onChange={(e) => setTypeForm((f) => ({ ...f, default_annual_quota: Number(e.target.value) }))} /></div>
             <div><Label>Max Consecutive Days</Label><Input type="number" value={typeForm.max_consecutive_days ?? ""} onChange={(e) => setTypeForm((f) => ({ ...f, max_consecutive_days: e.target.value ? Number(e.target.value) : null }))} /></div>
             <div><Label>Color</Label><Input type="color" value={typeForm.color} onChange={(e) => setTypeForm((f) => ({ ...f, color: e.target.value }))} /></div>
+            <div className="col-span-2"><Label>Payroll Treatment</Label>
+              <Select value={typeForm.payroll_treatment} onValueChange={(v) => setTypeForm((f) => ({ ...f, payroll_treatment: v, is_paid: v === "paid" }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="paid">Paid (no salary impact)</SelectItem>
+                  <SelectItem value="unpaid">No-pay (reduces basic salary)</SelectItem>
+                  <SelectItem value="encashable">Encashable (paid out)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground mt-1">No-pay leave reduces the employee's basic salary for the period it falls in.</p>
+            </div>
           </div>
           <div className="flex flex-wrap gap-4 pt-1">
-            <label className="flex items-center gap-2 text-sm"><Checkbox checked={typeForm.is_paid} onCheckedChange={(c) => setTypeForm((f) => ({ ...f, is_paid: !!c }))} /> Paid</label>
             <label className="flex items-center gap-2 text-sm"><Checkbox checked={typeForm.requires_approval} onCheckedChange={(c) => setTypeForm((f) => ({ ...f, requires_approval: !!c }))} /> Requires approval</label>
             <label className="flex items-center gap-2 text-sm"><Checkbox checked={typeForm.allow_negative_balance} onCheckedChange={(c) => setTypeForm((f) => ({ ...f, allow_negative_balance: !!c }))} /> Allow negative</label>
             <label className="flex items-center gap-2 text-sm"><Checkbox checked={typeForm.is_active} onCheckedChange={(c) => setTypeForm((f) => ({ ...f, is_active: !!c }))} /> Active</label>
