@@ -383,42 +383,45 @@ export default function CreateInvoice() {
   const customer = customers?.find((c) => c.id === customerId);
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8 pb-12">
+    <div className="max-w-7xl mx-auto space-y-6 pb-12">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/sales/invoices")}>
+          <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={() => navigate("/sales/invoices")}>
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Create Invoice</h1>
-            <p className="text-sm text-muted-foreground">Fill in the details to create a new invoice</p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-semibold tracking-tight text-foreground">New invoice</h1>
+              <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">Draft</span>
+            </div>
+            <p className="text-[13px] text-muted-foreground mt-0.5">Add lines, map each to a revenue account, and post a balanced entry.</p>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => handleSave(false)} disabled={saving || posting}>
-            <Save className="w-4 h-4 mr-1" />
-            {saving ? "Saving..." : "Save Draft"}
+        <div className="flex gap-2 shrink-0">
+          <Button variant="outline" size="sm" onClick={() => handleSave(false)} disabled={saving || posting}>
+            <Save className="w-4 h-4 mr-1.5" />
+            {saving ? "Saving…" : "Save draft"}
           </Button>
-          <Button onClick={() => handleSave(true)} disabled={saving || posting}>
-            <Send className="w-4 h-4 mr-1" />
-            {posting ? "Posting..." : "Save & Post"}
+          <Button size="sm" onClick={() => handleSave(true)} disabled={saving || posting}>
+            <Send className="w-4 h-4 mr-1.5" />
+            {posting ? "Posting…" : "Save & post"}
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
         {/* Main Form */}
-        <div className="lg:col-span-3 space-y-8">
+        <div className="lg:col-span-3 space-y-6">
           {/* Customer & Dates */}
           <Card>
-            <CardContent className="pt-6 space-y-5">
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <Label>Customer *</Label>
-                  <div className="flex gap-2 mt-1.5">
+            <CardContent className="p-5 space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Customer</Label>
+                  <div className="flex gap-2">
                     <Select value={customerId} onValueChange={setCustomerId}>
-                      <SelectTrigger><SelectValue placeholder="Select customer..." /></SelectTrigger>
+                      <SelectTrigger className="h-9"><SelectValue placeholder="Select customer..." /></SelectTrigger>
                       <SelectContent>
                         {customers?.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                       </SelectContent>
@@ -426,20 +429,20 @@ export default function CreateInvoice() {
                     <QuickCustomerDialog onCreated={(id) => setCustomerId(id)} />
                   </div>
                 </div>
-                <div>
-                  <Label>Invoice Number *</Label>
-                  <Input className="mt-1.5" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Invoice number</Label>
+                  <Input className="h-9 font-mono" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-6">
-                <div>
-                  <Label>Issue Date</Label>
-                  <Input type="date" className="mt-1.5" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Issue date</Label>
+                  <Input type="date" className="h-9" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
                 </div>
-                <div>
-                  <Label>Payment Terms</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Payment terms</Label>
                   <Select value={paymentTerms} onValueChange={setPaymentTerms}>
-                    <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {TERM_OPTIONS.map((o) => (
                         <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
@@ -447,14 +450,14 @@ export default function CreateInvoice() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
-                  <Label>Due Date</Label>
-                  <Input type="date" className="mt-1.5" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Due date</Label>
+                  <Input type="date" className="h-9" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
                 </div>
               </div>
               {customer && (
-                <div className="p-3 bg-muted/50 rounded-lg text-sm">
-                  <p className="font-medium">{customer.name}</p>
+                <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm">
+                  <p className="font-medium text-foreground">{customer.name}</p>
                   {customer.email && <p className="text-muted-foreground">{customer.email}</p>}
                   {customer.address && <p className="text-muted-foreground">{customer.address}</p>}
                 </div>
@@ -465,26 +468,28 @@ export default function CreateInvoice() {
           {/* Line Items */}
           <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base">Line Items</CardTitle>
-                <Button variant="outline" size="sm" onClick={addLine}>
-                  <Plus className="w-4 h-4 mr-1" /> Add Line
-                </Button>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">Line items</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-0.5">Pick a product, or leave it blank for a service line and choose a revenue account.</p>
+                </div>
+                <span className="text-xs text-muted-foreground tabular-nums shrink-0">{lines.length} line{lines.length === 1 ? "" : "s"}</span>
               </div>
             </CardHeader>
-            <CardContent>
-              <div className="border border-border rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50">
-                    <tr>
-                      <th className="px-4 py-3 text-left font-medium text-muted-foreground min-w-[280px]">Product / Description</th>
-                      <th className="px-4 py-3 text-center font-medium text-muted-foreground w-20">Qty</th>
-                      <th className="px-4 py-3 text-right font-medium text-muted-foreground w-24">Unit Cost</th>
-                      <th className="px-4 py-3 text-right font-medium text-muted-foreground w-24">Rate / Amount</th>
-                      <th className="px-4 py-3 text-center font-medium text-muted-foreground w-28">Tax</th>
-                      <th className="px-4 py-3 text-right font-medium text-muted-foreground w-20">Discount</th>
-                      <th className="px-4 py-3 text-right font-medium text-muted-foreground w-24">Amount</th>
-                      <th className="px-4 py-3 w-10"></th>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto border-y border-border">
+                <table className="w-full min-w-[880px] text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-muted/40 [&>th]:px-3 [&>th]:py-2.5 [&>th]:text-[11px] [&>th]:font-semibold [&>th]:uppercase [&>th]:tracking-[0.05em] [&>th]:text-muted-foreground">
+                      <th className="w-9 text-center">#</th>
+                      <th className="text-left min-w-[240px]">Item &amp; description</th>
+                      <th className="text-left w-[190px]">Revenue account</th>
+                      <th className="text-center w-16">Qty</th>
+                      <th className="text-right w-24">Rate</th>
+                      <th className="text-right w-20">Disc</th>
+                      <th className="text-left w-[124px]">Tax</th>
+                      <th className="text-right w-28">Amount</th>
+                      <th className="w-9"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -503,9 +508,14 @@ export default function CreateInvoice() {
                         ? Math.round(((line.rate - lineCost) / line.rate) * 100)
                         : null;
                       return (
-                      <tr key={line.id} className="border-t border-border align-top">
-                        <td className="px-4 py-5">
-                          <div className="space-y-3">
+                      <tr key={line.id} className="border-t border-border align-top transition-colors hover:bg-muted/20 [&>td]:px-3 [&>td]:py-3">
+                        <td className="text-center">
+                          <div className="flex h-9 items-center justify-center">
+                            <span className="font-mono text-xs text-muted-foreground/70">{idx + 1}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <div className="space-y-1.5">
                             <Select value={line.product_id || "none"}
                               onValueChange={(v) => updateLine(line.id, "product_id", v === "none" ? "" : v)}>
                               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select product..." /></SelectTrigger>
@@ -523,58 +533,51 @@ export default function CreateInvoice() {
                             </Select>
                             <Input className="h-9 text-sm" placeholder="Description" value={line.description}
                               onChange={(e) => updateLine(line.id, "description", e.target.value)} />
-                            {/* Revenue account for this line — auto-filled from the product's
-                                income account, or pick directly for an ad-hoc service line. */}
-                            <Select value={line.account_id} onValueChange={(v) => updateLine(line.id, "account_id", v)}>
-                              <SelectTrigger className="h-8 text-xs">
-                                <SelectValue placeholder="Revenue account…" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {revenueAccounts.map((a: any) => (
-                                  <SelectItem key={a.id} value={a.id}>
-                                    {a.account_code} · {a.account_name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            {(lineBadge || isService) && (
-                              <span className="inline-block text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                                {lineBadge ?? "Service"}
-                              </span>
+                            {(lineBadge || isService || lineOnHand !== null) && (
+                              <div className="flex items-center gap-2">
+                                {(lineBadge || isService) && (
+                                  <span className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded ${isService ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground"}`}>
+                                    {lineBadge ?? "Service"}
+                                  </span>
+                                )}
+                                {lineOnHand !== null && (
+                                  <span className={`text-[10px] ${overStock ? "text-destructive" : "text-muted-foreground"}`}>
+                                    {lineOnHand} in stock
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-5">
+                        <td>
+                          {/* Revenue account — auto-filled from the product's income account,
+                              or pick directly for an ad-hoc service line. */}
+                          <Select value={line.account_id} onValueChange={(v) => updateLine(line.id, "account_id", v)}>
+                            <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select account…" /></SelectTrigger>
+                            <SelectContent>
+                              {revenueAccounts.map((a: any) => (
+                                <SelectItem key={a.id} value={a.id}>
+                                  <span className="font-mono text-xs text-muted-foreground">{a.account_code}</span> {a.account_name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td>
                           {isService ? (
                             // Service lines bill a flat amount; quantity is not applicable.
-                            <div className="h-9 flex items-center justify-center">
-                              <span className="text-xs text-muted-foreground/60">—</span>
+                            <div className="flex h-9 items-center justify-center">
+                              <span className="text-xs text-muted-foreground/50">—</span>
                             </div>
                           ) : (
-                            <>
-                              <Input type="number"
-                                className={`h-9 text-sm text-center${overStock ? " border-destructive focus-visible:ring-destructive" : ""}`}
-                                value={line.qty || ""}
-                                onChange={(e) => updateLine(line.id, "qty", Number(e.target.value))} min={1} />
-                              {overStock && (
-                                <p className="text-[10px] text-destructive mt-1">Only {lineOnHand} in stock</p>
-                              )}
-                            </>
+                            <Input type="number"
+                              className={`h-9 text-sm text-center font-mono${overStock ? " border-destructive focus-visible:ring-destructive" : ""}`}
+                              value={line.qty || ""}
+                              onChange={(e) => updateLine(line.id, "qty", Number(e.target.value))} min={1} />
                           )}
                         </td>
-                        <td className="px-4 py-5">
-                          <div className="h-9 flex items-center justify-end">
-                            {lineCost !== null ? (
-                              <span className="text-sm font-medium text-muted-foreground tabular-nums">
-                                {formatCurrency(lineCost)}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-muted-foreground/60">—</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-5">
-                          <Input type="number" className="h-9 text-sm text-right" placeholder={isService ? "Amount" : "Rate"}
+                        <td>
+                          <Input type="number" className="h-9 text-sm text-right font-mono" placeholder={isService ? "Amount" : "Rate"}
                             value={line.rate || ""}
                             onChange={(e) => updateLine(line.id, "rate", Number(e.target.value))} min={0} />
                           {marginPct !== null && (
@@ -583,8 +586,12 @@ export default function CreateInvoice() {
                             </p>
                           )}
                         </td>
-                        <td className="px-4 py-5">
-                          <div className="space-y-2">
+                        <td>
+                          <Input type="number" className="h-9 text-sm text-right font-mono" value={line.discount || ""}
+                            onChange={(e) => updateLine(line.id, "discount", Number(e.target.value))} min={0} />
+                        </td>
+                        <td>
+                          <div className="space-y-1.5">
                             <Select value={line.tax_sel || "none"}
                               onValueChange={(v) => updateLine(line.id, "tax_sel", v === "none" ? "" : v)}>
                               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="No tax" /></SelectTrigger>
@@ -617,20 +624,16 @@ export default function CreateInvoice() {
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-5">
-                          <Input type="number" className="h-9 text-sm text-right" value={line.discount || ""}
-                            onChange={(e) => updateLine(line.id, "discount", Number(e.target.value))} min={0} />
-                        </td>
-                        <td className="px-4 py-5">
-                          <div className="h-9 flex items-center justify-end font-medium text-foreground tabular-nums">
+                        <td>
+                          <div className="flex h-9 items-center justify-end font-mono tabular-nums text-sm font-medium text-foreground">
                             {formatCurrency(lineCalcs[idx]?.lineTotal ?? 0)}
                           </div>
                         </td>
-                        <td className="px-4 py-5">
-                          <div className="h-9 flex items-center justify-center">
+                        <td>
+                          <div className="flex h-9 items-center justify-center">
                             {lines.length > 1 && (
-                              <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => removeLine(line.id)}>
-                                <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeLine(line.id)}>
+                                <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
                               </Button>
                             )}
                           </div>
@@ -640,6 +643,11 @@ export default function CreateInvoice() {
                     })}
                   </tbody>
                 </table>
+              </div>
+              <div className="p-3">
+                <Button variant="ghost" size="sm" onClick={addLine} className="text-muted-foreground hover:text-foreground">
+                  <Plus className="w-4 h-4 mr-1.5" /> Add line
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -662,57 +670,57 @@ export default function CreateInvoice() {
         </div>
 
         {/* Sidebar - Totals & Journal Preview */}
-        <div className="space-y-6">
+        <div className="space-y-5 lg:sticky lg:top-6">
           <Card>
-            <CardHeader className="pb-3"><CardTitle className="text-base">Invoice Summary</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
+            <CardHeader className="pb-3"><CardTitle className="text-base">Summary</CardTitle></CardHeader>
+            <CardContent className="space-y-2.5">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Subtotal</span>
-                <span className="font-medium">{formatCurrency(subtotal)}</span>
+                <span className="font-mono tabular-nums text-foreground">{formatCurrency(subtotal)}</span>
               </div>
               {totalDiscount > 0 && (
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Discount</span>
-                  <span className="font-medium text-destructive">-{formatCurrency(totalDiscount)}</span>
+                  <span className="font-mono tabular-nums text-destructive">-{formatCurrency(totalDiscount)}</span>
                 </div>
               )}
               {/* One row per tax code */}
               {taxByCode.map((t) => (
                 <div key={t.code} className="flex justify-between text-sm">
                   <span className="text-muted-foreground">{t.code} {t.rate}%</span>
-                  <span className="font-medium">{formatCurrency(t.amount)}</span>
+                  <span className="font-mono tabular-nums text-foreground">{formatCurrency(t.amount)}</span>
                 </div>
               ))}
               <Separator />
-              <div className="flex justify-between text-lg font-bold">
-                <span>Total</span>
-                <span className="text-primary">{formatCurrency(total)}</span>
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm font-semibold text-foreground">Total</span>
+                <span className="font-mono tabular-nums text-xl font-bold text-primary">{formatCurrency(total)}</span>
               </div>
             </CardContent>
           </Card>
 
           {/* Journal Preview */}
           <Card>
-            <CardHeader className="pb-3"><CardTitle className="text-base">Journal Preview</CardTitle></CardHeader>
+            <CardHeader className="pb-3"><CardTitle className="text-base">Journal preview</CardTitle></CardHeader>
             <CardContent>
               {total > 0 ? (
                 <div className="space-y-2 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Dr {arAccount?.account_name || "A/R"}</span>
-                    <span className="font-mono">{formatCurrency(total)}</span>
+                  <div className="flex justify-between gap-2">
+                    <span className="text-muted-foreground truncate">Dr {arAccount?.account_name || "A/R"}</span>
+                    <span className="font-mono tabular-nums shrink-0">{formatCurrency(total)}</span>
                   </div>
-                  <div className="flex justify-between pl-4">
-                    <span className="text-muted-foreground">Cr {revenueAccount?.account_name || "Revenue"}</span>
-                    <span className="font-mono">{formatCurrency(subtotal)}</span>
+                  <div className="flex justify-between gap-2 pl-4">
+                    <span className="text-muted-foreground truncate">Cr {revenueAccount?.account_name || "Revenue"}</span>
+                    <span className="font-mono tabular-nums shrink-0">{formatCurrency(subtotal)}</span>
                   </div>
                   {taxByCode.map((t) => (
-                    <div key={t.code} className="flex justify-between pl-4">
-                      <span className="text-muted-foreground">Cr {t.code} Payable</span>
-                      <span className="font-mono">{formatCurrency(t.amount)}</span>
+                    <div key={t.code} className="flex justify-between gap-2 pl-4">
+                      <span className="text-muted-foreground truncate">Cr {t.code} Payable</span>
+                      <span className="font-mono tabular-nums shrink-0">{formatCurrency(t.amount)}</span>
                     </div>
                   ))}
                   <Separator className="my-2" />
-                  <p className="text-[10px] text-muted-foreground">
+                  <p className="text-[10px] leading-relaxed text-muted-foreground">
                     Each tax code posts to its own liability account; the server recomputes tax and rejects mismatches.
                   </p>
                 </div>
