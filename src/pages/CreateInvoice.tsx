@@ -240,8 +240,11 @@ export default function CreateInvoice() {
             if (product.default_tax_group_id) updated.tax_sel = `g:${product.default_tax_group_id}`;
             else if (product.default_tax_code_id) updated.tax_sel = `c:${product.default_tax_code_id}`;
           } else {
-            // Product cleared → clear inherited revenue account so the manual picker takes over.
+            // Product cleared → this is now a service line: drop the inherited revenue
+            // account so the manual picker takes over, and reset qty (a service bills a
+            // flat amount, not qty × rate).
             updated.account_id = "";
+            updated.qty = 1;
           }
         }
         return updated;
@@ -477,7 +480,7 @@ export default function CreateInvoice() {
                       <th className="px-4 py-3 text-left font-medium text-muted-foreground min-w-[280px]">Product / Description</th>
                       <th className="px-4 py-3 text-center font-medium text-muted-foreground w-20">Qty</th>
                       <th className="px-4 py-3 text-right font-medium text-muted-foreground w-24">Unit Cost</th>
-                      <th className="px-4 py-3 text-right font-medium text-muted-foreground w-24">Rate</th>
+                      <th className="px-4 py-3 text-right font-medium text-muted-foreground w-24">Rate / Amount</th>
                       <th className="px-4 py-3 text-center font-medium text-muted-foreground w-28">Tax</th>
                       <th className="px-4 py-3 text-right font-medium text-muted-foreground w-20">Discount</th>
                       <th className="px-4 py-3 text-right font-medium text-muted-foreground w-24">Amount</th>
@@ -490,6 +493,10 @@ export default function CreateInvoice() {
                       const lineOnHand = onHandOf(lineProduct);
                       const lineCost = costOf(lineProduct);
                       const lineBadge = typeLabel(lineProduct);
+                      // A line with no product is a service / ad-hoc line: it bills a flat
+                      // amount against a chosen revenue account — no qty, no unit cost, no
+                      // COGS leg. Selecting a product switches it back to a goods line.
+                      const isService = !line.product_id;
                       const overStock = lineOnHand !== null && line.qty > lineOnHand;
                       // Gross margin % on the entered rate vs unit cost (stocked items only)
                       const marginPct = lineCost && line.rate > 0
@@ -499,9 +506,11 @@ export default function CreateInvoice() {
                       <tr key={line.id} className="border-t border-border align-top">
                         <td className="px-4 py-5">
                           <div className="space-y-3">
-                            <Select value={line.product_id} onValueChange={(v) => updateLine(line.id, "product_id", v)}>
+                            <Select value={line.product_id || "none"}
+                              onValueChange={(v) => updateLine(line.id, "product_id", v === "none" ? "" : v)}>
                               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select product..." /></SelectTrigger>
                               <SelectContent>
+                                <SelectItem value="none">— No product (service) —</SelectItem>
                                 {products?.map((p: any) => {
                                   const oh = onHandOf(p);
                                   return (
@@ -528,20 +537,29 @@ export default function CreateInvoice() {
                                 ))}
                               </SelectContent>
                             </Select>
-                            {lineBadge && (
+                            {(lineBadge || isService) && (
                               <span className="inline-block text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                                {lineBadge}
+                                {lineBadge ?? "Service"}
                               </span>
                             )}
                           </div>
                         </td>
                         <td className="px-4 py-5">
-                          <Input type="number"
-                            className={`h-9 text-sm text-center${overStock ? " border-destructive focus-visible:ring-destructive" : ""}`}
-                            value={line.qty || ""}
-                            onChange={(e) => updateLine(line.id, "qty", Number(e.target.value))} min={1} />
-                          {overStock && (
-                            <p className="text-[10px] text-destructive mt-1">Only {lineOnHand} in stock</p>
+                          {isService ? (
+                            // Service lines bill a flat amount; quantity is not applicable.
+                            <div className="h-9 flex items-center justify-center">
+                              <span className="text-xs text-muted-foreground/60">—</span>
+                            </div>
+                          ) : (
+                            <>
+                              <Input type="number"
+                                className={`h-9 text-sm text-center${overStock ? " border-destructive focus-visible:ring-destructive" : ""}`}
+                                value={line.qty || ""}
+                                onChange={(e) => updateLine(line.id, "qty", Number(e.target.value))} min={1} />
+                              {overStock && (
+                                <p className="text-[10px] text-destructive mt-1">Only {lineOnHand} in stock</p>
+                              )}
+                            </>
                           )}
                         </td>
                         <td className="px-4 py-5">
@@ -556,7 +574,8 @@ export default function CreateInvoice() {
                           </div>
                         </td>
                         <td className="px-4 py-5">
-                          <Input type="number" className="h-9 text-sm text-right" value={line.rate || ""}
+                          <Input type="number" className="h-9 text-sm text-right" placeholder={isService ? "Amount" : "Rate"}
+                            value={line.rate || ""}
                             onChange={(e) => updateLine(line.id, "rate", Number(e.target.value))} min={0} />
                           {marginPct !== null && (
                             <p className={`text-[10px] mt-1 text-right ${marginPct < 0 ? "text-destructive" : "text-muted-foreground"}`}>
