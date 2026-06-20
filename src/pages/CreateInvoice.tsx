@@ -247,6 +247,16 @@ export default function CreateInvoice() {
             updated.qty = 1;
           }
         }
+        // Explicitly choosing a revenue account turns the line into a manually-mapped
+        // (service) line: unlink any product and clear the product's auto-filled
+        // description so it doesn't linger. Custom text the user typed is preserved.
+        if (field === "account_id" && value && l.product_id) {
+          const prod: any = products?.find((p: any) => p.id === l.product_id);
+          const autoDesc = prod ? (prod.description || prod.name) : null;
+          updated.product_id = "";
+          updated.qty = 1;
+          if (autoDesc && l.description === autoDesc) updated.description = "";
+        }
         return updated;
       })
     );
