@@ -31,6 +31,8 @@ interface LineItem {
   tax_sel: string;
   inclusive: boolean;
   discount: number;
+  /** Revenue account for THIS line (service or product income acct). Empty = fall back to default sales account in post-invoice. */
+  account_id: string;
 }
 
 const emptyLine = (): LineItem => ({
@@ -42,6 +44,7 @@ const emptyLine = (): LineItem => ({
   tax_sel: "",
   inclusive: false,
   discount: 0,
+  account_id: "",
 });
 
 const TERM_OPTIONS = [
@@ -112,6 +115,24 @@ export default function CreateInvoice() {
   );
   const revenueAccount = useMemo(
     () => accounts?.find((a) => a.account_type === "Revenue" && !a.account_name?.toLowerCase().includes("return")),
+    [accounts]
+  );
+
+  // All active income accounts, for the per-line revenue-account picker. Sorted by code.
+  // "Revenue" is the live COA label; "Income"/"Other Income" are defensive and harmless if unused.
+  const revenueAccounts = useMemo(
+    () =>
+      (accounts ?? [])
+        .filter(
+          (a: any) =>
+            a.is_active &&
+            (a.account_type === "Revenue" ||
+              a.account_type === "Income" ||
+              a.account_type === "Other Income"),
+        )
+        .sort((a: any, b: any) =>
+          String(a.account_code).localeCompare(String(b.account_code)),
+        ),
     [accounts]
   );
 
@@ -213,9 +234,14 @@ export default function CreateInvoice() {
             // the product master price (current behavior for services/non-inventory).
             const sellPrice = product.inventory_item?.selling_price;
             updated.rate = Number(sellPrice ?? product.price) || 0;
+            // Inherit the product's revenue account onto this line.
+            updated.account_id = product.income_account_id || "";
             // Default tax from the product (group preferred, then code)
             if (product.default_tax_group_id) updated.tax_sel = `g:${product.default_tax_group_id}`;
             else if (product.default_tax_code_id) updated.tax_sel = `c:${product.default_tax_code_id}`;
+          } else {
+            // Product cleared → clear inherited revenue account so the manual picker takes over.
+            updated.account_id = "";
           }
         }
         return updated;
@@ -271,6 +297,19 @@ export default function CreateInvoice() {
     if (!invoiceNumber) return toast.error("Please enter an invoice number");
     if (lines.every((l) => l.rate === 0)) return toast.error("Add at least one line item");
 
+    // Non-blocking warning: a posted line with an amount but no revenue account and no
+    // product silently lands in the default sales account — a footgun for service firms.
+    if (shouldPost) {
+      const unmapped = lines.filter((l) => l.rate > 0 && !l.account_id && !l.product_id);
+      if (unmapped.length > 0) {
+        const proceed = window.confirm(
+          `${unmapped.length} line(s) have no revenue account selected and will post to the ` +
+            `default sales account. Continue posting?`,
+        );
+        if (!proceed) return;
+      }
+    }
+
     const setter = shouldPost ? setPosting : setSaving;
     setter(true);
 
@@ -308,6 +347,10 @@ export default function CreateInvoice() {
           // recomputes tax from qty*unit_price - discount_amount + is_tax_inclusive
           total: lineCalcs[lines.indexOf(l)]?.lineTotal ?? l.qty * l.rate - l.discount,
           product_id: l.product_id || null,
+          // Revenue account for this line; null → post-invoice falls back to defaultSalesId.
+          // Do NOT set inventory_item_id here — the DB trigger snapshots it from the product
+          // only when the product is tracked, so service lines correctly stay null.
+          account_id: l.account_id || null,
           discount_amount: l.discount,
           is_tax_inclusive: l.inclusive,
           tax_group_id: l.tax_sel.startsWith("g:") ? l.tax_sel.slice(2) : null,
@@ -471,6 +514,20 @@ export default function CreateInvoice() {
                             </Select>
                             <Input className="h-9 text-sm" placeholder="Description" value={line.description}
                               onChange={(e) => updateLine(line.id, "description", e.target.value)} />
+                            {/* Revenue account for this line — auto-filled from the product's
+                                income account, or pick directly for an ad-hoc service line. */}
+                            <Select value={line.account_id} onValueChange={(v) => updateLine(line.id, "account_id", v)}>
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue placeholder="Revenue account…" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {revenueAccounts.map((a: any) => (
+                                  <SelectItem key={a.id} value={a.id}>
+                                    {a.account_code} · {a.account_name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                             {lineBadge && (
                               <span className="inline-block text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
                                 {lineBadge}
