@@ -404,7 +404,80 @@ export function useAggregateBatch() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["attendance_daily"] }); toast.success("Attendance aggregated"); },
+    onSuccess: () => {
+      // Aggregation also mirrors into attendance_records (the register grid) — refresh those views too.
+      qc.invalidateQueries({ queryKey: ["attendance_daily"] });
+      qc.invalidateQueries({ queryKey: ["attendance_records"] });
+      qc.invalidateQueries({ queryKey: ["attendance_summary"] });
+      qc.invalidateQueries({ queryKey: ["attendance_daily_summary"] });
+      toast.success("Attendance aggregated and recorded in the register");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ===== Standard working hours (the tenant's default work shift) =====
+// Overtime during biometric aggregation is computed as
+//   ot_hours = worked_hours - work_shifts.ot_threshold_hours (fallback 8).
+// Without a configured shift the threshold defaults to 8h; this lets each
+// company set its own standard so OT — and the worked/OT hours fed into
+// payroll Step 2 — match their policy.
+
+export function useDefaultWorkShift() {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["default_work_shift", appUser?.tenant_id],
+    enabled: !!appUser?.tenant_id,
+    queryFn: async () => {
+      // Prefer the explicit default; fall back to the oldest shift if none is flagged.
+      const { data, error } = await supabase
+        .from("work_shifts")
+        .select("*")
+        .eq("tenant_id", appUser!.tenant_id)
+        .order("is_default", { ascending: false })
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+export function useSaveStandardHours() {
+  const qc = useQueryClient();
+  const { appUser } = useAuth();
+  return useMutation({
+    mutationFn: async (input: { standard_hours: number; break_minutes: number }) => {
+      const tenant = appUser?.tenant_id;
+      if (!tenant) throw new Error("No tenant");
+      // OT begins beyond the standard day, so the threshold mirrors standard hours.
+      const fields = {
+        standard_hours: input.standard_hours,
+        ot_threshold_hours: input.standard_hours,
+        break_minutes: input.break_minutes,
+      };
+      // One default shift per tenant (enforced by uq_work_shifts_one_default).
+      const { data: existing } = await supabase
+        .from("work_shifts")
+        .select("id")
+        .eq("tenant_id", tenant)
+        .eq("is_default", true)
+        .maybeSingle();
+      if (existing) {
+        const { error } = await supabase.from("work_shifts").update(fields).eq("id", existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("work_shifts")
+          .insert({ tenant_id: tenant, name: "Standard", is_default: true, is_active: true, ...fields });
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["default_work_shift"] });
+      toast.success("Standard working hours saved");
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 }

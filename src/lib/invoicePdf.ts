@@ -39,7 +39,7 @@ interface InvoicePdfData {
   tenant: any;
 }
 
-interface LoadedLogo {
+export interface LoadedLogo {
   dataUrl: string;
   /** Natural pixel dimensions, used to preserve aspect ratio in the PDF. */
   w: number;

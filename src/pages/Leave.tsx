@@ -9,7 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Check, X, Ban, CalendarDays } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import { format, parseISO } from "date-fns";
+import { Plus, Trash2, Check, X, Ban, CalendarDays, Repeat, Search } from "lucide-react";
 import {
   useLeaveTypes, useUpsertLeaveType, useHolidays, useCreateHoliday, useDeleteHoliday,
   useLeaveBalances, useAdjustLeaveBalance, useLeaveRequests, useCreateLeaveRequest,
@@ -30,6 +32,7 @@ export default function Leave() {
   const allowed = canEdit("payroll");
 
   const [statusFilter, setStatusFilter] = useState("all");
+  const [reqSearch, setReqSearch] = useState("");
   const { data: requests } = useLeaveRequests(statusFilter === "all" ? undefined : statusFilter);
   const { data: types } = useLeaveTypes();
   const { data: employees } = useEmployees();
@@ -85,20 +88,58 @@ export default function Leave() {
     setTypeOpen(false);
   };
 
-  // ---- Holiday dialog ----
-  const [holOpen, setHolOpen] = useState(false);
+  // ---- Holiday calendar ----
   const [hol, setHol] = useState({ holiday_date: "", name: "", is_recurring: false });
+  const [holMonth, setHolMonth] = useState<Date>(new Date());
+  const [holOpen, setHolOpen] = useState(false);
   const saveHoliday = async () => {
     if (!hol.holiday_date || !hol.name) { toast.error("Date and name are required"); return; }
     await createHoliday.mutateAsync(hol);
-    setHol({ holiday_date: "", name: "", is_recurring: false }); setHolOpen(false);
+    setHol({ holiday_date: "", name: "", is_recurring: false });
+    setHolOpen(false);
   };
+  // Match a calendar day against stored holidays (exact date or recurring month-day).
+  const holidayOn = (date: Date) => {
+    const iso = format(date, "yyyy-MM-dd"); const md = iso.slice(5);
+    return (holidays ?? []).find((h: any) => h.holiday_date === iso || (h.is_recurring && h.holiday_date.slice(5) === md));
+  };
+  const selectedHoliday = hol.holiday_date ? holidayOn(parseISO(hol.holiday_date)) : undefined;
 
   // ---- Balance adjust ----
   const [adjId, setAdjId] = useState<string | null>(null);
   const [adjVal, setAdjVal] = useState(0);
 
   const empName = (e: any) => `${e.first_name} ${e.last_name}`;
+
+  // Filter requests by employee name or employee number.
+  const filteredRequests = useMemo(() => {
+    const q = reqSearch.trim().toLowerCase();
+    if (!q) return requests ?? [];
+    return (requests ?? []).filter((r: any) => {
+      const name = r.employees ? empName(r.employees).toLowerCase() : "";
+      const empNo = (r.employees?.employee_number ?? "").toLowerCase();
+      return name.includes(q) || empNo.includes(q);
+    });
+  }, [requests, reqSearch]);
+
+  // Group balances by employee so the name shows once per employee instead of
+  // repeating on every leave-type row.
+  const groupedBalances = useMemo(() => {
+    const groups = new Map<string, { name: string; empNo?: string; rows: any[] }>();
+    (balances ?? []).forEach((b: any) => {
+      const g = groups.get(b.employee_id) ?? {
+        name: b.employees ? empName(b.employees) : "—",
+        empNo: b.employees?.employee_number,
+        rows: [],
+      };
+      g.rows.push(b);
+      groups.set(b.employee_id, g);
+    });
+    const arr = Array.from(groups.values());
+    arr.sort((a, b) => a.name.localeCompare(b.name));
+    arr.forEach((g) => g.rows.sort((x, y) => (x.leave_types?.name || "").localeCompare(y.leave_types?.name || "")));
+    return arr;
+  }, [balances]);
 
   return (
     <div className="space-y-6">
@@ -119,18 +160,29 @@ export default function Leave() {
 
         {/* ===== Requests ===== */}
         <TabsContent value="requests" className="space-y-4 pt-4">
-          <div className="flex items-center justify-between">
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
-              <SelectContent>{STATUSES.map((s) => <SelectItem key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</SelectItem>)}</SelectContent>
-            </Select>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 flex-1">
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+                <SelectContent>{STATUSES.map((s) => <SelectItem key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</SelectItem>)}</SelectContent>
+              </Select>
+              <div className="relative w-full max-w-xs">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  value={reqSearch}
+                  onChange={(e) => setReqSearch(e.target.value)}
+                  placeholder="Search by employee or employee no…"
+                  className="pl-9"
+                />
+              </div>
+            </div>
             {allowed && <Button onClick={() => setReqOpen(true)}><Plus className="w-4 h-4" />New Request</Button>}
           </div>
           <Card><CardContent className="pt-6 overflow-x-auto">
             <table className="data-table">
               <thead><tr><th>Request #</th><th>Employee</th><th>Type</th><th>Dates</th><th className="text-right">Days</th><th>Status</th><th className="text-right">Actions</th></tr></thead>
               <tbody>
-                {(requests ?? []).map((r: any) => (
+                {filteredRequests.map((r: any) => (
                   <tr key={r.id}>
                     <td className="text-muted-foreground">{r.request_number || "—"}</td>
                     <td className="font-medium text-foreground">{r.employees ? empName(r.employees) : "—"}<div className="text-xs text-muted-foreground">{r.employees?.employee_number}</div></td>
@@ -147,7 +199,7 @@ export default function Leave() {
                     </td>
                   </tr>
                 ))}
-                {(requests ?? []).length === 0 && <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">No leave requests.</td></tr>}
+                {filteredRequests.length === 0 && <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">{reqSearch.trim() ? "No matching leave requests." : "No leave requests."}</td></tr>}
               </tbody>
             </table>
           </CardContent></Card>
@@ -159,17 +211,22 @@ export default function Leave() {
             <table className="data-table">
               <thead><tr><th>Employee</th><th>Type</th><th className="text-right">Entitled</th><th className="text-right">Taken</th><th className="text-right">Reserved</th><th className="text-right">Available</th>{allowed && <th></th>}</tr></thead>
               <tbody>
-                {(balances ?? []).map((b: any) => (
-                  <tr key={b.id}>
-                    <td className="font-medium text-foreground">{b.employees ? empName(b.employees) : "—"}</td>
-                    <td>{b.leave_types?.name}</td>
+                {groupedBalances.map((g) => g.rows.map((b: any, i: number) => (
+                  <tr key={b.id} className={i === 0 ? "border-t-2 border-border" : ""}>
+                    {i === 0 && (
+                      <td rowSpan={g.rows.length} className="font-medium text-foreground align-top">
+                        {g.name}
+                        {g.empNo && <div className="text-xs text-muted-foreground">{g.empNo}</div>}
+                      </td>
+                    )}
+                    <td><Badge style={{ backgroundColor: b.leave_types?.color || undefined }} className="text-white">{b.leave_types?.name}</Badge></td>
                     <td className="text-right">{Number(b.entitled) + Number(b.carried_forward) + Number(b.adjustment)}</td>
                     <td className="text-right">{b.taken}</td>
                     <td className="text-right">{b.reserved}</td>
                     <td className="text-right font-bold">{b.available}</td>
                     {allowed && <td className="text-right"><Button size="sm" variant="ghost" onClick={() => { setAdjId(b.id); setAdjVal(Number(b.adjustment)); }}>Adjust</Button></td>}
                   </tr>
-                ))}
+                )))}
                 {(balances ?? []).length === 0 && <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">No balances.</td></tr>}
               </tbody>
             </table>
@@ -194,7 +251,7 @@ export default function Leave() {
                     </td>
                     <td className="text-right">{t.default_annual_quota}</td>
                     <td>{t.is_active ? "Yes" : "No"}</td>
-                    {allowed && <td className="text-right"><Button size="sm" variant="ghost" onClick={() => setTypeForm({ id: t.id, name: t.name, code: t.code, is_paid: t.is_paid, payroll_treatment: t.payroll_treatment || "paid", default_annual_quota: Number(t.default_annual_quota), requires_approval: t.requires_approval, max_consecutive_days: t.max_consecutive_days, allow_negative_balance: t.allow_negative_balance, color: t.color || "#3b82f6", is_active: t.is_active }) || setTypeOpen(true)}>Edit</Button></td>}
+                    {allowed && <td className="text-right"><Button size="sm" variant="ghost" onClick={() => { setTypeForm({ id: t.id, name: t.name, code: t.code, is_paid: t.is_paid, payroll_treatment: t.payroll_treatment || "paid", default_annual_quota: Number(t.default_annual_quota), requires_approval: t.requires_approval, max_consecutive_days: t.max_consecutive_days, allow_negative_balance: t.allow_negative_balance, color: t.color || "#3b82f6", is_active: t.is_active }); setTypeOpen(true); }}>Edit</Button></td>}
                   </tr>
                 ))}
               </tbody>
@@ -203,24 +260,53 @@ export default function Leave() {
         </TabsContent>
 
         {/* ===== Holidays ===== */}
-        <TabsContent value="holidays" className="space-y-4 pt-4">
-          {allowed && <div className="flex justify-end"><Button onClick={() => setHolOpen(true)}><Plus className="w-4 h-4" />Add Holiday</Button></div>}
-          <Card><CardContent className="pt-6 overflow-x-auto">
-            <table className="data-table">
-              <thead><tr><th>Date</th><th>Name</th><th>Recurring</th>{allowed && <th></th>}</tr></thead>
-              <tbody>
-                {(holidays ?? []).map((h: any) => (
-                  <tr key={h.id}>
-                    <td className="text-muted-foreground"><CalendarDays className="w-3.5 h-3.5 inline mr-1" />{h.holiday_date}</td>
-                    <td className="font-medium text-foreground">{h.name}</td>
-                    <td>{h.is_recurring ? <Badge variant="secondary">Yearly</Badge> : "—"}</td>
-                    {allowed && <td className="text-right"><Button size="sm" variant="ghost" onClick={() => deleteHoliday.mutate(h.id)}><Trash2 className="w-3.5 h-3.5" /></Button></td>}
-                  </tr>
-                ))}
-                {(holidays ?? []).length === 0 && <tr><td colSpan={4} className="text-center py-8 text-muted-foreground">No holidays.</td></tr>}
-              </tbody>
-            </table>
-          </CardContent></Card>
+        <TabsContent value="holidays" className="pt-4">
+          {/* Full-width modern calendar — click any day to add/edit a holiday */}
+          <Card>
+            <CardContent className="pt-6">
+              <Calendar
+                mode="single"
+                month={holMonth}
+                onMonthChange={setHolMonth}
+                selected={hol.holiday_date ? parseISO(hol.holiday_date) : undefined}
+                onSelect={(d) => {
+                  if (!d) return;
+                  const existing = holidayOn(d);
+                  setHol({ holiday_date: format(d, "yyyy-MM-dd"), name: existing?.name ?? "", is_recurring: existing?.is_recurring ?? false });
+                  setHolOpen(true);
+                }}
+                showOutsideDays
+                modifiers={{ holiday: (d) => !!holidayOn(d) }}
+                modifiersClassNames={{ holiday: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300 font-bold ring-1 ring-rose-300 dark:ring-rose-700" }}
+                className="w-full p-0"
+                classNames={{
+                  months: "w-full",
+                  month: "w-full space-y-4",
+                  caption: "flex justify-center pt-1 pb-2 relative items-center",
+                  caption_label: "text-lg sm:text-xl font-semibold",
+                  nav: "space-x-1 flex items-center",
+                  nav_button: "h-9 w-9 bg-transparent p-0 opacity-70 hover:opacity-100 border border-input rounded-md inline-flex items-center justify-center",
+                  nav_button_previous: "absolute left-1",
+                  nav_button_next: "absolute right-1",
+                  table: "w-full border-collapse",
+                  head_row: "flex w-full",
+                  head_cell: "text-muted-foreground flex-1 font-medium text-[11px] sm:text-xs uppercase tracking-wide py-2",
+                  row: "flex w-full mt-1.5 sm:mt-2 gap-1 sm:gap-2",
+                  cell: "flex-1 relative p-0 text-center focus-within:relative focus-within:z-20",
+                  day: "h-16 sm:h-20 md:h-24 w-full rounded-xl p-0 font-normal text-sm sm:text-base inline-flex items-center justify-center border border-transparent hover:border-border hover:bg-accent transition-colors cursor-pointer aria-selected:opacity-100",
+                  day_selected: "!bg-primary !text-primary-foreground hover:!bg-primary ring-2 ring-primary/30",
+                  day_today: "border-primary/40 font-semibold",
+                  day_outside: "text-muted-foreground/40",
+                  day_disabled: "text-muted-foreground opacity-50",
+                  day_hidden: "invisible",
+                }}
+              />
+              <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-muted-foreground mt-4">
+                <span className="flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded bg-rose-100 dark:bg-rose-900/40 ring-1 ring-rose-300 dark:ring-rose-700 inline-block" /> Holiday</span>
+                <span>Click any day to {allowed ? "add or edit" : "view"} a holiday.</span>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
 
@@ -295,16 +381,74 @@ export default function Leave() {
         </DialogContent>
       </Dialog>
 
-      {/* Holiday dialog */}
+      {/* Holiday day dialog — opens when a calendar day is clicked */}
       <Dialog open={holOpen} onOpenChange={setHolOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Add Holiday</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div><Label>Date</Label><Input type="date" value={hol.holiday_date} onChange={(e) => setHol((f) => ({ ...f, holiday_date: e.target.value }))} /></div>
-            <div><Label>Name</Label><Input value={hol.name} onChange={(e) => setHol((f) => ({ ...f, name: e.target.value }))} /></div>
-            <label className="flex items-center gap-2 text-sm"><Checkbox checked={hol.is_recurring} onCheckedChange={(c) => setHol((f) => ({ ...f, is_recurring: !!c }))} /> Repeats yearly</label>
+          <DialogHeader>
+            <DialogTitle>
+              {selectedHoliday ? "Edit holiday" : "Add holiday"}
+              {hol.holiday_date && <span className="text-muted-foreground font-normal"> · {hol.holiday_date}</span>}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {allowed && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div><Label className="text-xs">Date</Label>
+                    <Input type="date" value={hol.holiday_date} onChange={(e) => setHol((f) => ({ ...f, holiday_date: e.target.value }))} />
+                  </div>
+                  <div><Label className="text-xs">Name</Label>
+                    <Input value={hol.name} onChange={(e) => setHol((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Vesak Poya" />
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                  <Checkbox checked={hol.is_recurring} onCheckedChange={(c) => setHol((f) => ({ ...f, is_recurring: !!c }))} /> Repeats every year
+                </label>
+                <div className="flex gap-2">
+                  <Button size="sm" disabled={!hol.holiday_date || !hol.name || createHoliday.isPending} onClick={saveHoliday}>
+                    <Plus className="w-4 h-4" /> {selectedHoliday ? "Save" : "Add Holiday"}
+                  </Button>
+                  {selectedHoliday && (
+                    <Button size="sm" variant="ghost" onClick={() => { deleteHoliday.mutate(selectedHoliday.id); setHolOpen(false); }}>
+                      <Trash2 className="w-3.5 h-3.5 text-destructive" /> Remove
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase mb-2">
+                Holidays in {format(holMonth, "MMMM yyyy")}
+              </p>
+              <div className="divide-y divide-border border border-border rounded-lg max-h-60 overflow-auto">
+                {(() => {
+                  const monthStr = format(holMonth, "yyyy-MM");
+                  const inMonth = (holidays ?? []).filter((h: any) =>
+                    h.holiday_date.startsWith(monthStr) || (h.is_recurring && h.holiday_date.slice(5, 7) === monthStr.slice(5, 7))
+                  ).sort((a: any, b: any) => a.holiday_date.slice(5).localeCompare(b.holiday_date.slice(5)));
+                  if (!inMonth.length) return <p className="text-center py-6 text-sm text-muted-foreground">No holidays this month.</p>;
+                  return inMonth.map((h: any) => (
+                    <div key={h.id} className="flex items-center justify-between px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <CalendarDays className="w-4 h-4 text-rose-500" />
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{h.name}</p>
+                          <p className="text-xs text-muted-foreground">{h.is_recurring ? `${h.holiday_date.slice(5)} (yearly)` : h.holiday_date}</p>
+                        </div>
+                        {h.is_recurring && <Badge variant="secondary" className="text-[10px]"><Repeat className="w-2.5 h-2.5 mr-0.5" />Yearly</Badge>}
+                      </div>
+                      {allowed && (
+                        <Button size="sm" variant="ghost" onClick={() => deleteHoliday.mutate(h.id)}>
+                          <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                        </Button>
+                      )}
+                    </div>
+                  ));
+                })()}
+              </div>
+            </div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setHolOpen(false)}>Cancel</Button><Button onClick={saveHoliday} disabled={createHoliday.isPending}>Add</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

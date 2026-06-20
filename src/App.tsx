@@ -8,6 +8,13 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import TenantRoute from "@/components/TenantRoute";
 import SuperAdminRoute from "@/components/SuperAdminRoute";
+import EmployeeRoute from "@/components/EmployeeRoute";
+import EmployeeLayout from "./components/layout/EmployeeLayout";
+import EmployeeDashboard from "./pages/employee/EmployeeDashboard";
+import MyAttendance from "./pages/employee/MyAttendance";
+import MySalarySlips from "./pages/employee/MySalarySlips";
+import ApplyLeave from "./pages/employee/ApplyLeave";
+import LeaveHistory from "./pages/employee/LeaveHistory";
 import AppLayout from "./components/layout/AppLayout";
 import ModuleLayout from "./components/layout/ModuleLayout";
 import { MODULE_CONFIGS } from "./config/modules";
@@ -104,6 +111,20 @@ const App = () => (
             <Route path="/signup" element={<Signup />} />
             <Route element={<ProtectedRoute />}>
               <Route path="/onboarding" element={<Onboarding />} />
+
+              {/* ═══════════════════════════════════════════════════
+                  EMPLOYEE SELF-SERVICE PORTAL — own dashboard only
+                  ═══════════════════════════════════════════════════ */}
+              <Route element={<EmployeeRoute />}>
+                <Route element={<EmployeeLayout />}>
+                  <Route path="/me" element={<EmployeeDashboard />} />
+                  <Route path="/me/attendance" element={<MyAttendance />} />
+                  <Route path="/me/payslips" element={<MySalarySlips />} />
+                  <Route path="/me/leave/apply" element={<ApplyLeave />} />
+                  <Route path="/me/leave" element={<LeaveHistory />} />
+                </Route>
+              </Route>
+
               <Route element={<AppLayout />}>
                 {/* Home — renders different dashboard based on role */}
                 <Route path="/" element={<Home />} />

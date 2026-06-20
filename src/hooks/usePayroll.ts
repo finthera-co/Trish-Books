@@ -195,7 +195,7 @@ export function usePayrollRunItems(runId?: string) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("payroll_run_items")
-        .select("*, employees(first_name, last_name, department, epf_number)")
+        .select("*, employees(first_name, last_name, department, epf_number, designation, employee_number, bank_account_no), payroll_item_details(*)")
         .eq("run_id", runId!)
         .order("created_at");
       if (error) throw error;
@@ -692,6 +692,49 @@ export function useFinalizePayrollRun() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["payroll_runs"] });
       toast.success("Payroll run finalized — now immutable");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ===== Publish payslips to employees (visibility gate + notify) =====
+export function usePublishPayslips() {
+  const qc = useQueryClient();
+  const { appUser } = useAuth();
+  return useMutation({
+    mutationFn: async (run: { id: string; period_start: string; period_end: string }) => {
+      const { error } = await supabase.from("payroll_runs").update({
+        payslips_published_at: new Date().toISOString(),
+        published_by: appUser?.id,
+      }).eq("id", run.id);
+      if (error) throw error;
+
+      // Notify each employee in the run that has a self-service login.
+      const { data: items } = await supabase
+        .from("payroll_run_items")
+        .select("employees(user_id, first_name)")
+        .eq("run_id", run.id);
+      const period = `${run.period_start} → ${run.period_end}`;
+      const rows = (items ?? [])
+        .map((it: any) => it.employees)
+        .filter((e: any) => e?.user_id)
+        .map((e: any) => ({
+          tenant_id: appUser?.tenant_id,
+          user_id: e.user_id,
+          type: "payroll",
+          title: "Payslip ready",
+          message: `Your payslip for ${period} is now available.`,
+          link: "/me/payslips",
+        }));
+      if (rows.length) await supabase.from("notifications").insert(rows);
+
+      writeAuditLog("Payslips Published", "payroll_runs", run.id, { notified: rows.length });
+      return rows.length;
+    },
+    onSuccess: (count) => {
+      qc.invalidateQueries({ queryKey: ["payroll_runs"] });
+      qc.invalidateQueries({ queryKey: ["my_payslips"] });
+      toast.success(`Payslips published${count ? ` — ${count} employee${count === 1 ? "" : "s"} notified` : ""}`);
     },
     onError: (e: Error) => toast.error(e.message),
   });

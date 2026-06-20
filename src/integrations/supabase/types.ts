@@ -3322,11 +3322,13 @@ export type Database = {
           last_name: string
           leave_balance: number
           manager_id: string | null
+          middle_name: string | null
           nic_number: string | null
           pay_rate: number | null
           pay_rate_type: string
           pay_schedule_id: string | null
           personal_phone: string | null
+          photo_url: string | null
           postal_code: string | null
           salary: number | null
           shift_id: string | null
@@ -3334,6 +3336,7 @@ export type Database = {
           status: string
           tenant_id: string
           tin_number: string | null
+          user_id: string | null
           vacation_balance: number
         }
         Insert: {
@@ -3365,11 +3368,13 @@ export type Database = {
           last_name: string
           leave_balance?: number
           manager_id?: string | null
+          middle_name?: string | null
           nic_number?: string | null
           pay_rate?: number | null
           pay_rate_type?: string
           pay_schedule_id?: string | null
           personal_phone?: string | null
+          photo_url?: string | null
           postal_code?: string | null
           salary?: number | null
           shift_id?: string | null
@@ -3377,6 +3382,7 @@ export type Database = {
           status?: string
           tenant_id: string
           tin_number?: string | null
+          user_id?: string | null
           vacation_balance?: number
         }
         Update: {
@@ -3408,11 +3414,13 @@ export type Database = {
           last_name?: string
           leave_balance?: number
           manager_id?: string | null
+          middle_name?: string | null
           nic_number?: string | null
           pay_rate?: number | null
           pay_rate_type?: string
           pay_schedule_id?: string | null
           personal_phone?: string | null
+          photo_url?: string | null
           postal_code?: string | null
           salary?: number | null
           shift_id?: string | null
@@ -3420,6 +3428,7 @@ export type Database = {
           status?: string
           tenant_id?: string
           tin_number?: string | null
+          user_id?: string | null
           vacation_balance?: number
         }
         Relationships: [
@@ -3449,6 +3458,13 @@ export type Database = {
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employees_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
@@ -6743,8 +6759,10 @@ export type Database = {
           notes: string | null
           pay_schedule_id: string | null
           payment_date: string | null
+          payslips_published_at: string | null
           period_end: string
           period_start: string
+          published_by: string | null
           rule_set_version_hash: string | null
           run_number: string
           status: string
@@ -6771,8 +6789,10 @@ export type Database = {
           notes?: string | null
           pay_schedule_id?: string | null
           payment_date?: string | null
+          payslips_published_at?: string | null
           period_end: string
           period_start: string
+          published_by?: string | null
           rule_set_version_hash?: string | null
           run_number: string
           status?: string
@@ -6799,8 +6819,10 @@ export type Database = {
           notes?: string | null
           pay_schedule_id?: string | null
           payment_date?: string | null
+          payslips_published_at?: string | null
           period_end?: string
           period_start?: string
+          published_by?: string | null
           rule_set_version_hash?: string | null
           run_number?: string
           status?: string
@@ -6847,6 +6869,13 @@ export type Database = {
             columns: ["pay_schedule_id"]
             isOneToOne: false
             referencedRelation: "pay_schedules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payroll_runs_published_by_fkey"
+            columns: ["published_by"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
           {
@@ -11170,6 +11199,7 @@ export type Database = {
         Args: { p_as_of: string; p_tax_code_id: string }
         Returns: number
       }
+      get_user_employee_id: { Args: never; Returns: string }
       get_user_permission: {
         Args: { p_module: string; p_user_id: string }
         Returns: string

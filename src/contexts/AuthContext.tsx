@@ -25,6 +25,7 @@ interface AuthContextType {
   isSuperAdmin: boolean;
   isCompanyAdmin: boolean;
   isPrimaryAdmin: boolean;
+  isEmployee: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -139,12 +140,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isSuperAdmin = appUser?.role_name === "Super Admin";
   const isPrimaryAdmin = appUser?.role_name === "Primary Admin" || appUser?.is_primary === true;
   const isCompanyAdmin = ["Company Admin", "Primary Admin"].includes(appUser?.role_name || "") || isSuperAdmin || isPrimaryAdmin;
+  const isEmployee = appUser?.role_name === "Employee";
 
   return (
     <AuthContext.Provider value={{
       user, appUser, session, loading,
       signIn, signUp, signOut,
-      isSuperAdmin, isCompanyAdmin, isPrimaryAdmin,
+      isSuperAdmin, isCompanyAdmin, isPrimaryAdmin, isEmployee,
     }}>
       {children}
     </AuthContext.Provider>

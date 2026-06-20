@@ -378,17 +378,20 @@ export default function AttendanceRegister() {
 
   const days = useMemo(() => daysInMonth(month), [month]);
 
-  const holidaySet = useMemo(() => {
-    const set = new Set<string>();
+  // Map each in-month date to its holiday name (exact date or recurring month-day),
+  // so the grid can both mark and label holidays.
+  const holidayNameByDate = useMemo(() => {
+    const map = new Map<string, string>();
     days.forEach((d) => {
-      const hit = holidays?.some((h: any) =>
+      const hit = holidays?.find((h: any) =>
         h.holiday_date === d ||
         (h.is_recurring && h.holiday_date.slice(5) === d.slice(5))
       );
-      if (hit) set.add(d);
+      if (hit) map.set(d, hit.name);
     });
-    return set;
+    return map;
   }, [holidays, days]);
+  const holidaySet = useMemo(() => new Set(holidayNameByDate.keys()), [holidayNameByDate]);
 
   const recordMap = useMemo(() => {
     const map = new Map<string, AttendanceRecord>();
@@ -510,7 +513,8 @@ export default function AttendanceRegister() {
                   <tr>
                     <th className="px-3 py-2 text-left font-medium text-muted-foreground sticky left-0 bg-muted/50 min-w-44">Employee</th>
                     {days.map((d) => (
-                      <th key={d} className={`px-1 py-2 text-center font-medium text-muted-foreground min-w-8 ${isWeekend(d) || holidaySet.has(d) ? "bg-muted/70" : ""}`}>
+                      <th key={d} title={holidayNameByDate.get(d) || undefined}
+                        className={`px-1 py-2 text-center font-medium text-muted-foreground min-w-8 ${isWeekend(d) || holidaySet.has(d) ? "bg-muted/70" : ""}`}>
                         {Number(d.slice(8))}
                       </th>
                     ))}
@@ -529,7 +533,7 @@ export default function AttendanceRegister() {
                         const holiday = holidaySet.has(d);
                         if (weekend || holiday) {
                           return (
-                            <td key={d} className="px-1 py-1 text-center bg-muted/40">
+                            <td key={d} title={holidayNameByDate.get(d) || (weekend ? "Weekend" : undefined)} className="px-1 py-1 text-center bg-muted/40">
                               <span className="text-[10px] text-muted-foreground">{holiday ? "H" : ""}</span>
                             </td>
                           );

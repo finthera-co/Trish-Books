@@ -16,7 +16,7 @@ import { Loader2, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function Home() {
-  const { appUser, isSuperAdmin, loading } = useAuth();
+  const { appUser, isSuperAdmin, isEmployee, loading } = useAuth();
 
   // Wait for user data to resolve before deciding which dashboard to show
   if (loading || !appUser) {
@@ -33,6 +33,11 @@ export default function Home() {
   // Super Admin should always land inside the control-plane module shell
   if (isSuperAdmin) {
     return <Navigate to="/admin" replace />;
+  }
+
+  // Self-service employees get their own portal
+  if (isEmployee) {
+    return <Navigate to="/me" replace />;
   }
 
   return <TenantDashboard />;

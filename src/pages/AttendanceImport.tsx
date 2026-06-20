@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   useDeviceProfiles, useSaveDeviceProfile, useImportPunches, useAggregateBatch,
-  useOverlappingBatches, useSetBiometricId,
+  useOverlappingBatches, useSetBiometricId, useDefaultWorkShift, useSaveStandardHours,
 } from "@/hooks/useAttendance";
 import { useEmployees } from "@/hooks/useData";
 import {
@@ -21,9 +21,32 @@ import { useDraftPersistence } from "@/hooks/useDraftPersistence";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { Upload, CheckCircle2, AlertTriangle, Sparkles, Wand2 } from "lucide-react";
+import { Upload, CheckCircle2, AlertTriangle, Sparkles, Wand2, Clock } from "lucide-react";
 
 const NONE = "__none__";
+
+type ImportType = "daily" | "weekly" | "monthly";
+
+// Shift an ISO date (yyyy-mm-dd) by n days using local components — no timezone drift.
+function addDays(iso: string, n: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + n);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+}
+
+// Resolve the fixed import window from the chosen cadence + anchor.
+// Daily = one day; Weekly = anchor..anchor+6; Monthly = whole calendar month.
+function computePeriod(type: ImportType, anchorDate: string, anchorMonth: string): { start: string; end: string } {
+  if (type === "monthly") {
+    if (!anchorMonth) return { start: "", end: "" };
+    const [y, m] = anchorMonth.split("-").map(Number);
+    const last = new Date(y, m, 0).getDate();
+    return { start: `${anchorMonth}-01`, end: `${anchorMonth}-${String(last).padStart(2, "0")}` };
+  }
+  if (!anchorDate) return { start: "", end: "" };
+  if (type === "daily") return { start: anchorDate, end: anchorDate };
+  return { start: anchorDate, end: addDays(anchorDate, 6) }; // weekly
+}
 
 interface PunchEntry {
   raw_device_id: string;
@@ -51,6 +74,19 @@ export default function AttendanceImport() {
   const importPunches = useImportPunches();
   const aggregate = useAggregateBatch();
   const setBiometric = useSetBiometricId();
+  const { data: defaultShift } = useDefaultWorkShift();
+  const saveStandardHours = useSaveStandardHours();
+
+  // Standard working hours config (drives OT during aggregation).
+  const [stdHours, setStdHours] = useState("8");
+  const [breakMins, setBreakMins] = useState("60");
+  useEffect(() => {
+    if (defaultShift === undefined) return; // still loading
+    if (defaultShift) {
+      setStdHours(String(defaultShift.ot_threshold_hours ?? defaultShift.standard_hours ?? 8));
+      setBreakMins(String(defaultShift.break_minutes ?? 60));
+    }
+  }, [defaultShift]);
 
   const [fileName, setFileName] = useState("");
   const [fileFormat, setFileFormat] = useState<"csv" | "xlsx">("csv");
@@ -60,8 +96,9 @@ export default function AttendanceImport() {
   const [autoDetected, setAutoDetected] = useState(false);
 
   const [profileId, setProfileId] = useState<string>(NONE);
-  const [periodStart, setPeriodStart] = useState("");
-  const [periodEnd, setPeriodEnd] = useState("");
+  const [importType, setImportType] = useState<ImportType>("monthly");
+  const [anchorDate, setAnchorDate] = useState(""); // daily / weekly anchor (yyyy-mm-dd)
+  const [anchorMonth, setAnchorMonth] = useState(""); // monthly anchor (yyyy-mm)
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileName, setProfileName] = useState("");
   const [acknowledgedOverlap, setAcknowledgedOverlap] = useState(false);
@@ -74,7 +111,7 @@ export default function AttendanceImport() {
   const { appUser } = useAuth();
   const scope = appUser ? `${appUser.tenant_id}:${appUser.id}` : undefined;
   const { value: savedCfg, setValue: setSavedCfg, clearDraft: clearCfg } =
-    useDraftPersistence<{ cfg: MappingConfig; periodStart: string; periodEnd: string } | null>({
+    useDraftPersistence<{ cfg: MappingConfig; importType: ImportType; anchorDate: string; anchorMonth: string } | null>({
       page: "attendance-import-config", scope, initial: null,
     });
   const [restoredCfg, setRestoredCfg] = useState(false);
@@ -86,8 +123,9 @@ export default function AttendanceImport() {
   useEffect(() => {
     if (savedCfg && !cfg) {
       setCfg(savedCfg.cfg);
-      if (savedCfg.periodStart) setPeriodStart(savedCfg.periodStart);
-      if (savedCfg.periodEnd) setPeriodEnd(savedCfg.periodEnd);
+      if (savedCfg.importType) setImportType(savedCfg.importType);
+      if (savedCfg.anchorDate) setAnchorDate(savedCfg.anchorDate);
+      if (savedCfg.anchorMonth) setAnchorMonth(savedCfg.anchorMonth);
       setRestoredCfg(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -181,22 +219,44 @@ export default function AttendanceImport() {
     return { entries, total: entries.length, failCount, matchedCount, unmatchedIds };
   }, [cfg, rows, biometricMap]);
 
-  // Derived period from parsed punches
+  // Actual span of the file's punches — used to auto-fill the anchor and to detect mismatches.
   const derivedPeriod = useMemo(() => {
     const dates = model.entries.filter((e) => e.punch_at).map((e) => e.punch_at!.slice(0, 10)).sort();
     return dates.length ? { start: dates[0], end: dates[dates.length - 1] } : { start: "", end: "" };
   }, [model.entries]);
 
-  const effStart = periodStart || derivedPeriod.start;
-  const effEnd = periodEnd || derivedPeriod.end;
+  // The import window is fixed by the chosen cadence — no arbitrary ranges.
+  const period = useMemo(() => computePeriod(importType, anchorDate, anchorMonth), [importType, anchorDate, anchorMonth]);
+  const effStart = period.start;
+  const effEnd = period.end;
+
+  // Auto-fill the anchor from the first parsed punch (only when not already set / restored).
+  useEffect(() => {
+    if (!derivedPeriod.start) return;
+    if (importType === "monthly") { if (!anchorMonth) setAnchorMonth(derivedPeriod.start.slice(0, 7)); }
+    else if (!anchorDate) setAnchorDate(derivedPeriod.start);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [derivedPeriod.start, importType]);
+
+  // Punches that fall outside the selected window — these are excluded from the commit.
+  const windowStats = useMemo(() => {
+    if (!effStart || !effEnd) return { inWindow: 0, outOfWindow: 0 };
+    let inWindow = 0, outOfWindow = 0;
+    model.entries.forEach((e) => {
+      if (!e.punch_at) return;
+      const d = e.punch_at.slice(0, 10);
+      if (d >= effStart && d <= effEnd) inWindow++; else outOfWindow++;
+    });
+    return { inWindow, outOfWindow };
+  }, [model.entries, effStart, effEnd]);
 
   const { data: overlaps } = useOverlappingBatches(effStart || undefined, effEnd || undefined);
 
   // Mirror the lightweight config so a refresh restores the mapping (never the rows/file).
   useEffect(() => {
-    if (cfg && headers.length > 0) setSavedCfg({ cfg, periodStart: effStart, periodEnd: effEnd });
+    if (cfg && headers.length > 0) setSavedCfg({ cfg, importType, anchorDate, anchorMonth });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg, effStart, effEnd, headers.length]);
+  }, [cfg, importType, anchorDate, anchorMonth, headers.length]);
 
   // ---- Validation gates --------------------------------------------------
   const deviceIdMapped = !!cfg?.mapping.device_id;
@@ -204,15 +264,20 @@ export default function AttendanceImport() {
   const parseFailureRate = model.total > 0 ? model.failCount / model.total : 0;
   const parseOk = model.total > 0 && parseFailureRate < 0.2;
   const anyMatched = model.matchedCount > 0;
+  const periodSet = !!effStart && !!effEnd;
+  const inWindowOk = windowStats.inWindow > 0;
   const hasOverlap = !!overlaps && overlaps.length > 0;
   const overlapOk = !hasOverlap || acknowledgedOverlap;
-  const canImport = deviceIdMapped && dateMapped && parseOk && anyMatched && overlapOk;
+  const canImport = deviceIdMapped && dateMapped && parseOk && anyMatched && periodSet && inWindowOk && overlapOk;
 
+  const periodLabel = importType === "daily" ? "day" : importType === "weekly" ? "week" : "month";
   const gateReason = !deviceIdMapped ? "Map the Device ID column."
     : !dateMapped ? "Map the date/time column(s)."
     : model.total === 0 ? "No data rows parsed."
     : !parseOk ? `${model.failCount} of ${model.total} rows have unreadable dates (${Math.round(parseFailureRate * 100)}%) — the date column is likely wrong.`
     : !anyMatched ? "Zero employees matched — the Device ID column is likely wrong, or no employees have a biometric ID set."
+    : !periodSet ? `Select the ${periodLabel} to import.`
+    : !inWindowOk ? `No punches fall within the selected ${periodLabel} — pick the ${periodLabel} that matches this file.`
     : !overlapOk ? "A batch for this period already exists — acknowledge the overlap warning to continue."
     : "";
 
@@ -221,7 +286,12 @@ export default function AttendanceImport() {
   // ---- Commit ------------------------------------------------------------
   const handleImport = async () => {
     if (!cfg) return;
-    const valid: PunchEntry[] = model.entries.filter((e) => e.punch_at);
+    // Only commit punches inside the selected cadence window — the window, not the file, defines the period.
+    const valid: PunchEntry[] = model.entries.filter((e) => {
+      if (!e.punch_at) return false;
+      const d = e.punch_at.slice(0, 10);
+      return d >= effStart && d <= effEnd;
+    });
     const list = valid.map((e) => ({
       raw_device_id: e.raw_device_id, punch_at: e.punch_at!, direction: e.direction,
       raw_row: e.raw_row, employee_id: e.employee_id,
@@ -235,6 +305,13 @@ export default function AttendanceImport() {
     setCommittedBatchId(batch.id);
     clearCfg();
     toast.success("Punches imported");
+    // Auto-aggregate straight away so worked/OT hours are computed without a
+    // second click and are immediately ready for payroll Step 2.
+    try {
+      await aggregate.mutateAsync(batch.id);
+    } catch {
+      /* aggregate hook surfaces its own error toast; user can re-run below */
+    }
   };
 
   const handleSaveProfile = async () => {
@@ -286,6 +363,45 @@ export default function AttendanceImport() {
           <p className="page-description">Upload a biometric device export — columns are auto-detected, validated, and matched to employees.</p>
         </div>
       </div>
+
+      {/* Standard working hours — drives OT during aggregation */}
+      <Card>
+        <CardHeader><CardTitle className="text-base flex items-center gap-2"><Clock className="w-4 h-4" />Standard working hours</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Overtime is any time worked beyond the standard daily hours. Set your company's standard here — it's applied automatically when attendance is aggregated, and the resulting worked &amp; OT hours flow into payroll Step&nbsp;2.
+          </p>
+          <div className="grid grid-cols-2 gap-4 max-w-md">
+            <div>
+              <Label>Standard hours / day</Label>
+              <Input type="number" min="0" step="0.5" value={stdHours} onChange={(e) => setStdHours(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground mt-1">Hours beyond this count as OT.</p>
+            </div>
+            <div>
+              <Label>Unpaid break (minutes)</Label>
+              <Input type="number" min="0" step="5" value={breakMins} onChange={(e) => setBreakMins(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground mt-1">Deducted from worked hours.</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              size="sm"
+              disabled={saveStandardHours.isPending || !stdHours}
+              onClick={() => saveStandardHours.mutate({ standard_hours: Number(stdHours) || 0, break_minutes: Number(breakMins) || 0 })}
+            >
+              {saveStandardHours.isPending ? "Saving..." : "Save standard hours"}
+            </Button>
+            {defaultShift && (
+              <span className="text-[11px] text-muted-foreground">
+                Current: {Number(defaultShift.ot_threshold_hours ?? 8)} h/day · {Number(defaultShift.break_minutes ?? 0)} min break
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-amber-600">
+            Already imported &amp; aggregated this period? Re-run aggregation after changing these so OT recalculates.
+          </p>
+        </CardContent>
+      </Card>
 
       {/* Section A — Upload & profile */}
       <Card>
@@ -378,8 +494,27 @@ export default function AttendanceImport() {
                   <Input type="number" value={cfg.debounce_seconds} onChange={(e) => patchCfg({ debounce_seconds: Number(e.target.value) })} />
                   <p className="text-[11px] text-muted-foreground mt-1">Collapse repeat scans within N seconds.</p>
                 </div>
-                <div><Label>Period start</Label><Input type="date" value={effStart} onChange={(e) => setPeriodStart(e.target.value)} /></div>
-                <div><Label>Period end</Label><Input type="date" value={effEnd} onChange={(e) => setPeriodEnd(e.target.value)} /></div>
+                <div>
+                  <Label>Import type</Label>
+                  <Select value={importType} onValueChange={(v) => setImportType(v as ImportType)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="daily">Daily</SelectItem>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  {importType === "monthly" ? (
+                    <><Label>Month</Label><Input type="month" value={anchorMonth} onChange={(e) => setAnchorMonth(e.target.value)} /></>
+                  ) : (
+                    <><Label>{importType === "weekly" ? "Week starting" : "Date"}</Label><Input type="date" value={anchorDate} onChange={(e) => setAnchorDate(e.target.value)} /></>
+                  )}
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    {periodSet ? `Window: ${effStart} → ${effEnd}` : "Pick the period to import into the register."}
+                  </p>
+                </div>
               </div>
 
               <div className="flex items-center gap-3 pt-2 border-t">
@@ -405,6 +540,7 @@ export default function AttendanceImport() {
                   <Badge variant="secondary">{model.matchedCount}/{model.total} matched</Badge>
                   <Badge variant="outline" className="text-amber-600 border-amber-500/50">{model.unmatchedIds.length} device IDs need linking</Badge>
                   {model.failCount > 0 && <Badge variant="outline" className="text-rose-600 border-rose-500/50">{model.failCount} unreadable dates</Badge>}
+                  {windowStats.outOfWindow > 0 && <Badge variant="outline" className="text-rose-600 border-rose-500/50">{windowStats.outOfWindow} outside selected {periodLabel} (excluded)</Badge>}
                   <span className="text-[11px] text-muted-foreground">Dates parsed in US (mm/dd) order — if timestamps look wrong, the date column or format is the cause.</span>
                 </div>
 
@@ -480,9 +616,14 @@ export default function AttendanceImport() {
                     <p className="text-sm text-muted-foreground">
                       {model.total} rows · {model.matchedCount} matched · {model.total - model.matchedCount} unmatched · {collapsedCount} duplicate scans collapsed.
                     </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {aggregate.isPending
+                        ? "Calculating worked & OT hours…"
+                        : "Worked & OT hours were calculated automatically and recorded into the Attendance Register — they're ready to pull into payroll Step 2. Changed the standard hours? Re-run to recalculate OT."}
+                    </p>
                     <div className="flex justify-end">
-                      <Button onClick={() => aggregate.mutate(committedBatchId)} disabled={aggregate.isPending}>
-                        {aggregate.isPending ? "Aggregating..." : "Run aggregation"}
+                      <Button variant="outline" onClick={() => aggregate.mutate(committedBatchId)} disabled={aggregate.isPending}>
+                        {aggregate.isPending ? "Aggregating..." : "Re-run aggregation"}
                       </Button>
                     </div>
                   </div>

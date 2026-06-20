@@ -647,6 +647,30 @@ export function useCreateEmployee() {
   });
 }
 
+/**
+ * Creates an employee together with a self-service login account (role 'Employee')
+ * in one atomic server call. Used when the admin supplies an email + temp password.
+ */
+export function useProvisionEmployee() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: Record<string, any>) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Not authenticated");
+      const res = await supabase.functions.invoke("provision-employee", { body: payload });
+      if (res.error) throw new Error(res.error.message);
+      if (!res.data?.success) throw new Error(res.data?.error || "Failed to provision employee");
+      writeAuditLog("Employee Provisioned", "employees", res.data.employee?.id, { email: payload.email });
+      return res.data.employee;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["employees"] });
+      toast.success("Employee added with login access");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
 export function useUpdateEmployee() {
   const queryClient = useQueryClient();
   return useMutation({

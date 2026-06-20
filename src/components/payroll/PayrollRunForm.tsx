@@ -70,6 +70,8 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<EmployeePayItem[]>([]);
   const [empSearch, setEmpSearch] = useState("");
+  // Guards the one-time auto-apply of biometric attendance when Step 2 opens.
+  const [autoAppliedBiometric, setAutoAppliedBiometric] = useState(false);
 
   const { data: employees } = useEmployees();
   const { data: schedules } = usePaySchedules();
@@ -133,6 +135,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
         attendance_missing: false,
       }));
       setItems(empItems);
+      setAutoAppliedBiometric(false); // re-apply biometric for the freshly-built rows
       setStep(2);
     } else if (step === 2) {
       setStep(3);
@@ -230,6 +233,19 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
     toast.success(applied > 0 ? `Attendance applied to ${applied} employee(s)` : "No matching employees for this period's attendance");
   };
 
+  // Auto-apply biometric attendance (worked hours + OT) the first time Step 2
+  // opens for a period that has aggregated biometric data — so the figures show
+  // without the user having to click "Import attendance for this period".
+  useEffect(() => {
+    if (step !== 2 || autoAppliedBiometric) return;
+    if (loadingAttendance) return;
+    if (!biometricSummary || Object.keys(biometricSummary).length === 0) return;
+    if (items.length === 0) return;
+    importAttendance();
+    setAutoAppliedBiometric(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, biometricSummary, loadingAttendance, items.length, autoAppliedBiometric]);
+
   const selectedItems = items.filter((i) => i.selected);
 
   const totals = useMemo(() => {
@@ -295,11 +311,12 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
     setScheduleId("");
     setNotes("");
     setItems([]);
+    setAutoAppliedBiometric(false);
   };
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) resetForm(); }}>
-      <DialogContent className={`${step === 2 ? "max-w-[95vw] xl:max-w-7xl" : "max-w-2xl"} max-h-[90vh] overflow-hidden flex flex-col`}>
+      <DialogContent className={`${step === 2 ? "max-w-[98vw] xl:max-w-[1700px] h-[92vh] max-h-[92vh]" : "max-w-2xl max-h-[90vh]"} overflow-hidden flex flex-col`}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Calculator className="w-5 h-5" />
@@ -404,17 +421,17 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                     <th className="px-3 py-2 text-left font-medium text-muted-foreground w-8 sticky left-0 z-40 bg-muted whitespace-nowrap"></th>
                     <th className="px-3 py-2 text-left font-medium text-muted-foreground sticky left-8 z-40 bg-muted whitespace-nowrap">Employee</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">Basic Salary</th>
-                    <th className="px-2 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Hours worked (imported from attendance)">Worked h</th>
-                    <th className="px-2 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Overtime hours (imported from attendance)">OT h</th>
-                    <th className="px-2 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Days present">Pres.</th>
-                    <th className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap" title="Approved leave in this period, by type">Leave (period)</th>
-                    <th className="px-2 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Unpaid absent days + no-pay leave">Unpaid Abs.</th>
-                    <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Pro-rata no-pay deduction — editable">Att. Ded.</th>
-                    <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Earned basic = Basic − Attendance Deduction">Earned Basic</th>
-                    <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">OT Pay</th>
+                    <th className="px-2 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Hours worked (imported from attendance)">Worked Hours</th>
+                    <th className="px-2 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Overtime hours (imported from attendance)">Overtime Hours</th>
+                    <th className="px-2 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Days present">Days Present</th>
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap" title="Approved leave in this period, by type">Leave (This Period)</th>
+                    <th className="px-2 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Unpaid absent days + no-pay leave">Unpaid Absent Days</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Pro-rata no-pay deduction — editable">Attendance Deduction</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Earned basic = Basic − Attendance Deduction">Earned Basic Salary</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">Overtime Pay</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">Bonuses</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">Allowances</th>
-                    <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">Other Ded.</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">Other Deductions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -449,13 +466,26 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                           if (leaveLoading) return <span className="text-xs text-muted-foreground animate-pulse">…</span>;
                           const codes = lv ? Object.entries(lv.byCode) : [];
                           if (!codes.length) return <span className="text-muted-foreground">—</span>;
-                          return <span className="flex flex-wrap gap-1">{codes.map(([code, info]) => (
-                            <Badge key={code} variant="outline"
-                              title={`${info.name} — ${info.treatment === "unpaid" ? "No-pay (reduces basic)" : info.treatment === "encashable" ? "Encashable" : "Paid (no salary impact)"}`}
-                              className={`text-[10px] ${info.treatment === "unpaid" ? "text-amber-700 dark:text-amber-400 border-amber-400" : "text-muted-foreground"}`}>
-                              {code} {info.days}
-                            </Badge>
-                          ))}</span>;
+                          // Paid total = everything that doesn't reduce basic (paid + encashable);
+                          // No-pay total = unpaid days (already summed in lv.unpaidDays).
+                          const paidDays = round2(codes.reduce((s, [, info]) => s + (info.treatment === "unpaid" ? 0 : info.days), 0));
+                          const unpaidDays = round2(lv?.unpaidDays ?? 0);
+                          return (
+                            <div className="flex flex-col gap-1">
+                              <span className="flex flex-wrap gap-1">{codes.map(([code, info]) => (
+                                <Badge key={code} variant="outline"
+                                  title={`${info.name} — ${info.treatment === "unpaid" ? "No-pay (reduces basic)" : info.treatment === "encashable" ? "Encashable" : "Paid (no salary impact)"}`}
+                                  className={`text-[10px] ${info.treatment === "unpaid" ? "text-amber-700 dark:text-amber-400 border-amber-400" : "text-muted-foreground"}`}>
+                                  {code} {info.days}
+                                </Badge>
+                              ))}</span>
+                              <span className="text-[10px] text-muted-foreground flex gap-1.5">
+                                {paidDays > 0 && <span><span className="text-foreground font-medium">{paidDays}</span> paid</span>}
+                                {paidDays > 0 && unpaidDays > 0 && <span>·</span>}
+                                {unpaidDays > 0 && <span className="text-amber-700 dark:text-amber-400"><span className="font-medium">{unpaidDays}</span> no-pay</span>}
+                              </span>
+                            </div>
+                          );
                         })()}
                       </td>
                       <td className={`px-2 py-2 text-right ${(item.unpaid_absent_days + leavePreview(item).unpaidDays) > 0 ? "text-destructive font-medium" : "text-muted-foreground"}`}>

@@ -1,7 +1,6 @@
 import { Outlet, useNavigate, useLocation, Link } from "react-router-dom";
 import { ChevronRight, Home, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { NavLink } from "@/components/NavLink";
 import { cn } from "@/lib/utils";
 import { useHideSidebar } from "@/stores/useAppStore";
 
@@ -33,33 +32,45 @@ export default function ModuleLayout({ config }: ModuleLayoutProps) {
         "shrink-0 bg-sidebar hidden md:flex flex-col border-r border-sidebar-border transition-all duration-300 overflow-hidden",
         hideSidebar ? "w-0 border-r-0" : "w-60"
       )}>
-        <div className="p-4 border-b border-sidebar-border">
-          <button
-            onClick={() => navigate("/")}
-            className="flex items-center gap-2 text-xs font-medium text-sidebar-foreground/60 hover:text-sidebar-foreground transition-all duration-200"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Back to Home
-          </button>
-          <div className="flex items-center gap-3 mt-4">
-            <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center shadow-sm", config.color)}>
-              <config.icon className="w-4.5 h-4.5 text-primary-foreground" />
+        <div className="relative p-4 border-b border-sidebar-border overflow-hidden">
+          {/* module-colored wash */}
+          <div className={cn("absolute inset-0 opacity-[0.16] pointer-events-none", config.color)} />
+          <div className="relative">
+            <button
+              onClick={() => navigate("/")}
+              className="flex items-center gap-2 text-xs font-medium text-sidebar-foreground/60 hover:text-sidebar-foreground transition-all duration-200"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Back to Home
+            </button>
+            <div className="flex items-center gap-3 mt-4">
+              <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center shadow-md", config.color)}>
+                <config.icon className="w-4.5 h-4.5 text-primary-foreground" />
+              </div>
+              <span className="font-bold text-sidebar-accent-foreground text-sm tracking-tight">{config.label}</span>
             </div>
-            <span className="font-bold text-sidebar-accent-foreground text-sm tracking-tight">{config.label}</span>
           </div>
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {config.sidebarItems.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              className="sidebar-item sidebar-item-inactive"
-              activeClassName="sidebar-item sidebar-item-active"
-            >
-              <item.icon className="w-[18px] h-[18px] shrink-0" />
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
+          {config.sidebarItems.map((item) => {
+            const isActive = location.pathname === item.path;
+            return (
+              <button
+                key={item.path}
+                onClick={() => navigate(item.path)}
+                className={cn(
+                  "relative w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ease-out",
+                  isActive
+                    ? "bg-accent text-accent-foreground"
+                    : "text-sidebar-foreground hover:bg-muted hover:text-foreground hover:translate-x-0.5",
+                )}
+              >
+                {isActive && <span className={cn("absolute left-0 top-1.5 bottom-1.5 w-1 rounded-full", config.color)} />}
+                <item.icon className={cn("w-[18px] h-[18px] shrink-0", isActive && "text-foreground")} />
+                <span className="text-left">{item.label}</span>
+              </button>
+            );
+          })}
         </nav>
       </aside>
 

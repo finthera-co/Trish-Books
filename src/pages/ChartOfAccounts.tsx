@@ -29,7 +29,7 @@ import {
 
 import InlineOpeningBalance from "@/components/chart-of-accounts/InlineOpeningBalance";
 import { useSystemSetting } from "@/hooks/useOpeningBalanceSettings";
-import { useFiscalPeriods, usePeriodOpeningBalances, usePeriodAccountMovements } from "@/hooks/useFiscalPeriodBalances";
+import { useFiscalPeriods, usePeriodOpeningBalances, usePeriodAccountMovements, useCumulativeAccountMovements } from "@/hooks/useFiscalPeriodBalances";
 import { useInventoryAccountBalanceMap } from "@/hooks/useComputedInventoryValue";
 import { netAccountBalance } from "@/lib/accountBalances";
 import FiscalPeriodSelector from "@/components/FiscalPeriodSelector";
@@ -43,6 +43,7 @@ import {
   isOpeningBalanceEquityAccount,
   isContraAccount,
   getAccountTypeLabel,
+  isPeriodBasedAccount,
 } from "@/lib/accountTypes";
 import {
   buildAccountsMap,
@@ -129,20 +130,34 @@ function getAccountDisplayBalance(
 
   const isContra = isContraAccount(account);
 
-  // Opening balance contribution (period OB if present, else stored OB).
-  const periodOB = periodOBMap?.get(account.id);
-  let opening: PostedMovement;
-  if (periodOB) {
-    opening = { debit: periodOB.debit, credit: periodOB.credit };
-  } else {
-    const ob = Number((account as any).opening_balance ?? 0);
-    const debitNormal = getNormalBalance(account.account_type, isContra) === "Debit";
-    const obType = (account as any).opening_balance_type ?? (debitNormal ? "debit" : "credit");
-    opening = obType === "debit" ? { debit: ob, credit: 0 } : { debit: 0, credit: ob };
-  }
-
-  // Posted journal movement contribution.
+  // Posted journal movement contribution. For balance-sheet accounts this map
+  // carries the CUMULATIVE posted movements up to the period end; for P&L
+  // accounts it carries only the in-period movements (see the page-level
+  // movementsMap memo).
   const movements = movementsMap?.get(account.id) ?? { debit: 0, credit: 0 };
+
+  let opening: PostedMovement;
+  if (isPeriodBasedAccount(account.account_type)) {
+    // P&L accounts reset each fiscal year, so they carry only the period
+    // opening balance (or the stored opening field as a fallback), never the
+    // lifetime balance — movements here are in-period only.
+    const periodOB = periodOBMap?.get(account.id);
+    if (periodOB) {
+      opening = { debit: periodOB.debit, credit: periodOB.credit };
+    } else {
+      const ob = Number((account as any).opening_balance ?? 0);
+      const debitNormal = getNormalBalance(account.account_type, isContra) === "Debit";
+      const obType = (account as any).opening_balance_type ?? (debitNormal ? "debit" : "credit");
+      opening = obType === "debit" ? { debit: ob, credit: 0 } : { debit: 0, credit: ob };
+    }
+  } else {
+    // Balance-sheet accounts: the cumulative movements already include the
+    // opening-balance journal entry (opening balances are posted to the ledger
+    // against OBE) plus every posted transaction up to the period end, so the
+    // movement total IS the current balance. Adding the opening_balance field
+    // again would double-count it.
+    opening = { debit: 0, credit: 0 };
+  }
 
   return netAccountBalance({
     accountType: account.account_type,
@@ -899,11 +914,10 @@ export default function ChartOfAccounts() {
   // Computed inventory balance — never stored, always derived
   const computedBalanceMap = useInventoryAccountBalanceMap(accounts as any[]);
 
-  // Posted journal movement per account within the selected period — combined
-  // with the period opening balance this yields each account's period closing
-  // balance (matching the Trial Balance). Server-side filtered by period dates,
-  // status='posted' and voided_at is null.
-  const { data: movementsMap } = usePeriodAccountMovements(
+  // Posted journal movement per account WITHIN the selected period — used for
+  // P&L accounts, which reset each fiscal year. Server-side filtered by period
+  // dates, status='posted' and voided_at is null.
+  const { data: periodMovements } = usePeriodAccountMovements(
     selectedPeriod
       ? {
           id: selectedPeriod.id,
@@ -912,6 +926,29 @@ export default function ChartOfAccounts() {
         }
       : null
   );
+
+  // CUMULATIVE posted movements up to the period end — used for balance-sheet
+  // accounts so their displayed figure is the true running current balance
+  // (matching the petty cash ledger and OBE balance), reflecting every posted
+  // transaction regardless of which period it falls in.
+  const { data: cumulativeMovements } = useCumulativeAccountMovements(
+    selectedPeriod?.period_end ?? null
+  );
+
+  // One movements map for the rows: balance-sheet accounts get cumulative
+  // movements, P&L accounts get in-period movements. getAccountDisplayBalance
+  // pairs each with the correct opening-balance treatment.
+  const movementsMap = useMemo(() => {
+    const combined = new Map<string, { debit: number; credit: number }>();
+    for (const account of (accounts as Account[] | undefined) || []) {
+      const src = isPeriodBasedAccount(account.account_type)
+        ? periodMovements
+        : cumulativeMovements;
+      const m = src?.get(account.id);
+      if (m) combined.set(account.id, m);
+    }
+    return combined;
+  }, [accounts, periodMovements, cumulativeMovements]);
 
   const displayAccounts = useMemo(() => {
     return ((accounts as Account[] | undefined) || []).map((account) =>

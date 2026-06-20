@@ -89,6 +89,55 @@ export function usePeriodAccountMovements(
   });
 }
 
+/**
+ * Sum POSTED, non-voided journal-line movements per account CUMULATIVELY up to
+ * (and including) a cut-off date. Returns Map<account_id, { debit, credit }>.
+ *
+ * Unlike usePeriodAccountMovements (which only sums activity *inside* a period's
+ * window), this gives the running balance an account has reached by the cut-off
+ * date — the same all-posted-lines logic used by the petty cash ledger
+ * (getLedgerBalance) and the OBE balance. Because opening balances are
+ * themselves posted as journal entries (see useSaveAccountOpeningBalance), the
+ * opening balance is already folded in here. This is what the Chart of Accounts
+ * uses to show the true current balance of balance-sheet accounts, so a posted
+ * transaction is reflected regardless of which fiscal period is selected.
+ *
+ * When `cutoff` is null, every posted line is summed (lifetime balance).
+ */
+export function useCumulativeAccountMovements(cutoff: string | null) {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["cumulative_account_movements", appUser?.tenant_id, cutoff],
+    queryFn: async () => {
+      const map = new Map<string, { debit: number; credit: number }>();
+      if (!appUser?.tenant_id) return map;
+
+      let query = supabase
+        .from("journal_lines")
+        .select(
+          "account_id, debit, credit, journal_entries!inner(entry_date, status, tenant_id, voided_at)"
+        )
+        .eq("journal_entries.tenant_id", appUser.tenant_id)
+        .eq("journal_entries.status", "posted")
+        .is("journal_entries.voided_at", null);
+      if (cutoff) query = query.lte("journal_entries.entry_date", cutoff);
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      for (const line of (data || []) as any[]) {
+        const existing = map.get(line.account_id) || { debit: 0, credit: 0 };
+        existing.debit += Number(line.debit) || 0;
+        existing.credit += Number(line.credit) || 0;
+        map.set(line.account_id, existing);
+      }
+      return map;
+    },
+    enabled: !!appUser?.tenant_id,
+    staleTime: 30_000,
+  });
+}
+
 /** Save opening balances for a specific fiscal period */
 export function useSavePeriodOpeningBalances() {
   const { appUser } = useAuth();

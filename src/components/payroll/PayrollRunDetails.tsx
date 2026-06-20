@@ -5,10 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { usePayrollRunItems, useApprovePayrollRun, useProcessPayrollRun, useVoidPayrollRun, usePayrollGLPreview } from "@/hooks/usePayroll";
+import { usePayrollRunItems, useApprovePayrollRun, useProcessPayrollRun, useVoidPayrollRun, usePayrollGLPreview, usePublishPayslips } from "@/hooks/usePayroll";
 import { formatCurrency } from "@/lib/currency";
 import { exportToCsv } from "@/lib/csvExport";
-import { CheckCircle, XCircle, Printer, FileText, Download, Eye, AlertTriangle, ExternalLink } from "lucide-react";
+import { CheckCircle, XCircle, Printer, FileText, Download, Eye, AlertTriangle, ExternalLink, Send } from "lucide-react";
 
 interface Props {
   run: any;
@@ -20,6 +20,7 @@ const statusColors: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
   approved: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
   processed: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+  finalized: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400",
   voided: "bg-destructive/10 text-destructive",
 };
 
@@ -115,6 +116,7 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
   const approveRun = useApprovePayrollRun();
   const processRun = useProcessPayrollRun();
   const voidRun = useVoidPayrollRun();
+  const publishPayslips = usePublishPayslips();
   const [previewOpen, setPreviewOpen] = useState(false);
 
   if (!run) return null;
@@ -168,6 +170,11 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
               <FileText className="w-5 h-5" />
               {run.run_number}
               <Badge className={statusColors[run.status]}>{run.status.toUpperCase()}</Badge>
+              {run.payslips_published_at && (
+                <Badge className="bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400 gap-1">
+                  <Send className="w-3 h-3" /> PUBLISHED
+                </Badge>
+              )}
               {run.journal_entry_id && (
                 <Button
                   variant="link"
@@ -295,6 +302,20 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
                     <CheckCircle className="w-4 h-4" /> Process & Post to GL
                   </Button>
                 </>
+              )}
+              {["processed", "finalized"].includes(run.status) && !run.payslips_published_at && (
+                <Button
+                  size="sm"
+                  onClick={() => publishPayslips.mutate({ id: run.id, period_start: run.period_start, period_end: run.period_end })}
+                  disabled={publishPayslips.isPending}
+                >
+                  <Send className="w-4 h-4" /> {publishPayslips.isPending ? "Publishing…" : "Publish Payslips"}
+                </Button>
+              )}
+              {run.payslips_published_at && (
+                <span className="text-xs text-muted-foreground self-center">
+                  Published {new Date(run.payslips_published_at).toLocaleDateString()}
+                </span>
               )}
             </div>
           </div>
