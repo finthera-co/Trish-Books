@@ -229,6 +229,13 @@ function renderInvoiceHtml({ components, tableSettings, pageSettings, data }: Lo
 
 export async function downloadInvoicePdf(invoiceId: string, tenantId: string) {
   const loaded = await loadInvoiceForDownload(invoiceId, tenantId);
+  // No custom template configured → the designer layout has no components and
+  // would render a blank page. Fall back to the self-contained vector invoice.
+  if (!loaded.components.length) {
+    const { downloadInvoiceVectorPdf } = await import("@/lib/invoicePdf");
+    await downloadInvoiceVectorPdf(invoiceId, tenantId);
+    return;
+  }
   const node = renderInvoiceHtml(loaded);
   // Off-screen mount
   node.style.position = "fixed";

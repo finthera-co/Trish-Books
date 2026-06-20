@@ -4,7 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { usePaymentsReceived, useRecordPayment, useUpdateInvoice } from "@/hooks/useData";
 import { formatCurrency } from "@/lib/currency";
-import { DollarSign, Plus, Clock, CheckCircle2 } from "lucide-react";
+import { downloadInvoicePdf } from "@/lib/invoiceDownload";
+import { toast } from "sonner";
+import { DollarSign, Plus, Clock, CheckCircle2, Download } from "lucide-react";
 
 interface Props {
   invoice: any;
@@ -27,11 +29,26 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
   const [payReference, setPayReference] = useState("");
   const [payDate, setPayDate] = useState(new Date().toISOString().split("T")[0]);
 
+  const [downloading, setDownloading] = useState(false);
+
   const { data: payments, isLoading } = usePaymentsReceived(invoice?.id);
   const recordPayment = useRecordPayment();
   const updateInvoice = useUpdateInvoice();
 
   if (!invoice) return null;
+
+  const handleDownload = async () => {
+    if (!invoice.tenant_id) return toast.error("Missing tenant for this invoice");
+    setDownloading(true);
+    try {
+      await downloadInvoicePdf(invoice.id, invoice.tenant_id);
+      toast.success("Invoice downloaded");
+    } catch (e: any) {
+      toast.error("Failed to download: " + (e?.message || "unknown error"));
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const totalAmount = Number(invoice.total_amount);
   const amountPaid = invoice.amount_paid ?? 0;
@@ -75,6 +92,16 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
             <Badge className={statusColors[effectiveStatus] || statusColors.draft}>
               {effectiveStatus.toUpperCase()}
             </Badge>
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-auto"
+              onClick={handleDownload}
+              disabled={downloading}
+            >
+              <Download className="w-4 h-4 mr-1.5" />
+              {downloading ? "Preparing…" : "Download PDF"}
+            </Button>
           </DialogTitle>
         </DialogHeader>
 
