@@ -39,6 +39,41 @@ interface InvoicePdfData {
   tenant: any;
 }
 
+interface LoadedLogo {
+  dataUrl: string;
+  /** Natural pixel dimensions, used to preserve aspect ratio in the PDF. */
+  w: number;
+  h: number;
+}
+
+/**
+ * Load the company logo into a PNG data URL plus its natural dimensions.
+ * Returns null on any failure (missing, CORS-tainted, decode error) so the
+ * invoice still renders without it.
+ */
+export async function loadLogo(url?: string | null): Promise<LoadedLogo | null> {
+  if (!url) return null;
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return resolve(null);
+        ctx.drawImage(img, 0, 0);
+        resolve({ dataUrl: canvas.toDataURL("image/png"), w: img.naturalWidth, h: img.naturalHeight });
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
 /** Fetch everything the PDF needs for one invoice. */
 export async function loadInvoicePdfData(invoiceId: string, tenantId: string): Promise<InvoicePdfData> {
   const { data: invoice, error } = await supabase
@@ -50,7 +85,7 @@ export async function loadInvoicePdfData(invoiceId: string, tenantId: string): P
 
   const { data: tenant } = await supabase
     .from("tenants")
-    .select("company_name, country")
+    .select("company_name, country, registration_number, logo_url")
     .eq("id", tenantId)
     .maybeSingle();
 
@@ -63,40 +98,52 @@ export async function loadInvoicePdfData(invoiceId: string, tenantId: string): P
 }
 
 /** Render an invoice to a jsPDF document (no save). */
-export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdfData): jsPDF {
+export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdfData, logo?: LoadedLogo | null): jsPDF {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const M = 15; // page margin
   const right = pageW - M;
-  let y = M;
+  const y0 = M;
 
-  // ── Header: company (left) · INVOICE title (right) ──────────────────
+  // ── Header: logo + company (left) · INVOICE title (right) ───────────
+  let leftY = y0 + 2; // baseline for the first company text line
+  if (logo) {
+    // Fit the logo into a 45×18mm box, preserving aspect ratio.
+    const boxW = 45, boxH = 18;
+    const ratio = logo.w / logo.h || 1;
+    let drawW = boxW, drawH = boxW / ratio;
+    if (drawH > boxH) { drawH = boxH; drawW = boxH * ratio; }
+    doc.addImage(logo.dataUrl, "PNG", M, y0, drawW, drawH);
+    leftY = y0 + drawH + 5;
+  }
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
   setText(doc, INK);
-  doc.text(tenant?.company_name || "Your Company", M, y + 2);
+  doc.text(tenant?.company_name || "Your Company", M, leftY);
+  leftY += 6;
   if (tenant?.country) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     setText(doc, MUTED);
-    doc.text(String(tenant.country), M, y + 8);
+    doc.text(String(tenant.country), M, leftY);
+    leftY += 4;
   }
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(22);
   setText(doc, GREEN);
-  doc.text("INVOICE", right, y + 2, { align: "right" });
+  doc.text("INVOICE", right, y0 + 2, { align: "right" });
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   setText(doc, INK);
-  doc.text(invoice.invoice_number || "", right, y + 9, { align: "right" });
+  doc.text(invoice.invoice_number || "", right, y0 + 9, { align: "right" });
   if (invoice.status) {
     doc.setFontSize(8);
     setText(doc, MUTED);
-    doc.text(String(invoice.status).toUpperCase(), right, y + 14, { align: "right" });
+    doc.text(String(invoice.status).toUpperCase(), right, y0 + 14, { align: "right" });
   }
 
-  y += 22;
+  let y = Math.max(leftY + 1, y0 + 22);
   setDraw(doc, RULE);
   doc.setLineWidth(0.3);
   doc.line(M, y, right, y);
@@ -224,12 +271,26 @@ export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdf
     ny += wrapped.length * 4.5 + 4;
   }
 
+  // ── Footer: business registration no., centered at the foot ─────────
+  if (tenant?.registration_number) {
+    const pageH = doc.internal.pageSize.getHeight();
+    const fy = pageH - 12;
+    setDraw(doc, RULE);
+    doc.setLineWidth(0.3);
+    doc.line(pageW / 2 - 35, fy - 4, pageW / 2 + 35, fy - 4);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    setText(doc, MUTED);
+    doc.text(`BR No: ${tenant.registration_number}`, pageW / 2, fy, { align: "center" });
+  }
+
   return doc;
 }
 
 /** Fetch, render, and trigger a browser download of the invoice PDF. */
 export async function downloadInvoiceVectorPdf(invoiceId: string, tenantId: string): Promise<void> {
   const data = await loadInvoicePdfData(invoiceId, tenantId);
-  const doc = buildInvoicePdf(data);
+  const logo = await loadLogo(data.tenant?.logo_url);
+  const doc = buildInvoicePdf(data, logo);
   doc.save(`Invoice-${sanitize(data.invoice.invoice_number || invoiceId)}.pdf`);
 }

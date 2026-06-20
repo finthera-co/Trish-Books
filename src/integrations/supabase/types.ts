@@ -10370,6 +10370,8 @@ export type Database = {
           deleted_at: string | null
           id: string
           industry: string | null
+          logo_url: string | null
+          registration_number: string | null
           status: string
           subscription_plan_id: string | null
           updated_at: string
@@ -10381,6 +10383,8 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           industry?: string | null
+          logo_url?: string | null
+          registration_number?: string | null
           status?: string
           subscription_plan_id?: string | null
           updated_at?: string
@@ -10392,6 +10396,8 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           industry?: string | null
+          logo_url?: string | null
+          registration_number?: string | null
           status?: string
           subscription_plan_id?: string | null
           updated_at?: string
