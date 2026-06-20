@@ -410,9 +410,9 @@ export default function CreateInvoice() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
         {/* Main Form */}
-        <div className="lg:col-span-3 space-y-6">
+        <div className="lg:col-span-4 space-y-6">
           {/* Customer & Dates */}
           <Card>
             <CardContent className="p-5 space-y-5">
@@ -478,11 +478,11 @@ export default function CreateInvoice() {
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto border-y border-border">
-                <table className="w-full min-w-[880px] text-sm border-collapse">
+                <table className="w-full min-w-[900px] text-sm border-collapse">
                   <thead>
                     <tr className="bg-muted/40 [&>th]:px-3 [&>th]:py-2.5 [&>th]:text-[11px] [&>th]:font-semibold [&>th]:uppercase [&>th]:tracking-[0.05em] [&>th]:text-muted-foreground">
                       <th className="w-9 text-center">#</th>
-                      <th className="text-left min-w-[240px]">Item &amp; description</th>
+                      <th className="text-left min-w-[300px]">Description &amp; product</th>
                       <th className="text-left w-[190px]">Revenue account</th>
                       <th className="text-center w-16">Qty</th>
                       <th className="text-right w-24">Rate</th>
@@ -516,23 +516,27 @@ export default function CreateInvoice() {
                         </td>
                         <td>
                           <div className="space-y-1.5">
-                            <Select value={line.product_id || "none"}
-                              onValueChange={(v) => updateLine(line.id, "product_id", v === "none" ? "" : v)}>
-                              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select product..." /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">— No product (service) —</SelectItem>
-                                {products?.map((p: any) => {
-                                  const oh = onHandOf(p);
-                                  return (
-                                    <SelectItem key={p.id} value={p.id}>
-                                      {p.name}{oh !== null ? ` — ${oh} in stock` : ""}
-                                    </SelectItem>
-                                  );
-                                })}
-                              </SelectContent>
-                            </Select>
-                            <Input className="h-9 text-sm" placeholder="Description" value={line.description}
-                              onChange={(e) => updateLine(line.id, "description", e.target.value)} />
+                            {/* Description is the primary field (aligns with the rest of the
+                                row); the product picker is a compact link beside it. */}
+                            <div className="flex gap-1.5">
+                              <Input className="h-9 flex-1 text-sm" placeholder="Description" value={line.description}
+                                onChange={(e) => updateLine(line.id, "description", e.target.value)} />
+                              <Select value={line.product_id || "none"}
+                                onValueChange={(v) => updateLine(line.id, "product_id", v === "none" ? "" : v)}>
+                                <SelectTrigger className="h-9 w-[150px] shrink-0 text-xs"><SelectValue placeholder="Link product" /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">— No product (service) —</SelectItem>
+                                  {products?.map((p: any) => {
+                                    const oh = onHandOf(p);
+                                    return (
+                                      <SelectItem key={p.id} value={p.id}>
+                                        {p.name}{oh !== null ? ` — ${oh} in stock` : ""}
+                                      </SelectItem>
+                                    );
+                                  })}
+                                </SelectContent>
+                              </Select>
+                            </div>
                             {(lineBadge || isService || lineOnHand !== null) && (
                               <div className="flex items-center gap-2">
                                 {(lineBadge || isService) && (
