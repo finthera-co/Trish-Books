@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectGroup, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Separator } from "@/components/ui/separator";
 import { ArrowLeft, Plus, Trash2, Send, Save } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -447,7 +448,7 @@ export default function CreateInvoice() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
                 <div className="space-y-1.5">
                   <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Issue date</Label>
-                  <Input type="date" className="h-9" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
+                  <DatePicker value={issueDate} onChange={setIssueDate} placeholder="Select issue date" />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Payment terms</Label>
@@ -462,7 +463,7 @@ export default function CreateInvoice() {
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Due date</Label>
-                  <Input type="date" className="h-9" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                  <DatePicker value={dueDate} onChange={setDueDate} placeholder="Select due date" fromDate={issueDate} />
                 </div>
               </div>
               {customer && (
