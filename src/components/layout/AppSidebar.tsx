@@ -179,8 +179,8 @@ export default function AppSidebar() {
                         <SidebarMenuButton asChild isActive={isActive}>
                           <NavLink
                             to={item.path}
-                            className="hover:bg-muted"
-                            activeClassName="bg-accent text-accent-foreground font-medium border-l-[3px] border-l-primary"
+                            className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                            activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium border-l-[3px] border-l-sidebar-primary"
                           >
                             <item.icon className="w-[18px] h-[18px] shrink-0" />
                             {!collapsed && <span className="truncate">{item.label}</span>}
@@ -199,7 +199,7 @@ export default function AppSidebar() {
       <SidebarFooter className="border-t border-sidebar-border">
         {planName && !collapsed && (
           <div className="px-3 py-2">
-            <div className="rounded-lg bg-muted/20 border border-border/30 px-3 py-2 text-center">
+            <div className="rounded-lg bg-sidebar-accent/50 border border-sidebar-border px-3 py-2 text-center">
               <p className="text-[10px] uppercase tracking-wider text-sidebar-foreground/60">
                 Current Plan
               </p>

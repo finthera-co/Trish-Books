@@ -1,4 +1,4 @@
-import { Plus, Search, MoreHorizontal, Eye, Send, Ban, Download } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Eye, Send, Ban, Download, MessageCircle, Mail } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useState, useMemo } from "react";
@@ -17,6 +17,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { downloadInvoicePdf } from "@/lib/invoiceDownload";
+import { shareInvoiceViaWhatsApp, shareInvoiceViaGmail, type ShareInvoiceArgs } from "@/lib/invoiceShare";
 
 const statusColors: Record<string, string> = {
   paid: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
@@ -147,6 +148,35 @@ export default function Invoices() {
       setProcessing(false);
     }
   };
+
+  const handleShare = async (inv: any, channel: "whatsapp" | "gmail") => {
+    const tenantId = inv.tenant_id ?? appUser?.tenant_id;
+    if (!tenantId) return toast.error("Missing tenant for this invoice");
+    setProcessing(true);
+    const args: ShareInvoiceArgs = {
+      invoiceId: inv.id,
+      tenantId,
+      invoiceNumber: inv.invoice_number,
+      customerName: (inv.customers as any)?.name,
+      customerPhone: (inv.customers as any)?.phone,
+      customerEmail: (inv.customers as any)?.email,
+      total: Number(inv.total_amount),
+      amountPaid: Number(inv.amount_paid || 0),
+      balanceDue: Number(inv.balance_due || 0),
+    };
+    try {
+      const outcome = channel === "whatsapp"
+        ? await shareInvoiceViaWhatsApp(args)
+        : await shareInvoiceViaGmail(args);
+      if (outcome === "linked") {
+        toast.success("Invoice PDF downloaded — attach it to your message");
+      }
+    } catch (e: any) {
+      toast.error("Failed to share: " + (e?.message || "unknown error"));
+    } finally {
+      setProcessing(false);
+    }
+  };
   const stats = {
     outstanding: invoices?.filter(i => getEffectiveStatus(i) === "sent" || getEffectiveStatus(i) === "partial")
       .reduce((s, i) => s + Number(i.balance_due), 0) || 0,
@@ -251,6 +281,17 @@ export default function Invoices() {
                               <DropdownMenuItem onClick={() => handleDownload(inv)} disabled={processing}>
                                 <Download className="w-4 h-4 mr-2" /> Download PDF
                               </DropdownMenuItem>
+                              {!isVoided && (
+                                <>
+                                  <DropdownMenuItem onClick={() => handleShare(inv, "whatsapp")} disabled={processing}>
+                                    <MessageCircle className="w-4 h-4 mr-2" /> Send via WhatsApp
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleShare(inv, "gmail")} disabled={processing}>
+                                    <Mail className="w-4 h-4 mr-2" /> Send via Gmail
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                </>
+                              )}
                               {isDraft && (
                                 <DropdownMenuItem onClick={() => setPostConfirmInvoice(inv)} disabled={processing}>
                                   <Send className="w-4 h-4 mr-2" /> Post & Create Journal

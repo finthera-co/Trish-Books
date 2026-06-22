@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { format } from "date-fns";
 import {
-  CalendarCheck, CalendarDays, Download, Lock, Plus, Trash2, Users, AlertTriangle, CheckCircle,
+  CalendarCheck, CalendarDays, Download, Lock, Plus, Trash2, Users, AlertTriangle, CheckCircle, MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,12 +17,13 @@ import {
 import { useEmployees } from "@/hooks/useData";
 import { useMyPermissions } from "@/hooks/usePermissions";
 import {
-  useAttendanceRecords, useUpsertAttendance, useBulkMarkAttendance,
+  useAttendanceRecords, useUpsertAttendance, useDeleteAttendance, useBulkMarkAttendance,
   useHolidays, useCreateHoliday, useDeleteHoliday,
   useLockedPayrollPeriods, isDateLocked,
   type AttendanceStatus, type AttendanceRecord,
 } from "@/hooks/useAttendance";
 import { exportToCsv } from "@/lib/csvExport";
+import { KpiCard } from "@/components/ui/KpiCard";
 
 const STATUS_OPTIONS: { value: AttendanceStatus; label: string }[] = [
   { value: "present", label: "Present" },
@@ -73,19 +74,22 @@ function CellEditor({ employeeId, employeeName, date, record, canEdit, locked }:
   const [checkOut, setCheckOut] = useState(record?.check_out_time || "");
   const [otHours, setOtHours] = useState(String(record?.overtime_hours || 0));
   const upsert = useUpsertAttendance();
+  const remove = useDeleteAttendance();
 
   const chip = record ? STATUS_CHIP[record.status] : null;
   const fromLeave = !!record?.leave_request_id;
+  const fromField = record?.entry_source === "field";
 
   const cellContent = (
     <div
-      className={`w-7 h-7 mx-auto flex items-center justify-center rounded text-[11px] font-medium ${
+      className={`relative w-7 h-7 mx-auto flex items-center justify-center rounded text-[11px] font-medium ${
         chip ? chip.className : "bg-transparent text-muted-foreground/40 border border-dashed border-border"
       } ${canEdit && !locked ? "cursor-pointer hover:ring-1 hover:ring-primary" : "cursor-default"}`}
-      title={locked ? "Locked by a finalized payroll run" : fromLeave ? "Set by approved leave request" : undefined}
+      title={locked ? "Locked by a finalized payroll run" : fromField ? "Field visit (remote check-in)" : fromLeave ? "Set by approved leave request" : undefined}
     >
       {locked && !chip ? <Lock className="w-3 h-3" /> : chip ? chip.label : "·"}
       {locked && chip ? <Lock className="w-2.5 h-2.5 ml-0.5 opacity-60" /> : null}
+      {fromField && <MapPin className="absolute -top-1 -right-1 w-2.5 h-2.5 text-teal-600 dark:text-teal-400" />}
     </div>
   );
 
@@ -128,23 +132,47 @@ function CellEditor({ employeeId, employeeName, date, record, canEdit, locked }:
           <Label className="text-xs">OT Hours</Label>
           <Input type="number" min="0" step="0.5" value={otHours} onChange={(e) => setOtHours(e.target.value)} className="h-8 text-sm" />
         </div>
-        <Button
-          size="sm"
-          className="w-full"
-          disabled={upsert.isPending}
-          onClick={() => {
-            upsert.mutate({
-              employee_id: employeeId,
-              attendance_date: date,
-              status,
-              check_in_time: checkIn || null,
-              check_out_time: checkOut || null,
-              overtime_hours: Number(otHours) || 0,
-            }, { onSuccess: () => setOpen(false) });
-          }}
-        >
-          {upsert.isPending ? "Saving..." : "Save"}
-        </Button>
+        <div className="flex gap-2">
+          {record && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-destructive hover:text-destructive"
+              disabled={remove.isPending}
+              title={fromLeave ? "Clears the attendance mark (does not cancel the leave request)" : "Remove this attendance entry"}
+              onClick={() => {
+                remove.mutate(
+                  { id: record.id, employee_id: employeeId, attendance_date: date },
+                  { onSuccess: () => setOpen(false) },
+                );
+              }}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </Button>
+          )}
+          <Button
+            size="sm"
+            className="flex-1"
+            disabled={upsert.isPending}
+            onClick={() => {
+              upsert.mutate({
+                employee_id: employeeId,
+                attendance_date: date,
+                status,
+                check_in_time: checkIn || null,
+                check_out_time: checkOut || null,
+                overtime_hours: Number(otHours) || 0,
+              }, { onSuccess: () => setOpen(false) });
+            }}
+          >
+            {upsert.isPending ? "Saving..." : record ? "Update" : "Save"}
+          </Button>
+        </div>
+        {record && (
+          <p className="text-[11px] text-muted-foreground">
+            Clearing removes the mark so the day is unmarked again — you can re-add it any time.
+          </p>
+        )}
       </PopoverContent>
     </Popover>
   );
@@ -448,54 +476,21 @@ export default function AttendanceRegister() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-4 gap-4">
-        <div className="stat-card">
-          <div className="flex items-center gap-2 text-muted-foreground mb-1">
-            <CalendarCheck className="w-4 h-4" />
-            <p className="text-sm">Working Days ({month})</p>
-          </div>
-          <p className="text-xl font-semibold text-foreground">{stats.workingDays}</p>
-        </div>
-        <div className="stat-card">
-          <div className="flex items-center gap-2 text-muted-foreground mb-1">
-            <Users className="w-4 h-4" />
-            <p className="text-sm">Present Today</p>
-          </div>
-          <p className="text-xl font-semibold text-foreground">{stats.presentToday}</p>
-        </div>
-        <div className="stat-card">
-          <div className="flex items-center gap-2 text-muted-foreground mb-1">
-            <CalendarDays className="w-4 h-4" />
-            <p className="text-sm">On Leave Today</p>
-          </div>
-          <p className="text-xl font-semibold text-foreground">{stats.onLeaveToday}</p>
-        </div>
-        <div className="stat-card">
-          <div className="flex items-center gap-2 text-muted-foreground mb-1">
-            <AlertTriangle className="w-4 h-4" />
-            <p className="text-sm">Unmarked Entries</p>
-          </div>
-          <p className={`text-xl font-semibold ${stats.unmarked > 0 ? "text-destructive" : "text-foreground"}`}>{stats.unmarked}</p>
-        </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard label={`Working Days (${month})`} value={stats.workingDays} sublabel="excl. weekends & holidays" icon={CalendarCheck} tone="primary" />
+        <KpiCard label="Present Today" value={stats.presentToday} sublabel="incl. half-days" icon={Users} tone="success" />
+        <KpiCard label="On Leave Today" value={stats.onLeaveToday} sublabel="paid + no-pay" icon={CalendarDays} tone="info" />
+        <KpiCard label="Unmarked Entries" value={stats.unmarked} sublabel="awaiting entry" icon={AlertTriangle} tone={stats.unmarked > 0 ? "rose" : "success"} />
       </div>
 
-      <Tabs defaultValue="daily">
+      <Tabs defaultValue="grid">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <TabsList>
-            <TabsTrigger value="daily">Daily Entry</TabsTrigger>
             <TabsTrigger value="grid">Monthly Grid</TabsTrigger>
+            <TabsTrigger value="daily">Daily Entry</TabsTrigger>
           </TabsList>
           <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="h-9 w-44" />
         </div>
-
-        <TabsContent value="daily" className="mt-4">
-          <DailyEntryTab
-            activeEmployees={activeEmployees}
-            records={records}
-            lockedPeriods={lockedPeriods}
-            canEdit={canEdit}
-          />
-        </TabsContent>
 
         <TabsContent value="grid" className="mt-4">
           <div className="stat-card">
@@ -558,6 +553,15 @@ export default function AttendanceRegister() {
               </table>
             </div>
           </div>
+        </TabsContent>
+
+        <TabsContent value="daily" className="mt-4">
+          <DailyEntryTab
+            activeEmployees={activeEmployees}
+            records={records}
+            lockedPeriods={lockedPeriods}
+            canEdit={canEdit}
+          />
         </TabsContent>
       </Tabs>
 

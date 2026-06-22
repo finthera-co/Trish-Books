@@ -14,6 +14,7 @@ import PayrollRunDetails from "@/components/payroll/PayrollRunDetails";
 import PayStub from "@/components/payroll/PayStub";
 import PayScheduleManager from "@/components/payroll/PayScheduleManager";
 import { exportToCsv } from "@/lib/csvExport";
+import { KpiCard } from "@/components/ui/KpiCard";
 import { buildEpfEtfReturn, buildPayeSchedule, buildBankDisbursement } from "@/lib/statutoryReturns";
 import { useSearchParams } from "react-router-dom";
 
@@ -195,35 +196,11 @@ export default function Payroll() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-4 gap-4">
-        <div className="stat-card">
-          <div className="flex items-center gap-2 text-muted-foreground mb-1">
-            <DollarSign className="w-4 h-4" />
-            <p className="text-sm">Total Net Paid</p>
-          </div>
-          <p className="text-xl font-semibold text-foreground">{formatCurrency(totalNetThisMonth)}</p>
-        </div>
-        <div className="stat-card">
-          <div className="flex items-center gap-2 text-muted-foreground mb-1">
-            <TrendingUp className="w-4 h-4" />
-            <p className="text-sm">Total Gross</p>
-          </div>
-          <p className="text-xl font-semibold text-foreground">{formatCurrency(totalGrossThisMonth)}</p>
-        </div>
-        <div className="stat-card">
-          <div className="flex items-center gap-2 text-muted-foreground mb-1">
-            <Users className="w-4 h-4" />
-            <p className="text-sm">Active Employees</p>
-          </div>
-          <p className="text-xl font-semibold text-foreground">{employees?.filter((e: any) => (e.status || "active") === "active").length || 0}</p>
-        </div>
-        <div className="stat-card">
-          <div className="flex items-center gap-2 text-muted-foreground mb-1">
-            <FileText className="w-4 h-4" />
-            <p className="text-sm">Pending Runs</p>
-          </div>
-          <p className="text-xl font-semibold text-foreground">{pendingRuns}</p>
-        </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard label="Total Net Paid" value={formatCurrency(totalNetThisMonth)} sublabel="this month" icon={DollarSign} tone="success" />
+        <KpiCard label="Total Gross" value={formatCurrency(totalGrossThisMonth)} sublabel="this month" icon={TrendingUp} tone="primary" />
+        <KpiCard label="Active Employees" value={employees?.filter((e: any) => (e.status || "active") === "active").length || 0} sublabel="on payroll" icon={Users} tone="info" />
+        <KpiCard label="Pending Runs" value={pendingRuns} sublabel="awaiting processing" icon={FileText} tone="warning" />
       </div>
 
       <Tabs defaultValue="runs">

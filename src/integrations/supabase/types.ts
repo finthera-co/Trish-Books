@@ -3604,6 +3604,78 @@ export type Database = {
           },
         ]
       }
+      field_visits: {
+        Row: {
+          check_in_accuracy: number | null
+          check_in_at: string
+          check_in_lat: number | null
+          check_in_lng: number | null
+          check_out_accuracy: number | null
+          check_out_at: string | null
+          check_out_lat: number | null
+          check_out_lng: number | null
+          client_name: string | null
+          created_at: string
+          employee_id: string
+          id: string
+          notes: string | null
+          tenant_id: string
+          updated_at: string
+          visit_date: string
+        }
+        Insert: {
+          check_in_accuracy?: number | null
+          check_in_at?: string
+          check_in_lat?: number | null
+          check_in_lng?: number | null
+          check_out_accuracy?: number | null
+          check_out_at?: string | null
+          check_out_lat?: number | null
+          check_out_lng?: number | null
+          client_name?: string | null
+          created_at?: string
+          employee_id: string
+          id?: string
+          notes?: string | null
+          tenant_id: string
+          updated_at?: string
+          visit_date: string
+        }
+        Update: {
+          check_in_accuracy?: number | null
+          check_in_at?: string
+          check_in_lat?: number | null
+          check_in_lng?: number | null
+          check_out_accuracy?: number | null
+          check_out_at?: string | null
+          check_out_lat?: number | null
+          check_out_lng?: number | null
+          client_name?: string | null
+          created_at?: string
+          employee_id?: string
+          id?: string
+          notes?: string | null
+          tenant_id?: string
+          updated_at?: string
+          visit_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "field_visits_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "field_visits_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       financial_forecasts: {
         Row: {
           category_id: string | null
@@ -11120,6 +11192,71 @@ export type Database = {
           p_type: string
         }
         Returns: string
+      }
+      field_check_in: {
+        Args: {
+          p_accuracy?: number
+          p_client_name?: string
+          p_lat?: number
+          p_lng?: number
+          p_notes?: string
+        }
+        Returns: {
+          check_in_accuracy: number | null
+          check_in_at: string
+          check_in_lat: number | null
+          check_in_lng: number | null
+          check_out_accuracy: number | null
+          check_out_at: string | null
+          check_out_lat: number | null
+          check_out_lng: number | null
+          client_name: string | null
+          created_at: string
+          employee_id: string
+          id: string
+          notes: string | null
+          tenant_id: string
+          updated_at: string
+          visit_date: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "field_visits"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      field_check_out: {
+        Args: {
+          p_accuracy?: number
+          p_lat?: number
+          p_lng?: number
+          p_visit_id: string
+        }
+        Returns: {
+          check_in_accuracy: number | null
+          check_in_at: string
+          check_in_lat: number | null
+          check_in_lng: number | null
+          check_out_accuracy: number | null
+          check_out_at: string | null
+          check_out_lat: number | null
+          check_out_lng: number | null
+          client_name: string | null
+          created_at: string
+          employee_id: string
+          id: string
+          notes: string | null
+          tenant_id: string
+          updated_at: string
+          visit_date: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "field_visits"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       generate_bill_number: { Args: { p_tenant_id: string }; Returns: string }
       generate_grn_number: { Args: { p_tenant_id: string }; Returns: string }

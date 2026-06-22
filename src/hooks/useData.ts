@@ -298,14 +298,23 @@ export function useInvoices() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("invoices")
-        .select("*, customers(name), payments_received(amount)")
+        .select("*, customers(name, phone, email), payments_received(amount), ar_credit_notes(amount, status)")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data?.map((inv) => {
         const amountPaid = ((inv.payments_received as any[]) || []).reduce(
           (sum: number, p: any) => sum + Number(p.amount), 0
         );
-        return { ...inv, amount_paid: amountPaid, balance_due: Number(inv.total_amount) - amountPaid };
+        // Discounts/credits applied to this invoice reduce what's still owed
+        const creditTotal = ((inv.ar_credit_notes as any[]) || [])
+          .filter((c: any) => c.status !== "voided")
+          .reduce((sum: number, c: any) => sum + Number(c.amount), 0);
+        return {
+          ...inv,
+          amount_paid: amountPaid,
+          credit_total: creditTotal,
+          balance_due: Number(inv.total_amount) - amountPaid - creditTotal,
+        };
       });
     },
   });

@@ -12,6 +12,7 @@ import EmployeeRoute from "@/components/EmployeeRoute";
 import EmployeeLayout from "./components/layout/EmployeeLayout";
 import EmployeeDashboard from "./pages/employee/EmployeeDashboard";
 import MyAttendance from "./pages/employee/MyAttendance";
+import FieldCheckIn from "./pages/employee/FieldCheckIn";
 import MySalarySlips from "./pages/employee/MySalarySlips";
 import ApplyLeave from "./pages/employee/ApplyLeave";
 import LeaveHistory from "./pages/employee/LeaveHistory";
@@ -54,6 +55,8 @@ import PayrollGLMapping from "./pages/PayrollGLMapping";
 import PayrollLiabilities from "./pages/PayrollLiabilities";
 import Employees from "./pages/Employees";
 import AttendanceRegister from "./pages/AttendanceRegister";
+import FieldVisits from "./pages/FieldVisits";
+import WorkforceDashboard from "./pages/WorkforceDashboard";
 import AttendanceImport from "./pages/AttendanceImport";
 import BiometricLinking from "./pages/BiometricLinking";
 import Leave from "./pages/Leave";
@@ -119,6 +122,7 @@ const App = () => (
                 <Route element={<EmployeeLayout />}>
                   <Route path="/me" element={<EmployeeDashboard />} />
                   <Route path="/me/attendance" element={<MyAttendance />} />
+                  <Route path="/me/field" element={<FieldCheckIn />} />
                   <Route path="/me/payslips" element={<MySalarySlips />} />
                   <Route path="/me/leave/apply" element={<ApplyLeave />} />
                   <Route path="/me/leave" element={<LeaveHistory />} />
@@ -210,9 +214,11 @@ const App = () => (
                   {/* Payroll module */}
                   <Route element={<ModuleLayout config={MODULE_CONFIGS.payroll} />}>
                     <Route path="/payroll" element={<ModuleDashboard config={MODULE_CONFIGS.payroll} />} />
+                    <Route path="/payroll/dashboard" element={<WorkforceDashboard />} />
                     <Route path="/payroll/runs" element={<Payroll />} />
                     <Route path="/payroll/employees" element={<Employees />} />
                     <Route path="/payroll/attendance" element={<AttendanceRegister />} />
+                    <Route path="/payroll/field-visits" element={<FieldVisits />} />
                     <Route path="/payroll/attendance-import" element={<AttendanceImport />} />
                     <Route path="/payroll/biometric-linking" element={<BiometricLinking />} />
                     <Route path="/payroll/leave" element={<Leave />} />

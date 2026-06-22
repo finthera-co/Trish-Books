@@ -4,6 +4,13 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useAttendanceRecords, type AttendanceStatus } from "@/hooks/useAttendance";
 import { Button } from "@/components/ui/button";
 
+type Glyph = { mark: string; label: string; cls: string };
+
+const FIELD_GLYPH: Glyph = {
+  mark: "F", label: "Field visit",
+  cls: "bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 ring-teal-200 dark:ring-teal-800",
+};
+
 const GLYPH: Record<AttendanceStatus, { mark: string; label: string; cls: string }> = {
   present:      { mark: "●",  label: "Present",      cls: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 ring-emerald-200 dark:ring-emerald-800" },
   absent:       { mark: "A",  label: "Absent",       cls: "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 ring-red-200 dark:ring-red-800" },
@@ -22,8 +29,8 @@ export default function MyAttendance() {
   const { data: records, isLoading } = useAttendanceRecords(month);
 
   const byDate = useMemo(() => {
-    const m: Record<string, AttendanceStatus> = {};
-    (records ?? []).forEach((r: any) => { m[r.attendance_date] = r.status; });
+    const m: Record<string, { status: AttendanceStatus; entry_source?: string }> = {};
+    (records ?? []).forEach((r: any) => { m[r.attendance_date] = { status: r.status, entry_source: r.entry_source }; });
     return m;
   }, [records]);
 
@@ -34,10 +41,11 @@ export default function MyAttendance() {
     return { lead, all };
   }, [cursor]);
 
-  const statusFor = (d: Date): AttendanceStatus | undefined => {
+  const glyphFor = (d: Date): Glyph | undefined => {
     const key = format(d, "yyyy-MM-dd");
-    if (byDate[key]) return byDate[key];
-    if (getDay(d) === 0) return "weekend"; // unmarked Sundays render as weekend
+    const rec = byDate[key];
+    if (rec) return rec.entry_source === "field" ? FIELD_GLYPH : GLYPH[rec.status];
+    if (getDay(d) === 0) return GLYPH.weekend; // unmarked Sundays render as weekend
     return undefined;
   };
 
@@ -57,7 +65,7 @@ export default function MyAttendance() {
 
       {/* Legend */}
       <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs rounded-2xl border border-border bg-card px-4 py-3 shadow-sm">
-        {Object.entries(GLYPH).map(([k, g]) => (
+        {[...Object.entries(GLYPH), ["field", FIELD_GLYPH] as const].map(([k, g]) => (
           <span key={k} className="flex items-center gap-1.5">
             <span className={`w-6 h-6 rounded-md ring-1 flex items-center justify-center font-semibold ${g.cls}`}>{g.mark}</span>
             {g.label}
@@ -72,8 +80,7 @@ export default function MyAttendance() {
         <div className="grid grid-cols-7 gap-1.5">
           {Array.from({ length: days.lead }).map((_, i) => <div key={`lead-${i}`} />)}
           {days.all.map((d) => {
-            const st = statusFor(d);
-            const g = st ? GLYPH[st] : undefined;
+            const g = glyphFor(d);
             return (
               <div
                 key={d.toISOString()}

@@ -34,6 +34,7 @@ import {
   CalendarOff,
   Upload,
   Fingerprint,
+  MapPin,
 } from "lucide-react";
 import type { ModuleConfig } from "@/components/layout/ModuleLayout";
 
@@ -129,9 +130,11 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
     color: "bg-[hsl(var(--info))]",
     basePath: "/payroll",
     sidebarItems: [
+      { label: "Dashboard", path: "/payroll/dashboard", icon: Activity },
       { label: "Payroll Runs", path: "/payroll/runs", icon: DollarSign },
       { label: "Employees", path: "/payroll/employees", icon: UserCheck },
       { label: "Attendance", path: "/payroll/attendance", icon: CalendarCheck },
+      { label: "Field Visits", path: "/payroll/field-visits", icon: MapPin },
       { label: "Import Attendance", path: "/payroll/attendance-import", icon: Upload },
       { label: "Device Linking", path: "/payroll/biometric-linking", icon: Fingerprint },
       { label: "Leave", path: "/payroll/leave", icon: CalendarOff },

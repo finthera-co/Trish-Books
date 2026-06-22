@@ -1,5 +1,5 @@
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import { LayoutDashboard, CalendarDays, FileText, CalendarPlus, History, LogOut } from "lucide-react";
+import { LayoutDashboard, CalendarDays, MapPin, FileText, CalendarPlus, History, LogOut } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMyEmployee } from "@/hooks/useMyEmployee";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { label: "My Dashboard", path: "/me", icon: LayoutDashboard, end: true },
   { label: "My Attendance", path: "/me/attendance", icon: CalendarDays },
+  { label: "Field Check-in", path: "/me/field", icon: MapPin },
   { label: "My Salary Slips", path: "/me/payslips", icon: FileText },
   { label: "Apply for Leave", path: "/me/leave/apply", icon: CalendarPlus },
   { label: "Leave History", path: "/me/leave", icon: History },

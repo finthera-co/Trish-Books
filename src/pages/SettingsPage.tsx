@@ -69,7 +69,7 @@ export default function SettingsPage() {
     if (!appUser?.tenant_id) return;
     setSaving(true);
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("tenants")
       .update({
         company_name: companyName || tenant?.company_name,
@@ -77,10 +77,14 @@ export default function SettingsPage() {
         registration_number: registrationNumber.trim() || null,
         logo_url: logoUrl || null,
       })
-      .eq("id", appUser.tenant_id);
+      .eq("id", appUser.tenant_id)
+      .select("id");
 
     if (error) {
       toast.error(error.message);
+    } else if (!data || data.length === 0) {
+      // RLS matched no rows — the update silently did nothing.
+      toast.error("You don't have permission to update company settings.");
     } else {
       toast.success("Settings saved");
       queryClient.invalidateQueries({ queryKey: ["tenant"] });

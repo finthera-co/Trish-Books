@@ -494,7 +494,7 @@ export default function CreateInvoice() {
                       <th className="w-9 text-center">#</th>
                       <th className="text-left min-w-[300px]">Description &amp; product</th>
                       <th className="text-left w-[190px]">Revenue account</th>
-                      <th className="text-center w-16">Qty</th>
+                      <th className="text-center w-24">Qty</th>
                       <th className="text-right w-24">Rate</th>
                       <th className="text-right w-20">Disc</th>
                       <th className="text-left w-[124px]">Tax</th>

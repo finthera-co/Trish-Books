@@ -110,6 +110,25 @@ export function useUpsertAttendance() {
   });
 }
 
+export function useDeleteAttendance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (record: { id: string; employee_id?: string; attendance_date?: string }) => {
+      const { error } = await supabase.from("attendance_records").delete().eq("id", record.id);
+      if (error) throw error;
+      writeAuditLog("Attendance Cleared", "attendance_records", record.id, {
+        employee_id: record.employee_id, date: record.attendance_date,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance_records"] });
+      qc.invalidateQueries({ queryKey: ["attendance_summary"] });
+      toast.success("Attendance cleared");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
 export function useBulkMarkAttendance() {
   const qc = useQueryClient();
   const { appUser } = useAuth();
