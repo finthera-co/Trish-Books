@@ -1,16 +1,33 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { format } from "date-fns";
-import { CalendarCheck, Wallet, Percent, FileText, CalendarDays, CalendarPlus, History, Eye } from "lucide-react";
+import { format, parseISO, differenceInCalendarDays } from "date-fns";
+import { CalendarCheck, Wallet, Percent, FileText, CalendarDays, CalendarPlus, History, Eye, MapPin, LogOut, PartyPopper } from "lucide-react";
 import { useMyEmployee, useMyPayslips } from "@/hooks/useMyEmployee";
 import { useLeaveBalances, useLeaveRequests, useLeaveTypes } from "@/hooks/useLeave";
-import { useAttendanceRecords } from "@/hooks/useAttendance";
+import { useAttendanceRecords, useHolidays } from "@/hooks/useAttendance";
+import { useMyOpenVisit } from "@/hooks/useFieldVisits";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { formatCurrency } from "@/lib/currency";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import PayStub from "@/components/payroll/PayStub";
 
 // Statuses that count as a scheduled working day (weekends & holidays excluded).
 const WORKING_STATUSES = ["present", "absent", "half_day", "paid_leave", "unpaid_leave"];
+
+const STATUS_LABEL: Record<string, string> = {
+  present: "Present", absent: "Absent", half_day: "Half day",
+  paid_leave: "On paid leave", unpaid_leave: "On unpaid leave",
+  holiday: "Holiday", weekend: "Weekend",
+};
+
+function fmtDuration(fromIso: string, toMs: number) {
+  const secs = Math.max(0, Math.floor((toMs - new Date(fromIso).getTime()) / 1000));
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  return `${h > 0 ? `${h}h ` : ""}${m}m ${String(s).padStart(2, "0")}s`;
+}
 
 export default function EmployeeDashboard() {
   const navigate = useNavigate();
@@ -18,9 +35,21 @@ export default function EmployeeDashboard() {
   const { data: balances } = useLeaveBalances();
   const { data: types } = useLeaveTypes();
   const { data: requests } = useLeaveRequests();
-  const { data: payslips } = useMyPayslips(me?.id);
+  const { data: payslips, isLoading: payslipsLoading } = useMyPayslips(me?.id);
   const month = format(new Date(), "yyyy-MM");
   const { data: attendance } = useAttendanceRecords(month);
+  const { data: openVisit } = useMyOpenVisit(me?.id);
+  const { data: holidays } = useHolidays();
+
+  const [now, setNow] = useState(Date.now());
+  const [activeSlip, setActiveSlip] = useState<any>(null);
+
+  // Live ticking clock — only needed while a field visit is open.
+  useEffect(() => {
+    if (!openVisit) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [openVisit]);
 
   // Every active leave type with its available balance (fall back to the type's
   // default quota when the employee has no balance row yet — created on approval).
@@ -52,14 +81,32 @@ export default function EmployeeDashboard() {
     };
   }, [attendance]);
 
+  const todayKey = format(new Date(), "yyyy-MM-dd");
+  const todayRecord = useMemo(
+    () => (attendance ?? []).find((r: any) => r.attendance_date === todayKey),
+    [attendance, todayKey],
+  );
+
   const pendingCount = useMemo(
     () => (requests ?? []).filter((r: any) => r.status === "pending").length,
     [requests],
   );
 
+  // Upcoming holidays within the next 60 days (the lightweight "company feed").
+  const upcomingHolidays = useMemo(() => {
+    const today = new Date();
+    return (holidays ?? [])
+      .filter((h: any) => {
+        if (!h.holiday_date) return false; // guard: parseISO(null) throws
+        const d = differenceInCalendarDays(parseISO(h.holiday_date), today);
+        return d >= 0 && d <= 60;
+      })
+      .sort((a: any, b: any) => (a.holiday_date > b.holiday_date ? 1 : -1))
+      .slice(0, 4);
+  }, [holidays]);
+
   const latest = payslips?.[0];
   const recent = (payslips ?? []).slice(0, 5);
-
   const greeting = me?.first_name ? `Hi, ${me.first_name}` : "Welcome";
 
   const links = [
@@ -75,6 +122,47 @@ export default function EmployeeDashboard() {
         <p className="text-sm text-white/80">{format(new Date(), "EEEE, d MMMM yyyy")}</p>
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mt-1">{greeting} 👋</h1>
         <p className="text-sm text-white/85 mt-1">{me?.designation || me?.employee_number || "Your personal workspace"}</p>
+      </div>
+
+      {/* Today — live field-visit / attendance status */}
+      <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
+        {openVisit ? (
+          <div className="p-5 sm:p-6 bg-emerald-50 dark:bg-emerald-950/30">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> ON A FIELD VISIT
+                </span>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {openVisit.client_name || "Field work"} · since {format(new Date(openVisit.check_in_at), "p")}
+                </p>
+              </div>
+              <span className="text-2xl font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
+                {fmtDuration(openVisit.check_in_at, now)}
+              </span>
+            </div>
+            <Button className="mt-4 w-full sm:w-auto" variant="destructive" onClick={() => navigate("/me/field")}>
+              <LogOut className="w-4 h-4" /> Go to check-out
+            </Button>
+          </div>
+        ) : (
+          <div className="p-5 sm:p-6 flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Today</p>
+              <p className="text-lg font-semibold text-foreground mt-0.5">
+                {todayRecord ? STATUS_LABEL[todayRecord.status] ?? todayRecord.status : "Not marked yet"}
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {todayRecord?.check_in_time
+                  ? `Checked in at ${todayRecord.check_in_time}`
+                  : "Check in from a client site to log a field-work day"}
+              </p>
+            </div>
+            <Button onClick={() => navigate("/me/field")} className="shrink-0">
+              <MapPin className="w-4 h-4" /> Field Check-in
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -119,6 +207,33 @@ export default function EmployeeDashboard() {
         )}
       </div>
 
+      {/* Upcoming holidays — lightweight company calendar feed */}
+      {upcomingHolidays.length > 0 && (
+        <div className="rounded-2xl border border-border bg-card shadow-sm p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <PartyPopper className="w-4 h-4 text-rose-500" />
+            <h2 className="text-sm font-semibold text-foreground">Upcoming Holidays</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {upcomingHolidays.map((h: any) => {
+              const days = differenceInCalendarDays(parseISO(h.holiday_date), new Date());
+              return (
+                <div key={h.id} className="flex items-center gap-3 rounded-xl border border-border/70 bg-muted/30 p-3">
+                  <div className="w-11 h-11 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 flex flex-col items-center justify-center shrink-0 leading-none">
+                    <span className="text-[10px] font-medium uppercase">{format(parseISO(h.holiday_date), "MMM")}</span>
+                    <span className="text-base font-bold">{format(parseISO(h.holiday_date), "d")}</span>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{h.name}</p>
+                    <p className="text-xs text-muted-foreground">{days === 0 ? "Today" : days === 1 ? "Tomorrow" : `in ${days} days`}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Recent salary slips */}
       <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
@@ -138,7 +253,15 @@ export default function EmployeeDashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {!recent.length ? (
+              {payslipsLoading ? (
+                Array.from({ length: 3 }).map((_, i) => (
+                  <tr key={i}>
+                    {Array.from({ length: 6 }).map((__, j) => (
+                      <td key={j} className="px-5 py-3"><Skeleton className="h-4 w-full" /></td>
+                    ))}
+                  </tr>
+                ))
+              ) : !recent.length ? (
                 <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">No salary slips yet.</td></tr>
               ) : recent.map((it: any) => {
                 const deductions = Number(it.employee_epf || 0) + Number(it.employee_paye || 0) + Number(it.other_deductions || 0);
@@ -150,7 +273,7 @@ export default function EmployeeDashboard() {
                     <td className="px-5 py-3 text-right tabular-nums text-destructive">-{formatCurrency(deductions)}</td>
                     <td className="px-5 py-3 text-right tabular-nums font-semibold text-foreground">{formatCurrency(Number(it.net_pay))}</td>
                     <td className="px-5 py-3 text-right">
-                      <Button variant="outline" size="sm" onClick={() => navigate("/me/payslips")}>
+                      <Button variant="outline" size="sm" onClick={() => setActiveSlip(it)}>
                         <Eye className="w-3.5 h-3.5" /> View
                       </Button>
                     </td>
@@ -182,6 +305,8 @@ export default function EmployeeDashboard() {
           ))}
         </div>
       </div>
+
+      <PayStub item={activeSlip} run={activeSlip?.payroll_runs} open={!!activeSlip} onOpenChange={(o) => !o && setActiveSlip(null)} />
     </div>
   );
 }

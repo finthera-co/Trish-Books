@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { format, eachDayOfInterval, parseISO } from "date-fns";
+import { format, eachDayOfInterval, parseISO, getDay } from "date-fns";
 import { toast } from "sonner";
-import { CalendarPlus } from "lucide-react";
+import { CalendarPlus, AlertTriangle, CalendarRange } from "lucide-react";
 import { useMyEmployee } from "@/hooks/useMyEmployee";
 import { useLeaveTypes, useLeaveBalances, useCreateLeaveRequest, useLeaveRequests } from "@/hooks/useLeave";
 import { Button } from "@/components/ui/button";
@@ -54,6 +54,25 @@ export default function ApplyLeave() {
 
   const balanceFor = (typeId: string) =>
     balanceRows.find((b) => b.id === typeId)?.available ?? null;
+
+  // Set of ISO dates the employee has already booked (for overlap detection).
+  const bookedSet = useMemo(() => new Set(bookedDates.map((d) => format(d, "yyyy-MM-dd"))), [bookedDates]);
+
+  // Live summary for the request in progress: working days (Sundays excluded),
+  // balance after, and any overlap with existing requests.
+  const summary = useMemo(() => {
+    if (!form.start_date) return null;
+    const end = form.is_half_day ? form.start_date : (form.end_date || form.start_date);
+    if (end < form.start_date) return { invalid: true } as const;
+    const range = eachDayOfInterval({ start: parseISO(form.start_date), end: parseISO(end) });
+    const workingDays = range.filter((d) => getDay(d) !== 0); // exclude Sundays
+    const days = form.is_half_day ? 0.5 : workingDays.length;
+    const overlap = range.some((d) => bookedSet.has(format(d, "yyyy-MM-dd")));
+    const balance = form.leave_type_id ? balanceFor(form.leave_type_id) : null;
+    const after = balance != null ? balance - days : null;
+    const insufficient = balance != null && days > balance;
+    return { invalid: false, days, overlap, balance, after, insufficient };
+  }, [form, bookedSet, balanceRows]);
 
   const onPickDay = (day?: Date) => {
     if (!day) return;
@@ -202,6 +221,30 @@ export default function ApplyLeave() {
               )}
             </div>
 
+            {/* Live request summary */}
+            {summary && !summary.invalid && (
+              <div className="rounded-xl border border-border bg-muted/40 p-3 space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-muted-foreground"><CalendarRange className="w-3.5 h-3.5" /> Days requested</span>
+                  <span className="font-semibold text-foreground tabular-nums">{summary.days}</span>
+                </div>
+                {summary.balance != null && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Balance after</span>
+                    <span className={`font-semibold tabular-nums ${summary.insufficient ? "text-destructive" : "text-foreground"}`}>
+                      {summary.after} day(s)
+                    </span>
+                  </div>
+                )}
+                {summary.insufficient && (
+                  <p className="flex items-start gap-1.5 text-xs text-destructive"><AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> This exceeds your available balance.</p>
+                )}
+                {summary.overlap && (
+                  <p className="flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-400"><AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> Overlaps a leave request you've already made.</p>
+                )}
+              </div>
+            )}
+
             <div>
               <Label>Reason</Label>
               <Textarea value={form.reason} onChange={(e) => set("reason", e.target.value)} placeholder="Optional note for your manager" />
@@ -209,7 +252,7 @@ export default function ApplyLeave() {
 
             <div className="flex justify-end gap-2 pt-2 border-t border-border">
               <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button onClick={submit} disabled={createReq.isPending}>
+              <Button onClick={submit} disabled={createReq.isPending || summary?.overlap || (summary && !summary.invalid && summary.days === 0)}>
                 {createReq.isPending ? "Submitting…" : "Submit Request"}
               </Button>
             </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Bell, Check, CheckCheck, AlertTriangle, Info, DollarSign, FileCheck } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,7 @@ const typeColors: Record<string, string> = {
   warning: "bg-destructive/10 text-destructive",
 };
 
-export default function NotificationBell() {
+export default function NotificationBell({ seeAllLink }: { seeAllLink?: string } = {}) {
   const { appUser } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -52,7 +52,7 @@ export default function NotificationBell() {
       return (data as any[]) || [];
     },
     enabled: !!appUser,
-    refetchInterval: 30000, // poll every 30s
+    refetchInterval: 60000, // safety-net poll; useNotificationsRealtime (in the layout) handles the live path
   });
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
@@ -95,7 +95,7 @@ export default function NotificationBell() {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button className="relative p-2 rounded-md hover:bg-accent transition-colors">
-          <Bell className="w-4 h-4 text-muted-foreground" />
+          <Bell className="w-6 h-6 text-amber-500" />
           {unreadCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 w-4.5 h-4.5 min-w-[18px] bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
               {unreadCount > 9 ? "9+" : unreadCount}
@@ -161,6 +161,19 @@ export default function NotificationBell() {
             })
           )}
         </div>
+
+        {seeAllLink && notifications.length > 0 && (
+          <div className="border-t border-border p-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full text-xs h-8"
+              onClick={() => { navigate(seeAllLink); setOpen(false); }}
+            >
+              View all notifications
+            </Button>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );

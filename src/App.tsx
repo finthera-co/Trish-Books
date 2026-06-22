@@ -16,6 +16,8 @@ import FieldCheckIn from "./pages/employee/FieldCheckIn";
 import MySalarySlips from "./pages/employee/MySalarySlips";
 import ApplyLeave from "./pages/employee/ApplyLeave";
 import LeaveHistory from "./pages/employee/LeaveHistory";
+import MyProfile from "./pages/employee/MyProfile";
+import MyNotifications from "./pages/employee/MyNotifications";
 import AppLayout from "./components/layout/AppLayout";
 import ModuleLayout from "./components/layout/ModuleLayout";
 import { MODULE_CONFIGS } from "./config/modules";
@@ -23,6 +25,7 @@ import ModuleDashboard from "./pages/ModuleDashboard";
 
 // Pages
 import Home from "./pages/Home";
+import Notifications from "./pages/Notifications";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Onboarding from "./pages/Onboarding";
@@ -101,6 +104,7 @@ import SuperAdminDashboard from "./pages/SuperAdminDashboard";
 import SystemAnalytics from "./pages/SystemAnalytics";
 import ErrorLogs from "./pages/ErrorLogs";
 import SuperAdminUsers from "./pages/SuperAdminUsers";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -109,6 +113,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <ErrorBoundary>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
@@ -126,12 +131,17 @@ const App = () => (
                   <Route path="/me/payslips" element={<MySalarySlips />} />
                   <Route path="/me/leave/apply" element={<ApplyLeave />} />
                   <Route path="/me/leave" element={<LeaveHistory />} />
+                  <Route path="/me/profile" element={<MyProfile />} />
+                  <Route path="/me/notifications" element={<MyNotifications />} />
                 </Route>
               </Route>
 
               <Route element={<AppLayout />}>
                 {/* Home — renders different dashboard based on role */}
                 <Route path="/" element={<Home />} />
+
+                {/* Notifications feed (all alerts) — available to any signed-in user */}
+                <Route path="/notifications" element={<Notifications />} />
 
                 {/* ═══════════════════════════════════════════════════
                     SUPER ADMIN ONLY — Control Plane
@@ -167,8 +177,6 @@ const App = () => (
                     <Route path="/accounting/opening-balances" element={<OpeningBalances />} />
                     <Route path="/accounting/close-obe" element={<CloseOBE />} />
                     <Route path="/accounting/gl-verify" element={<GLVerification />} />
-                    <Route path="/accounting/customers" element={<CustomersPage />} />
-                    <Route path="/accounting/customers/:id" element={<CustomerDetail />} />
                     <Route path="/accounting/receive-payment" element={<ReceivePayment />} />
                     <Route path="/accounting/credit-notes" element={<CreditNotePage />} />
                     <Route path="/accounting/ar-aging" element={<ARAgingReport />} />
@@ -202,6 +210,9 @@ const App = () => (
                     <Route path="/sales" element={<ModuleDashboard config={MODULE_CONFIGS.sales} />} />
                     <Route path="/sales/invoices" element={<Invoices />} />
                     <Route path="/sales/invoices/new" element={<CreateInvoice />} />
+                    <Route path="/sales/customers" element={<CustomersPage />} />
+                    <Route path="/sales/customers/:id" element={<CustomerDetail />} />
+                    <Route path="/sales/notifications" element={<Notifications />} />
                     <Route path="/sales/products-taxes" element={<ProductsTaxes />} />
                   </Route>
 
@@ -263,6 +274,7 @@ const App = () => (
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </ErrorBoundary>
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>

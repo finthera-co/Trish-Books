@@ -30,7 +30,7 @@ export interface MappableAccount {
 
 // ─── Route Map (no hardcoded names) ───────────────────────
 const SUBLEDGER_ROUTES: Record<string, string> = {
-  customer: "/accounting/customers",
+  customer: "/sales/customers",
   vendor: "/accounting/vendors",
   inventory: "/accounting/inventory",
   fixed_asset: "/assets/register",

@@ -108,7 +108,31 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
   const paidPercent = totalAmount > 0 ? Math.min(((amountPaid + discountTotal) / totalAmount) * 100, 100) : 0;
 
   const isPosted = invoice.status !== "draft" && invoice.status !== "voided";
-  const effectiveStatus = balanceDue <= 0 ? "paid" : amountPaid > 0 || discountTotal > 0 ? "partial" : invoice.status;
+
+  // Live overdue derivation (matches the list + due-reminder alerts): a posted,
+  // still-owing invoice past its due date.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const isOverdue = isPosted && balanceDue > 0 && !!invoice.due_date && invoice.due_date < todayIso;
+
+  const effectiveStatus = balanceDue <= 0
+    ? "paid"
+    : isOverdue
+      ? "overdue"
+      : amountPaid > 0 || discountTotal > 0
+        ? "partial"
+        : invoice.status;
+
+  // Short human hint shown beside the due date for owing invoices.
+  const dueHint = (): { text: string; overdue: boolean } | null => {
+    if (!invoice.due_date || balanceDue <= 0 || !isPosted) return null;
+    const days = Math.round(
+      (new Date(invoice.due_date + "T00:00:00").getTime() - new Date(todayIso + "T00:00:00").getTime()) / 86_400_000
+    );
+    if (days < 0) return { text: `${Math.abs(days)}d overdue`, overdue: true };
+    if (days === 0) return { text: "due today", overdue: true };
+    if (days <= 7) return { text: `in ${days}d`, overdue: false };
+    return null;
+  };
 
   const handleApplyDiscount = async () => {
     const amount = Number(discountAmount);
@@ -312,6 +336,15 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
           <div>
             <span className="text-muted-foreground">Due Date: </span>
             <span className="text-foreground">{invoice.due_date || "—"}</span>
+            {(() => {
+              const hint = dueHint();
+              if (!hint) return null;
+              return (
+                <span className={`ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${hint.overdue ? "bg-destructive/10 text-destructive" : "bg-amber-500/10 text-amber-600 dark:text-amber-400"}`}>
+                  {hint.text}
+                </span>
+              );
+            })()}
           </div>
           <div>
             <span className="text-muted-foreground">Currency: </span>

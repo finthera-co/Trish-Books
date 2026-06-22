@@ -1,5 +1,6 @@
 import {
   BookOpen,
+  Bell,
   FileText,
   Receipt,
   Calendar,
@@ -77,7 +78,6 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "Close OBE", path: "/accounting/close-obe", icon: Lock },
       { label: "Fiscal Periods", path: "/accounting/fiscal-periods", icon: Calendar },
       { label: "GL Verification", path: "/accounting/gl-verify", icon: Shield },
-      { label: "Customers", path: "/accounting/customers", icon: Contact },
       { label: "Receive Payment", path: "/accounting/receive-payment", icon: CreditCard },
       { label: "Credit Notes", path: "/accounting/credit-notes", icon: Receipt },
       { label: "AR Aging", path: "/accounting/ar-aging", icon: Calendar },
@@ -111,6 +111,8 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
     basePath: "/sales",
     sidebarItems: [
       { label: "Invoices", path: "/sales/invoices", icon: Wallet },
+      { label: "Customers", path: "/sales/customers", icon: Contact },
+      { label: "Reminders", path: "/sales/notifications", icon: Bell },
     ],
   },
   expenses: {

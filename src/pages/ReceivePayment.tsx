@@ -73,7 +73,7 @@ export default function ReceivePayment() {
         wht_amount: wht > 0 ? wht : undefined,
       });
     }
-    navigate("/accounting/customers/" + customerId);
+    navigate("/sales/customers/" + customerId);
   };
 
   const toggleInvoice = (invId: string, balanceDue: number) => {

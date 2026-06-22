@@ -491,7 +491,7 @@ export function getControlAccountModule(subledgerType: string | null | undefined
 export function getControlAccountRoute(subledgerType: string | null | undefined): string | null {
   if (!subledgerType) return null;
   switch (subledgerType) {
-    case "customer": return "/accounting/customers";
+    case "customer": return "/sales/customers";
     case "vendor": return "/accounting/vendors";
     case "inventory": return "/accounting/inventory";
     case "fixed_asset": return "/accounting/assets";

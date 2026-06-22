@@ -487,179 +487,163 @@ export default function CreateInvoice() {
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-x-auto border-y border-border">
-                <table className="w-full min-w-[900px] text-sm border-collapse">
-                  <thead>
-                    <tr className="bg-muted/40 [&>th]:px-3 [&>th]:py-2.5 [&>th]:text-[11px] [&>th]:font-semibold [&>th]:uppercase [&>th]:tracking-[0.05em] [&>th]:text-muted-foreground">
-                      <th className="w-9 text-center">#</th>
-                      <th className="text-left min-w-[300px]">Description &amp; product</th>
-                      <th className="text-left w-[190px]">Revenue account</th>
-                      <th className="text-center w-24">Qty</th>
-                      <th className="text-right w-24">Rate</th>
-                      <th className="text-right w-20">Disc</th>
-                      <th className="text-left w-[124px]">Tax</th>
-                      <th className="text-right w-28">Amount</th>
-                      <th className="w-9"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lines.map((line, idx) => {
-                      const lineProduct = line.product_id ? productsById.get(line.product_id) : null;
-                      const lineOnHand = onHandOf(lineProduct);
-                      const lineCost = costOf(lineProduct);
-                      const lineBadge = typeLabel(lineProduct);
-                      // A line with no product is a service / ad-hoc line: it bills a flat
-                      // amount against a chosen revenue account — no qty, no unit cost, no
-                      // COGS leg. Selecting a product switches it back to a goods line.
-                      const isService = !line.product_id;
-                      const overStock = lineOnHand !== null && line.qty > lineOnHand;
-                      // Gross margin % on the entered rate vs unit cost (stocked items only)
-                      const marginPct = lineCost && line.rate > 0
-                        ? Math.round(((line.rate - lineCost) / line.rate) * 100)
-                        : null;
-                      return (
-                      <tr key={line.id} className="border-t border-border align-top transition-colors hover:bg-muted/20 [&>td]:px-3 [&>td]:py-3">
-                        <td className="text-center">
-                          <div className="flex h-9 items-center justify-center">
-                            <span className="font-mono text-xs text-muted-foreground/70">{idx + 1}</span>
+              <div className="divide-y divide-border border-y border-border">
+                {lines.map((line, idx) => {
+                  const lineProduct = line.product_id ? productsById.get(line.product_id) : null;
+                  const lineOnHand = onHandOf(lineProduct);
+                  const lineCost = costOf(lineProduct);
+                  const lineBadge = typeLabel(lineProduct);
+                  // A line with no product is a service / ad-hoc line: it bills a flat
+                  // amount against a chosen revenue account — no qty, no unit cost, no
+                  // COGS leg. Selecting a product switches it back to a goods line.
+                  const isService = !line.product_id;
+                  const overStock = lineOnHand !== null && line.qty > lineOnHand;
+                  // Gross margin % on the entered rate vs unit cost (stocked items only)
+                  const marginPct = lineCost && line.rate > 0
+                    ? Math.round(((line.rate - lineCost) / line.rate) * 100)
+                    : null;
+                  return (
+                    <div key={line.id} className="group/line relative px-5 py-6 transition-colors hover:bg-muted/20">
+                      {/* Row 1 — line number, description and product picker */}
+                      <div className="flex items-start gap-3">
+                        <span className="mt-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground">
+                          {idx + 1}
+                        </span>
+                        <div className="flex-1 space-y-2">
+                          <div className="flex flex-col gap-2 sm:flex-row">
+                            {/* Description, product picker and revenue account share the top row. */}
+                            <Input className="h-10 min-w-0 flex-1 text-sm" placeholder="Description" value={line.description}
+                              onChange={(e) => updateLine(line.id, "description", e.target.value)} />
+                            <Select value={line.product_id || "none"}
+                              onValueChange={(v) => updateLine(line.id, "product_id", v === "none" ? "" : v)}>
+                              <SelectTrigger className="h-10 w-full shrink-0 text-xs sm:w-[170px]"><SelectValue placeholder="Link a product" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">— No product (service) —</SelectItem>
+                                {products?.map((p: any) => {
+                                  const oh = onHandOf(p);
+                                  return (
+                                    <SelectItem key={p.id} value={p.id}>
+                                      {p.name}{oh !== null ? ` — ${oh} in stock` : ""}
+                                    </SelectItem>
+                                  );
+                                })}
+                              </SelectContent>
+                            </Select>
+                            {/* Revenue account — auto-filled from the product's income account,
+                                or pick one for an ad-hoc service line. */}
+                            <Select value={line.account_id} onValueChange={(v) => updateLine(line.id, "account_id", v)}>
+                              <SelectTrigger className="h-10 w-full shrink-0 text-xs sm:w-[190px]"><SelectValue placeholder="Revenue account…" /></SelectTrigger>
+                              <SelectContent>
+                                {revenueAccounts.map((a: any) => (
+                                  <SelectItem key={a.id} value={a.id}>
+                                    <span className="font-mono text-xs text-muted-foreground">{a.account_code}</span> {a.account_name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
-                        </td>
-                        <td>
-                          <div className="space-y-1.5">
-                            {/* Description is the primary field (aligns with the rest of the
-                                row); the product picker is a compact link beside it. */}
-                            <div className="flex gap-1.5">
-                              <Input className="h-9 flex-1 text-sm" placeholder="Description" value={line.description}
-                                onChange={(e) => updateLine(line.id, "description", e.target.value)} />
-                              <Select value={line.product_id || "none"}
-                                onValueChange={(v) => updateLine(line.id, "product_id", v === "none" ? "" : v)}>
-                                <SelectTrigger className="h-9 w-[150px] shrink-0 text-xs"><SelectValue placeholder="Link product" /></SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="none">— No product (service) —</SelectItem>
-                                  {products?.map((p: any) => {
-                                    const oh = onHandOf(p);
-                                    return (
-                                      <SelectItem key={p.id} value={p.id}>
-                                        {p.name}{oh !== null ? ` — ${oh} in stock` : ""}
-                                      </SelectItem>
-                                    );
-                                  })}
-                                </SelectContent>
-                              </Select>
+                          {(lineBadge || lineOnHand !== null) && (
+                            <div className="flex items-center gap-2">
+                              {lineBadge && (
+                                <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                                  {lineBadge}
+                                </span>
+                              )}
+                              {lineOnHand !== null && (
+                                <span className={`text-[10px] ${overStock ? "text-destructive" : "text-muted-foreground"}`}>
+                                  {lineOnHand} in stock
+                                </span>
+                              )}
                             </div>
-                            {(lineBadge || isService || lineOnHand !== null) && (
-                              <div className="flex items-center gap-2">
-                                {(lineBadge || isService) && (
-                                  <span className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded ${isService ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground"}`}>
-                                    {lineBadge ?? "Service"}
-                                  </span>
-                                )}
-                                {lineOnHand !== null && (
-                                  <span className={`text-[10px] ${overStock ? "text-destructive" : "text-muted-foreground"}`}>
-                                    {lineOnHand} in stock
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td>
-                          {/* Revenue account — auto-filled from the product's income account,
-                              or pick directly for an ad-hoc service line. */}
-                          <Select value={line.account_id} onValueChange={(v) => updateLine(line.id, "account_id", v)}>
-                            <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select account…" /></SelectTrigger>
-                            <SelectContent>
-                              {revenueAccounts.map((a: any) => (
-                                <SelectItem key={a.id} value={a.id}>
-                                  <span className="font-mono text-xs text-muted-foreground">{a.account_code}</span> {a.account_name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </td>
-                        <td>
+                          )}
+                        </div>
+                        <div className="w-9 shrink-0">
+                          {lines.length > 1 && (
+                            <Button variant="ghost" size="icon" className="h-9 w-9 opacity-0 transition-opacity group-hover/line:opacity-100" onClick={() => removeLine(line.id)}>
+                              <Trash2 className="w-4 h-4 text-muted-foreground hover:text-destructive" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Row 2 — the financial fields, each with its own label and breathing room */}
+                      <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-4 pl-9 sm:grid-cols-12">
+                        <div className="space-y-1.5 sm:col-span-2">
+                          <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Qty</Label>
                           {isService ? (
                             // Service lines bill a flat amount; quantity is not applicable.
-                            <div className="flex h-9 items-center justify-center">
+                            <div className="flex h-10 items-center justify-center rounded-md border border-dashed border-border">
                               <span className="text-xs text-muted-foreground/50">—</span>
                             </div>
                           ) : (
                             <Input type="number"
-                              className={`h-9 text-sm text-center font-mono${overStock ? " border-destructive focus-visible:ring-destructive" : ""}`}
+                              className={`h-10 text-sm text-center font-mono${overStock ? " border-destructive focus-visible:ring-destructive" : ""}`}
                               value={line.qty || ""}
                               onChange={(e) => updateLine(line.id, "qty", Number(e.target.value))} min={1} />
                           )}
-                        </td>
-                        <td>
-                          <Input type="number" className="h-9 text-sm text-right font-mono" placeholder={isService ? "Amount" : "Rate"}
+                        </div>
+                        <div className="space-y-1.5 sm:col-span-3">
+                          <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{isService ? "Amount" : "Rate"}</Label>
+                          <Input type="number" className="h-10 text-sm text-right font-mono" placeholder="0.00"
                             value={line.rate || ""}
                             onChange={(e) => updateLine(line.id, "rate", Number(e.target.value))} min={0} />
                           {marginPct !== null && (
-                            <p className={`text-[10px] mt-1 text-right ${marginPct < 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                            <p className={`text-[10px] text-right ${marginPct < 0 ? "text-destructive" : "text-muted-foreground"}`}>
                               {marginPct}% margin
                             </p>
                           )}
-                        </td>
-                        <td>
-                          <Input type="number" className="h-9 text-sm text-right font-mono" value={line.discount || ""}
+                        </div>
+                        <div className="space-y-1.5 sm:col-span-2">
+                          <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Disc</Label>
+                          <Input type="number" className="h-10 text-sm text-right font-mono" placeholder="0.00" value={line.discount || ""}
                             onChange={(e) => updateLine(line.id, "discount", Number(e.target.value))} min={0} />
-                        </td>
-                        <td>
-                          <div className="space-y-1.5">
-                            <Select value={line.tax_sel || "none"}
-                              onValueChange={(v) => updateLine(line.id, "tax_sel", v === "none" ? "" : v)}>
-                              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="No tax" /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">No Tax</SelectItem>
-                                {sellableGroups.length > 0 && (
-                                  <SelectGroup>
-                                    <SelectLabel>Groups</SelectLabel>
-                                    {sellableGroups.map((g) => <SelectItem key={g.id} value={`g:${g.id}`}>{g.code}</SelectItem>)}
-                                  </SelectGroup>
-                                )}
-                                {sellableCodes.length > 0 && (
-                                  <SelectGroup>
-                                    <SelectLabel>Codes</SelectLabel>
-                                    {sellableCodes.map((c) => (
-                                      <SelectItem key={c.id} value={`c:${c.id}`}>
-                                        {c.code} ({currentRate(c, issueDate) ?? 0}%)
-                                      </SelectItem>
-                                    ))}
-                                  </SelectGroup>
-                                )}
-                              </SelectContent>
-                            </Select>
-                            {line.tax_sel && (
-                              <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                                <Switch className="scale-75" checked={line.inclusive}
-                                  onCheckedChange={(v) => updateLine(line.id, "inclusive", v)} />
-                                Incl.
-                              </label>
-                            )}
-                          </div>
-                        </td>
-                        <td>
-                          <div className="flex h-9 items-center justify-end font-mono tabular-nums text-sm font-medium text-foreground">
+                        </div>
+                        <div className="space-y-1.5 sm:col-span-3">
+                          <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Tax</Label>
+                          <Select value={line.tax_sel || "none"}
+                            onValueChange={(v) => updateLine(line.id, "tax_sel", v === "none" ? "" : v)}>
+                            <SelectTrigger className="h-10 text-sm"><SelectValue placeholder="No tax" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">No Tax</SelectItem>
+                              {sellableGroups.length > 0 && (
+                                <SelectGroup>
+                                  <SelectLabel>Groups</SelectLabel>
+                                  {sellableGroups.map((g) => <SelectItem key={g.id} value={`g:${g.id}`}>{g.code}</SelectItem>)}
+                                </SelectGroup>
+                              )}
+                              {sellableCodes.length > 0 && (
+                                <SelectGroup>
+                                  <SelectLabel>Codes</SelectLabel>
+                                  {sellableCodes.map((c) => (
+                                    <SelectItem key={c.id} value={`c:${c.id}`}>
+                                      {c.code} ({currentRate(c, issueDate) ?? 0}%)
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              )}
+                            </SelectContent>
+                          </Select>
+                          {line.tax_sel && (
+                            <label className="flex items-center gap-1.5 pt-0.5 text-[10px] text-muted-foreground">
+                              <Switch className="scale-75" checked={line.inclusive}
+                                onCheckedChange={(v) => updateLine(line.id, "inclusive", v)} />
+                              Tax inclusive
+                            </label>
+                          )}
+                        </div>
+                        <div className="col-span-2 space-y-1.5 sm:col-span-2">
+                          <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:text-right sm:block">Amount</Label>
+                          <div className="flex h-10 items-center justify-end font-mono tabular-nums text-base font-semibold text-foreground">
                             {formatCurrency(lineCalcs[idx]?.lineTotal ?? 0)}
                           </div>
-                        </td>
-                        <td>
-                          <div className="flex h-9 items-center justify-center">
-                            {lines.length > 1 && (
-                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeLine(line.id)}>
-                                <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              <div className="p-3">
-                <Button variant="ghost" size="sm" onClick={addLine} className="text-muted-foreground hover:text-foreground">
+              <div className="p-4">
+                <Button variant="outline" size="sm" onClick={addLine} className="w-full border-dashed text-muted-foreground hover:text-foreground">
                   <Plus className="w-4 h-4 mr-1.5" /> Add line
                 </Button>
               </div>

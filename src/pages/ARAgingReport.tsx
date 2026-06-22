@@ -164,7 +164,7 @@ export default function ARAgingReport() {
                     <TableRow
                       key={row.customer_id}
                       className="cursor-pointer hover:bg-muted/40"
-                      onClick={() => navigate(`/accounting/customers/${row.customer_id}`)}
+                      onClick={() => navigate(`/sales/customers/${row.customer_id}`)}
                     >
                       <TableCell className="font-medium">{row.customer_name}</TableCell>
                       <TableCell className="text-right tabular-nums text-green-700">

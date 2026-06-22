@@ -698,10 +698,37 @@ export function useUpdateEmployee() {
     }) => {
       const { error } = await supabase.from("employees").update(updates).eq("id", id);
       if (error) throw error;
+      writeAuditLog("Employee Updated", "employees", id, updates);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["employees"] });
       toast.success("Employee updated");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useDeleteEmployee() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, name }: { id: string; name?: string }) => {
+      // Block deletion when payroll history exists — those records reference this employee.
+      const { count, error: countError } = await supabase
+        .from("payroll_records")
+        .select("id", { count: "exact", head: true })
+        .eq("employee_id", id);
+      if (countError) throw countError;
+      if (count && count > 0) {
+        throw new Error("Cannot delete an employee with payroll history. Set their status to Inactive instead.");
+      }
+
+      const { error } = await supabase.from("employees").delete().eq("id", id);
+      if (error) throw error;
+      writeAuditLog("Employee Deleted", "employees", id, { name });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["employees"] });
+      toast.success("Employee deleted");
     },
     onError: (e: Error) => toast.error(e.message),
   });

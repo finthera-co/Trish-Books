@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
-import { Plus, Building2, LogOut, ChevronDown } from "lucide-react";
+import { Plus, LogOut } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useNotificationsRealtime } from "@/hooks/useNotificationsRealtime";
 import NotificationBell from "@/components/NotificationBell";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,6 +16,7 @@ import GlobalSearchBar from "@/components/layout/GlobalSearchBar";
 export default function GlobalTopNav() {
   const { appUser, isSuperAdmin, signOut } = useAuth();
   const navigate = useNavigate();
+  useNotificationsRealtime(); // live notification toasts + bell refresh
 
   const handleSignOut = async () => {
     await signOut();
@@ -54,23 +56,7 @@ export default function GlobalTopNav() {
           </DropdownMenu>
         )}
 
-        <NotificationBell />
-
-        {/* Company Switcher — only for tenant users */}
-        {!isSuperAdmin && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="hidden md:flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-muted text-xs text-muted-foreground transition-all duration-200">
-                <Building2 className="w-4 h-4" />
-                <span className="max-w-[100px] truncate">{appUser?.tenant_id ? "My Company" : "—"}</span>
-                <ChevronDown className="w-3 h-3" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem>My Company</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+        <NotificationBell seeAllLink="/notifications" />
 
         {/* User */}
         <DropdownMenu>

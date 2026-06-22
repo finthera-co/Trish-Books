@@ -19,14 +19,14 @@ const MUTED = [107, 114, 128] as const; // gray-500
 const RULE = [229, 231, 235] as const; // gray-200
 const GREEN = [22, 163, 74] as const; // primary accent
 const RED = [220, 38, 38] as const; // balance due
-const NAVY = [15, 23, 42] as const; // slate-900 — header/table fill
-const SLATE = [51, 65, 85] as const; // slate-700
-const PANEL = [248, 250, 252] as const; // slate-50 — soft panels / zebra
 const AMBER = [217, 119, 6] as const; // amber-600 — partial
 const BLUE = [37, 99, 235] as const; // blue-600 — due
 const WHITE = [255, 255, 255] as const;
-const SLATE300 = [203, 213, 225] as const; // header sub-text on navy
-const SLATE400 = [148, 163, 184] as const; // header muted on navy
+// Modern light theme accents
+const HEADING = [23, 37, 84] as const; // blue-950 — titles & section labels
+const CARD = [237, 240, 251] as const; // soft lavender — summary card / accents
+const ACCENT = [47, 102, 235] as const; // blue — the single pop colour (amount due)
+const TBL_HEAD_BG = [245, 247, 251] as const; // table header fill
 
 type RGB = readonly [number, number, number];
 const setText = (d: jsPDF, c: RGB) => d.setTextColor(c[0], c[1], c[2]);
@@ -34,6 +34,12 @@ const setDraw = (d: jsPDF, c: RGB) => d.setDrawColor(c[0], c[1], c[2]);
 const setFill = (d: jsPDF, c: RGB) => d.setFillColor(c[0], c[1], c[2]);
 
 const fmt = (n: unknown) => formatCurrency(Number(n) || 0);
+/** Plain grouped number (no currency prefix) — used where the label already names the currency. */
+const num = (n: unknown) => {
+  const v = Number(n) || 0;
+  const s = Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return v < 0 ? `(${s})` : s;
+};
 const sanitize = (s: string) => (s || "").replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "");
 const prettyDate = (d?: string | null) =>
   d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—";
@@ -135,81 +141,59 @@ export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdf
   const M = 16; // page margin
   const right = pageW - M;
   const contentW = right - M;
+  const currency = String(invoice.currency || "LKR");
 
-  // ── Header band: dark slate panel with company + INVOICE title ───────
-  const bandH = 40;
-  setFill(doc, NAVY);
-  doc.rect(0, 0, pageW, bandH, "F");
-  setFill(doc, GREEN);
-  doc.rect(0, bandH, pageW, 1.4, "F"); // accent underline
-
-  // Left: logo and/or company name
-  let leftY = 15;
-  if (logo) {
-    const boxW = 42, boxH = 16;
-    const ratio = logo.w / logo.h || 1;
-    let drawW = boxW, drawH = boxW / ratio;
-    if (drawH > boxH) { drawH = boxH; drawW = boxH * ratio; }
-    // White rounded plate so dark/transparent logos stay legible on navy.
-    setFill(doc, WHITE);
-    doc.roundedRect(M - 2, 12 - 2, drawW + 4, drawH + 4, 1.5, 1.5, "F");
-    doc.addImage(logo.dataUrl, "PNG", M, 12, drawW, drawH);
-    leftY = 12 + drawH + 7;
-  } else {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(17);
-    setText(doc, WHITE);
-    doc.text(tenant?.company_name || "Your Company", M, 18);
-    leftY = 25;
-  }
-  if (logo && tenant?.company_name) {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    setText(doc, WHITE);
-    doc.text(tenant.company_name, M, leftY);
-    leftY += 4.5;
-  }
-  // Country / BR shown in the band only when there's vertical room (no logo);
-  // with a logo the band is tight, and the BR still appears in the footer.
-  if (!logo) {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    setText(doc, SLATE300);
-    const headerMeta = [tenant?.country, tenant?.registration_number ? `BR No: ${tenant.registration_number}` : null]
-      .filter(Boolean).map(String);
-    headerMeta.forEach((line) => { doc.text(line, M, leftY); leftY += 4; });
-  }
-
-  // Right: INVOICE title + number
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(28);
-  setText(doc, WHITE);
-  doc.text("INVOICE", right, 19, { align: "right" });
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  setText(doc, SLATE400);
-  doc.text(`# ${invoice.invoice_number || "—"}`, right, 26, { align: "right" });
-
-  // Status chip, top-right under the number
   const status = invoiceStatus(invoice);
+  const paid = Number(invoice.amount_paid) || 0;
+  const disc = Number(invoice.discount_total) || 0;
+  const balance = Number(invoice.balance_due ?? Number(invoice.total_amount) - paid - disc);
+  // The headline figure: what's still owed, or the grand total once settled.
+  const headlineAmount = balance > 0.005 ? balance : Number(invoice.total_amount) || 0;
+  const headlineLabel = balance > 0.005 ? `Amount due (${currency})` : `Total (${currency})`;
+
+  // ── Summary card: soft lavender panel, INVOICE title + headline amount ──
+  const cardY = 14, cardH = 36;
+  const padX = 9;
+  setFill(doc, CARD);
+  doc.roundedRect(M, cardY, contentW, cardH, 3, 3, "F");
+
+  // Left: title + issuer
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
+  doc.setFontSize(26);
+  setText(doc, HEADING);
+  doc.text("Invoice", M + padX, cardY + 17);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  setText(doc, MUTED);
+  doc.text(tenant?.company_name || "Your Company", M + padX, cardY + 25);
+
+  // Right: headline amount + status chip
+  const rTextX = right - padX;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  setText(doc, MUTED);
+  doc.text(headlineLabel, rTextX, cardY + 13, { align: "right" });
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(23);
+  setText(doc, ACCENT);
+  doc.text(num(headlineAmount), rTextX, cardY + 25, { align: "right" });
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
   const chipW = doc.getTextWidth(status.label) + 7;
-  const chipH = 6.5;
+  const chipH = 6;
   setFill(doc, status.color);
-  doc.roundedRect(right - chipW, 29.5, chipW, chipH, 1.6, 1.6, "F");
+  doc.roundedRect(rTextX - chipW, cardY + 28, chipW, chipH, 1.5, 1.5, "F");
   setText(doc, WHITE);
-  doc.text(status.label, right - chipW / 2, 34, { align: "center" });
+  doc.text(status.label, rTextX - chipW / 2, cardY + 32.2, { align: "center" });
 
-  let y = bandH + 12;
+  let y = cardY + cardH + 13;
 
-  // ── Bill To (left) · Invoice details card (right) ────────────────────
-  const detailW = 72;
-  const billW = contentW - detailW - 8;
-
+  // ── Bill To (left) · Invoice meta (right, key:value) ─────────────────
+  const billW = contentW * 0.5 - 6;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
-  setText(doc, GREEN);
+  setText(doc, HEADING);
   doc.text("BILL TO", M, y);
 
   const partyAddr = customer?.address ? doc.splitTextToSize(String(customer.address), billW) : [];
@@ -218,43 +202,38 @@ export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdf
     ...partyAddr.map((t: string) => ({ t })),
     ...[customer?.email, customer?.phone || customer?.mobile].filter(Boolean).map((t: any) => ({ t: String(t) })),
   ];
-  let by = y + 6;
+  let by = y + 6.5;
   billLines.forEach((ln) => {
     doc.setFont("helvetica", ln.bold ? "bold" : "normal");
-    doc.setFontSize(ln.bold ? 10.5 : 9);
+    doc.setFontSize(ln.bold ? 11 : 9);
     setText(doc, ln.bold ? INK : MUTED);
     doc.text(ln.t, M, by);
-    by += ln.bold ? 5.5 : 4.6;
+    by += ln.bold ? 5.8 : 4.6;
   });
 
-  // Details card (bordered panel, right aligned)
-  const details: [string, string][] = [["Issue date", prettyDate(invoice.issue_date)]];
+  // Meta: right-aligned label · value rows (value bold, label muted to its left)
+  const meta: [string, string][] = [["Invoice number", String(invoice.invoice_number || "—")]];
+  meta.push(["Invoice date", prettyDate(invoice.issue_date)]);
   const terms = prettyTerms(invoice.payment_terms);
-  if (terms) details.push(["Terms", terms]);
-  details.push(["Due date", prettyDate(invoice.due_date)]);
-  if (invoice.currency) details.push(["Currency", String(invoice.currency)]);
+  if (terms) meta.push(["Terms", terms]);
+  meta.push(["Payment due", prettyDate(invoice.due_date)]);
 
-  const dpadX = 5, dpadY = 6, drowH = 6;
-  const cardH = dpadY * 2 + details.length * drowH - 1.5;
-  const cardX = right - detailW;
-  setFill(doc, PANEL);
-  setDraw(doc, RULE);
-  doc.setLineWidth(0.2);
-  doc.roundedRect(cardX, y - 4, detailW, cardH, 2, 2, "FD");
-  details.forEach(([label, value], i) => {
-    const ry = y - 4 + dpadY + i * drowH;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    setText(doc, MUTED);
-    doc.text(label, cardX + dpadX, ry);
+  let my = y;
+  meta.forEach(([label, value]) => {
     doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
     setText(doc, INK);
-    doc.text(value, cardX + detailW - dpadX, ry, { align: "right" });
+    doc.text(value, right, my, { align: "right" });
+    const vW = doc.getTextWidth(value);
+    doc.setFont("helvetica", "normal");
+    setText(doc, MUTED);
+    doc.text(`${label}:`, right - vW - 3, my, { align: "right" });
+    my += 6.2;
   });
 
-  y = Math.max(by, y - 4 + cardH) + 8;
+  y = Math.max(by, my) + 6;
 
-  // ── Line items table ────────────────────────────────────────────────
+  // ── Line items table (light theme) ───────────────────────────────────
   autoTable(doc, {
     startY: y,
     margin: { left: M, right: M },
@@ -267,15 +246,14 @@ export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdf
       fmt(it.total),
     ]),
     styles: {
-      font: "helvetica", fontSize: 9, cellPadding: { top: 3, bottom: 3, left: 3, right: 3 },
+      font: "helvetica", fontSize: 9, cellPadding: { top: 3.5, bottom: 3.5, left: 3, right: 3 },
       textColor: [INK[0], INK[1], INK[2]], lineColor: [RULE[0], RULE[1], RULE[2]], lineWidth: 0,
       valign: "middle",
     },
     headStyles: {
-      fillColor: [NAVY[0], NAVY[1], NAVY[2]], textColor: [WHITE[0], WHITE[1], WHITE[2]],
-      fontStyle: "bold", fontSize: 8.5, halign: "left", cellPadding: { top: 3.5, bottom: 3.5, left: 3, right: 3 },
+      fillColor: [TBL_HEAD_BG[0], TBL_HEAD_BG[1], TBL_HEAD_BG[2]], textColor: [HEADING[0], HEADING[1], HEADING[2]],
+      fontStyle: "bold", fontSize: 8.5, halign: "left", cellPadding: { top: 4, bottom: 4, left: 3, right: 3 },
     },
-    alternateRowStyles: { fillColor: [PANEL[0], PANEL[1], PANEL[2]] },
     columnStyles: {
       0: { halign: "center", cellWidth: 10, textColor: [MUTED[0], MUTED[1], MUTED[2]] },
       1: { cellWidth: "auto" },
@@ -283,8 +261,8 @@ export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdf
       3: { halign: "right", cellWidth: 28 },
       4: { halign: "right", cellWidth: 30, fontStyle: "bold" },
     },
-    theme: "striped",
-    // bottom rule under the table body
+    theme: "plain",
+    // hairline rule under each body row for a clean, airy ledger feel
     didParseCell: (data) => {
       if (data.section === "body") data.cell.styles.lineWidth = { bottom: 0.1, top: 0, left: 0, right: 0 } as any;
     },
@@ -292,10 +270,10 @@ export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdf
 
   // ── Totals block (right) ─────────────────────────────────────────────
   let ty = (doc as any).lastAutoTable.finalY + 9;
-  const totalsW = 92; // wide enough that large amounts never clip the boxes
+  const totalsW = 92; // wide enough that large amounts never clip
   const labelX = right - totalsW;
   const valX = right;
-  const boxValX = right - 3; // values sit just inside the rounded boxes
+  const boxValX = right - 3; // values sit just inside the rounded bars
 
   const totalRow = (label: string, value: string, opts: { color?: RGB; bold?: boolean } = {}) => {
     doc.setFont("helvetica", opts.bold ? "bold" : "normal");
@@ -311,25 +289,22 @@ export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdf
   if (Number(invoice.discount_amount) > 0) totalRow("Line discount", `-${fmt(invoice.discount_amount)}`, { color: RED });
   if (Number(invoice.tax_amount) > 0) totalRow("Tax", fmt(invoice.tax_amount));
 
-  // Grand total — filled accent bar
+  // Grand total — soft lavender bar (light, matches the summary card)
   ty += 0.5;
   const gtH = 10;
-  setFill(doc, NAVY);
+  setFill(doc, CARD);
   doc.roundedRect(labelX - 4, ty - 1, totalsW + 4, gtH, 2, 2, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
-  setText(doc, WHITE);
-  doc.text("TOTAL", labelX, ty + 5.5);
+  setText(doc, HEADING);
+  doc.text(`Grand total (${currency})`, labelX, ty + 5.7);
   doc.setFontSize(12);
-  doc.text(fmt(invoice.total_amount), boxValX, ty + 5.8, { align: "right" });
+  doc.text(fmt(invoice.total_amount), boxValX, ty + 5.9, { align: "right" });
   ty += gtH + 4;
 
-  const paid = Number(invoice.amount_paid) || 0;
-  const disc = Number(invoice.discount_total) || 0;
   if (paid > 0) totalRow("Amount paid", `-${fmt(paid)}`, { color: GREEN });
   if (disc > 0) totalRow("Discounts applied", `-${fmt(disc)}`, { color: GREEN });
   if (paid > 0 || disc > 0) {
-    const balance = Number(invoice.balance_due ?? Number(invoice.total_amount) - paid - disc);
     ty += 0.5;
     const bH = 9;
     const bColor = balance > 0.005 ? RED : GREEN;
@@ -349,38 +324,56 @@ export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdf
   let ny = (doc as any).lastAutoTable.finalY + 9;
   const notesW = contentW - totalsW - 12;
   for (const [heading, text] of [
-    ["Notes", invoice.notes],
+    ["Notes / Terms", invoice.notes],
     ["Terms & conditions", invoice.terms],
   ] as [string, string | null][]) {
     if (!text) continue;
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.5);
-    setText(doc, GREEN);
-    doc.text(heading.toUpperCase(), M, ny);
-    ny += 4.5;
+    doc.setFontSize(8);
+    setText(doc, HEADING);
+    doc.text(heading, M, ny);
+    ny += 4.8;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
-    setText(doc, SLATE);
+    setText(doc, MUTED);
     const wrapped = doc.splitTextToSize(String(text), notesW);
     doc.text(wrapped, M, ny);
     ny += wrapped.length * 4.2 + 5;
   }
 
-  // ── Footer on every page: rule + company · thank-you · page no. ──────
+  // ── Footer on every page: rule + logo · company · thank-you · page ───
   const pageCount = doc.getNumberOfPages();
   for (let p = 1; p <= pageCount; p++) {
     doc.setPage(p);
-    const fy = pageH - 10;
+    const fy = pageH - 11;
     setDraw(doc, RULE);
     doc.setLineWidth(0.2);
-    doc.line(M, fy - 4, right, fy - 4);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9.5);
-    setText(doc, MUTED);
-    const footLeft = [tenant?.company_name, tenant?.registration_number ? `BR No: ${tenant.registration_number}` : null]
+    doc.line(M, fy - 5, right, fy - 5);
+
+    // Left: small logo (if any) + company name / BR
+    let fx = M;
+    if (logo) {
+      const lh = 7, ratio = logo.w / logo.h || 1;
+      const lw = Math.min(lh * ratio, 16);
+      doc.addImage(logo.dataUrl, "PNG", fx, fy - 5, lw, lh);
+      fx += lw + 3;
+    }
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    setText(doc, HEADING);
+    doc.text(tenant?.company_name || "", fx, fy - 1);
+    const sub = [tenant?.country, tenant?.registration_number ? `BR No: ${tenant.registration_number}` : null]
       .filter(Boolean).join("  ·  ");
-    doc.text(footLeft, M, fy);
+    if (sub) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      setText(doc, MUTED);
+      doc.text(sub, fx, fy + 3);
+    }
+
     doc.setFont("helvetica", "italic");
+    doc.setFontSize(9);
+    setText(doc, MUTED);
     doc.text("Thank you for your business", pageW / 2, fy, { align: "center" });
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);

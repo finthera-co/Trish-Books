@@ -3,6 +3,7 @@ import { useMyEmployee, useMyPayslips } from "@/hooks/useMyEmployee";
 import { formatCurrency } from "@/lib/currency";
 import { FileText, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import PayStub from "@/components/payroll/PayStub";
 
 export default function MySalarySlips() {
@@ -19,7 +20,12 @@ export default function MySalarySlips() {
 
       <div className="rounded-2xl border border-border bg-card shadow-sm divide-y divide-border">
         {isLoading ? (
-          <p className="text-center text-sm text-muted-foreground py-10">Loading…</p>
+          Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="flex items-center justify-between gap-4 px-5 py-4">
+              <div className="space-y-2"><Skeleton className="h-4 w-32" /><Skeleton className="h-3 w-44" /></div>
+              <Skeleton className="h-8 w-16" />
+            </div>
+          ))
         ) : !slips?.length ? (
           <div className="text-center py-12 text-muted-foreground">
             <FileText className="w-8 h-8 mx-auto mb-2 opacity-50" />

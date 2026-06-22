@@ -558,7 +558,7 @@ export default function CustomersPage() {
               </TableHeader>
               <TableBody>
                 {(customers || []).map((c: any) => (
-                  <TableRow key={c.id} className="cursor-pointer hover:bg-muted/30" onClick={() => navigate(`/accounting/customers/${c.id}`)}>
+                  <TableRow key={c.id} className="cursor-pointer hover:bg-muted/30" onClick={() => navigate(`/sales/customers/${c.id}`)}>
                     <TableCell className="font-medium">
                       {c.name}
                       {c.credit_hold && <Badge variant="destructive" className="ml-2">On Hold</Badge>}
@@ -577,7 +577,7 @@ export default function CustomersPage() {
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => navigate(`/accounting/customers/${c.id}`)}><Eye className="w-4 h-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => navigate(`/sales/customers/${c.id}`)}><Eye className="w-4 h-4" /></Button>
                         <Button variant="ghost" size="icon" onClick={() => handleEdit(c)}><Pencil className="w-4 h-4" /></Button>
                         <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(c.id)}><Trash2 className="w-4 h-4 text-destructive" /></Button>
                       </div>

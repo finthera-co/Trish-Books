@@ -5,6 +5,7 @@ import { useMyEmployee } from "@/hooks/useMyEmployee";
 import { useLeaveRequests, useCancelLeaveRequest } from "@/hooks/useLeave";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const STATUS_STYLE: Record<string, string> = {
   pending:   "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
@@ -49,7 +50,13 @@ export default function LeaveHistory() {
           </thead>
           <tbody className="divide-y divide-border">
             {isLoading ? (
-              <tr><td colSpan={5} className="text-center py-10 text-muted-foreground">Loading…</td></tr>
+              Array.from({ length: 4 }).map((_, i) => (
+                <tr key={i}>
+                  {Array.from({ length: 5 }).map((__, j) => (
+                    <td key={j} className="px-4 py-3"><Skeleton className="h-4 w-full" /></td>
+                  ))}
+                </tr>
+              ))
             ) : !mine.length ? (
               <tr><td colSpan={5} className="text-center py-10 text-muted-foreground">No leave requests yet.</td></tr>
             ) : mine.map((r: any) => (

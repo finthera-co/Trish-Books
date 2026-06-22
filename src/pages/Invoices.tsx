@@ -33,6 +33,7 @@ export default function Invoices() {
   const { appUser } = useAuth();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "due_soon" | "overdue" | "paid" | "draft">("all");
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [voidDialogInvoice, setVoidDialogInvoice] = useState<any>(null);
@@ -45,16 +46,60 @@ export default function Invoices() {
   const updateInvoice = useUpdateInvoice();
   const { canEdit: canEditSales } = useMyPermissions();
 
-  const filtered = invoices?.filter((i) =>
-    i.invoice_number.toLowerCase().includes(search.toLowerCase()) ||
-    (i.customers as any)?.name?.toLowerCase().includes(search.toLowerCase())
-  ) || [];
+  const todayIso = new Date().toISOString().slice(0, 10);
 
   const getEffectiveStatus = (inv: any) => {
     if (inv.status === "voided") return "voided";
     if (inv.balance_due <= 0) return "paid";
+    // A posted, still-owing invoice past its due date is overdue regardless of
+    // the stored status — derived live so it matches the due-reminder alerts.
+    if (inv.status !== "draft" && inv.due_date && inv.due_date < todayIso) return "overdue";
     if (inv.amount_paid > 0) return "partial";
     return inv.status;
+  };
+
+  // Whole-day signed distance from today to a due date (negative = overdue).
+  // Returns a short human hint shown beside the due date for owing invoices.
+  const dueHint = (inv: any): { text: string; overdue: boolean } | null => {
+    if (!inv.due_date || inv.balance_due <= 0 || inv.status === "draft" || inv.status === "voided") return null;
+    const due = new Date(inv.due_date + "T00:00:00");
+    const days = Math.round((due.getTime() - new Date(todayIso + "T00:00:00").getTime()) / 86_400_000);
+    if (days < 0) return { text: `${Math.abs(days)}d overdue`, overdue: true };
+    if (days === 0) return { text: "due today", overdue: true };
+    if (days <= 7) return { text: `in ${days}d`, overdue: false };
+    return null;
+  };
+
+  // True when an owing, posted invoice falls due within the next 7 days (today
+  // included) but is not yet overdue — the "due soon" bucket.
+  const isDueSoon = (inv: any) => {
+    const hint = dueHint(inv);
+    return !!hint && !hint.overdue;
+  };
+
+  const matchesStatusFilter = (inv: any) => {
+    switch (statusFilter) {
+      case "due_soon": return isDueSoon(inv);
+      case "overdue": return getEffectiveStatus(inv) === "overdue";
+      case "paid": return getEffectiveStatus(inv) === "paid";
+      case "draft": return inv.status === "draft";
+      default: return true;
+    }
+  };
+
+  const filtered = (invoices ?? []).filter((i) =>
+    (i.invoice_number.toLowerCase().includes(search.toLowerCase()) ||
+      (i.customers as any)?.name?.toLowerCase().includes(search.toLowerCase())) &&
+    matchesStatusFilter(i)
+  );
+
+  // Tab counts (computed on the unfiltered set so they don't change with search).
+  const tabCounts = {
+    all: invoices?.length ?? 0,
+    due_soon: invoices?.filter(isDueSoon).length ?? 0,
+    overdue: invoices?.filter((i) => getEffectiveStatus(i) === "overdue").length ?? 0,
+    paid: invoices?.filter((i) => getEffectiveStatus(i) === "paid").length ?? 0,
+    draft: invoices?.filter((i) => i.status === "draft").length ?? 0,
   };
 
   const postInvoice = usePostInvoice();
@@ -182,7 +227,7 @@ export default function Invoices() {
       .reduce((s, i) => s + Number(i.balance_due), 0) || 0,
     paid: invoices?.filter(i => getEffectiveStatus(i) === "paid")
       .reduce((s, i) => s + Number(i.total_amount), 0) || 0,
-    overdue: invoices?.filter(i => i.status === "overdue")
+    overdue: invoices?.filter(i => getEffectiveStatus(i) === "overdue")
       .reduce((s, i) => s + Number(i.balance_due), 0) || 0,
     partial: invoices?.filter(i => getEffectiveStatus(i) === "partial")
       .reduce((s, i) => s + Number(i.amount_paid), 0) || 0,
@@ -210,12 +255,43 @@ export default function Invoices() {
       </div>
 
       <div className="stat-card">
+        {/* Status filter tabs — focus the list on what needs chasing */}
+        <div className="flex flex-wrap items-center gap-1 mb-4">
+          {([
+            { key: "all", label: "All" },
+            { key: "due_soon", label: "Due soon" },
+            { key: "overdue", label: "Overdue" },
+            { key: "paid", label: "Paid" },
+            { key: "draft", label: "Drafts" },
+          ] as const).map((t) => {
+            const active = statusFilter === t.key;
+            const count = tabCounts[t.key];
+            const isOverdue = t.key === "overdue";
+            return (
+              <button
+                key={t.key}
+                onClick={() => setStatusFilter(t.key)}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                  active
+                    ? isOverdue ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                {t.label}
+                <span className={`tabular-nums rounded-full px-1.5 text-[10px] ${active ? "bg-background/60" : "bg-muted"}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
         <div className="flex items-center gap-3 mb-4">
           <Search className="w-4 h-4 text-muted-foreground" />
           <input type="text" placeholder="Search invoices..." value={search} onChange={(e) => setSearch(e.target.value)}
             className="bg-transparent text-sm outline-none flex-1 text-foreground placeholder:text-muted-foreground" />
         </div>
-        
+
         {isLoading ? (
           <p className="text-center py-8 text-muted-foreground">Loading...</p>
         ) : filtered.length === 0 ? (
@@ -247,7 +323,20 @@ export default function Invoices() {
                       <td className="px-4 py-3 font-medium text-foreground">{inv.invoice_number}</td>
                       <td className="px-4 py-3 text-muted-foreground">{(inv.customers as any)?.name || "-"}</td>
                       <td className="px-4 py-3 text-muted-foreground">{inv.issue_date}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{inv.due_date || "-"}</td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        <div className="flex items-center gap-2">
+                          <span>{inv.due_date || "-"}</span>
+                          {(() => {
+                            const hint = dueHint(inv);
+                            if (!hint) return null;
+                            return (
+                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${hint.overdue ? "bg-destructive/10 text-destructive" : "bg-amber-500/10 text-amber-600 dark:text-amber-400"}`}>
+                                {hint.text}
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      </td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[status] || ""}`}>
                           {status}

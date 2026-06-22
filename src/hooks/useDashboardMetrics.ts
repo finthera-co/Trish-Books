@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { format, eachMonthOfInterval, startOfMonth, endOfMonth } from "date-fns";
+import { format, eachMonthOfInterval, differenceInCalendarDays, subDays, parseISO } from "date-fns";
 
 interface PeriodFilter {
   from: string;
@@ -38,10 +38,14 @@ export interface DashboardMetrics {
   roa: number;
   roe: number;
   assetTurnover: number;
-  // AR/AP
+  // AR/AP/Inventory — annualized, using average balances (audit-grade)
   arTurnover: number;
   collectionPeriod: number;
   apTurnover: number;
+  inventoryTurnover: number;
+  avgAccountsReceivable: number;
+  avgAccountsPayable: number;
+  avgInventory: number;
   // Cash flow
   totalInflows: number;
   totalOutflows: number;
@@ -55,6 +59,12 @@ export interface DashboardMetrics {
   prevRevenue: number;
   prevExpenses: number;
   revenueGrowth: number;
+  expenseGrowth: number;
+  // Workforce / runway
+  headcount: number;
+  profitPerEmployee: number;
+  avgMonthlyBurn: number;
+  cashRunwayMonths: number;
   // Budget
   budgetVariance: number;
   budgetVariancePct: number;
@@ -126,18 +136,75 @@ function useDashboardData(period: PeriodFilter) {
     },
   });
 
+  // Previous period of equal length, immediately preceding the selected range.
+  const prevPeriod = (() => {
+    try {
+      const fromD = parseISO(period.from);
+      const toD = parseISO(period.to);
+      const len = differenceInCalendarDays(toD, fromD);
+      const prevTo = subDays(fromD, 1);
+      const prevFrom = subDays(prevTo, len);
+      return { from: format(prevFrom, "yyyy-MM-dd"), to: format(prevTo, "yyyy-MM-dd") };
+    } catch {
+      return { from: period.from, to: period.to };
+    }
+  })();
+
+  const prevJournalsQuery = useQuery({
+    queryKey: ["dashboard_journals_prev", prevPeriod.from, prevPeriod.to],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("journal_entries")
+        .select("id, journal_lines(account_id, debit, credit)")
+        .eq("status", "posted")
+        .is("voided_at", null)
+        .gte("entry_date", prevPeriod.from)
+        .lte("entry_date", prevPeriod.to);
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const employeesQuery = useQuery({
+    queryKey: ["dashboard_employees_count"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("employees").select("id, status");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Opening balances: cumulative posted movement strictly BEFORE the period start.
+  // Used to derive average balance-sheet balances for audit-grade turnover ratios.
+  const openingJournalsQuery = useQuery({
+    queryKey: ["dashboard_journals_opening", period.from],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("journal_entries")
+        .select("id, journal_lines(account_id, debit, credit)")
+        .eq("status", "posted")
+        .is("voided_at", null)
+        .lt("entry_date", period.from);
+      if (error) throw error;
+      return data;
+    },
+  });
+
   return {
     journals: journalQuery.data || [],
+    prevJournals: prevJournalsQuery.data || [],
+    openingJournals: openingJournalsQuery.data || [],
     accounts: accountsQuery.data || [],
     invoices: invoicesQuery.data || [],
     expenses: expensesQuery.data || [],
     budgets: budgetsQuery.data || [],
+    employees: employeesQuery.data || [],
     isLoading: journalQuery.isLoading || accountsQuery.isLoading || invoicesQuery.isLoading,
   };
 }
 
 export function useDashboardMetrics(period: PeriodFilter) {
-  const { journals, accounts, invoices, expenses, budgets, isLoading } = useDashboardData(period);
+  const { journals, prevJournals, openingJournals, accounts, invoices, expenses, budgets, employees, isLoading } = useDashboardData(period);
 
   const metrics = useMemo<DashboardMetrics>(() => {
     // Build account lookup maps
@@ -281,6 +348,64 @@ export function useDashboardMetrics(period: PeriodFilter) {
     const totalInflows = monthlyData.reduce((s, m) => s + m.inflow, 0);
     const totalOutflows = monthlyData.reduce((s, m) => s + m.outflow, 0);
 
+    // Previous-period revenue/expenses for growth comparison
+    let prevRevenue = 0, prevExpenses = 0;
+    prevJournals.forEach(entry => {
+      const lines = (entry.journal_lines as any[]) || [];
+      lines.forEach(line => {
+        const debit = Number(line.debit) || 0;
+        const credit = Number(line.credit) || 0;
+        if (revenueIds.has(line.account_id)) prevRevenue += credit - debit;
+        if (expenseIds.has(line.account_id) || cogsIds.has(line.account_id)) prevExpenses += debit - credit;
+      });
+    });
+    const revenueGrowth = safe(totalRevenue - prevRevenue, Math.abs(prevRevenue)) * 100;
+    const expenseGrowth = safe((totalCOGS + totalExpenses) - prevExpenses, Math.abs(prevExpenses)) * 100;
+
+    // Workforce + cash runway
+    const headcount = employees.filter((e: any) => (e.status || "active") === "active").length;
+    const profitPerEmployee = headcount > 0 ? netProfit / headcount : 0;
+    const burnMonths = monthlyData.filter(m => m.inflow || m.outflow);
+    const avgMonthlyBurn = burnMonths.length
+      ? burnMonths.reduce((s, m) => s + (m.outflow - m.inflow), 0) / burnMonths.length
+      : 0;
+    const cashRunwayMonths = avgMonthlyBurn > 0 ? cash / avgMonthlyBurn : Infinity;
+
+    // ── Audit-grade turnover ratios ──────────────────────────────────────────
+    // Use AVERAGE balances [(opening + closing) / 2] and normalise for period
+    // length so a non-annual range doesn't distort turnover / DSO / DPO / DIO.
+    const arIds = new Set(accounts.filter(a => assetIds.has(a.id) && isAR(a)).map(a => a.id));
+    const apIds = new Set(accounts.filter(a => liabilityIds.has(a.id) && isAP(a)).map(a => a.id));
+    const invIds = new Set(accounts.filter(a => assetIds.has(a.id) && isInventory(a)).map(a => a.id));
+
+    let openingAR = 0, openingAP = 0, openingInv = 0;
+    openingJournals.forEach(entry => {
+      const lines = (entry.journal_lines as any[]) || [];
+      lines.forEach(line => {
+        const debit = Number(line.debit) || 0;
+        const credit = Number(line.credit) || 0;
+        if (arIds.has(line.account_id)) openingAR += debit - credit;   // asset, debit-normal
+        if (invIds.has(line.account_id)) openingInv += debit - credit; // asset, debit-normal
+        if (apIds.has(line.account_id)) openingAP += credit - debit;   // liability, credit-normal
+      });
+    });
+
+    // accountsReceivable / accountsPayable / inventory above are the in-period
+    // movement; closing = opening + movement.
+    const closingAR = openingAR + accountsReceivable;
+    const closingAP = openingAP + accountsPayable;
+    const closingInv = openingInv + inventory;
+    const avgAccountsReceivable = (openingAR + closingAR) / 2;
+    const avgAccountsPayable = (openingAP + closingAP) / 2;
+    const avgInventory = (openingInv + closingInv) / 2;
+
+    const periodDays = Math.max(1, differenceInCalendarDays(parseISO(period.to), parseISO(period.from)) + 1);
+    const annualFactor = 365 / periodDays;
+    const arTurnover = safe(totalRevenue, avgAccountsReceivable) * annualFactor;
+    const apTurnover = safe(totalCOGS, avgAccountsPayable) * annualFactor;
+    const inventoryTurnover = safe(totalCOGS, avgInventory) * annualFactor;
+    const collectionPeriod = arTurnover ? 365 / arTurnover : 0;
+
     // Budget variance
     const totalBudget = budgets.reduce((s, b) => s + Number(b.total_budget), 0);
     const actualSpend = totalCOGS + totalExpenses;
@@ -314,9 +439,13 @@ export function useDashboardMetrics(period: PeriodFilter) {
       roa: safe(netProfit, totalAssets) * 100,
       roe: safe(netProfit, equity) * 100,
       assetTurnover: safe(totalRevenue, totalAssets),
-      arTurnover: safe(totalRevenue, accountsReceivable),
-      collectionPeriod: safe(365, safe(totalRevenue, accountsReceivable)),
-      apTurnover: safe(totalCOGS, accountsPayable),
+      arTurnover,
+      collectionPeriod,
+      apTurnover,
+      inventoryTurnover,
+      avgAccountsReceivable,
+      avgAccountsPayable,
+      avgInventory,
       totalInflows,
       totalOutflows,
       monthlyData,
@@ -324,13 +453,18 @@ export function useDashboardMetrics(period: PeriodFilter) {
         ? Object.entries(expDist).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
         : [],
       topCustomers: Object.values(custBalances).sort((a, b) => b.balance - a.balance).slice(0, 5),
-      prevRevenue: 0,
-      prevExpenses: 0,
-      revenueGrowth: 0,
+      prevRevenue,
+      prevExpenses,
+      revenueGrowth,
+      expenseGrowth,
+      headcount,
+      profitPerEmployee,
+      avgMonthlyBurn,
+      cashRunwayMonths,
       budgetVariance,
       budgetVariancePct,
     };
-  }, [journals, accounts, invoices, expenses, budgets, period]);
+  }, [journals, prevJournals, openingJournals, accounts, invoices, expenses, budgets, employees, period]);
 
   return { metrics, isLoading };
 }

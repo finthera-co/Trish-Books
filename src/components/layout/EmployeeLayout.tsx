@@ -1,7 +1,8 @@
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import { LayoutDashboard, CalendarDays, MapPin, FileText, CalendarPlus, History, LogOut } from "lucide-react";
+import { LayoutDashboard, CalendarDays, MapPin, FileText, CalendarPlus, History, LogOut, User, ChevronRight } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMyEmployee } from "@/hooks/useMyEmployee";
+import { useNotificationsRealtime } from "@/hooks/useNotificationsRealtime";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import NotificationBell from "@/components/NotificationBell";
 import { cn } from "@/lib/utils";
@@ -13,6 +14,16 @@ const NAV = [
   { label: "My Salary Slips", path: "/me/payslips", icon: FileText },
   { label: "Apply for Leave", path: "/me/leave/apply", icon: CalendarPlus },
   { label: "Leave History", path: "/me/leave", icon: History },
+  { label: "My Profile", path: "/me/profile", icon: User },
+];
+
+// A compact set of destinations for the mobile bottom tab bar.
+const BOTTOM_NAV = [
+  { label: "Home", path: "/me", icon: LayoutDashboard, end: true },
+  { label: "Attendance", path: "/me/attendance", icon: CalendarDays },
+  { label: "Field", path: "/me/field", icon: MapPin },
+  { label: "Leave", path: "/me/leave", icon: CalendarPlus },
+  { label: "Profile", path: "/me/profile", icon: User },
 ];
 
 export default function EmployeeLayout() {
@@ -20,6 +31,7 @@ export default function EmployeeLayout() {
   const location = useLocation();
   const { signOut } = useAuth();
   const { data: me } = useMyEmployee();
+  useNotificationsRealtime(); // one realtime subscription for the whole portal (bell renders twice)
 
   const fullName = me ? [me.first_name, me.last_name].filter(Boolean).join(" ") : "Employee";
   const initials = (me?.first_name?.[0] ?? "") + (me?.last_name?.[0] ?? "");
@@ -44,17 +56,21 @@ export default function EmployeeLayout() {
           </div>
         </div>
 
-        {/* Profile */}
-        <div className="px-5 py-5 flex items-center gap-3 border-b border-white/15">
+        {/* Profile — tap to open My Profile */}
+        <button
+          onClick={() => navigate("/me/profile")}
+          className="px-5 py-5 flex items-center gap-3 border-b border-white/15 text-left hover:bg-white/10 transition-colors group"
+        >
           <Avatar className="w-11 h-11 ring-2 ring-white/40">
             <AvatarImage src={me?.photo_url ?? undefined} alt={fullName} />
             <AvatarFallback className="bg-white/20 text-white text-sm">{initials || "ME"}</AvatarFallback>
           </Avatar>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold truncate">{fullName}</p>
             <p className="text-[11px] text-white/70 truncate">{me?.designation || me?.employee_number || "—"}</p>
           </div>
-        </div>
+          <ChevronRight className="w-4 h-4 text-white/50 group-hover:text-white/90 shrink-0 transition-colors" />
+        </button>
 
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {NAV.map((item) => {
@@ -90,19 +106,41 @@ export default function EmployeeLayout() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Desktop top bar */}
         <header className="hidden md:flex h-14 border-b border-border bg-card items-center justify-end px-5 shrink-0">
-          <NotificationBell />
+          <NotificationBell seeAllLink="/me/notifications" />
         </header>
         {/* Mobile top bar */}
         <header className="md:hidden h-14 border-b border-border bg-card flex items-center justify-between px-4 shrink-0">
           <span className="font-semibold">Employee Portal</span>
           <div className="flex items-center gap-1">
-            <NotificationBell />
+            <NotificationBell seeAllLink="/me/notifications" />
             <button onClick={handleSignOut} className="text-muted-foreground"><LogOut className="w-5 h-5" /></button>
           </div>
         </header>
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
           <Outlet />
         </main>
+
+        {/* Mobile bottom tab bar */}
+        <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 pb-[env(safe-area-inset-bottom)]">
+          <div className="grid grid-cols-5">
+            {BOTTOM_NAV.map((item) => {
+              const active = isActive(item.path, item.end);
+              return (
+                <button
+                  key={item.path}
+                  onClick={() => navigate(item.path)}
+                  className={cn(
+                    "flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors",
+                    active ? "text-indigo-600 dark:text-indigo-400" : "text-muted-foreground",
+                  )}
+                >
+                  <item.icon className={cn("w-5 h-5", active && "scale-110 transition-transform")} />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
       </div>
     </div>
   );
