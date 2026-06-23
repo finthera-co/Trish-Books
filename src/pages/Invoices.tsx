@@ -18,6 +18,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { downloadInvoicePdf } from "@/lib/invoiceDownload";
 import { downloadTaxInvoicePdf } from "@/lib/taxInvoicePdf";
+import { loadTaxInvoice, type TaxInvoiceModel } from "@/lib/taxInvoiceData";
+import TaxInvoiceDocument from "@/components/invoices/TaxInvoiceDocument";
 import { shareInvoiceViaWhatsApp, shareInvoiceViaGmail, type ShareInvoiceArgs } from "@/lib/invoiceShare";
 
 const statusColors: Record<string, string> = {
@@ -41,6 +43,9 @@ export default function Invoices() {
   const [voidReason, setVoidReason] = useState("");
   const [processing, setProcessing] = useState(false);
   const [postConfirmInvoice, setPostConfirmInvoice] = useState<any>(null);
+  const [taxPreviewOpen, setTaxPreviewOpen] = useState(false);
+  const [taxPreviewModel, setTaxPreviewModel] = useState<TaxInvoiceModel | null>(null);
+  const [taxPreviewInvoice, setTaxPreviewInvoice] = useState<any>(null);
 
   const { data: invoices, isLoading } = useInvoices();
   const { data: accounts } = useAccounts();
@@ -206,6 +211,22 @@ export default function Invoices() {
       toast.success("Tax invoice downloaded");
     } catch (e: any) {
       toast.error("Failed to download: " + (e?.message || "unknown error"));
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleTaxInvoicePreview = async (inv: any) => {
+    const tenantId = inv.tenant_id ?? appUser?.tenant_id;
+    if (!tenantId) return toast.error("Missing tenant for this invoice");
+    setProcessing(true);
+    try {
+      const model = await loadTaxInvoice(inv.id, tenantId);
+      setTaxPreviewModel(model);
+      setTaxPreviewInvoice(inv);
+      setTaxPreviewOpen(true);
+    } catch (e: any) {
+      toast.error("Failed to load tax invoice: " + (e?.message || "unknown error"));
     } finally {
       setProcessing(false);
     }
@@ -387,6 +408,9 @@ export default function Invoices() {
                               <DropdownMenuItem onClick={() => handleDownload(inv)} disabled={processing}>
                                 <Download className="w-4 h-4 mr-2" /> Invoice (Template)
                               </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleTaxInvoicePreview(inv)} disabled={processing}>
+                                <Eye className="w-4 h-4 mr-2" /> View Tax Invoice
+                              </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleTaxInvoiceDownload(inv)} disabled={processing}>
                                 <FileText className="w-4 h-4 mr-2" /> Tax Invoice (PDF)
                               </DropdownMenuItem>
@@ -436,6 +460,33 @@ export default function Invoices() {
       </div>
 
       <InvoiceDetails invoice={selectedInvoice} open={detailsOpen} onOpenChange={setDetailsOpen} />
+
+      {/* Statutory VAT Tax Invoice preview (IRD Gazette 2481/22) */}
+      <Dialog open={taxPreviewOpen} onOpenChange={setTaxPreviewOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Tax Invoice — {taxPreviewModel?.invoiceNo}</DialogTitle>
+            <DialogDescription>IRD Gazette 2481/22 statutory format. Review before issuing.</DialogDescription>
+          </DialogHeader>
+          {(!taxPreviewModel?.supplier.tin || !taxPreviewModel?.purchaser.tin) && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+              {!taxPreviewModel?.supplier.tin && <p>Supplier TIN is missing — set it in Settings → Company Information.</p>}
+              {!taxPreviewModel?.purchaser.tin && <p>Purchaser TIN is missing — set it on the customer record.</p>}
+            </div>
+          )}
+          {taxPreviewModel && (
+            <div className="overflow-x-auto rounded border border-border bg-white">
+              <TaxInvoiceDocument model={taxPreviewModel} />
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setTaxPreviewOpen(false)}>Close</Button>
+            <Button onClick={() => taxPreviewInvoice && handleTaxInvoiceDownload(taxPreviewInvoice)} disabled={processing}>
+              <FileText className="w-4 h-4 mr-1.5" /> Download PDF
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Post Invoice confirmation */}
       <AlertDialog open={!!postConfirmInvoice} onOpenChange={(v) => { if (!v) setPostConfirmInvoice(null); }}>

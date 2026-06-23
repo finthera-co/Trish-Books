@@ -104,26 +104,55 @@ export async function loadTaxInvoice(invoiceId: string, tenantId: string): Promi
   const customer: any = (invoice as any).customers || {};
   const items: any[] = (invoice as any).invoice_items || [];
 
-  // Each table row shows VAT-EXCLUSIVE figures. unit_price is the net rate;
-  // amountExVat = qty * unitPriceExVat.
-  const lines: TaxInvoiceLine[] = items.map((it) => {
+  // Each table row must show VAT-EXCLUSIVE figures. For tax-EXCLUSIVE lines
+  // `unit_price` is already the net rate; for tax-INCLUSIVE lines it is the
+  // GROSS rate (the post-invoice engine backs VAT out into invoice.subtotal).
+  // We can't recompute per-line net in the browser — the effective rate lives
+  // in tax_codes / tax_groups, which aren't joinable here. So we take each
+  // line's raw amount (qty*price − discount) as a weight and scale the set to
+  // foot exactly to the stored subtotal (the authoritative Total Value of
+  // Supply). This is exact when all taxed lines share the same inclusive/
+  // exclusive treatment (the normal case) and always reconciles to the total.
+  const rawLines = items.map((it) => {
     const qty = Number(it.quantity) || 0;
-    const unitPriceExVat = Number(it.unit_price) || 0;
-    const amountExVat = Math.round(qty * unitPriceExVat * 100) / 100;
+    const raw = Math.round((qty * (Number(it.unit_price) || 0) - (Number(it.discount_amount) || 0)) * 100) / 100;
     return {
       reference: it.reference || "",
       description: it.description || "",
       qty,
-      unitPrice: unitPriceExVat,
+      raw: Math.max(0, raw),
+    };
+  });
+
+  const rawSum = Math.round(rawLines.reduce((s, l) => s + l.raw, 0) * 100) / 100;
+  // Prefer the stored subtotal (authoritative, VAT-exclusive); fall back to the
+  // raw sum if it is missing.
+  const storedSubtotal = (invoice as any).subtotal;
+  const totalValueOfSupply = storedSubtotal != null ? Number(storedSubtotal) : rawSum;
+  const scale = rawSum > 0 ? totalValueOfSupply / rawSum : 1;
+
+  const lines: TaxInvoiceLine[] = rawLines.map((l) => {
+    const amountExVat = Math.round(l.raw * scale * 100) / 100;
+    return {
+      reference: l.reference,
+      description: l.description,
+      qty: l.qty,
+      unitPrice: l.qty ? Math.round((amountExVat / l.qty) * 100) / 100 : amountExVat,
       amountExVat,
     };
   });
 
-  const computedNet = Math.round(lines.reduce((s, l) => s + l.amountExVat, 0) * 100) / 100;
-  // Prefer the stored subtotal (authoritative, VAT-exclusive); fall back to the
-  // computed sum if it is missing.
-  const storedSubtotal = (invoice as any).subtotal;
-  const totalValueOfSupply = storedSubtotal != null ? Number(storedSubtotal) : computedNet;
+  // Push any rounding residual onto the largest line so the column foots exactly
+  // to Total Value of Supply.
+  const linesSum = Math.round(lines.reduce((s, l) => s + l.amountExVat, 0) * 100) / 100;
+  const residual = Math.round((totalValueOfSupply - linesSum) * 100) / 100;
+  if (residual !== 0 && lines.length > 0) {
+    let idx = 0;
+    for (let i = 1; i < lines.length; i++) if (lines[i].amountExVat > lines[idx].amountExVat) idx = i;
+    lines[idx].amountExVat = Math.round((lines[idx].amountExVat + residual) * 100) / 100;
+    if (lines[idx].qty) lines[idx].unitPrice = Math.round((lines[idx].amountExVat / lines[idx].qty) * 100) / 100;
+  }
+
   const vatAmount = Number((invoice as any).tax_amount) || 0;
   const totalIncludingVat = Number((invoice as any).total_amount) || 0;
 
