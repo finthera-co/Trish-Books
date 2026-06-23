@@ -56,6 +56,17 @@ const TERM_OPTIONS = [
   { value: "net_60", label: "Net 60", days: 60 },
 ];
 const termToDays = (t: string) => TERM_OPTIONS.find((o) => o.value === t)?.days ?? 30;
+
+// IRD Gazette 2481/22 — permitted Mode of Payment values (optional field).
+const MODE_OF_PAYMENT_OPTIONS = [
+  "Cash",
+  "Bank Transfer",
+  "Cheque",
+  "Credit/Debit Card",
+  "Mobile Payment",
+  "Online Payment",
+];
+const MOP_NONE = "__none__"; // Radix Select cannot use "" as a value
 const addDays = (isoDate: string, days: number) => {
   const d = new Date(isoDate);
   d.setDate(d.getDate() + days);
@@ -83,19 +94,22 @@ export default function CreateInvoice() {
   }, [setHideSidebar]);
 
   const [customerId, setCustomerId] = useState("");
+  // Invoice number is system-generated on save per IRD Gazette 2481/22
+  // (YYMMM_QQQQ_XXXXX); never user-typed. Held only for post-save display.
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [issueDate, setIssueDate] = useState(new Date().toISOString().split("T")[0]);
   const [dueDate, setDueDate] = useState("");
   const [paymentTerms, setPaymentTerms] = useState("net_30");
+  // ── Statutory VAT tax-invoice fields (Gazette 2481/22) ──
+  const [branchCode, setBranchCode] = useState("");        // QQQQ segment of the serial
+  const [dateOfSupply, setDateOfSupply] = useState("");
+  const [placeOfSupply, setPlaceOfSupply] = useState("");
+  const [modeOfPayment, setModeOfPayment] = useState("");  // "" = Not specified
   const [notes, setNotes] = useState("");
   const [terms, setTerms] = useState("");
   const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
   const [saving, setSaving] = useState(false);
   const [posting, setPosting] = useState(false);
-
-  useEffect(() => {
-    if (!invoiceNumber) setInvoiceNumber(`INV-${Date.now().toString().slice(-6)}`);
-  }, []);
 
   // Inherit the selected customer's default payment term.
   useEffect(() => {
@@ -115,7 +129,7 @@ export default function CreateInvoice() {
     [accounts]
   );
   const revenueAccount = useMemo(
-    () => accounts?.find((a) => a.account_type === "Revenue" && !a.account_name?.toLowerCase().includes("return")),
+    () => accounts?.find((a) => (a.account_type === "Income" || a.account_type === "Other Income" || a.account_type === "Revenue") && !a.account_name?.toLowerCase().includes("return")),
     [accounts]
   );
 
@@ -308,7 +322,7 @@ export default function CreateInvoice() {
 
   const handleSave = async (shouldPost = false) => {
     if (!customerId) return toast.error("Please select a customer");
-    if (!invoiceNumber) return toast.error("Please enter an invoice number");
+    if (!branchCode.trim()) return toast.error("Branch/Entity code (QQQQ) is required");
     if (lines.every((l) => l.rate === 0)) return toast.error("Add at least one line item");
 
     // Non-blocking warning: a posted line with an amount but no revenue account and no
@@ -328,15 +342,29 @@ export default function CreateInvoice() {
     setter(true);
 
     try {
+      // Generate the IRD-compliant serial (YYMMM_QQQQ_XXXXX) atomically before
+      // the insert. The RPC increments a row-locked per-tenant/branch/month
+      // counter, so concurrent saves never collide.
+      const { data: serial, error: serialErr } = await supabase
+        .rpc("next_invoice_serial", {
+          p_branch_code: branchCode.trim(),
+          p_issue_date: issueDate,
+        });
+      if (serialErr || !serial) throw new Error(serialErr?.message || "Failed to generate invoice serial");
+
       const { data: invoice, error: invErr } = await supabase
         .from("invoices")
         .insert({
           tenant_id: appUser?.tenant_id,
           customer_id: customerId,
-          invoice_number: invoiceNumber,
+          invoice_number: serial,
           issue_date: issueDate,
           due_date: dueDate || null,
           payment_terms: paymentTerms,
+          date_of_supply: dateOfSupply || issueDate,
+          place_of_supply: placeOfSupply.trim() || null,
+          mode_of_payment: modeOfPayment || null,
+          branch_code: branchCode.trim(),
           total_amount: total,
           subtotal,
           tax_amount: totalTax,
@@ -349,6 +377,7 @@ export default function CreateInvoice() {
         .single();
 
       if (invErr) throw invErr;
+      setInvoiceNumber(serial);
 
       const itemInserts = lines
         .filter((l) => l.rate > 0 || l.description)
@@ -442,7 +471,53 @@ export default function CreateInvoice() {
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Invoice number</Label>
-                  <Input className="h-9 font-mono" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
+                  <Input
+                    className="h-9 font-mono bg-muted/50 text-muted-foreground"
+                    value={invoiceNumber}
+                    readOnly
+                    tabIndex={-1}
+                    placeholder="System-generated on save"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Generated on save per IRD format (YYMMM_QQQQ_XXXXX)</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Branch / Entity code (QQQQ)</Label>
+                  <Input
+                    className="h-9 font-mono"
+                    value={branchCode}
+                    onChange={(e) => setBranchCode(e.target.value)}
+                    maxLength={15}
+                    placeholder="e.g. BR03"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Date of supply</Label>
+                  <DatePicker value={dateOfSupply || issueDate} onChange={setDateOfSupply} placeholder="Select date of supply" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Place of supply</Label>
+                  <Input
+                    className="h-9"
+                    value={placeOfSupply}
+                    onChange={(e) => setPlaceOfSupply(e.target.value)}
+                    placeholder="Optional"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Mode of payment</Label>
+                  <Select value={modeOfPayment || MOP_NONE} onValueChange={(v) => setModeOfPayment(v === MOP_NONE ? "" : v)}>
+                    <SelectTrigger className="h-9"><SelectValue placeholder="Not specified" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={MOP_NONE}>Not specified</SelectItem>
+                      {MODE_OF_PAYMENT_OPTIONS.map((m) => (
+                        <SelectItem key={m} value={m}>{m}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
