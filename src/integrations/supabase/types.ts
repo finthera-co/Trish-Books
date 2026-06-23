@@ -4738,6 +4738,47 @@ export type Database = {
           },
         ]
       }
+      invoice_serial_sequences: {
+        Row: {
+          branch_code: string
+          created_at: string
+          id: string
+          last_seq: number
+          mmm: string
+          tenant_id: string
+          updated_at: string
+          yy: number
+        }
+        Insert: {
+          branch_code: string
+          created_at?: string
+          id?: string
+          last_seq?: number
+          mmm: string
+          tenant_id: string
+          updated_at?: string
+          yy: number
+        }
+        Update: {
+          branch_code?: string
+          created_at?: string
+          id?: string
+          last_seq?: number
+          mmm?: string
+          tenant_id?: string
+          updated_at?: string
+          yy?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_serial_sequences_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoice_templates: {
         Row: {
           created_at: string
@@ -4798,17 +4839,21 @@ export type Database = {
       invoices: {
         Row: {
           ar_account_id: string | null
+          branch_code: string | null
           created_at: string
           currency: string
           customer_id: string | null
+          date_of_supply: string | null
           discount_amount: number
           due_date: string | null
           id: string
           invoice_number: string
           issue_date: string
           journal_entry_id: string | null
+          mode_of_payment: string | null
           notes: string | null
           payment_terms: string
+          place_of_supply: string | null
           posted_at: string | null
           posted_by: string | null
           posting_status: string
@@ -4826,17 +4871,21 @@ export type Database = {
         }
         Insert: {
           ar_account_id?: string | null
+          branch_code?: string | null
           created_at?: string
           currency?: string
           customer_id?: string | null
+          date_of_supply?: string | null
           discount_amount?: number
           due_date?: string | null
           id?: string
           invoice_number: string
           issue_date?: string
           journal_entry_id?: string | null
+          mode_of_payment?: string | null
           notes?: string | null
           payment_terms?: string
+          place_of_supply?: string | null
           posted_at?: string | null
           posted_by?: string | null
           posting_status?: string
@@ -4854,17 +4903,21 @@ export type Database = {
         }
         Update: {
           ar_account_id?: string | null
+          branch_code?: string | null
           created_at?: string
           currency?: string
           customer_id?: string | null
+          date_of_supply?: string | null
           discount_amount?: number
           due_date?: string | null
           id?: string
           invoice_number?: string
           issue_date?: string
           journal_entry_id?: string | null
+          mode_of_payment?: string | null
           notes?: string | null
           payment_terms?: string
+          place_of_supply?: string | null
           posted_at?: string | null
           posted_by?: string | null
           posting_status?: string
@@ -10465,6 +10518,7 @@ export type Database = {
       }
       tenants: {
         Row: {
+          address: string | null
           company_name: string
           country: string | null
           created_at: string
@@ -10472,12 +10526,15 @@ export type Database = {
           id: string
           industry: string | null
           logo_url: string | null
+          phone: string | null
           registration_number: string | null
           status: string
           subscription_plan_id: string | null
+          tax_id: string | null
           updated_at: string
         }
         Insert: {
+          address?: string | null
           company_name: string
           country?: string | null
           created_at?: string
@@ -10485,12 +10542,15 @@ export type Database = {
           id?: string
           industry?: string | null
           logo_url?: string | null
+          phone?: string | null
           registration_number?: string | null
           status?: string
           subscription_plan_id?: string | null
+          tax_id?: string | null
           updated_at?: string
         }
         Update: {
+          address?: string | null
           company_name?: string
           country?: string | null
           created_at?: string
@@ -10498,9 +10558,11 @@ export type Database = {
           id?: string
           industry?: string | null
           logo_url?: string | null
+          phone?: string | null
           registration_number?: string | null
           status?: string
           subscription_plan_id?: string | null
+          tax_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -11371,6 +11433,10 @@ export type Database = {
       }
       is_primary_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
+      next_invoice_serial: {
+        Args: { p_branch_code: string; p_issue_date: string }
+        Returns: string
+      }
       next_tenant_number: {
         Args: { p_key: string; p_tenant_id: string }
         Returns: number
