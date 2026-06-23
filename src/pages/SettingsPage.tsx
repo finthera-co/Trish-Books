@@ -28,6 +28,9 @@ export default function SettingsPage() {
   const [companyName, setCompanyName] = useState("");
   const [country, setCountry] = useState("");
   const [registrationNumber, setRegistrationNumber] = useState("");
+  const [taxId, setTaxId] = useState("");
+  const [address, setAddress] = useState("");
+  const [phone, setPhone] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -39,6 +42,9 @@ export default function SettingsPage() {
       setCompanyName(tenant.company_name);
       setCountry(tenant.country || "");
       setRegistrationNumber(tenant.registration_number || "");
+      setTaxId(tenant.tax_id || "");
+      setAddress(tenant.address || "");
+      setPhone(tenant.phone || "");
       setLogoUrl(tenant.logo_url || "");
     }
   }, [tenant]);
@@ -75,6 +81,9 @@ export default function SettingsPage() {
         company_name: companyName || tenant?.company_name,
         country: country || tenant?.country,
         registration_number: registrationNumber.trim() || null,
+        tax_id: taxId.trim() || null,
+        address: address.trim() || null,
+        phone: phone.trim() || null,
         logo_url: logoUrl || null,
       })
       .eq("id", appUser.tenant_id)
@@ -133,6 +142,41 @@ export default function SettingsPage() {
                 className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground"
               />
               <p className="mt-1 text-xs text-muted-foreground">Printed centered at the foot of every invoice.</p>
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground">Tax Registration Number (TIN)</label>
+              <input
+                type="text"
+                value={taxId}
+                onChange={(e) => setTaxId(e.target.value)}
+                placeholder="123456789"
+                className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground"
+              />
+              <p className={`mt-1 text-xs ${taxId.trim() && !/^\d{9}$/.test(taxId.trim()) ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}>
+                {taxId.trim() && !/^\d{9}$/.test(taxId.trim())
+                  ? "TIN should be 9 digits (IRD VAT tax invoice requirement)."
+                  : "Supplier TIN — 9 digits. Printed on the statutory tax invoice."}
+              </p>
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground">Address</label>
+              <textarea
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                rows={2}
+                placeholder="Registered business address"
+                className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground"
+              />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground">Telephone</label>
+              <input
+                type="text"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+94 ..."
+                className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground"
+              />
             </div>
             <div>
               <label className="text-sm text-muted-foreground">Company Logo</label>
