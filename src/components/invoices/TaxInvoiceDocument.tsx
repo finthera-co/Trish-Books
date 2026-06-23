@@ -68,7 +68,7 @@ export default function TaxInvoiceDocument({ model }: { model: TaxInvoiceModel }
         <thead>
           <tr>
             <th className={cell + " text-left"} style={{ width: "12%" }}>Reference*</th>
-            <th className={cell + " text-left"} style={{ width: "40%" }}>Description of Goods or Services</th>
+            <th className={cell + " text-left"} style={{ width: "40%" }}>{model.descriptionHeader}</th>
             <th className={cell + " text-right"} style={{ width: "11%" }}>Quantity</th>
             <th className={cell + " text-right"} style={{ width: "16%" }}>Unit Price</th>
             <th className={cell + " text-right"} style={{ width: "21%" }}>Amount Excluding VAT (Rs.)</th>
@@ -78,12 +78,7 @@ export default function TaxInvoiceDocument({ model }: { model: TaxInvoiceModel }
           {model.lines.map((l, i) => (
             <tr key={i}>
               <td className={cell}>{l.reference}</td>
-              <td className={cell}>
-                {l.description}
-                {(l.description || l.amountExVat) ? (
-                  <span className="text-[9px] text-gray-500"> ({l.nature})</span>
-                ) : null}
-              </td>
+              <td className={cell}>{l.description}</td>
               <td className={cell + " text-right tabular-nums"}>{l.qty || ""}</td>
               <td className={cell + " text-right tabular-nums"}>{l.unitPrice ? formatCurrency(l.unitPrice) : ""}</td>
               <td className={cell + " text-right tabular-nums"}>{formatCurrency(l.amountExVat)}</td>

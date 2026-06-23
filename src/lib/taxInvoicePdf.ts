@@ -90,11 +90,11 @@ export function buildTaxInvoicePdf(model: TaxInvoiceModel): jsPDF {
     theme: "grid",
     styles: baseStyles,
     headStyles: { fillColor: [255, 255, 255], textColor: BLACK, fontStyle: "bold", lineColor: BLACK, lineWidth: 0.2 },
-    head: [["Reference*", "Description of Goods or Services", "Quantity", "Unit Price", "Amount Excluding VAT (Rs.)"]],
+    head: [["Reference*", model.descriptionHeader, "Quantity", "Unit Price", "Amount Excluding VAT (Rs.)"]],
     body: [
       ...model.lines.map((l) => [
         l.reference,
-        (l.description || l.amountExVat) ? `${l.description} (${l.nature})` : l.description,
+        l.description,
         l.qty ? String(l.qty) : "",
         l.unitPrice ? fmt(l.unitPrice) : "",
         fmt(l.amountExVat),

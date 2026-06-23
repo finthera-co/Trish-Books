@@ -20,6 +20,8 @@ export interface TaxInvoiceModel {
   placeOfSupply: string;
   additionalInfo: string;
   modeOfPayment: string;
+  /** Items table header: "Description of Goods" | "...Services" | "...Goods or Services". */
+  descriptionHeader: string;
   lines: TaxInvoiceLine[];
   totalValueOfSupply: number;
   vatAmount: number;
@@ -160,6 +162,15 @@ export async function loadTaxInvoice(invoiceId: string, tenantId: string): Promi
     if (lines[idx].qty) lines[idx].unitPrice = Math.round((lines[idx].amountExVat / lines[idx].qty) * 100) / 100;
   }
 
+  // The items-column header reflects what the invoice actually contains:
+  // only goods, only services, or both (the full gazette wording).
+  const hasGoods = lines.some((l) => l.nature === "Goods");
+  const hasService = lines.some((l) => l.nature === "Service");
+  const descriptionHeader =
+    hasGoods && !hasService ? "Description of Goods"
+      : hasService && !hasGoods ? "Description of Services"
+      : "Description of Goods or Services";
+
   const vatAmount = Number((invoice as any).tax_amount) || 0;
   const totalIncludingVat = Number((invoice as any).total_amount) || 0;
 
@@ -183,6 +194,7 @@ export async function loadTaxInvoice(invoiceId: string, tenantId: string): Promi
     placeOfSupply: (invoice as any).place_of_supply || "",
     additionalInfo: (invoice as any).notes || "",
     modeOfPayment: (invoice as any).mode_of_payment || "",
+    descriptionHeader,
     lines,
     totalValueOfSupply,
     vatAmount,
