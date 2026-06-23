@@ -94,7 +94,7 @@ export function buildTaxInvoicePdf(model: TaxInvoiceModel): jsPDF {
     body: [
       ...model.lines.map((l) => [
         l.reference,
-        l.description,
+        (l.description || l.amountExVat) ? `${l.description} (${l.nature})` : l.description,
         l.qty ? String(l.qty) : "",
         l.unitPrice ? fmt(l.unitPrice) : "",
         fmt(l.amountExVat),

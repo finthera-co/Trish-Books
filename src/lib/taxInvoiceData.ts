@@ -4,6 +4,8 @@ import { formatGazetteDate } from "@/lib/gazetteFormat";
 export interface TaxInvoiceLine {
   reference: string;
   description: string;
+  /** "Goods" when the line is a stocked/non-service product, else "Service". */
+  nature: "Goods" | "Service";
   qty: number;
   unitPrice: number;
   amountExVat: number;
@@ -90,7 +92,7 @@ export function amountInWords(amount: number): string {
 export async function loadTaxInvoice(invoiceId: string, tenantId: string): Promise<TaxInvoiceModel> {
   const { data: invoice, error: invErr } = await supabase
     .from("invoices")
-    .select("*, customers(*), invoice_items(*, taxes(*))")
+    .select("*, customers(*), invoice_items(*, taxes(*), products(type))")
     .eq("id", invoiceId)
     .single();
   if (invErr || !invoice) throw new Error(invErr?.message || "Invoice not found");
@@ -116,9 +118,13 @@ export async function loadTaxInvoice(invoiceId: string, tenantId: string): Promi
   const rawLines = items.map((it) => {
     const qty = Number(it.quantity) || 0;
     const raw = Math.round((qty * (Number(it.unit_price) || 0) - (Number(it.discount_amount) || 0)) * 100) / 100;
+    // A line is a Service when it has no linked product (ad-hoc service line) or
+    // the linked product is itself a service type; otherwise it is Goods.
+    const isService = !it.product_id || it.products?.type === "service";
     return {
       reference: it.reference || "",
       description: it.description || "",
+      nature: (isService ? "Service" : "Goods") as "Goods" | "Service",
       qty,
       raw: Math.max(0, raw),
     };
@@ -136,6 +142,7 @@ export async function loadTaxInvoice(invoiceId: string, tenantId: string): Promi
     return {
       reference: l.reference,
       description: l.description,
+      nature: l.nature,
       qty: l.qty,
       unitPrice: l.qty ? Math.round((amountExVat / l.qty) * 100) / 100 : amountExVat,
       amountExVat,

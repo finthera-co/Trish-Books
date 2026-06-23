@@ -78,7 +78,12 @@ export default function TaxInvoiceDocument({ model }: { model: TaxInvoiceModel }
           {model.lines.map((l, i) => (
             <tr key={i}>
               <td className={cell}>{l.reference}</td>
-              <td className={cell}>{l.description}</td>
+              <td className={cell}>
+                {l.description}
+                {(l.description || l.amountExVat) ? (
+                  <span className="text-[9px] text-gray-500"> ({l.nature})</span>
+                ) : null}
+              </td>
               <td className={cell + " text-right tabular-nums"}>{l.qty || ""}</td>
               <td className={cell + " text-right tabular-nums"}>{l.unitPrice ? formatCurrency(l.unitPrice) : ""}</td>
               <td className={cell + " text-right tabular-nums"}>{formatCurrency(l.amountExVat)}</td>
