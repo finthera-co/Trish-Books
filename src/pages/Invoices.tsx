@@ -1,4 +1,4 @@
-import { Plus, Search, MoreHorizontal, Eye, Send, Ban, Download, MessageCircle, Mail } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Eye, Send, Ban, Download, MessageCircle, Mail, FileText } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useState, useMemo } from "react";
@@ -17,6 +17,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { downloadInvoicePdf } from "@/lib/invoiceDownload";
+import { downloadTaxInvoicePdf } from "@/lib/taxInvoicePdf";
 import { shareInvoiceViaWhatsApp, shareInvoiceViaGmail, type ShareInvoiceArgs } from "@/lib/invoiceShare";
 
 const statusColors: Record<string, string> = {
@@ -187,6 +188,22 @@ export default function Invoices() {
     try {
       await downloadInvoicePdf(inv.id, appUser.tenant_id);
       toast.success("Invoice downloaded");
+    } catch (e: any) {
+      toast.error("Failed to download: " + (e?.message || "unknown error"));
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // Statutory IRD VAT tax invoice (Gazette 2481/22) — fixed gazette layout,
+  // distinct from the user-editable template above.
+  const handleTaxInvoiceDownload = async (inv: any) => {
+    const tenantId = inv.tenant_id ?? appUser?.tenant_id;
+    if (!tenantId) return toast.error("Missing tenant for this invoice");
+    setProcessing(true);
+    try {
+      await downloadTaxInvoicePdf(inv.id, tenantId);
+      toast.success("Tax invoice downloaded");
     } catch (e: any) {
       toast.error("Failed to download: " + (e?.message || "unknown error"));
     } finally {
@@ -368,7 +385,10 @@ export default function Invoices() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent>
                               <DropdownMenuItem onClick={() => handleDownload(inv)} disabled={processing}>
-                                <Download className="w-4 h-4 mr-2" /> Download PDF
+                                <Download className="w-4 h-4 mr-2" /> Invoice (Template)
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleTaxInvoiceDownload(inv)} disabled={processing}>
+                                <FileText className="w-4 h-4 mr-2" /> Tax Invoice (PDF)
                               </DropdownMenuItem>
                               {!isVoided && (
                                 <>
