@@ -2,12 +2,17 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, ComposedChart, Line, ReferenceLine,
 } from "recharts";
-import { ArrowDownRight, ArrowUpRight, Scale, TrendingUp, TrendingDown, Wallet, LineChart as LineChartIcon } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Scale, TrendingUp, TrendingDown, Wallet, LineChart as LineChartIcon, FileText, CreditCard, CalendarClock, Receipt, Landmark } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import type { DashboardMetrics } from "@/hooks/useDashboardMetrics";
+import RecentTransactions from "@/components/dashboard/RecentTransactions";
 
-const COLORS = [
+// Distinct, modern palette so every expense category gets its own colour.
+const EXPENSE_PALETTE = [
   "hsl(217, 91%, 60%)", "hsl(160, 84%, 39%)", "hsl(38, 92%, 50%)",
   "hsl(280, 65%, 60%)", "hsl(0, 84%, 60%)", "hsl(199, 89%, 48%)",
+  "hsl(330, 81%, 60%)", "hsl(24, 95%, 53%)", "hsl(142, 71%, 45%)",
+  "hsl(252, 83%, 67%)", "hsl(173, 80%, 40%)", "hsl(47, 96%, 53%)",
 ];
 
 const INFLOW = "hsl(160 84% 39%)";   // emerald
@@ -27,7 +32,12 @@ interface Props {
 }
 
 export default function DashboardCharts({ metrics }: Props) {
-  const { monthlyData, expenseDistribution, topCustomers, totalInflows, totalOutflows } = metrics;
+  const navigate = useNavigate();
+  const {
+    monthlyData, expenseDistribution, totalInflows, totalOutflows,
+    invoiceCount, overdueInvoiceCount, accountsPayable, currentMonthOverdueAmount,
+    bankAccounts,
+  } = metrics;
   const hasMonthly = monthlyData.some(d => d.revenue || d.expenses || d.inflow || d.outflow);
 
   // Diverging series: inflows above the zero line, outflows below it, net as a line.
@@ -37,6 +47,8 @@ export default function DashboardCharts({ metrics }: Props) {
     outflowNeg: -d.outflow,
     net: d.inflow - d.outflow,
   }));
+
+  const totalExpenseDist = expenseDistribution.reduce((s, d) => s + d.value, 0);
 
   const netCashFlow = totalInflows - totalOutflows;
   const monthsWithData = cashData.filter(d => d.inflow || d.outflowNeg);
@@ -54,8 +66,42 @@ export default function DashboardCharts({ metrics }: Props) {
 
   return (
     <div className="space-y-5 animate-fade-in">
+      {/* Invoice / payables summary strip — sits above the Cash Flow card */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        <button
+          type="button"
+          onClick={() => navigate("/sales/invoices")}
+          className="text-left rounded-2xl border border-border/60 shadow-sm p-4 transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          style={{ backgroundImage: `linear-gradient(135deg, hsl(217 91% 60% / 0.18), hsl(var(--card)))` }}
+        >
+          <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <FileText className="w-3.5 h-3.5" style={{ color: NET }} /> Invoices
+          </div>
+          <div className="mt-2 flex items-end gap-4">
+            <div>
+              <p className="text-2xl font-bold tracking-tight leading-none" style={{ color: NET }}>{invoiceCount}</p>
+              <p className="text-[10px] text-muted-foreground mt-1">Total</p>
+            </div>
+            <div className="h-8 w-px bg-border/70" />
+            <div>
+              <p className="text-2xl font-bold tracking-tight leading-none" style={{ color: OUTFLOW }}>{overdueInvoiceCount}</p>
+              <p className="text-[10px] text-muted-foreground mt-1">Overdue</p>
+            </div>
+          </div>
+        </button>
+        <InvoiceStat label="Accounts Payable" value={fmt(accountsPayable)} icon={CreditCard} color="hsl(347 77% 50%)" />
+        <InvoiceStat label="Expense" value={fmt(totalExpenseDist)} icon={Receipt} color={OUTFLOW} />
+        <BankBalanceCard accounts={bankAccounts} />
+        <InvoiceStat label="Current Month Overdue" value={fmt(currentMonthOverdueAmount)} icon={CalendarClock} color={MARGIN} />
+      </div>
+
       {/* Cash Flow — full-width hero chart */}
-      <div className="bg-card rounded-2xl border border-border/60 shadow-sm overflow-hidden">
+      <div
+        className="rounded-2xl border border-border/60 shadow-sm overflow-hidden"
+        style={{
+          backgroundImage: `linear-gradient(135deg, hsl(217 91% 60% / 0.28) 0%, hsl(217 91% 60% / 0.12) 45%, hsl(var(--card)) 100%)`,
+        }}
+      >
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-5 sm:px-6 pt-5">
           <div>
             <h3 className="text-base font-bold text-foreground flex items-center gap-2">
@@ -125,7 +171,12 @@ export default function DashboardCharts({ metrics }: Props) {
       </div>
 
       {/* Monthly Profit Trend — net profit bars + margin line */}
-      <div className="bg-card rounded-2xl border border-border/60 shadow-sm overflow-hidden">
+      <div
+        className="rounded-2xl border border-border/60 shadow-sm overflow-hidden"
+        style={{
+          backgroundImage: `linear-gradient(135deg, hsl(38 92% 50% / 0.28) 0%, hsl(160 84% 39% / 0.12) 45%, hsl(var(--card)) 100%)`,
+        }}
+      >
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-5 sm:px-6 pt-5">
           <div>
             <h3 className="text-base font-bold text-foreground flex items-center gap-2">
@@ -206,43 +257,77 @@ export default function DashboardCharts({ metrics }: Props) {
           )}
         </ChartCard>
 
-        {/* Top Customers */}
-        <ChartCard title="Top 5 Customers" subtitle="By outstanding balance">
-          {topCustomers.length === 0 ? <EmptyChart text="No customer balances found." /> : (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={topCustomers} layout="vertical" barSize={22}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(220, 13%, 91%)" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 11 }} stroke="hsl(220, 9%, 46%)" tickFormatter={kFmt} />
-                <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} stroke="hsl(220, 9%, 46%)" width={100} />
-                <Tooltip formatter={(v: number) => [fmt(v), "Balance"]} contentStyle={{ borderRadius: "8px", border: "1px solid hsl(220, 13%, 91%)", fontSize: "12px" }} />
-                <Bar dataKey="balance" radius={[0, 6, 6, 0]}>
-                  {topCustomers.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </ChartCard>
+        {/* Recent Transactions — live activity feed */}
+        <RecentTransactions />
 
         {/* Expense Distribution */}
         <ChartCard title="Expense Distribution" subtitle="By category" className="lg:col-span-2">
           {expenseDistribution.length === 0 ? <EmptyChart text="No categorized expenses found." /> : (
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={expenseDistribution}
-                  cx="50%" cy="50%"
-                  outerRadius={100} innerRadius={60}
-                  paddingAngle={2}
-                  dataKey="value"
-                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                  labelLine={{ strokeWidth: 1 }}
-                >
-                  {expenseDistribution.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                </Pie>
-                <Tooltip formatter={(v: number) => [fmt(v), ""]} contentStyle={{ borderRadius: "8px", fontSize: "12px" }} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-              </PieChart>
-            </ResponsiveContainer>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+              {/* Donut */}
+              <div className="relative">
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <defs>
+                      {EXPENSE_PALETTE.map((c, i) => (
+                        <linearGradient key={i} id={`expSlice${i}`} x1="0" y1="0" x2="1" y2="1">
+                          <stop offset="0%" stopColor={c} stopOpacity={1} />
+                          <stop offset="100%" stopColor={c} stopOpacity={0.72} />
+                        </linearGradient>
+                      ))}
+                    </defs>
+                    <Pie
+                      data={expenseDistribution}
+                      cx="50%" cy="50%"
+                      outerRadius={115} innerRadius={74}
+                      paddingAngle={3}
+                      cornerRadius={6}
+                      dataKey="value"
+                      stroke="hsl(var(--card))"
+                      strokeWidth={3}
+                    >
+                      {expenseDistribution.map((_, i) => (
+                        <Cell key={i} fill={`url(#expSlice${i % EXPENSE_PALETTE.length})`} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(v: number, n: string) => [fmt(v), n]}
+                      contentStyle={{ borderRadius: "10px", border: "1px solid hsl(220, 13%, 91%)", fontSize: "12px", boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Total</span>
+                  <span className="text-xl font-bold tracking-tight text-foreground">{fmt(totalExpenseDist)}</span>
+                  <span className="text-[10px] text-muted-foreground mt-0.5">{expenseDistribution.length} categories</span>
+                </div>
+              </div>
+
+              {/* Legend list with share bars */}
+              <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
+                {expenseDistribution.map((d, i) => {
+                  const share = totalExpenseDist ? (d.value / totalExpenseDist) * 100 : 0;
+                  const color = EXPENSE_PALETTE[i % EXPENSE_PALETTE.length];
+                  return (
+                    <div key={d.name} className="flex items-center gap-3">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-inset ring-white/40" style={{ backgroundColor: color }} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-medium text-foreground truncate">{d.name}</span>
+                          <span className="text-xs font-semibold tabular-nums text-foreground">{fmt(d.value)}</span>
+                        </div>
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${share}%`, backgroundColor: color }} />
+                          </div>
+                          <span className="text-[10px] text-muted-foreground tabular-nums w-9 text-right">{share.toFixed(0)}%</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </ChartCard>
       </div>
@@ -264,6 +349,52 @@ function StatTile({ label, value, sub, icon: Icon, color, signed }: {
       </div>
       <p className="mt-1.5 text-lg font-bold tracking-tight truncate" style={{ color: valueColor }}>{value}</p>
       {sub && <p className="text-[11px] text-muted-foreground">{sub}</p>}
+    </div>
+  );
+}
+
+function InvoiceStat({ label, value, icon: Icon, color }: {
+  label: string; value: string; icon: React.ElementType; color: string;
+}) {
+  return (
+    <div
+      className="rounded-2xl border border-border/60 shadow-sm p-4"
+      style={{ backgroundImage: `linear-gradient(135deg, ${color.replace(")", " / 0.18)")}, hsl(var(--card)))` }}
+    >
+      <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        <Icon className="w-3.5 h-3.5" style={{ color }} /> {label}
+      </div>
+      <p className="mt-3 text-2xl font-bold tracking-tight leading-none truncate" style={{ color }}>{value}</p>
+    </div>
+  );
+}
+
+// Bank Balance card: headline total + per-account breakdown for every COA
+// account whose detail type is "Bank", so multiple bank accounts show separately.
+function BankBalanceCard({ accounts }: { accounts: DashboardMetrics["bankAccounts"] }) {
+  const color = INFLOW;
+  const total = accounts.reduce((s, a) => s + a.balance, 0);
+  return (
+    <div
+      className="rounded-2xl border border-border/60 shadow-sm p-4"
+      style={{ backgroundImage: `linear-gradient(135deg, ${color.replace(")", " / 0.18)")}, hsl(var(--card)))` }}
+    >
+      <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        <Landmark className="w-3.5 h-3.5" style={{ color }} /> Bank Balance
+      </div>
+      <p className="mt-2 text-2xl font-bold tracking-tight leading-none truncate" style={{ color }}>{fmt(total)}</p>
+      {accounts.length > 0 ? (
+        <div className="mt-3 space-y-1.5 border-t border-border/50 pt-2">
+          {accounts.map(a => (
+            <div key={a.id} className="flex items-center justify-between gap-2 text-[11px]">
+              <span className="truncate text-muted-foreground" title={`${a.code} · ${a.name}`}>{a.name}</span>
+              <span className="font-semibold tabular-nums text-foreground whitespace-nowrap">{fmt(a.balance)}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 text-[10px] text-muted-foreground">No bank accounts in the chart of accounts.</p>
+      )}
     </div>
   );
 }

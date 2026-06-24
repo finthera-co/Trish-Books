@@ -5,6 +5,7 @@ import { useMyEmployee } from "@/hooks/useMyEmployee";
 import { useNotificationsRealtime } from "@/hooks/useNotificationsRealtime";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import NotificationBell from "@/components/NotificationBell";
+import ThemeToggle from "@/components/ThemeToggle";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -105,13 +106,15 @@ export default function EmployeeLayout() {
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Desktop top bar */}
-        <header className="hidden md:flex h-14 border-b border-border bg-card items-center justify-end px-5 shrink-0">
+        <header className="hidden md:flex h-14 border-b border-border bg-card items-center justify-end gap-1.5 px-5 shrink-0">
+          <ThemeToggle />
           <NotificationBell seeAllLink="/me/notifications" />
         </header>
         {/* Mobile top bar */}
         <header className="md:hidden h-14 border-b border-border bg-card flex items-center justify-between px-4 shrink-0">
           <span className="font-semibold">Employee Portal</span>
           <div className="flex items-center gap-1">
+            <ThemeToggle />
             <NotificationBell seeAllLink="/me/notifications" />
             <button onClick={handleSignOut} className="text-muted-foreground"><LogOut className="w-5 h-5" /></button>
           </div>

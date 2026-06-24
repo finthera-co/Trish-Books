@@ -111,6 +111,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
     basePath: "/sales",
     sidebarItems: [
       { label: "Invoices", path: "/sales/invoices", icon: Wallet },
+      { label: "Expenses", path: "/expenses/tracker", icon: Receipt },
       { label: "Customers", path: "/sales/customers", icon: Contact },
       { label: "Reminders", path: "/sales/notifications", icon: Bell },
     ],

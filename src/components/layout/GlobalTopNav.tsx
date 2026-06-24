@@ -3,6 +3,7 @@ import { Plus, LogOut } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNotificationsRealtime } from "@/hooks/useNotificationsRealtime";
 import NotificationBell from "@/components/NotificationBell";
+import ThemeToggle from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -55,6 +56,8 @@ export default function GlobalTopNav() {
             </DropdownMenuContent>
           </DropdownMenu>
         )}
+
+        <ThemeToggle />
 
         <NotificationBell seeAllLink="/notifications" />
 

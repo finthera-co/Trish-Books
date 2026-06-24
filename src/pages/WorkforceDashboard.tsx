@@ -5,6 +5,7 @@ import { useAttendanceRecords } from "@/hooks/useAttendance";
 import { useEmployees } from "@/hooks/useData";
 import { useLeaveRequests } from "@/hooks/useLeave";
 import { KpiCard } from "@/components/ui/KpiCard";
+import { DatePicker } from "@/components/ui/date-picker";
 
 const today = () => format(new Date(), "yyyy-MM-dd");
 
@@ -54,12 +55,12 @@ export default function WorkforceDashboard() {
           <h1 className="page-title">Workforce Dashboard</h1>
           <p className="page-description">Daily attendance at a glance — who's present, absent or on leave.</p>
         </div>
-        <input
-          type="date"
+        <DatePicker
           value={date}
-          max={today()}
-          onChange={(e) => setDate(e.target.value || today())}
-          className="border border-border rounded-md px-3 py-1.5 text-sm bg-background"
+          onChange={(v) => setDate(v || today())}
+          toDate={today()}
+          placeholder="Select date"
+          className="w-48"
         />
       </div>
 

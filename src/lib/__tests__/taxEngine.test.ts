@@ -219,4 +219,29 @@ describe("calculateApit — 2025/26 indicative schedule", () => {
     expect(r.trace.result).toBe(r.monthlyApit);
     expect(r.trace.evaluation_steps.length).toBeGreaterThan(2);
   });
+
+  it("taxes a one-off bonus once (not annualized ×12)", () => {
+    // Regular 200,000/mo → 3,000/mo APIT (as above). A 100,000 bonus this month
+    // sits on top of annual regular 2.4M: it falls in the 6% band (still below the
+    // 2.8M gross / 1M-taxable ceiling), so bonus tax = 100,000 × 6% = 6,000 — once.
+    const base = calculateApit(200000, schedule);
+    const withBonus = calculateApit(300000, schedule, 100000); // 200k regular + 100k bonus
+    expect(withBonus.monthlyApit).toBe(base.monthlyApit + 6000);
+  });
+
+  it("does NOT push the whole bonus through 12× annualization", () => {
+    // The naive ×12 bug would annualize 300,000 → 3.6M, taxing far more than the
+    // correct regular(3,000) + bonus(6,000) = 9,000.
+    const r = calculateApit(300000, schedule, 100000);
+    expect(r.monthlyApit).toBe(9000);
+    // Naive ×12 would have produced ~18,000+/month.
+    expect(r.monthlyApit).toBeLessThan(12000);
+  });
+
+  it("with zero lump sum matches the pure-regular result", () => {
+    const a = calculateApit(300000, schedule);
+    const b = calculateApit(300000, schedule, 0);
+    expect(b.monthlyApit).toBe(a.monthlyApit);
+    expect(b.annualTax).toBe(a.annualTax);
+  });
 });

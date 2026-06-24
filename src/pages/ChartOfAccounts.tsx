@@ -29,7 +29,7 @@ import {
 
 import InlineOpeningBalance from "@/components/chart-of-accounts/InlineOpeningBalance";
 import { useSystemSetting } from "@/hooks/useOpeningBalanceSettings";
-import { useFiscalPeriods, usePeriodOpeningBalances, usePeriodAccountMovements, useCumulativeAccountMovements } from "@/hooks/useFiscalPeriodBalances";
+import { useFiscalPeriods, usePeriodOpeningBalances, usePeriodAccountMovements, useCumulativeAccountMovements, useEnsureCurrentFiscalPeriod } from "@/hooks/useFiscalPeriodBalances";
 import { useInventoryAccountBalanceMap } from "@/hooks/useComputedInventoryValue";
 import { netAccountBalance } from "@/lib/accountBalances";
 import FiscalPeriodSelector from "@/components/FiscalPeriodSelector";
@@ -865,17 +865,28 @@ export default function ChartOfAccounts() {
 
   const { data: obStatus } = useSystemSetting("opening_balance_status");
 
+  // Lazily guarantee a fiscal period covering today exists for this tenant, so
+  // current-year balances/rollups are never gated behind a stale period.
+  // Idempotent + self-healing across year rollovers (see RPC).
+  useEnsureCurrentFiscalPeriod();
+
   // Fiscal period selector
   const { data: periods } = useFiscalPeriods();
   const [selectedPeriodId, setSelectedPeriodId] = useState("");
   const { data: periodBalances } = usePeriodOpeningBalances(selectedPeriodId || null);
 
-  // Auto-select first open period
+  // Auto-select the period that contains today (so balances reflect current
+  // activity); fall back to the most recent period if none covers today.
   useEffect(() => {
     if (periods?.length && !selectedPeriodId) {
-      const openPeriod = periods.find((p: any) => p.status === "open");
-      if (openPeriod) setSelectedPeriodId(openPeriod.id);
-      else setSelectedPeriodId(periods[0].id);
+      const today = new Date().toISOString().slice(0, 10);
+      const current = periods.find(
+        (p: any) => p.period_start <= today && today <= p.period_end
+      );
+      const latest = [...periods].sort((a: any, b: any) =>
+        b.period_end.localeCompare(a.period_end)
+      )[0];
+      setSelectedPeriodId((current ?? latest).id);
     }
   }, [periods, selectedPeriodId]);
 
@@ -931,9 +942,24 @@ export default function ChartOfAccounts() {
   // accounts so their displayed figure is the true running current balance
   // (matching the petty cash ledger and OBE balance), reflecting every posted
   // transaction regardless of which period it falls in.
-  const { data: cumulativeMovements } = useCumulativeAccountMovements(
-    selectedPeriod?.period_end ?? null
-  );
+  //
+  // Live fallback: if the most-recent period still ends before today (no period
+  // covers the current date — e.g. the ensure-RPC hasn't populated yet, or
+  // activity is dated beyond every defined period), cut off at null so the true
+  // current balance shows rather than silently zeroing out current activity.
+  // Explicitly selecting an OLDER period still respects its period_end, so
+  // historical "as of" viewing is preserved.
+  const cumulativeCutoff = useMemo(() => {
+    if (!selectedPeriod) return null;
+    const today = new Date().toISOString().slice(0, 10);
+    const latestPeriod = [...(periods || [])].sort((a: any, b: any) =>
+      b.period_end.localeCompare(a.period_end)
+    )[0];
+    const isLatest = latestPeriod?.id === selectedPeriod.id;
+    if (isLatest && selectedPeriod.period_end < today) return null;
+    return selectedPeriod.period_end;
+  }, [selectedPeriod, periods]);
+  const { data: cumulativeMovements } = useCumulativeAccountMovements(cumulativeCutoff);
 
   // One movements map for the rows: balance-sheet accounts get cumulative
   // movements, P&L accounts get in-period movements. getAccountDisplayBalance

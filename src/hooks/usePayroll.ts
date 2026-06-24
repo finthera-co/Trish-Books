@@ -214,11 +214,13 @@ export interface PayrollRunInput {
   employees: {
     employee_id: string;
     basic_salary: number;
+    contractual_basic?: number; // full monthly basic — no-pay-leave per-day base
     hours_worked?: number;
     overtime_hours?: number;
     overtime_pay?: number;
     bonuses?: number;
     allowances?: number;
+    non_epf_allowances?: number;
     other_deductions?: number;
     payment_method?: string;
     notes?: string;
@@ -293,7 +295,9 @@ export function useCreatePayrollRun() {
         // Hourly staff are paid on hours, so leave doesn't cut their basic here.
         const unpaidLeaveDays = unpaidLeaveByEmp.get(emp.employee_id) || 0;
         const isHourly = (empFlags.pay_rate_type ?? "monthly") === "hourly";
-        const perDay = workingDays > 0 ? emp.basic_salary / workingDays : 0;
+        // No-pay leave is valued at the contractual day rate, not the absence-reduced basic.
+        const fullBasic = emp.contractual_basic ?? emp.basic_salary;
+        const perDay = workingDays > 0 ? fullBasic / workingDays : 0;
         const leaveDeduction = isHourly ? 0 : r2(perDay * unpaidLeaveDays);
         const attendanceDeduction = r2((emp.attendance_deduction || 0) + leaveDeduction);
         const engineInput: EmployeePayrollInput = {
@@ -306,6 +310,7 @@ export function useCreatePayrollRun() {
           overtime_pay: emp.overtime_pay || 0,
           bonuses: emp.bonuses || 0,
           allowances: emp.allowances || 0,
+          non_epf_allowances: emp.non_epf_allowances || 0,
           other_deductions: emp.other_deductions || 0,
         };
 
@@ -317,7 +322,8 @@ export function useCreatePayrollRun() {
         // deduction only (like EPF Employee).
         let payeAmount = 0;
         if (engineInput.is_paye_applicable && apitSchedule) {
-          const apit = calculateApit(result.gross_pay, apitSchedule);
+          // Bonus is an irregular lump sum — taxed once, not annualized ×12.
+          const apit = calculateApit(result.gross_pay, apitSchedule, engineInput.bonuses || 0);
           payeAmount = apit.monthlyApit;
           if (payeAmount > 0) {
             result.traces["PAYE"] = apit.trace as any;
@@ -345,7 +351,8 @@ export function useCreatePayrollRun() {
 
         return {
           employee_id: emp.employee_id,
-          basic_salary: emp.basic_salary, // full contractual basic — never pro-rated in storage
+          basic_salary: emp.basic_salary, // earned (biometric) or full (manual) basic
+          contractual_basic: emp.contractual_basic ?? emp.basic_salary, // full monthly basic for leave per-day
           hours_worked: emp.hours_worked ?? null,
           overtime_hours: emp.overtime_hours || 0,
           overtime_pay: emp.overtime_pay || 0,
@@ -357,6 +364,7 @@ export function useCreatePayrollRun() {
           other_deductions: emp.other_deductions || 0,
           bonuses: emp.bonuses || 0,
           allowances: emp.allowances || 0,
+          non_epf_allowances: emp.non_epf_allowances || 0,
           net_pay: result.net_pay,
           payment_method: emp.payment_method || "bank_transfer",
           notes: emp.notes,
@@ -465,7 +473,7 @@ export function useRecalculateDraftRuns() {
       const runIds = drafts.map((r) => r.id);
       const { data: items, error: iErr } = await supabase
         .from("payroll_run_items")
-        .select("id,run_id,employee_id,basic_salary,overtime_pay,bonuses,allowances,other_deductions,attendance_deduction")
+        .select("id,run_id,employee_id,basic_salary,contractual_basic,overtime_pay,bonuses,allowances,non_epf_allowances,other_deductions,attendance_deduction")
         .in("run_id", runIds);
       if (iErr) throw iErr;
       if (!items || items.length === 0) return { runs: drafts.length, items: 0 };
@@ -507,25 +515,29 @@ export function useRecalculateDraftRuns() {
         const isHourly = (ef.pay_rate_type ?? "monthly") === "hourly";
         const unpaidLeaveDays = runUnpaidLeave.get(it.run_id)?.get(it.employee_id) || 0;
         const wd = runWorkingDays.get(it.run_id) || 0;
-        const fullBasic = Number(it.basic_salary || 0);
-        const attendanceDeduction = isHourly ? 0 : r2((wd > 0 ? fullBasic / wd : 0) * unpaidLeaveDays);
+        const earnedBasic = Number(it.basic_salary || 0); // engine base (already absence-reduced for biometric)
+        // No-pay leave per-day uses the full contractual basic, not the reduced figure.
+        const contractualBasic = Number((it as any).contractual_basic ?? it.basic_salary ?? 0);
+        const attendanceDeduction = isHourly ? 0 : r2((wd > 0 ? contractualBasic / wd : 0) * unpaidLeaveDays);
         const result = runPayrollForEmployee({
           id: it.employee_id,
           is_epf_applicable: !!ef.is_epf_applicable,
           is_etf_applicable: !!ef.is_etf_applicable,
           is_paye_applicable: !!ef.is_paye_applicable,
           employment_type: ef.employment_type,
-          basic_salary: fullBasic - attendanceDeduction,
+          basic_salary: earnedBasic - attendanceDeduction,
           overtime_pay: Number(it.overtime_pay || 0),
           bonuses: Number(it.bonuses || 0),
           allowances: Number(it.allowances || 0),
+          non_epf_allowances: Number((it as any).non_epf_allowances || 0),
           other_deductions: Number(it.other_deductions || 0),
         }, config.rules, config.components);
 
         // APIT/PAYE: bracket lookup outside the rule engine (same as create path).
         let payeAmount = 0;
         if (ef.is_paye_applicable && apitSchedule) {
-          payeAmount = calculateApit(result.gross_pay, apitSchedule).monthlyApit || 0;
+          // Bonus is an irregular lump sum — taxed once, not annualized ×12.
+          payeAmount = calculateApit(result.gross_pay, apitSchedule, Number(it.bonuses || 0)).monthlyApit || 0;
         }
         const netPay = result.net_pay - payeAmount;
         const totalDed = result.total_deductions + payeAmount;

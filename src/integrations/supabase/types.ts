@@ -1496,7 +1496,9 @@ export type Database = {
           early_leave_minutes: number
           employee_id: string
           first_in: string | null
+          holiday_ot_hours: number
           id: string
+          is_rest_day: boolean
           last_out: string | null
           late_minutes: number
           notes: string | null
@@ -1515,7 +1517,9 @@ export type Database = {
           early_leave_minutes?: number
           employee_id: string
           first_in?: string | null
+          holiday_ot_hours?: number
           id?: string
+          is_rest_day?: boolean
           last_out?: string | null
           late_minutes?: number
           notes?: string | null
@@ -1534,7 +1538,9 @@ export type Database = {
           early_leave_minutes?: number
           employee_id?: string
           first_in?: string | null
+          holiday_ot_hours?: number
           id?: string
+          is_rest_day?: boolean
           last_out?: string | null
           late_minutes?: number
           notes?: string | null
@@ -1582,6 +1588,7 @@ export type Database = {
         Row: {
           column_mapping: Json
           created_at: string
+          date_order: string | null
           datetime_format: string | null
           debounce_seconds: number
           direction_mode: string
@@ -1596,6 +1603,7 @@ export type Database = {
         Insert: {
           column_mapping?: Json
           created_at?: string
+          date_order?: string | null
           datetime_format?: string | null
           debounce_seconds?: number
           direction_mode?: string
@@ -1610,6 +1618,7 @@ export type Database = {
         Update: {
           column_mapping?: Json
           created_at?: string
+          date_order?: string | null
           datetime_format?: string | null
           debounce_seconds?: number
           direction_mode?: string
@@ -3514,6 +3523,8 @@ export type Database = {
           employee_id: string | null
           expense_date: string
           id: string
+          journal_entry_id: string | null
+          payment_account_id: string | null
           receipt_url: string | null
           status: string
           tenant_id: string
@@ -3526,6 +3537,8 @@ export type Database = {
           employee_id?: string | null
           expense_date?: string
           id?: string
+          journal_entry_id?: string | null
+          payment_account_id?: string | null
           receipt_url?: string | null
           status?: string
           tenant_id: string
@@ -3538,6 +3551,8 @@ export type Database = {
           employee_id?: string | null
           expense_date?: string
           id?: string
+          journal_entry_id?: string | null
+          payment_account_id?: string | null
           receipt_url?: string | null
           status?: string
           tenant_id?: string
@@ -3555,6 +3570,20 @@ export type Database = {
             columns: ["employee_id"]
             isOneToOne: false
             referencedRelation: "employees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_journal_entry_id_fkey"
+            columns: ["journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_payment_account_id_fkey"
+            columns: ["payment_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
             referencedColumns: ["id"]
           },
           {
@@ -3604,8 +3633,38 @@ export type Database = {
           },
         ]
       }
+      field_attendance_settings: {
+        Row: {
+          late_cutoff_enabled: boolean
+          late_cutoff_time: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          late_cutoff_enabled?: boolean
+          late_cutoff_time?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          late_cutoff_enabled?: boolean
+          late_cutoff_time?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "field_attendance_settings_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       field_visits: {
         Row: {
+          attendance_status: string | null
           check_in_accuracy: number | null
           check_in_at: string
           check_in_lat: number | null
@@ -3624,6 +3683,7 @@ export type Database = {
           visit_date: string
         }
         Insert: {
+          attendance_status?: string | null
           check_in_accuracy?: number | null
           check_in_at?: string
           check_in_lat?: number | null
@@ -3642,6 +3702,7 @@ export type Database = {
           visit_date: string
         }
         Update: {
+          attendance_status?: string | null
           check_in_accuracy?: number | null
           check_in_at?: string
           check_in_lat?: number | null
@@ -6734,6 +6795,7 @@ export type Database = {
           attendance_deduction: number
           basic_salary: number
           bonuses: number
+          contractual_basic: number | null
           created_at: string
           days_present: number | null
           employee_epf: number
@@ -6745,6 +6807,7 @@ export type Database = {
           hours_worked: number | null
           id: string
           net_pay: number
+          non_epf_allowances: number
           notes: string | null
           other_deductions: number
           overtime_hours: number | null
@@ -6760,6 +6823,7 @@ export type Database = {
           attendance_deduction?: number
           basic_salary?: number
           bonuses?: number
+          contractual_basic?: number | null
           created_at?: string
           days_present?: number | null
           employee_epf?: number
@@ -6771,6 +6835,7 @@ export type Database = {
           hours_worked?: number | null
           id?: string
           net_pay?: number
+          non_epf_allowances?: number
           notes?: string | null
           other_deductions?: number
           overtime_hours?: number | null
@@ -6786,6 +6851,7 @@ export type Database = {
           attendance_deduction?: number
           basic_salary?: number
           bonuses?: number
+          contractual_basic?: number | null
           created_at?: string
           days_present?: number | null
           employee_epf?: number
@@ -6797,6 +6863,7 @@ export type Database = {
           hours_worked?: number | null
           id?: string
           net_pay?: number
+          non_epf_allowances?: number
           notes?: string | null
           other_deductions?: number
           overtime_hours?: number | null
@@ -10981,15 +11048,20 @@ export type Database = {
       }
       work_shifts: {
         Row: {
+          break_after_hours: number
           break_minutes: number
           created_at: string
           crosses_midnight: boolean
           end_time: string
+          half_day_hours: number
+          holiday_ot_multiplier: number
           id: string
           is_active: boolean
           is_default: boolean
           late_grace_minutes: number
           name: string
+          ot_includes_allowances: boolean
+          ot_multiplier: number
           ot_threshold_hours: number
           standard_hours: number
           start_time: string
@@ -10997,15 +11069,20 @@ export type Database = {
           working_days: number[]
         }
         Insert: {
+          break_after_hours?: number
           break_minutes?: number
           created_at?: string
           crosses_midnight?: boolean
           end_time?: string
+          half_day_hours?: number
+          holiday_ot_multiplier?: number
           id?: string
           is_active?: boolean
           is_default?: boolean
           late_grace_minutes?: number
           name: string
+          ot_includes_allowances?: boolean
+          ot_multiplier?: number
           ot_threshold_hours?: number
           standard_hours?: number
           start_time?: string
@@ -11013,15 +11090,20 @@ export type Database = {
           working_days?: number[]
         }
         Update: {
+          break_after_hours?: number
           break_minutes?: number
           created_at?: string
           crosses_midnight?: boolean
           end_time?: string
+          half_day_hours?: number
+          holiday_ot_multiplier?: number
           id?: string
           is_active?: boolean
           is_default?: boolean
           late_grace_minutes?: number
           name?: string
+          ot_includes_allowances?: boolean
+          ot_multiplier?: number
           ot_threshold_hours?: number
           standard_hours?: number
           start_time?: string
@@ -11130,6 +11212,7 @@ export type Database = {
         Args: { p_as_of_date?: string }
         Returns: Json
       }
+      approve_expense: { Args: { p_expense_id: string }; Returns: string }
       approve_leave_request: { Args: { p_request_id: string }; Returns: Json }
       approve_stock_adjustment: {
         Args: { p_adjustment_id: string }
@@ -11545,6 +11628,27 @@ export type Database = {
           p_tenant_id: string
         }
         Returns: number
+      }
+      rpc_period_attendance_summary: {
+        Args: {
+          p_employee_ids?: string[]
+          p_period_end: string
+          p_period_start: string
+        }
+        Returns: {
+          absent_days: number
+          employee_id: string
+          expected_days: number
+          half_days: number
+          holiday_ot_hours: number
+          holiday_ot_multiplier: number
+          leave_days: number
+          ot_hours: number
+          ot_multiplier: number
+          present_days: number
+          std_hours_per_day: number
+          worked_hours: number
+        }[]
       }
       rpc_period_leave_summary: {
         Args: {

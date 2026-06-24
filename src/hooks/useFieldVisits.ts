@@ -18,7 +18,15 @@ export interface FieldVisit {
   check_out_accuracy: number | null;
   client_name: string | null;
   notes: string | null;
+  attendance_status: string | null; // 'present' | 'absent' — status stamped at check-in
   employees?: { first_name: string; last_name: string; employee_number: string | null; department: string | null };
+}
+
+export interface FieldAttendanceSettings {
+  tenant_id: string;
+  late_cutoff_enabled: boolean;
+  late_cutoff_time: string; // 'HH:MM:SS'
+  updated_at?: string;
 }
 
 export interface GeoFix {
@@ -66,21 +74,16 @@ export function useMyFieldVisits(employeeId?: string, limit = 30) {
   });
 }
 
-/** All tenant field visits (admin/staff view). */
-export function useTenantFieldVisits(month?: string) {
+/** All tenant field visits for a single day (admin/staff view). */
+export function useTenantFieldVisits(day?: string) {
   return useQuery({
-    queryKey: ["field_visits", "tenant", month ?? "all"],
+    queryKey: ["field_visits", "tenant", day ?? "all"],
     queryFn: async (): Promise<FieldVisit[]> => {
       let q = supabase
         .from("field_visits")
         .select("*, employees(first_name, last_name, employee_number, department)")
         .order("check_in_at", { ascending: false });
-      if (month) {
-        const start = `${month}-01`;
-        const [y, m] = month.split("-").map(Number);
-        const end = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
-        q = q.gte("visit_date", start).lte("visit_date", end);
-      }
+      if (day) q = q.eq("visit_date", day);
       const { data, error } = await q;
       if (error) throw error;
       return (data ?? []) as unknown as FieldVisit[];
@@ -126,6 +129,50 @@ export function useFieldCheckOut() {
       return data;
     },
     onSuccess: () => { invalidate(qc); toast.success("Checked out"); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+/** Tenant field-attendance policy (morning late cutoff). Null until first saved. */
+export function useFieldAttendanceSettings() {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["field_attendance_settings", appUser?.tenant_id],
+    enabled: !!appUser?.tenant_id,
+    queryFn: async (): Promise<FieldAttendanceSettings | null> => {
+      const { data, error } = await supabase
+        .from("field_attendance_settings")
+        .select("*")
+        .eq("tenant_id", appUser!.tenant_id)
+        .maybeSingle();
+      if (error) throw error;
+      return (data as FieldAttendanceSettings) ?? null;
+    },
+  });
+}
+
+export function useSaveFieldAttendanceSettings() {
+  const qc = useQueryClient();
+  const { appUser } = useAuth();
+  return useMutation({
+    mutationFn: async (input: { late_cutoff_enabled: boolean; late_cutoff_time: string }) => {
+      const tenant = appUser?.tenant_id;
+      if (!tenant) throw new Error("No tenant");
+      const { error } = await supabase.from("field_attendance_settings").upsert(
+        {
+          tenant_id: tenant,
+          late_cutoff_enabled: input.late_cutoff_enabled,
+          late_cutoff_time: input.late_cutoff_time,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "tenant_id" },
+      );
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["field_attendance_settings"] });
+      toast.success("Field attendance policy saved");
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 }

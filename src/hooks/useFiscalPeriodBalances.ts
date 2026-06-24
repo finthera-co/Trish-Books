@@ -18,6 +18,31 @@ export function useFiscalPeriods() {
   });
 }
 
+/**
+ * Lazily guarantee the caller's tenant has a fiscal period covering today.
+ * Calls the SECURITY DEFINER RPC (resolves tenant from the authed user), which
+ * is idempotent — it returns the existing covering period or creates the
+ * current Sri Lankan FY (Apr–Mar). Self-heals every tenant on load and across
+ * year rollovers, so balances/rollups are never gated behind a stale period.
+ */
+export function useEnsureCurrentFiscalPeriod() {
+  const { appUser } = useAuth();
+  const queryClient = useQueryClient();
+  return useQuery({
+    queryKey: ["ensure_current_fiscal_period", appUser?.tenant_id],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("ensure_current_fiscal_period" as any);
+      if (error) throw error;
+      // A new period may have been created — refresh the period list.
+      queryClient.invalidateQueries({ queryKey: ["fiscal_periods"] });
+      return data as string | null;
+    },
+    enabled: !!appUser?.tenant_id,
+    staleTime: Infinity,
+    retry: false,
+  });
+}
+
 /** Get the currently-open fiscal period */
 export function useCurrentFiscalPeriod() {
   const { data: periods } = useFiscalPeriods();
@@ -238,7 +263,8 @@ export function useCloseFiscalPeriod() {
       // 5. Calculate closing balances
       const DEBIT_NORMAL_TYPES = ["Asset", "Expense", "COGS"];
       const BALANCE_SHEET_TYPES = ["Asset", "Liability", "Equity"];
-      const TEMP_TYPES = ["Revenue", "Income", "Expense", "COGS"];
+      // All Profit & Loss (period-based) account types are closed to Retained Earnings.
+      const TEMP_TYPES = ["Income", "Other Income", "Expense", "Other Expense", "Cost of Goods Sold", "Revenue", "COGS"];
 
       const closingBalances = new Map<string, { debit: number; credit: number }>();
 
@@ -280,8 +306,8 @@ export function useCloseFiscalPeriod() {
           if (!TEMP_TYPES.includes(a.account_type)) return;
           const bal = closingBalances.get(a.id);
           if (!bal) return;
-          // Revenue is credit-normal, Expense/COGS debit-normal
-          if (a.account_type === "Revenue" || a.account_type === "Income") {
+          // Income is credit-normal, Expense/COGS debit-normal
+          if (a.account_type === "Income" || a.account_type === "Other Income" || a.account_type === "Revenue") {
             // Net revenue = credit - debit (positive = income)
             const net = bal.credit - bal.debit;
             if (net > 0) netIncomeCredit += net;

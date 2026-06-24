@@ -13,6 +13,13 @@ const FIELD_GLYPH: Glyph = {
   cls: "bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 ring-teal-200 dark:ring-teal-800",
 };
 
+// A field check-in past the admin's morning cutoff is recorded absent — show it
+// as absent (red) with a "late" label, not the regular field glyph.
+const FIELD_LATE_GLYPH: Glyph = {
+  mark: "A", label: "Absent — late field check-in",
+  cls: "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 ring-red-200 dark:ring-red-800",
+};
+
 const GLYPH: Record<AttendanceStatus, { mark: string; label: string; cls: string }> = {
   present:      { mark: "●",  label: "Present",      cls: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 ring-emerald-200 dark:ring-emerald-800" },
   absent:       { mark: "A",  label: "Absent",       cls: "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 ring-red-200 dark:ring-red-800" },
@@ -68,7 +75,10 @@ export default function MyAttendance() {
   const glyphFor = (d: Date): Glyph | undefined => {
     const key = format(d, "yyyy-MM-dd");
     const rec = byDate[key];
-    if (rec) return rec.entry_source === "field" ? FIELD_GLYPH : GLYPH[rec.status];
+    if (rec) {
+      if (rec.entry_source === "field") return rec.status === "absent" ? FIELD_LATE_GLYPH : FIELD_GLYPH;
+      return GLYPH[rec.status];
+    }
     if (getDay(d) === 0) return GLYPH.weekend; // unmarked Sundays render as weekend
     return undefined;
   };
@@ -164,7 +174,13 @@ export default function MyAttendance() {
               <div className="space-y-4 pt-1">
                 <div className="flex items-center gap-2">
                   <span className={`px-2.5 py-1 rounded-md ring-1 text-xs font-semibold ${selected.glyph?.cls}`}>{selected.glyph?.label}</span>
-                  {selected.isField && <span className="text-xs text-muted-foreground">Logged via field check-in</span>}
+                  {selected.isField && (
+                    <span className="text-xs text-muted-foreground">
+                      {selected.rec?.status === "absent"
+                        ? "Checked in after the cutoff — counted absent"
+                        : "Logged via field check-in"}
+                    </span>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div className="flex items-center gap-2">

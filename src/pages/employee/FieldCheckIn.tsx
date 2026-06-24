@@ -4,8 +4,9 @@ import { MapPin, LocateFixed, LogIn, LogOut, RefreshCw, ExternalLink, Loader2 } 
 import { useMyEmployee } from "@/hooks/useMyEmployee";
 import {
   useMyOpenVisit, useMyFieldVisits, useFieldCheckIn, useFieldCheckOut,
-  getCurrentLocation, mapLink, type GeoFix,
+  useFieldAttendanceSettings, getCurrentLocation, mapLink, type GeoFix,
 } from "@/hooks/useFieldVisits";
+import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,6 +27,7 @@ export default function FieldCheckIn() {
   const { data: visits } = useMyFieldVisits(me?.id);
   const checkIn = useFieldCheckIn();
   const checkOut = useFieldCheckOut();
+  const { data: fieldPolicy } = useFieldAttendanceSettings();
 
   const [geo, setGeo] = useState<GeoFix | null>(null);
   const [geoErr, setGeoErr] = useState<string | null>(null);
@@ -66,12 +68,37 @@ export default function FieldCheckIn() {
 
   const inLink = useMemo(() => geo ? mapLink(geo.lat, geo.lng) : null, [geo]);
 
+  // Late-cutoff policy banner. Compares the cutoff to the current Asia/Colombo
+  // time (the server uses that zone to stamp the check-in), re-evaluated each tick.
+  const cutoffInfo = useMemo(() => {
+    if (!fieldPolicy?.late_cutoff_enabled || !fieldPolicy.late_cutoff_time) return null;
+    const cutoff = fieldPolicy.late_cutoff_time.slice(0, 5);
+    const nowColombo = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Colombo", hour: "2-digit", minute: "2-digit", hour12: false,
+    }).format(new Date(now));
+    return { cutoff, isLate: nowColombo > cutoff };
+  }, [fieldPolicy, now]);
+
   return (
     <div className="px-4 sm:px-6 py-6 space-y-6 max-w-3xl mx-auto">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Field Check-in</h1>
         <p className="text-sm text-muted-foreground">Mark attendance from a client site — your location is captured as proof.</p>
       </div>
+
+      {cutoffInfo && !openVisit && (
+        <div className={`rounded-xl border p-3 text-sm flex items-start gap-2 ${
+          cutoffInfo.isLate
+            ? "border-rose-300 bg-rose-50 text-rose-800 dark:bg-rose-950/20 dark:text-rose-300"
+            : "border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-950/20 dark:text-amber-300"}`}>
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+          <span>
+            {cutoffInfo.isLate
+              ? `It's past the ${cutoffInfo.cutoff} cutoff — checking in now will be recorded as absent for today.`
+              : `Check in by ${cutoffInfo.cutoff} to be marked present. Later check-ins count as absent.`}
+          </span>
+        </div>
+      )}
 
       {/* Live location — animated map / radar */}
       <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">

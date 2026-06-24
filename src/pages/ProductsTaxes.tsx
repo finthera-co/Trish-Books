@@ -38,7 +38,7 @@ export default function ProductsTaxes() {
   const createProduct = useCreateProduct();
   const upsertInventoryItem = useUpsertInventoryItem();
 
-  const revenueAccounts = accounts?.filter((a) => a.account_type === "Revenue") || [];
+  const revenueAccounts = accounts?.filter((a) => a.account_type === "Income" || a.account_type === "Other Income" || a.account_type === "Revenue") || [];
   const activeGroups = (taxGroups || []).filter((g) => g.is_active);
   const activeCodes = (taxCodes || []).filter((c) => c.is_active);
 

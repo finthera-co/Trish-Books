@@ -15,7 +15,7 @@ import {
 import { useEmployees } from "@/hooks/useData";
 import {
   autoDetect, parsePunchAt, resolveDirection, debouncePunches,
-  type MappingConfig, type ResolvedDirection,
+  type MappingConfig, type ResolvedDirection, type DateOrder,
 } from "@/lib/attendanceMapping";
 import { useDraftPersistence } from "@/hooks/useDraftPersistence";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
@@ -80,11 +80,22 @@ export default function AttendanceImport() {
   // Standard working hours config (drives OT during aggregation).
   const [stdHours, setStdHours] = useState("8");
   const [breakMins, setBreakMins] = useState("60");
+  const [otMult, setOtMult] = useState("1.5");
+  const [breakAfter, setBreakAfter] = useState("6");
+  const [halfDayHours, setHalfDayHours] = useState("4");
+  const [holidayMult, setHolidayMult] = useState("2");
+  const [otInclAllow, setOtInclAllow] = useState(false);
   useEffect(() => {
     if (defaultShift === undefined) return; // still loading
     if (defaultShift) {
-      setStdHours(String(defaultShift.ot_threshold_hours ?? defaultShift.standard_hours ?? 8));
-      setBreakMins(String(defaultShift.break_minutes ?? 60));
+      const s = defaultShift as any;
+      setStdHours(String(s.ot_threshold_hours ?? s.standard_hours ?? 8));
+      setBreakMins(String(s.break_minutes ?? 60));
+      setOtMult(String(s.ot_multiplier ?? 1.5));
+      setBreakAfter(String(s.break_after_hours ?? 6));
+      setHalfDayHours(String(s.half_day_hours ?? 4));
+      setHolidayMult(String(s.holiday_ot_multiplier ?? 2));
+      setOtInclAllow(!!s.ot_includes_allowances);
     }
   }, [defaultShift]);
 
@@ -190,6 +201,7 @@ export default function AttendanceImport() {
       in_values: p.in_values || [],
       out_values: p.out_values || [],
       debounce_seconds: p.debounce_seconds ?? 60,
+      date_order: (p.date_order as DateOrder) || "DMY",
     });
     setAutoDetected(false);
   };
@@ -321,7 +333,7 @@ export default function AttendanceImport() {
       name: profileName.trim(), file_format: fileFormat,
       column_mapping: cfg.mapping, has_separate_date_time: cfg.has_separate_date_time,
       direction_mode: cfg.direction_mode, in_values: cfg.in_values, out_values: cfg.out_values,
-      debounce_seconds: cfg.debounce_seconds,
+      debounce_seconds: cfg.debounce_seconds, date_order: cfg.date_order,
     });
     setSavingProfile(false);
     setProfileName("");
@@ -371,7 +383,7 @@ export default function AttendanceImport() {
           <p className="text-sm text-muted-foreground">
             Overtime is any time worked beyond the standard daily hours. Set your company's standard here — it's applied automatically when attendance is aggregated, and the resulting worked &amp; OT hours flow into payroll Step&nbsp;2.
           </p>
-          <div className="grid grid-cols-2 gap-4 max-w-md">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-w-2xl">
             <div>
               <Label>Standard hours / day</Label>
               <Input type="number" min="0" step="0.5" value={stdHours} onChange={(e) => setStdHours(e.target.value)} />
@@ -380,20 +392,52 @@ export default function AttendanceImport() {
             <div>
               <Label>Unpaid break (minutes)</Label>
               <Input type="number" min="0" step="5" value={breakMins} onChange={(e) => setBreakMins(e.target.value)} />
-              <p className="text-[11px] text-muted-foreground mt-1">Deducted from worked hours.</p>
+              <p className="text-[11px] text-muted-foreground mt-1">Deducted only past the break threshold.</p>
+            </div>
+            <div>
+              <Label>OT multiplier</Label>
+              <Input type="number" min="1" step="0.1" value={otMult} onChange={(e) => setOtMult(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground mt-1">OT pay = rate × this (e.g. 1.5×).</p>
+            </div>
+            <div>
+              <Label>Deduct break after (hours)</Label>
+              <Input type="number" min="0" step="0.5" value={breakAfter} onChange={(e) => setBreakAfter(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground mt-1">Shorter days aren't docked a break.</p>
+            </div>
+            <div>
+              <Label>Half-day under (hours)</Label>
+              <Input type="number" min="0" step="0.5" value={halfDayHours} onChange={(e) => setHalfDayHours(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground mt-1">Worked below this = half day.</p>
+            </div>
+            <div>
+              <Label>Holiday / rest-day OT ×</Label>
+              <Input type="number" min="1" step="0.1" value={holidayMult} onChange={(e) => setHolidayMult(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground mt-1">Rate for work on off-days / holidays.</p>
             </div>
           </div>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={otInclAllow} onCheckedChange={(c) => setOtInclAllow(!!c)} />
+            Base overtime on basic + allowances (otherwise basic only)
+          </label>
           <div className="flex flex-wrap items-center gap-3">
             <Button
               size="sm"
               disabled={saveStandardHours.isPending || !stdHours}
-              onClick={() => saveStandardHours.mutate({ standard_hours: Number(stdHours) || 0, break_minutes: Number(breakMins) || 0 })}
+              onClick={() => saveStandardHours.mutate({
+                standard_hours: Number(stdHours) || 0,
+                break_minutes: Number(breakMins) || 0,
+                ot_multiplier: Number(otMult) || 1.5,
+                break_after_hours: Number(breakAfter) || 0,
+                half_day_hours: Number(halfDayHours) || 0,
+                holiday_ot_multiplier: Number(holidayMult) || 2,
+                ot_includes_allowances: otInclAllow,
+              })}
             >
               {saveStandardHours.isPending ? "Saving..." : "Save standard hours"}
             </Button>
             {defaultShift && (
               <span className="text-[11px] text-muted-foreground">
-                Current: {Number(defaultShift.ot_threshold_hours ?? 8)} h/day · {Number(defaultShift.break_minutes ?? 0)} min break
+                Current: {Number((defaultShift as any).ot_threshold_hours ?? 8)} h/day · {Number((defaultShift as any).break_minutes ?? 0)} min break · OT {Number((defaultShift as any).ot_multiplier ?? 1.5)}×
               </span>
             )}
           </div>
@@ -462,6 +506,18 @@ export default function AttendanceImport() {
                 ) : (
                   <div><Label>Date &amp; time (combined) *</Label>{columnSelect(cfg.mapping.datetime, (v) => patchMapping({ datetime: v }))}</div>
                 )}
+                <div>
+                  <Label>Date format *</Label>
+                  <Select value={cfg.date_order} onValueChange={(v) => patchCfg({ date_order: v as DateOrder })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="DMY">Day / Month / Year (31/12/2026)</SelectItem>
+                      <SelectItem value="MDY">Month / Day / Year (12/31/2026)</SelectItem>
+                      <SelectItem value="YMD">Year / Month / Day (2026-12-31)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground mt-1">How dates are written in this file. Check the parsed timestamps in the preview below.</p>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -541,7 +597,7 @@ export default function AttendanceImport() {
                   <Badge variant="outline" className="text-amber-600 border-amber-500/50">{model.unmatchedIds.length} device IDs need linking</Badge>
                   {model.failCount > 0 && <Badge variant="outline" className="text-rose-600 border-rose-500/50">{model.failCount} unreadable dates</Badge>}
                   {windowStats.outOfWindow > 0 && <Badge variant="outline" className="text-rose-600 border-rose-500/50">{windowStats.outOfWindow} outside selected {periodLabel} (excluded)</Badge>}
-                  <span className="text-[11px] text-muted-foreground">Dates parsed in US (mm/dd) order — if timestamps look wrong, the date column or format is the cause.</span>
+                  <span className="text-[11px] text-muted-foreground">Dates read as {cfg.date_order === "DMY" ? "Day/Month/Year" : cfg.date_order === "MDY" ? "Month/Day/Year" : "Year/Month/Day"} (Asia/Colombo) — if the timestamps below look wrong, change the Date format above.</span>
                 </div>
 
                 {hasOverlap && (

@@ -448,7 +448,7 @@ export function useCreateExpense() {
   const queryClient = useQueryClient();
   const { appUser } = useAuth();
   return useMutation({
-    mutationFn: async (expense: { amount: number; description?: string; category_id?: string; expense_date: string }) => {
+    mutationFn: async (expense: { amount: number; description?: string; category_id?: string; expense_date: string; payment_account_id?: string }) => {
       const { data, error } = await supabase.from("expenses").insert({
         ...expense,
         tenant_id: appUser?.tenant_id,
@@ -460,6 +460,29 @@ export function useCreateExpense() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
       toast.success("Expense submitted");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// Approve an expense: posts a balanced journal entry (Dr category GL / Cr
+// paid-through account) via the approve_expense RPC, mirroring the Payment
+// Voucher / Petty Cash posting flow. Use useUpdateExpense for rejection only.
+export function useApproveExpense() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await supabase.rpc("approve_expense", { p_expense_id: id });
+      if (error) throw error;
+      writeAuditLog("Expense Approved", "expenses", id, { journal_entry_id: data });
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard_journals"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard_expenses"] });
+      toast.success("Expense approved and posted to the ledger");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -508,6 +531,22 @@ export function useCreateExpenseCategory() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["expense_categories"] });
       toast.success("Category created");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useUpdateExpenseCategory() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...updates }: { id: string; name?: string; account_id?: string | null }) => {
+      const { data, error } = await supabase.from("expense_categories").update(updates).eq("id", id).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["expense_categories"] });
+      toast.success("Category updated");
     },
     onError: (e: Error) => toast.error(e.message),
   });

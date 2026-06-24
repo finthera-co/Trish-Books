@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { format, eachMonthOfInterval, differenceInCalendarDays, subDays, parseISO } from "date-fns";
+import { isDebitNormal } from "@/lib/accountTypes";
 
 interface PeriodFilter {
   from: string;
@@ -27,6 +28,8 @@ export interface DashboardMetrics {
   totalLiabilities: number;
   equity: number;
   cash: number;
+  // Per-account balances for every COA account whose detail type (subtype) is "Bank".
+  bankAccounts: { id: string; name: string; code: string; balance: number }[];
   inventory: number;
   accountsReceivable: number;
   accountsPayable: number;
@@ -55,6 +58,11 @@ export interface DashboardMetrics {
   expenseDistribution: { name: string; value: number }[];
   // Top customers
   topCustomers: { name: string; balance: number }[];
+  // Invoices summary (period-scoped by issue date)
+  invoiceCount: number;
+  overdueInvoiceCount: number;
+  overdueAmount: number;
+  currentMonthOverdueAmount: number;
   // Previous period comparison
   prevRevenue: number;
   prevExpenses: number;
@@ -91,7 +99,7 @@ function useDashboardData(period: PeriodFilter) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("accounts")
-        .select("id, account_name, account_type, account_subtype, account_code, category_id, account_categories(name)");
+        .select("id, account_name, account_type, account_subtype, account_code, parent_account_id, category_id, account_categories(name)");
       if (error) throw error;
       return data;
     },
@@ -102,7 +110,7 @@ function useDashboardData(period: PeriodFilter) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("invoices")
-        .select("id, total_amount, status, customer_id, customers(name), payments_received(amount)")
+        .select("id, total_amount, due_date, status, customer_id, customers(name), payments_received(amount)")
         .gte("issue_date", period.from)
         .lte("issue_date", period.to);
       if (error) throw error;
@@ -211,9 +219,13 @@ export function useDashboardMetrics(period: PeriodFilter) {
     const accountMap = new Map(accounts.map(a => [a.id, a]));
     const byType = (type: string) => new Set(accounts.filter(a => a.account_type === type).map(a => a.id));
 
-    const revenueIds = byType("Revenue");
-    const cogsIds = new Set(accounts.filter(a => a.account_type === "COGS").map(a => a.id));
-    const expenseIds = byType("Expense");
+    // Use the canonical account-type taxonomy (see src/lib/accountTypes.ts).
+    // Revenue = Income (+ Other Income); Expenses = Expense (+ Other Expense);
+    // COGS = "Cost of Goods Sold". The old literals "Revenue"/"COGS" never matched
+    // any account, which is why P&L charts read zero.
+    const revenueIds = new Set(accounts.filter(a => a.account_type === "Income" || a.account_type === "Other Income").map(a => a.id));
+    const cogsIds = new Set(accounts.filter(a => a.account_type === "Cost of Goods Sold").map(a => a.id));
+    const expenseIds = new Set(accounts.filter(a => a.account_type === "Expense" || a.account_type === "Other Expense").map(a => a.id));
     const assetIds = byType("Asset");
     const liabilityIds = byType("Liability");
     const equityIds = byType("Equity");
@@ -268,8 +280,8 @@ export function useDashboardMetrics(period: PeriodFilter) {
         if (!acct) return;
         const debit = Number(line.debit) || 0;
         const credit = Number(line.credit) || 0;
-        const isDebitNormal = ["Asset", "Expense", "COGS"].includes(acct.account_type);
-        const bal = isDebitNormal ? debit - credit : credit - debit;
+        const debitNormal = isDebitNormal(acct.account_type);
+        const bal = debitNormal ? debit - credit : credit - debit;
         balances.set(line.account_id, (balances.get(line.account_id) || 0) + bal);
 
         if (month && monthBuckets[month]) {
@@ -313,6 +325,58 @@ export function useDashboardMetrics(period: PeriodFilter) {
       if (equityIds.has(a.id)) equity += bal;
     });
 
+    // ── Bank balances with sub-ledger roll-ups ────────────────────────────────
+    // A bank account may be a non-postable parent ("Cash & Bank") whose real
+    // balance lives in its child sub-ledgers. We roll up each bank account's own
+    // balance plus the balance of every descendant in the parent_account_id tree,
+    // so the KPI reflects the full bank position per tenant regardless of nesting.
+    const isBankSubtype = (a: any) => (a?.account_subtype || "").trim().toLowerCase() === "bank";
+
+    const childrenByParent = new Map<string, string[]>();
+    accounts.forEach(a => {
+      const pid = (a as any).parent_account_id;
+      if (!pid) return;
+      const arr = childrenByParent.get(pid) || [];
+      arr.push(a.id);
+      childrenByParent.set(pid, arr);
+    });
+
+    // Sum of an account's own balance + all of its descendants' balances.
+    const rollupBalance = (id: string, seen = new Set<string>()): number => {
+      if (seen.has(id)) return 0; // cycle guard
+      seen.add(id);
+      let total = balances.get(id) || 0;
+      for (const childId of childrenByParent.get(id) || []) {
+        total += rollupBalance(childId, seen);
+      }
+      return total;
+    };
+
+    // True when any ancestor is itself a Bank account — such accounts are folded
+    // into their bank parent's roll-up, so we don't list them again (no double count).
+    const hasBankAncestor = (a: any): boolean => {
+      let pid = a?.parent_account_id;
+      const guard = new Set<string>();
+      while (pid && !guard.has(pid)) {
+        guard.add(pid);
+        const parent = accountMap.get(pid);
+        if (!parent) break;
+        if (isBankSubtype(parent)) return true;
+        pid = (parent as any).parent_account_id;
+      }
+      return false;
+    };
+
+    const bankAccounts = accounts
+      .filter(a => isBankSubtype(a) && !hasBankAncestor(a))
+      .map(a => ({
+        id: a.id,
+        name: a.account_name,
+        code: a.account_code,
+        balance: rollupBalance(a.id),
+      }))
+      .sort((a, b) => (a.code || "").localeCompare(b.code || ""));
+
     const grossProfit = totalRevenue - totalCOGS;
     const operatingExpenses = totalExpenses;
     const operatingProfit = grossProfit - operatingExpenses;
@@ -327,14 +391,31 @@ export function useDashboardMetrics(period: PeriodFilter) {
       expDist[cat] = (expDist[cat] || 0) + Number(e.amount);
     });
 
-    // Top customers by invoice balance
+    // Top customers by invoice balance + invoice/overdue summary
+    const todayIso = format(new Date(), "yyyy-MM-dd");
+    const monthStartIso = format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), "yyyy-MM-dd");
     const custBalances: Record<string, { name: string; balance: number }> = {};
+    let invoiceCount = 0;
+    let overdueInvoiceCount = 0;
+    let overdueAmount = 0;
+    let currentMonthOverdueAmount = 0;
     invoices?.forEach(inv => {
       const paid = ((inv.payments_received as any[]) || []).reduce((s: number, p: any) => s + Number(p.amount), 0);
-      const balance = Number(inv.total_amount) - paid;
+      const owing = Number(inv.total_amount) - paid;
       const name = (inv.customers as any)?.name || "Unknown";
       if (!custBalances[name]) custBalances[name] = { name, balance: 0 };
-      custBalances[name].balance += balance;
+      custBalances[name].balance += Number(inv.total_amount) - paid;
+
+      invoiceCount += 1;
+      // Overdue: posted (non-draft, non-voided), still owing, past its due date.
+      const isOverdue =
+        inv.status !== "draft" && inv.status !== "voided" &&
+        owing > 0 && !!inv.due_date && inv.due_date < todayIso;
+      if (isOverdue) {
+        overdueInvoiceCount += 1;
+        overdueAmount += owing;
+        if (inv.due_date! >= monthStartIso) currentMonthOverdueAmount += owing;
+      }
     });
 
     // Monthly data
@@ -429,6 +510,7 @@ export function useDashboardMetrics(period: PeriodFilter) {
       totalLiabilities,
       equity,
       cash,
+      bankAccounts,
       inventory,
       accountsReceivable,
       accountsPayable,
@@ -453,6 +535,10 @@ export function useDashboardMetrics(period: PeriodFilter) {
         ? Object.entries(expDist).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
         : [],
       topCustomers: Object.values(custBalances).sort((a, b) => b.balance - a.balance).slice(0, 5),
+      invoiceCount,
+      overdueInvoiceCount,
+      overdueAmount,
+      currentMonthOverdueAmount,
       prevRevenue,
       prevExpenses,
       revenueGrowth,

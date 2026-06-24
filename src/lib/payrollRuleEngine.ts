@@ -47,7 +47,8 @@ export interface EmployeePayrollInput {
   basic_salary: number;
   overtime_pay?: number;
   bonuses?: number;
-  allowances?: number;
+  allowances?: number;          // attract EPF/ETF
+  non_epf_allowances?: number;  // taxable, but excluded from EPF/ETF
   other_deductions?: number;
 }
 
@@ -174,13 +175,14 @@ export function runPayrollForEmployee(
   context.OVERTIME = employee.overtime_pay || 0;
   context.BONUS = employee.bonuses || 0;
   context.ALLOWANCES = employee.allowances || 0;
+  context.NON_EPF_ALLOWANCES = employee.non_epf_allowances || 0;
   context.OTHER_DEDUCTIONS = employee.other_deductions || 0;
 
   const traces: Record<string, CalculationTrace> = {};
   const compMap = new Map(components.map((c) => [c.code, c]));
 
   // Trace the inputs
-  for (const code of ["BASIC", "OVERTIME", "BONUS", "ALLOWANCES", "OTHER_DEDUCTIONS"]) {
+  for (const code of ["BASIC", "OVERTIME", "BONUS", "ALLOWANCES", "NON_EPF_ALLOWANCES", "OTHER_DEDUCTIONS"]) {
     const comp = compMap.get(code);
     if (comp) traces[code] = inputTrace(code, comp.name, context[code]);
   }

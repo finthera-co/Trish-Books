@@ -292,54 +292,81 @@ export interface ApitResult {
   trace: ApitTrace;
 }
 
-/**
- * APIT: annualize monthly gross ×12, subtract relief, run the brackets,
- * divide by 12, round to the nearest rupee.
- */
-export function calculateApit(monthlyGross: number, schedule: ApitSchedule): ApitResult {
-  const steps: string[] = [];
-  const annualGross = monthlyGross * 12;
-  steps.push(`Annualized gross: ${monthlyGross} × 12 = ${annualGross}`);
-  const annualTaxable = Math.max(0, annualGross - schedule.annualRelief);
-  steps.push(`Less annual relief ${schedule.annualRelief} → taxable ${annualTaxable}`);
-
-  const brackets = [...schedule.brackets].sort((a, b) => a.bracketOrder - b.bracketOrder);
-  let annualTax = 0;
+// Progressive bracket tax on an annual taxable amount (relief already removed).
+function bracketTaxOnAnnual(annualTaxable: number, brackets: ApitBracket[], steps?: string[]): number {
+  const sorted = [...brackets].sort((a, b) => a.bracketOrder - b.bracketOrder);
+  let tax = 0;
   let prevCeiling = 0;
-  for (const b of brackets) {
+  for (const b of sorted) {
     if (annualTaxable <= prevCeiling) break;
     const ceiling = b.annualAmountUpTo === null ? annualTaxable : Math.min(b.annualAmountUpTo, annualTaxable);
     const slice = ceiling - prevCeiling;
-    if (slice <= 0) {
-      prevCeiling = b.annualAmountUpTo ?? annualTaxable;
-      continue;
-    }
+    if (slice <= 0) { prevCeiling = b.annualAmountUpTo ?? annualTaxable; continue; }
     const sliceTax = slice * (b.rate / 100);
-    annualTax += sliceTax;
-    steps.push(
+    tax += sliceTax;
+    steps?.push(
       `Bracket ${b.bracketOrder}: ${slice} @ ${b.rate}% = ${roundAmount(sliceTax, "half_up")}` +
         (b.annualAmountUpTo === null ? " (top bracket)" : ` (up to ${b.annualAmountUpTo})`)
     );
     prevCeiling = b.annualAmountUpTo ?? annualTaxable;
   }
+  return tax;
+}
 
-  // Monthly APIT rounded to the nearest rupee (IRD tables are rupee-level)
-  const monthlyApit = roundAmount(annualTax / 12, "half_up", 0);
-  steps.push(`Annual tax ${roundAmount(annualTax, "half_up")} ÷ 12 = ${monthlyApit}/month`);
+/**
+ * APIT (PAYE).
+ *
+ * Regular remuneration (IRD Table 1): annualize ×12, less relief, run the
+ * brackets, ÷12.
+ *
+ * Lump-sum / irregular pay such as a bonus (IRD Table 2) must NOT be annualized
+ * ×12 — that would tax it as if it recurred every month. Instead it is taxed
+ * once, at the marginal rate: tax(annual regular + lump sum) − tax(annual
+ * regular). Pass the irregular portion (already included in `monthlyGross`) as
+ * `monthlyIrregular`; default 0 preserves the pure-regular case.
+ */
+export function calculateApit(
+  monthlyGross: number,
+  schedule: ApitSchedule,
+  monthlyIrregular = 0,
+): ApitResult {
+  const steps: string[] = [];
+  const lumpSum = Math.max(0, monthlyIrregular);
+  const regularMonthly = Math.max(0, monthlyGross - lumpSum);
+
+  const annualRegular = regularMonthly * 12;
+  const regularTaxable = Math.max(0, annualRegular - schedule.annualRelief);
+  steps.push(`Regular: ${regularMonthly} × 12 = ${annualRegular}, less relief ${schedule.annualRelief} → taxable ${regularTaxable}`);
+  const regularAnnualTax = bracketTaxOnAnnual(regularTaxable, schedule.brackets, steps);
+  const monthlyRegularApit = roundAmount(regularAnnualTax / 12, "half_up", 0);
+  steps.push(`Regular annual tax ${roundAmount(regularAnnualTax, "half_up")} ÷ 12 = ${monthlyRegularApit}/month`);
+
+  // Lump-sum taxed once at the marginal rate stacked on the regular annual income.
+  let lumpSumTax = 0;
+  if (lumpSum > 0) {
+    const combinedTaxable = Math.max(0, annualRegular + lumpSum - schedule.annualRelief);
+    lumpSumTax = roundAmount(Math.max(0, bracketTaxOnAnnual(combinedTaxable, schedule.brackets) - regularAnnualTax), "half_up", 0);
+    steps.push(`Lump sum ${lumpSum}: tax on (${annualRegular} + ${lumpSum}) less regular tax = ${lumpSumTax} (taxed once this month)`);
+  }
+
+  const monthlyApit = monthlyRegularApit + lumpSumTax;
+  const annualTaxable = regularTaxable + (lumpSum > 0 ? lumpSum : 0);
+  const annualTax = roundAmount(regularAnnualTax + lumpSumTax, "half_up");
 
   return {
     monthlyApit,
-    annualTax: roundAmount(annualTax, "half_up"),
+    annualTax,
     annualTaxable,
     trace: {
       rule_id: null,
       rule_version_id: null,
       rule_name: "APIT (PAYE) bracket schedule",
       formula_type: "CONDITIONAL",
-      formula_applied: `APIT brackets on annualized gross ${annualGross} less relief ${schedule.annualRelief}`,
+      formula_applied: `APIT on regular ${regularMonthly}/mo (annualized) less relief ${schedule.annualRelief}` +
+        (lumpSum > 0 ? `, plus lump-sum ${lumpSum} taxed once` : ``),
       base_component: "GROSS_PAY",
       base_value: monthlyGross,
-      inputs: { GROSS_PAY: monthlyGross, ANNUAL_RELIEF: schedule.annualRelief },
+      inputs: { GROSS_PAY: monthlyGross, LUMP_SUM: lumpSum, ANNUAL_RELIEF: schedule.annualRelief },
       condition: { field: "is_paye_applicable", operator: "==", value: true },
       condition_passed: true,
       result: monthlyApit,

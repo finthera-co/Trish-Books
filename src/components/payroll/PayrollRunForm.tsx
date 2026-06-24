@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Checkbox } from "@/components/ui/checkbox";
 import { useEmployees } from "@/hooks/useData";
 import { usePaySchedules, useCreatePayrollRun, usePeriodLeaveSummary, type PayrollRunInput } from "@/hooks/usePayroll";
-import { useAttendanceSummary, useAttendanceSummaryForPeriod, workingDaysInPeriod } from "@/hooks/useAttendance";
+import { useAttendanceSummary, useAttendanceSummaryForPeriod, workingDaysInPeriod, useDefaultWorkShift } from "@/hooks/useAttendance";
 import { computePayFromAttendance } from "@/lib/attendanceMapping";
 import { formatCurrency } from "@/lib/currency";
 import { toast } from "sonner";
@@ -31,13 +31,17 @@ interface EmployeePayItem {
   overtime_hours: number;
   overtime_pay: number;
   bonuses: number;
-  allowances: number;
+  allowances: number;          // attract EPF/ETF
+  non_epf_allowances: number;  // taxable, excluded from EPF/ETF
   other_deductions: number;
   payment_method: string;
   selected: boolean;
   // Attendance pro-rata. After a biometric import, basic_salary holds the
   // EARNED basic (pro-rated / hours-based) and attendance_deduction is 0;
   // the manual-register path keeps full basic + a separate deduction.
+  // contractual_basic preserves the FULL monthly basic so the no-pay-leave
+  // per-day rate is always derived from contractual pay, never the reduced figure.
+  contractual_basic?: number;
   working_days: number;
   days_present: number;
   paid_leave_days: number;
@@ -77,6 +81,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
   const { data: schedules } = usePaySchedules();
   const { data: attendanceSummary } = useAttendanceSummary(periodStart || undefined, periodEnd || undefined);
   const { data: biometricSummary, isFetching: loadingAttendance } = useAttendanceSummaryForPeriod(periodStart || undefined, periodEnd || undefined);
+  const { data: defaultShift } = useDefaultWorkShift();
   const createRun = useCreatePayrollRun();
 
   // Leave taken in the period, grouped by type — drives the grid's leave column.
@@ -91,8 +96,10 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
   const leavePreview = (item: EmployeePayItem) => {
     const lv = leaveSummary?.[item.employee_id];
     const unpaidDays = lv?.unpaidDays ?? 0;
+    // No-pay leave is valued at the contractual day rate, not the absence-reduced basic.
+    const fullBasic = item.attendance_applied ? (item.contractual_basic ?? item.basic_salary) : item.basic_salary;
     const ded = item.pay_rate_type === "hourly" || periodWorkingDays <= 0
-      ? 0 : round2((item.basic_salary / periodWorkingDays) * unpaidDays);
+      ? 0 : round2((fullBasic / periodWorkingDays) * unpaidDays);
     return { lv, unpaidDays, ded };
   };
 
@@ -121,6 +128,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
         overtime_pay: 0,
         bonuses: 0,
         allowances: 0,
+        non_epf_allowances: 0,
         other_deductions: 0,
         payment_method: e.bank_account_no ? "bank_transfer" : "cash",
         selected: true,
@@ -195,28 +203,40 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
       toast.error("No aggregated attendance found for this period. Import & aggregate punches first.");
       return;
     }
-    const workingDays = workingDaysInPeriod(periodStart, periodEnd); // default Mon–Sat
+    // Fallback denominator (Mon–Sat) only for the rare row lacking a server figure;
+    // the summary's expected_days excludes Sundays AND public holidays.
+    const fallbackWorkingDays = workingDaysInPeriod(periodStart, periodEnd);
     let applied = 0;
     setItems((prev) => prev.map((item) => {
       const emp = activeEmployees.find((e: any) => e.id === item.employee_id);
       const s = biometricSummary[item.employee_id];
       if (!s) return { ...item, attendance_missing: true, attendance_applied: false };
       applied += 1;
+      const workingDays = s.expected_days > 0 ? s.expected_days : fallbackWorkingDays;
+      const contractual = Number(emp?.salary ?? item.basic_salary) || 0;
       // No-pay leave proration is handled centrally in useCreatePayrollRun
-      // (single source); this button only applies biometric attendance.
+      // (single source); this button only applies biometric attendance. absent_days
+      // already excludes leave, so absence and unpaid-leave never double-charge.
       const result = computePayFromAttendance({
         payRateType: item.pay_rate_type,
-        contractualBasic: Number(emp?.salary ?? item.basic_salary) || 0,
+        contractualBasic: contractual,
         hourlyRate: Number(emp?.pay_rate ?? item.pay_rate) || 0,
         workedHours: s.worked_hours,
         otHours: s.ot_hours,
         absentDays: s.absent_days,
         halfDays: s.half_days,
         workingDays,
+        otMultiplier: s.ot_multiplier,
+        stdHoursPerDay: s.std_hours_per_day,
+        holidayOtHours: s.holiday_ot_hours,
+        holidayOtMultiplier: s.holiday_ot_multiplier,
+        otIncludesAllowances: !!(defaultShift as any)?.ot_includes_allowances,
+        otBaseAllowances: Number(item.allowances) || 0,
       });
       return {
         ...item,
         basic_salary: result.basic_salary,
+        contractual_basic: contractual,
         hours_worked: result.hours_worked,
         overtime_hours: result.overtime_hours,
         overtime_pay: result.overtime_pay,
@@ -256,7 +276,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
       // is NOT previewed here, so `net` below is pre-PAYE.
       const earned = earnedBasic(item);
       const epfBase = earned + item.allowances;
-      const g = earned + item.overtime_pay + item.bonuses + item.allowances;
+      const g = earned + item.overtime_pay + item.bonuses + item.allowances + item.non_epf_allowances;
       const eEpf = Math.round(epfBase * EPF_EMPLOYEE_RATE * 100) / 100;
       const erEpf = Math.round(epfBase * EPF_EMPLOYER_RATE * 100) / 100;
       const erEtf = Math.round(epfBase * ETF_EMPLOYER_RATE * 100) / 100;
@@ -284,11 +304,15 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
         // basic_salary already holds the earned figure after a biometric import
         // (deduction zeroed); the manual-register path keeps full basic + deduction.
         basic_salary: item.basic_salary,
+        // Full contractual monthly basic — the no-pay-leave per-day rate is derived
+        // from this, never the absence-reduced biometric figure.
+        contractual_basic: item.attendance_applied ? (item.contractual_basic ?? item.basic_salary) : item.basic_salary,
         hours_worked: item.hours_worked,
         overtime_hours: item.overtime_hours,
         overtime_pay: item.overtime_pay,
         bonuses: item.bonuses,
         allowances: item.allowances,
+        non_epf_allowances: item.non_epf_allowances,
         other_deductions: item.other_deductions,
         payment_method: item.payment_method,
         working_days: item.working_days,
@@ -399,7 +423,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
             </div>
             <p className="text-xs text-muted-foreground -mt-2">
               {biometricSummary && Object.keys(biometricSummary).length > 0
-                ? `${Object.keys(biometricSummary).length} employee(s) have aggregated attendance in ${periodStart} → ${periodEnd}. Salaried basic is pro-rated Mon–Sat; hourly basic = worked hours × rate.`
+                ? `${Object.keys(biometricSummary).length} employee(s) have aggregated attendance in ${periodStart} → ${periodEnd}. Salaried basic is pro-rated over working days (Sundays & public holidays excluded), net of approved leave; hourly basic = worked hours × rate.`
                 : "No aggregated attendance found for this period. Import & aggregate punches first."}
             </p>
 
@@ -430,7 +454,8 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Earned basic = Basic − Attendance Deduction">Earned Basic Salary</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">Overtime Pay</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">Bonuses</th>
-                    <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">Allowances</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Allowances that attract EPF/ETF">Allowances</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Taxable allowances excluded from EPF/ETF (reimbursements, non-pensionable)">Non-EPF Allow.</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">Other Deductions</th>
                   </tr>
                 </thead>
@@ -507,6 +532,10 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                       </td>
                       <td className="px-3 py-2">
                         <input type="number" value={item.allowances || ""} onChange={(e) => updateItem(idx, "allowances", Number(e.target.value))}
+                          className="w-28 text-right text-sm border border-input rounded px-2 py-1 bg-background text-foreground" />
+                      </td>
+                      <td className="px-3 py-2">
+                        <input type="number" value={item.non_epf_allowances || ""} onChange={(e) => updateItem(idx, "non_epf_allowances", Number(e.target.value))}
                           className="w-28 text-right text-sm border border-input rounded px-2 py-1 bg-background text-foreground" />
                       </td>
                       <td className="px-3 py-2">
@@ -606,7 +635,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                   <tbody>
                     {selectedItems.map((item) => {
                       const earned = earnedBasic(item);
-                      const gross = earned + item.overtime_pay + item.bonuses + item.allowances;
+                      const gross = earned + item.overtime_pay + item.bonuses + item.allowances + item.non_epf_allowances;
                       const epf = Math.round((earned + item.allowances) * EPF_EMPLOYEE_RATE * 100) / 100;
                       const net = gross - epf - item.other_deductions; // pre-PAYE, indicative
                       return (

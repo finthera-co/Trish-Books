@@ -272,6 +272,7 @@ export function useSaveDeviceProfile() {
       name: string; file_format: string; column_mapping: any;
       has_separate_date_time: boolean; direction_mode: string;
       in_values: string[]; out_values: string[]; debounce_seconds: number;
+      date_order: string;
     }) => {
       const { data, error } = await supabase.from("attendance_device_profiles")
         .insert({ ...p, tenant_id: appUser?.tenant_id }).select().single();
@@ -364,14 +365,22 @@ export function useImportPunches() {
   });
 }
 
-// Per-employee totals from aggregated biometric attendance (attendance_daily),
-// used to feed hours/OT into a payroll run.
+// Per-employee totals from aggregated biometric attendance, reconciled against the
+// expected working-day calendar (holidays excluded) and approved leave so absence
+// is real, not "any day without a punch". Backed by rpc_period_attendance_summary;
+// only employees with biometric data in the period appear in the map.
 export interface AttendanceSummaryRow {
   worked_hours: number;
-  ot_hours: number;
+  ot_hours: number;          // normal OT hours
+  holiday_ot_hours: number;  // rest-day / holiday hours (premium-rated)
   present_days: number;
-  absent_days: number;
+  absent_days: number;       // expected − present − half − leave (floored at 0)
   half_days: number;
+  expected_days: number;     // working days in period, Sundays + holidays excluded
+  leave_days: number;        // approved/settled leave clipped to the period
+  std_hours_per_day: number; // shift standard hours/day (for OT-rate derivation)
+  ot_multiplier: number;     // shift normal OT multiplier
+  holiday_ot_multiplier: number; // shift rest-day / holiday OT multiplier
   has_data: boolean;
 }
 
@@ -382,22 +391,27 @@ export function useAttendanceSummaryForPeriod(periodStart?: string, periodEnd?: 
     queryKey: ["attendance_daily_summary", periodStart, periodEnd],
     enabled: !!periodStart && !!periodEnd,
     queryFn: async (): Promise<Record<string, AttendanceSummaryRow>> => {
-      const { data, error } = await supabase
-        .from("attendance_daily")
-        .select("employee_id, worked_hours, ot_hours, status, work_date")
-        .gte("work_date", periodStart!)
-        .lte("work_date", periodEnd!);
+      const { data, error } = await supabase.rpc("rpc_period_attendance_summary", {
+        p_period_start: periodStart!,
+        p_period_end: periodEnd!,
+      });
       if (error) throw error;
       const map: Record<string, AttendanceSummaryRow> = {};
-      (data ?? []).forEach((d: any) => {
-        const m = (map[d.employee_id] ??= {
-          worked_hours: 0, ot_hours: 0, present_days: 0, absent_days: 0, half_days: 0, has_data: true,
-        });
-        m.worked_hours += Number(d.worked_hours) || 0;
-        m.ot_hours += Number(d.ot_hours) || 0;
-        if (d.status === "absent") m.absent_days += 1;
-        else if (d.status === "half_day") m.half_days += 1;
-        else m.present_days += 1;
+      ((data as any[]) ?? []).forEach((d) => {
+        map[d.employee_id] = {
+          worked_hours: Number(d.worked_hours) || 0,
+          ot_hours: Number(d.ot_hours) || 0,
+          holiday_ot_hours: Number(d.holiday_ot_hours) || 0,
+          present_days: Number(d.present_days) || 0,
+          absent_days: Number(d.absent_days) || 0,
+          half_days: Number(d.half_days) || 0,
+          expected_days: Number(d.expected_days) || 0,
+          leave_days: Number(d.leave_days) || 0,
+          std_hours_per_day: Number(d.std_hours_per_day) || 8,
+          ot_multiplier: Number(d.ot_multiplier) || 1.5,
+          holiday_ot_multiplier: Number(d.holiday_ot_multiplier) || 2.0,
+          has_data: true,
+        };
       });
       return map;
     },
@@ -467,15 +481,25 @@ export function useSaveStandardHours() {
   const qc = useQueryClient();
   const { appUser } = useAuth();
   return useMutation({
-    mutationFn: async (input: { standard_hours: number; break_minutes: number }) => {
+    mutationFn: async (input: {
+      standard_hours: number; break_minutes: number;
+      ot_multiplier?: number; break_after_hours?: number;
+      half_day_hours?: number; holiday_ot_multiplier?: number;
+      ot_includes_allowances?: boolean;
+    }) => {
       const tenant = appUser?.tenant_id;
       if (!tenant) throw new Error("No tenant");
       // OT begins beyond the standard day, so the threshold mirrors standard hours.
-      const fields = {
+      const fields: Record<string, number | boolean> = {
         standard_hours: input.standard_hours,
         ot_threshold_hours: input.standard_hours,
         break_minutes: input.break_minutes,
       };
+      if (input.ot_multiplier != null) fields.ot_multiplier = input.ot_multiplier;
+      if (input.break_after_hours != null) fields.break_after_hours = input.break_after_hours;
+      if (input.half_day_hours != null) fields.half_day_hours = input.half_day_hours;
+      if (input.holiday_ot_multiplier != null) fields.holiday_ot_multiplier = input.holiday_ot_multiplier;
+      if (input.ot_includes_allowances != null) fields.ot_includes_allowances = input.ot_includes_allowances;
       // One default shift per tenant (enforced by uq_work_shifts_one_default).
       const { data: existing } = await supabase
         .from("work_shifts")
