@@ -38,7 +38,7 @@ const statusColors: Record<string, string> = {
 
 export default function Invoices() {
   const navigate = useNavigate();
-  const { appUser } = useAuth();
+  const { appUser, isCompanyAdmin } = useAuth();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "due_soon" | "overdue" | "paid" | "draft">("all");
@@ -53,6 +53,8 @@ export default function Invoices() {
   const [govThreshold, setGovThreshold] = useState("");
   const [govEnforce, setGovEnforce] = useState(true);
   const [govApprovers, setGovApprovers] = useState<string[]>([]);
+  const [rejectInvoice, setRejectInvoice] = useState<any>(null);
+  const [rejectReason, setRejectReason] = useState("");
   const upsertSettings = useUpsertAccountSettings();
   const { data: tenantUsers } = useTenantUsers();
   const [taxPreviewOpen, setTaxPreviewOpen] = useState(false);
@@ -126,6 +128,14 @@ export default function Invoices() {
 
   const postInvoice = usePostInvoice();
   const { data: settings } = useAccountSettings();
+
+  // Who may approve: if specific approvers are appointed, only they qualify;
+  // otherwise it falls back to the owner (Company/Primary Admin). Mirrors the
+  // server-side eligible_invoice_approvers() — the RPC is the real enforcement.
+  const appointedApprovers = settings?.invoice_approver_ids ?? [];
+  const canApproveInvoices = appointedApprovers.length > 0
+    ? appointedApprovers.includes(appUser?.id ?? "")
+    : isCompanyAdmin;
   const { data: arAccountData }       = useAccountById(settings?.ar_account_id       ?? null);
   const { data: salesAccountData }    = useAccountById(settings?.sales_account_id    ?? null);
   const outputVatAccountId = settings?.vat_output_payable_account_id ?? settings?.tax_payable_account_id ?? null;
@@ -309,16 +319,19 @@ export default function Invoices() {
         </div>
         {canEditSales("sales") && (
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setGovThreshold(settings?.invoice_approval_threshold ? String(settings.invoice_approval_threshold) : "");
-                setGovEnforce(settings?.enforce_credit_limit !== false);
-                setGovOpen(true);
-              }}
-            >
-              <ShieldAlert className="w-4 h-4" /> Controls
-            </Button>
+            {isCompanyAdmin && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setGovThreshold(settings?.invoice_approval_threshold ? String(settings.invoice_approval_threshold) : "");
+                  setGovEnforce(settings?.enforce_credit_limit !== false);
+                  setGovApprovers(settings?.invoice_approver_ids ?? []);
+                  setGovOpen(true);
+                }}
+              >
+                <ShieldAlert className="w-4 h-4" /> Controls
+              </Button>
+            )}
             <Button onClick={() => navigate("/sales/invoices/new")}>
               <Plus className="w-4 h-4" />New Invoice
             </Button>
@@ -488,12 +501,12 @@ export default function Invoices() {
                                   <DropdownMenuSeparator />
                                 </>
                               )}
-                              {isDraft && (inv as any).approval_status === "pending" && (
+                              {isDraft && (inv as any).approval_status === "pending" && canApproveInvoices && (
                                 <>
                                   <DropdownMenuItem onClick={() => approveInvoice.mutate({ id: inv.id, decision: "approved" })}>
                                     <CheckCircle2 className="w-4 h-4 mr-2 text-green-600" /> Approve
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => approveInvoice.mutate({ id: inv.id, decision: "rejected" })}>
+                                  <DropdownMenuItem onClick={() => { setRejectInvoice(inv); setRejectReason(""); }}>
                                     <XCircle className="w-4 h-4 mr-2 text-destructive" /> Reject
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
@@ -594,6 +607,39 @@ export default function Invoices() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Reject invoice — reason required */}
+      <Dialog open={!!rejectInvoice} onOpenChange={(v) => { if (!v) setRejectInvoice(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive"><XCircle className="w-5 h-5" /> Reject invoice</DialogTitle>
+            <DialogDescription>
+              {rejectInvoice?.invoice_number} — the creator will need to amend and resubmit. A reason is required.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              className="w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground min-h-[90px]"
+              placeholder="e.g. Wrong customer PO, price mismatch, missing approval from ops…"
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setRejectInvoice(null)}>Cancel</Button>
+              <Button
+                variant="destructive"
+                disabled={!rejectReason.trim() || approveInvoice.isPending}
+                onClick={async () => {
+                  await approveInvoice.mutateAsync({ id: rejectInvoice.id, decision: "rejected", note: rejectReason.trim() });
+                  setRejectInvoice(null);
+                }}
+              >
+                {approveInvoice.isPending ? "Rejecting…" : "Reject invoice"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Approval & Credit Control settings */}
       <Dialog open={govOpen} onOpenChange={setGovOpen}>
         <DialogContent>
@@ -620,6 +666,36 @@ export default function Invoices() {
               </span>
               <Switch checked={govEnforce} onCheckedChange={setGovEnforce} />
             </label>
+            <div>
+              <label className="text-sm font-medium">Appointed approvers</label>
+              <p className="text-xs text-muted-foreground mb-2">
+                Select who may approve invoices. If none are selected, approval falls to the owner (Primary Admin).
+                Owners can always approve. An approver can never approve their own invoice (unless they are the only eligible approver).
+              </p>
+              <div className="max-h-44 overflow-y-auto rounded-lg border border-border divide-y divide-border">
+                {(tenantUsers ?? []).length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-muted-foreground">No users found</p>
+                ) : (
+                  (tenantUsers ?? []).map((u: any) => {
+                    const name = [u.first_name, u.last_name].filter(Boolean).join(" ") || u.email;
+                    const checked = govApprovers.includes(u.id);
+                    return (
+                      <label key={u.id} className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-muted/40">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) =>
+                            setGovApprovers((prev) => e.target.checked ? [...prev, u.id] : prev.filter((x) => x !== u.id))
+                          }
+                        />
+                        <span className="text-foreground">{name}</span>
+                        {u.email && name !== u.email && <span className="text-xs text-muted-foreground">{u.email}</span>}
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setGovOpen(false)}>Cancel</Button>
               <Button
@@ -627,6 +703,7 @@ export default function Invoices() {
                   await upsertSettings.mutateAsync({
                     invoice_approval_threshold: govThreshold ? Number(govThreshold) : null,
                     enforce_credit_limit: govEnforce,
+                    invoice_approver_ids: govApprovers.length ? govApprovers : null,
                   } as any);
                   setGovOpen(false);
                 }}

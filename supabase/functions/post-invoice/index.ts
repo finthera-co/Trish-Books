@@ -267,7 +267,7 @@ Deno.serve(async (req) => {
     // ── Resolve account settings ────────────────────────────────────
     const { data: settings } = await admin
       .from("account_settings")
-      .select("ar_account_id, sales_account_id, tax_payable_account_id, vat_output_payable_account_id, cogs_account_id, inventory_asset_account_id, enforce_credit_limit")
+      .select("ar_account_id, sales_account_id, tax_payable_account_id, vat_output_payable_account_id, cogs_account_id, inventory_asset_account_id, enforce_credit_limit, invoice_approval_threshold")
       .eq("tenant_id", appUser.tenant_id)
       .maybeSingle();
 
@@ -490,6 +490,20 @@ Deno.serve(async (req) => {
       errors.push("Invoice requires approval before it can be posted (Sales → Invoices → Approve)");
     } else if (approvalStatus === "rejected") {
       errors.push("Invoice approval was rejected; it cannot be posted");
+    }
+
+    // Defense in depth: re-verify against the threshold in BASE currency rather
+    // than trusting the stored approval_status alone (catches pre-threshold
+    // invoices and any status drift). fx is defined above.
+    const approvalThreshold = Number(settings?.invoice_approval_threshold || 0);
+    if (approvalThreshold > 0) {
+      const baseTotal = Math.round(total * fx * 100) / 100;
+      if (baseTotal >= approvalThreshold && approvalStatus !== "approved") {
+        errors.push(
+          `Invoice total (base ${baseTotal.toFixed(2)}) is at/above the approval threshold ` +
+          `(${approvalThreshold.toFixed(2)}) and must be approved before posting.`,
+        );
+      }
     }
 
     if (invoice.customer_id) {
