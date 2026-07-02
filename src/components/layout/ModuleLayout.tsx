@@ -3,6 +3,7 @@ import { ChevronRight, Home, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useHideSidebar } from "@/stores/useAppStore";
+import { useAuth } from "@/contexts/AuthContext";
 
 export interface ModuleConfig {
   id: string;
@@ -10,7 +11,7 @@ export interface ModuleConfig {
   icon: React.ElementType;
   color: string;
   basePath: string;
-  sidebarItems: { label: string; path: string; icon: React.ElementType }[];
+  sidebarItems: { label: string; path: string; icon: React.ElementType; adminOnly?: boolean }[];
 }
 
 interface ModuleLayoutProps {
@@ -21,7 +22,9 @@ export default function ModuleLayout({ config }: ModuleLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const hideSidebar = useHideSidebar();
+  const { isCompanyAdmin } = useAuth();
 
+  const visibleItems = config.sidebarItems.filter((i) => !i.adminOnly || isCompanyAdmin);
   const currentItem = config.sidebarItems.find(i => location.pathname === i.path);
   const isModuleRoot = location.pathname === config.basePath;
 
@@ -52,7 +55,7 @@ export default function ModuleLayout({ config }: ModuleLayoutProps) {
           </div>
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {config.sidebarItems.map((item) => {
+          {visibleItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
               <button
@@ -105,7 +108,7 @@ export default function ModuleLayout({ config }: ModuleLayoutProps) {
           <Button variant="ghost" size="sm" className="shrink-0 h-7 px-2 text-xs" onClick={() => navigate("/")}>
             <Home className="w-3.5 h-3.5 mr-1" /> Home
           </Button>
-          {config.sidebarItems.map((item) => {
+          {visibleItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
               <Button

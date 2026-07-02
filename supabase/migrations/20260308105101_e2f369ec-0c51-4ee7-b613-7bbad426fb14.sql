@@ -620,7 +620,7 @@ INSERT INTO public.account_types (type_name) VALUES
 
 -- Default subscription plans
 INSERT INTO public.subscription_plans (name, price, max_users, features_json, billing_cycle) VALUES
-  ('Starter', 15.00, 3, '{"modules": ["accounts", "journals", "reports"]}', 'monthly'),
+  ('Starter', 15.00, 5, '{"modules": ["accounts", "journals", "reports"]}', 'monthly'),
   ('Business', 35.00, 10, '{"modules": ["accounts", "journals", "reports", "invoicing", "expenses", "budgeting", "audit"]}', 'monthly');
 
 -- Default permissions

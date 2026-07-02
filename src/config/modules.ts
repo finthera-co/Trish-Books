@@ -111,8 +111,9 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
     color: "bg-[hsl(var(--success))]",
     basePath: "/sales",
     sidebarItems: [
-      { label: "Quotes", path: "/sales/quotes", icon: FileText },
+      { label: "Quotes / Estimates", path: "/sales/quotes", icon: FileText },
       { label: "Invoices", path: "/sales/invoices", icon: Wallet },
+      { label: "Approvals", path: "/sales/approvals", icon: Shield, adminOnly: true },
       { label: "Recurring", path: "/sales/recurring-invoices", icon: RefreshCw },
       { label: "Expenses", path: "/expenses/tracker", icon: Receipt },
       { label: "Customers", path: "/sales/customers", icon: Contact },

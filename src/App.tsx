@@ -95,6 +95,7 @@ import GLVerification from "./pages/GLVerification";
 import CustomersPage from "./pages/CustomersPage";
 import CustomerDetail from "./pages/CustomerDetail";
 import CustomerStatement from "./pages/CustomerStatement";
+import InvoiceApprovals from "./pages/InvoiceApprovals";
 import ReceivePayment from "./pages/ReceivePayment";
 import CreditNotePage from "./pages/CreditNotePage";
 import ARAgingReport from "./pages/ARAgingReport";
@@ -220,6 +221,7 @@ const App = () => (
                     <Route path="/sales" element={<ModuleDashboard config={MODULE_CONFIGS.sales} />} />
                     <Route path="/sales/invoices" element={<Invoices />} />
                     <Route path="/sales/invoices/new" element={<CreateInvoice />} />
+                    <Route path="/sales/approvals" element={<InvoiceApprovals />} />
                     <Route path="/sales/invoices/:id/edit" element={<CreateInvoice />} />
                     <Route path="/sales/recurring-invoices" element={<RecurringInvoices />} />
                     <Route path="/sales/quotes" element={<Quotes />} />

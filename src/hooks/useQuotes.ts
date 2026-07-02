@@ -48,6 +48,29 @@ export function useQuotes() {
   });
 }
 
+// Full estimate document: the quote with its items + customer + company header.
+export function useQuoteDocument(quoteId: string | null) {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["quote_document", quoteId],
+    enabled: !!quoteId,
+    queryFn: async () => {
+      const { data: quote, error } = await (supabase as any)
+        .from("quotes")
+        .select("*, customers(name, legal_name, address, email, phone), quote_items(*)")
+        .eq("id", quoteId)
+        .single();
+      if (error) throw error;
+      const { data: company } = await (supabase as any)
+        .from("tenants")
+        .select("company_name, address, phone, tax_id, logo_url")
+        .eq("id", appUser!.tenant_id)
+        .maybeSingle();
+      return { quote, company };
+    },
+  });
+}
+
 export function useCreateQuote() {
   const { appUser } = useAuth();
   const qc = useQueryClient();

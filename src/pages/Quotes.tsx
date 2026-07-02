@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, FileText, Plus, Trash2, MoreHorizontal, Send, Check, X, ArrowRightCircle } from "lucide-react";
+import { ArrowLeft, FileText, Plus, Trash2, MoreHorizontal, Send, Check, X, ArrowRightCircle, Eye, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,9 +16,10 @@ import { useCustomers, useAccounts } from "@/hooks/useData";
 import { useTaxGroups, useTaxCodes, useTaxProfile, currentRate } from "@/hooks/useTaxEngine";
 import { calculateLineTax, type TaxMemberInput } from "@/lib/taxEngine";
 import {
-  useQuotes, useCreateQuote, useSetQuoteStatus, useDeleteQuote, useConvertQuoteToInvoice,
+  useQuotes, useCreateQuote, useSetQuoteStatus, useDeleteQuote, useConvertQuoteToInvoice, useQuoteDocument,
   type QuoteItemInput,
 } from "@/hooks/useQuotes";
+import QuoteDocument from "@/components/quotes/QuoteDocument";
 
 const TERMS = [
   { value: "due_on_receipt", label: "Due on receipt" },
@@ -58,9 +59,11 @@ export default function Quotes() {
 
   const [open, setOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const { data: previewDoc } = useQuoteDocument(previewId);
   const [form, setForm] = useState({
     customer_id: "", issue_date: new Date().toISOString().split("T")[0],
-    expiry_date: "", branch_code: "", payment_terms: "net_30", notes: "",
+    expiry_date: "", branch_code: "", payment_terms: "net_30", notes: "", terms: "",
   });
   const [lines, setLines] = useState<LineDraft[]>([emptyLine()]);
 
@@ -115,7 +118,7 @@ export default function Quotes() {
     setLines((p) => p.map((l) => (l.id === id ? { ...l, [field]: value } : l)));
 
   const resetForm = () => {
-    setForm({ customer_id: "", issue_date: new Date().toISOString().split("T")[0], expiry_date: "", branch_code: "", payment_terms: "net_30", notes: "" });
+    setForm({ customer_id: "", issue_date: new Date().toISOString().split("T")[0], expiry_date: "", branch_code: "", payment_terms: "net_30", notes: "", terms: "" });
     setLines([emptyLine()]);
   };
 
@@ -131,7 +134,8 @@ export default function Quotes() {
     }));
     await createQuote.mutateAsync({
       customer_id: form.customer_id, issue_date: form.issue_date, expiry_date: form.expiry_date || null,
-      branch_code: form.branch_code.trim() || null, payment_terms: form.payment_terms, notes: form.notes || null,
+      branch_code: form.branch_code.trim() || null, payment_terms: form.payment_terms,
+      notes: form.notes || null, terms: form.terms || null,
       subtotal, tax_amount: totalTax, discount_amount: totalDiscount, total_amount: total, items,
     });
     setOpen(false); resetForm();
@@ -152,8 +156,8 @@ export default function Quotes() {
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => navigate(-1)}><ArrowLeft className="w-4 h-4" /></Button>
           <div>
-            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2"><FileText className="w-6 h-6 text-primary" /> Quotes</h1>
-            <p className="text-sm text-muted-foreground">Send priced estimates and convert accepted ones into invoices</p>
+            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2"><FileText className="w-6 h-6 text-primary" /> Quotes / Estimates</h1>
+            <p className="text-sm text-muted-foreground">Generate priced estimates, download as PDF, and convert accepted ones into invoices</p>
           </div>
         </div>
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
@@ -223,6 +227,21 @@ export default function Quotes() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Notes</Label>
+                  <textarea rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                    placeholder="Visible on the estimate…"
+                    className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground" />
+                </div>
+                <div>
+                  <Label>Terms &amp; Conditions</Label>
+                  <textarea rows={3} value={form.terms} onChange={(e) => setForm({ ...form, terms: e.target.value })}
+                    placeholder="e.g. 50% advance, balance on delivery…"
+                    className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground" />
+                </div>
+              </div>
+
               <Button className="w-full" onClick={handleCreate} disabled={!canSubmit}>{createQuote.isPending ? "Creating…" : "Create Quote"}</Button>
             </div>
           </DialogContent>
@@ -265,6 +284,8 @@ export default function Quotes() {
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild><button className="p-1 rounded hover:bg-accent"><MoreHorizontal className="w-4 h-4 text-muted-foreground" /></button></DropdownMenuTrigger>
                           <DropdownMenuContent>
+                            <DropdownMenuItem onClick={() => setPreviewId(q.id)}><Eye className="w-4 h-4 mr-2" /> Preview / PDF</DropdownMenuItem>
+                            <DropdownMenuSeparator />
                             {(q.status === "draft") && (
                               <DropdownMenuItem onClick={() => setStatus.mutate({ id: q.id, status: "sent" })}><Send className="w-4 h-4 mr-2" /> Mark as Sent</DropdownMenuItem>
                             )}
@@ -295,6 +316,28 @@ export default function Quotes() {
           )}
         </CardContent>
       </Card>
+
+      {/* Estimate preview / PDF */}
+      <Dialog open={!!previewId} onOpenChange={(v) => { if (!v) setPreviewId(null); }}>
+        <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto p-0">
+          <DialogHeader className="px-6 pt-6 print:hidden">
+            <DialogTitle>Estimate {previewDoc?.quote?.quote_number ?? ""}</DialogTitle>
+          </DialogHeader>
+          <div className="px-6">
+            {previewDoc ? (
+              <div className="rounded border border-border overflow-hidden">
+                <QuoteDocument quote={previewDoc.quote} company={previewDoc.company} />
+              </div>
+            ) : (
+              <p className="py-10 text-center text-muted-foreground">Loading…</p>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 px-6 py-4 print:hidden">
+            <Button variant="outline" onClick={() => setPreviewId(null)}>Close</Button>
+            <Button onClick={() => window.print()} disabled={!previewDoc}><Printer className="w-4 h-4 mr-1.5" /> Print / PDF</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(v) => { if (!v) setDeleteTarget(null); }}>
         <AlertDialogContent>
