@@ -50,7 +50,7 @@ export default function Invoices() {
   const [postConfirmInvoice, setPostConfirmInvoice] = useState<any>(null);
   const [deleteDialogInvoice, setDeleteDialogInvoice] = useState<any>(null);
   const [govOpen, setGovOpen] = useState(false);
-  const [govThreshold, setGovThreshold] = useState("");
+  const [govTiers, setGovTiers] = useState<{ min_amount: string; required_approvals: number }[]>([]);
   const [govEnforce, setGovEnforce] = useState(true);
   const [govApprovers, setGovApprovers] = useState<string[]>([]);
   const [rejectInvoice, setRejectInvoice] = useState<any>(null);
@@ -323,7 +323,12 @@ export default function Invoices() {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setGovThreshold(settings?.invoice_approval_threshold ? String(settings.invoice_approval_threshold) : "");
+                  const tiers = settings?.invoice_approval_tiers?.length
+                    ? settings.invoice_approval_tiers
+                    : (settings?.invoice_approval_threshold
+                        ? [{ min_amount: settings.invoice_approval_threshold, required_approvals: 1 }]
+                        : []);
+                  setGovTiers(tiers.map((t) => ({ min_amount: String(t.min_amount), required_approvals: t.required_approvals })));
                   setGovEnforce(settings?.enforce_credit_limit !== false);
                   setGovApprovers(settings?.invoice_approver_ids ?? []);
                   setGovOpen(true);
@@ -437,7 +442,7 @@ export default function Invoices() {
                           </span>
                           {isDraft && (inv as any).approval_status === "pending" && (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400" title="Awaiting approval">
-                              <ShieldAlert className="w-3 h-3" /> approval
+                              <ShieldAlert className="w-3 h-3" /> {(inv as any).approvals_count ?? 0}/{(inv as any).required_approvals || 1}
                             </span>
                           )}
                           {isDraft && (inv as any).approval_status === "rejected" && (
@@ -649,15 +654,48 @@ export default function Invoices() {
           </DialogHeader>
           <div className="space-y-4 pt-2">
             <div>
-              <label className="text-sm font-medium">Approval threshold</label>
-              <p className="text-xs text-muted-foreground mb-1.5">Invoices with a total at or above this amount require approval from a different finance user before posting. Leave blank or 0 to disable.</p>
-              <input
-                type="number"
-                value={govThreshold}
-                onChange={(e) => setGovThreshold(e.target.value)}
-                placeholder="e.g. 500000"
-                className="w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground"
-              />
+              <label className="text-sm font-medium">Approval levels</label>
+              <p className="text-xs text-muted-foreground mb-2">
+                Add an amount and how many different approvers it needs. An invoice uses the highest level its total
+                (in LKR) reaches — e.g. ≥ 500,000 needs 1 approver, ≥ 2,000,000 needs 2. No levels = no approval required.
+              </p>
+              <div className="space-y-2">
+                {govTiers.length === 0 && (
+                  <p className="text-xs text-muted-foreground italic">No approval required for any amount.</p>
+                )}
+                {govTiers.map((t, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground shrink-0">Total ≥</span>
+                    <input
+                      type="number"
+                      value={t.min_amount}
+                      onChange={(e) => setGovTiers((prev) => prev.map((x, i) => i === idx ? { ...x, min_amount: e.target.value } : x))}
+                      placeholder="amount (LKR)"
+                      className="flex-1 min-w-0 text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground font-mono"
+                    />
+                    <span className="text-xs text-muted-foreground shrink-0">needs</span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={t.required_approvals}
+                      onChange={(e) => setGovTiers((prev) => prev.map((x, i) => i === idx ? { ...x, required_approvals: Number(e.target.value) } : x))}
+                      className="w-16 text-sm border border-input rounded-lg px-2 py-2 bg-background text-foreground text-center"
+                    />
+                    <span className="text-xs text-muted-foreground shrink-0">approver{t.required_approvals === 1 ? "" : "s"}</span>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setGovTiers((prev) => prev.filter((_, i) => i !== idx))}>
+                      <Trash2 className="w-4 h-4 text-muted-foreground" />
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full border-dashed"
+                  onClick={() => setGovTiers((prev) => [...prev, { min_amount: "", required_approvals: 1 }])}
+                >
+                  <Plus className="w-4 h-4 mr-1.5" /> Add approval level
+                </Button>
+              </div>
             </div>
             <label className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
               <span>
@@ -700,8 +738,13 @@ export default function Invoices() {
               <Button variant="outline" onClick={() => setGovOpen(false)}>Cancel</Button>
               <Button
                 onClick={async () => {
+                  const cleanTiers = govTiers
+                    .map((t) => ({ min_amount: Number(t.min_amount), required_approvals: Math.max(1, Number(t.required_approvals) || 1) }))
+                    .filter((t) => t.min_amount > 0)
+                    .sort((a, b) => a.min_amount - b.min_amount);
                   await upsertSettings.mutateAsync({
-                    invoice_approval_threshold: govThreshold ? Number(govThreshold) : null,
+                    invoice_approval_tiers: cleanTiers.length ? cleanTiers : null,
+                    invoice_approval_threshold: cleanTiers.length ? cleanTiers[0].min_amount : null,
                     enforce_credit_limit: govEnforce,
                     invoice_approver_ids: govApprovers.length ? govApprovers : null,
                   } as any);

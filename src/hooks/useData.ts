@@ -408,11 +408,18 @@ export function useApproveInvoice() {
         p_note: note ?? null,
       });
       if (error) throw error;
-      return { data, decision };
+      return { data: data as any, decision };
     },
-    onSuccess: ({ decision }) => {
+    onSuccess: ({ data, decision }) => {
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
-      toast.success(decision === "approved" ? "Invoice approved" : "Invoice rejected");
+      queryClient.invalidateQueries({ queryKey: ["invoice_approval_history"] });
+      if (decision === "rejected") {
+        toast.success("Invoice rejected");
+      } else if (data?.final === false) {
+        toast.success(`Approval recorded — ${data.collected} of ${data.required} approvals`);
+      } else {
+        toast.success("Invoice approved");
+      }
     },
     onError: (e: Error) => toast.error(e.message.replace(/^.*?:\s*/, "")),
   });

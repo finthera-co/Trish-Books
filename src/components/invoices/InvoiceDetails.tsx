@@ -12,7 +12,7 @@ import { downloadInvoicePdf } from "@/lib/invoiceDownload";
 import { shareInvoiceViaWhatsApp, shareInvoiceViaGmail, type ShareInvoiceArgs } from "@/lib/invoiceShare";
 import { useSendInvoiceEmail } from "@/hooks/useSendInvoiceEmail";
 import { toast } from "sonner";
-import { DollarSign, Plus, Clock, CheckCircle2, Download, Tag, Percent, MessageCircle, Mail, Send, MailCheck } from "lucide-react";
+import { DollarSign, Plus, Clock, CheckCircle2, Download, Tag, Percent, MessageCircle, Mail, Send, MailCheck, ShieldCheck } from "lucide-react";
 
 interface Props {
   invoice: any;
@@ -74,6 +74,21 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
         .order("credit_date", { ascending: false });
       if (error) throw error;
       return data;
+    },
+  });
+
+  // Approval trail — submitted / approved / rejected events with actor names.
+  const { data: approvalHistory } = useQuery({
+    queryKey: ["invoice_approval_history", invoice?.id],
+    enabled: !!invoice?.id && !!invoice?.approval_status && invoice.approval_status !== "not_required",
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("invoice_approval_history" as any)
+        .select("id, action, note, amount_base, created_at, users:actor_id(first_name, last_name, email)")
+        .eq("invoice_id", invoice.id)
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      return data as any[];
     },
   });
 
@@ -622,6 +637,52 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
               <p className="text-[11px] text-amber-600 dark:text-amber-400">
                 No phone or email on file for this customer — add one on the customer to prefill the recipient.
               </p>
+            )}
+          </div>
+        )}
+
+        {/* Approval trail */}
+        {invoice.approval_status && invoice.approval_status !== "not_required" && (
+          <div className="border border-border rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4" /> Approval
+              </h4>
+              {invoice.approval_status === "pending" && (
+                <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+                  {invoice.approvals_count ?? 0} of {invoice.required_approvals || 1} approvals
+                </Badge>
+              )}
+              {invoice.approval_status === "approved" && (
+                <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">Approved</Badge>
+              )}
+              {invoice.approval_status === "rejected" && (
+                <Badge className="bg-destructive/10 text-destructive">Rejected</Badge>
+              )}
+            </div>
+            {(approvalHistory ?? []).length === 0 ? (
+              <p className="text-xs text-muted-foreground">Awaiting the first approval decision.</p>
+            ) : (
+              <div className="space-y-2">
+                {(approvalHistory ?? []).map((h: any) => {
+                  const u = h.users;
+                  const who = u ? ([u.first_name, u.last_name].filter(Boolean).join(" ") || u.email) : "System";
+                  const color = h.action === "approved" ? "text-green-600 dark:text-green-400"
+                    : h.action === "rejected" ? "text-destructive" : "text-muted-foreground";
+                  return (
+                    <div key={h.id} className="flex items-start justify-between gap-3 text-xs">
+                      <div>
+                        <span className={`font-medium capitalize ${color}`}>{h.action}</span>
+                        <span className="text-muted-foreground"> · {who}</span>
+                        {h.note && <p className="text-muted-foreground mt-0.5">{h.note}</p>}
+                      </div>
+                      <span className="text-muted-foreground shrink-0">
+                        {new Date(h.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         )}
