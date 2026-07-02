@@ -46,6 +46,7 @@ export interface AccountSettings {
   // not yet in generated DB types until `supabase gen types` is re-run).
   invoice_approval_threshold?:          number | null;   // total ≥ this requires approval (null/0 = off)
   enforce_credit_limit?:                boolean | null;   // block posting past customer credit limit
+  invoice_approver_ids?:                string[] | null;  // appointed approvers; empty → owners (Primary/Super Admin)
 }
 
 // ─── AccountSettingsCompleteness — shape returned by get_account_settings_completeness RPC

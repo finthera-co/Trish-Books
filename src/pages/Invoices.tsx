@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import JournalPreview, { type JournalPreviewLine } from "@/components/accounting/JournalPreview";
 import { useAccountSettings, useUpsertAccountSettings } from "@/hooks/useAccountSettings";
+import { useTenantUsers } from "@/hooks/usePettyCash";
 import { Switch } from "@/components/ui/switch";
 import { useAccountById } from "@/hooks/useAccountSearch";
 import { formatCurrency } from "@/lib/currency";
@@ -51,7 +52,9 @@ export default function Invoices() {
   const [govOpen, setGovOpen] = useState(false);
   const [govThreshold, setGovThreshold] = useState("");
   const [govEnforce, setGovEnforce] = useState(true);
+  const [govApprovers, setGovApprovers] = useState<string[]>([]);
   const upsertSettings = useUpsertAccountSettings();
+  const { data: tenantUsers } = useTenantUsers();
   const [taxPreviewOpen, setTaxPreviewOpen] = useState(false);
   const [taxPreviewModel, setTaxPreviewModel] = useState<TaxInvoiceModel | null>(null);
   const [taxPreviewInvoice, setTaxPreviewInvoice] = useState<any>(null);

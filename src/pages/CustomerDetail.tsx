@@ -49,6 +49,9 @@ export default function CustomerDetail() {
           <Button variant="outline" onClick={() => navigate("/accounting/receive-payment")}>
             <CreditCard className="w-4 h-4 mr-2" /> Receive Payment
           </Button>
+          <Button variant="outline" onClick={() => navigate(`/sales/customers/${id}/statement`)}>
+            <FileText className="w-4 h-4 mr-2" /> Statement
+          </Button>
         </div>
       </div>
 

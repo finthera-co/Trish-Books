@@ -307,6 +307,8 @@
   .space-y-4 > * { page-break-inside: avoid; break-inside: avoid; }
   #voucher-print .grid { display: grid !important; }
   #voucher-print .grid > * { margin-bottom: 0 !important; }
+  #statement-doc .grid { display: grid !important; }
+  #statement-doc .grid > * { margin-bottom: 0 !important; }
 }
 
 /* ─── Field check-in: location-capture map animation ─── */

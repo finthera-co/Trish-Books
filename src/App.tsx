@@ -94,6 +94,7 @@ import AccountReport from "./pages/AccountReport";
 import GLVerification from "./pages/GLVerification";
 import CustomersPage from "./pages/CustomersPage";
 import CustomerDetail from "./pages/CustomerDetail";
+import CustomerStatement from "./pages/CustomerStatement";
 import ReceivePayment from "./pages/ReceivePayment";
 import CreditNotePage from "./pages/CreditNotePage";
 import ARAgingReport from "./pages/ARAgingReport";
@@ -224,6 +225,7 @@ const App = () => (
                     <Route path="/sales/quotes" element={<Quotes />} />
                     <Route path="/sales/customers" element={<CustomersPage />} />
                     <Route path="/sales/customers/:id" element={<CustomerDetail />} />
+                    <Route path="/sales/customers/:id/statement" element={<CustomerStatement />} />
                     <Route path="/sales/notifications" element={<Notifications />} />
                     <Route path="/sales/products-taxes" element={<ProductsTaxes />} />
                   </Route>
