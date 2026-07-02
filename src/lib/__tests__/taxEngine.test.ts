@@ -244,4 +244,53 @@ describe("calculateApit — 2025/26 indicative schedule", () => {
     expect(b.monthlyApit).toBe(a.monthlyApit);
     expect(b.annualTax).toBe(a.annualTax);
   });
+
+  it("cumulative month 1 (no history) equals the single-month result", () => {
+    const single = calculateApit(300000, schedule);
+    const cumulative = calculateApit(300000, schedule, 0, { priorGross: 0, priorPaye: 0, monthIndex: 1 });
+    expect(cumulative.monthlyApit).toBe(single.monthlyApit);
+  });
+
+  it("cumulative is flat across months for a constant salary", () => {
+    // 300k/month constant: every month should withhold the same as the single-month figure.
+    const base = calculateApit(300000, schedule).monthlyApit;
+    let priorGross = 0, priorPaye = 0;
+    for (let m = 1; m <= 12; m++) {
+      const r = calculateApit(300000, schedule, 0, { priorGross, priorPaye, monthIndex: m });
+      expect(r.monthlyApit).toBe(base);
+      priorGross += 300000;
+      priorPaye += r.monthlyApit;
+    }
+  });
+
+  it("cumulative weekly (yearFraction) converges to the annual tax", () => {
+    // 52 equal weekly pays; using yearFraction = week/52, the full-year PAYE must
+    // equal the annual tax on the year's total.
+    const weekly = 60000; // ~260k/month equivalent
+    let priorGross = 0, priorPaye = 0, total = 0;
+    for (let w = 1; w <= 52; w++) {
+      const r = calculateApit(weekly, schedule, 0, { priorGross, priorPaye, monthIndex: 1, yearFraction: w / 52 });
+      total += r.monthlyApit;
+      priorGross += weekly;
+      priorPaye += r.monthlyApit;
+    }
+    const annualTax = calculateApit((weekly * 52) / 12, schedule).annualTax;
+    expect(Math.abs(total - annualTax)).toBeLessThanOrEqual(2);
+  });
+
+  it("cumulative self-corrects a mid-year raise over the remaining months", () => {
+    // 200k for 6 months then 400k for 6 months. The full-year tax must equal the
+    // tax on the actual annual total, regardless of the monthly path.
+    let priorGross = 0, priorPaye = 0, totalPaye = 0;
+    for (let m = 1; m <= 12; m++) {
+      const gross = m <= 6 ? 200000 : 400000;
+      const r = calculateApit(gross, schedule, 0, { priorGross, priorPaye, monthIndex: m });
+      totalPaye += r.monthlyApit;
+      priorGross += gross;
+      priorPaye += r.monthlyApit;
+    }
+    const annualGross = 200000 * 6 + 400000 * 6; // 3.6M
+    const annualTax = calculateApit(annualGross / 12, schedule).annualTax; // tax on annual total
+    expect(Math.abs(totalPaye - annualTax)).toBeLessThanOrEqual(2); // rupee rounding only
+  });
 });

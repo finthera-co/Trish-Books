@@ -19,6 +19,7 @@ export interface PayslipModel {
   employerEpf: number;
   employerEtf: number;
   workedHoursText?: string;
+  taxableBenefit?: number; // non-cash BIK — taxed for PAYE, not paid in cash
 }
 
 export function buildPayslipModel(item: any): PayslipModel {
@@ -49,9 +50,12 @@ export function buildPayslipModel(item: any): PayslipModel {
     if (Number(item.overtime_pay) > 0) earnings.push({ label: "Overtime", amount: Number(item.overtime_pay) });
     if (Number(item.bonuses) > 0) earnings.push({ label: "Bonuses", amount: Number(item.bonuses) });
     if (Number(item.allowances) > 0) earnings.push({ label: "Allowances", amount: Number(item.allowances) });
+    if (Number(item.non_epf_allowances) > 0) earnings.push({ label: "Allowances (non-EPF)", amount: Number(item.non_epf_allowances) });
+    if (Number(item.arrears) > 0) earnings.push({ label: "Arrears / Back-pay", amount: Number(item.arrears) });
 
     deductions.push({ label: "EPF (Employee 8%)", amount: Number(item.employee_epf), deduction: true });
     if (Number(item.employee_paye) > 0) deductions.push({ label: "PAYE / APIT Tax", amount: Number(item.employee_paye), deduction: true });
+    if (Number(item.loan_deduction) > 0) deductions.push({ label: "Loan Repayment", amount: Number(item.loan_deduction), deduction: true });
     if (Number(item.other_deductions) > 0) deductions.push({ label: "Other Deductions", amount: Number(item.other_deductions), deduction: true });
   }
 
@@ -69,6 +73,7 @@ export function buildPayslipModel(item: any): PayslipModel {
     employerEpf,
     employerEtf,
     workedHoursText,
+    taxableBenefit: Number(item.bik_value) > 0 ? Number(item.bik_value) : undefined,
   };
 }
 

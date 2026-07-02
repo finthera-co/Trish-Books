@@ -1,14 +1,15 @@
-import { Plus, Search, MoreHorizontal, Eye, Send, Ban, Download, MessageCircle, Mail, FileText } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Eye, Send, Ban, Download, MessageCircle, Mail, FileText, Pencil, Trash2, CheckCircle2, XCircle, ShieldAlert } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useState, useMemo } from "react";
-import { useInvoices, useUpdateInvoice, useAccounts } from "@/hooks/useData";
+import { useInvoices, useUpdateInvoice, useAccounts, useDeleteInvoice, useApproveInvoice } from "@/hooks/useData";
 import { usePostInvoice } from "@/hooks/useAccountSettings";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import JournalPreview, { type JournalPreviewLine } from "@/components/accounting/JournalPreview";
-import { useAccountSettings } from "@/hooks/useAccountSettings";
+import { useAccountSettings, useUpsertAccountSettings } from "@/hooks/useAccountSettings";
+import { Switch } from "@/components/ui/switch";
 import { useAccountById } from "@/hooks/useAccountSearch";
 import { formatCurrency } from "@/lib/currency";
 import InvoiceDetails from "@/components/invoices/InvoiceDetails";
@@ -22,9 +23,12 @@ import { loadTaxInvoice, type TaxInvoiceModel } from "@/lib/taxInvoiceData";
 import TaxInvoiceDocument from "@/components/invoices/TaxInvoiceDocument";
 import { shareInvoiceViaWhatsApp, shareInvoiceViaGmail, type ShareInvoiceArgs } from "@/lib/invoiceShare";
 
+// Canonical invoice status vocabulary (stored): draft · posted · partial · paid · voided.
+// "overdue" is derived live (posted/partial past due); "sent" is a legacy alias for "posted".
 const statusColors: Record<string, string> = {
   paid: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
   partial: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
+  posted: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
   sent: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
   overdue: "bg-destructive/10 text-destructive",
   draft: "bg-muted text-muted-foreground",
@@ -43,6 +47,11 @@ export default function Invoices() {
   const [voidReason, setVoidReason] = useState("");
   const [processing, setProcessing] = useState(false);
   const [postConfirmInvoice, setPostConfirmInvoice] = useState<any>(null);
+  const [deleteDialogInvoice, setDeleteDialogInvoice] = useState<any>(null);
+  const [govOpen, setGovOpen] = useState(false);
+  const [govThreshold, setGovThreshold] = useState("");
+  const [govEnforce, setGovEnforce] = useState(true);
+  const upsertSettings = useUpsertAccountSettings();
   const [taxPreviewOpen, setTaxPreviewOpen] = useState(false);
   const [taxPreviewModel, setTaxPreviewModel] = useState<TaxInvoiceModel | null>(null);
   const [taxPreviewInvoice, setTaxPreviewInvoice] = useState<any>(null);
@@ -50,18 +59,22 @@ export default function Invoices() {
   const { data: invoices, isLoading } = useInvoices();
   const { data: accounts } = useAccounts();
   const updateInvoice = useUpdateInvoice();
+  const deleteInvoice = useDeleteInvoice();
+  const approveInvoice = useApproveInvoice();
   const { canEdit: canEditSales } = useMyPermissions();
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
   const getEffectiveStatus = (inv: any) => {
     if (inv.status === "voided") return "voided";
+    if (inv.status === "draft") return "draft";
     if (inv.balance_due <= 0) return "paid";
     // A posted, still-owing invoice past its due date is overdue regardless of
     // the stored status — derived live so it matches the due-reminder alerts.
-    if (inv.status !== "draft" && inv.due_date && inv.due_date < todayIso) return "overdue";
+    if (inv.due_date && inv.due_date < todayIso) return "overdue";
     if (inv.amount_paid > 0) return "partial";
-    return inv.status;
+    // Normalize the legacy "sent" status onto the canonical "posted" label.
+    return inv.status === "sent" ? "posted" : inv.status;
   };
 
   // Whole-day signed distance from today to a due date (negative = overdue).
@@ -187,6 +200,19 @@ export default function Invoices() {
     }
   };
 
+  const handleDeleteInvoice = async () => {
+    if (!deleteDialogInvoice) return;
+    setProcessing(true);
+    try {
+      await deleteInvoice.mutateAsync({ id: deleteDialogInvoice.id, invoice_number: deleteDialogInvoice.invoice_number });
+      setDeleteDialogInvoice(null);
+    } catch (e) {
+      // toast handled by mutation
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const handleDownload = async (inv: any) => {
     if (!appUser?.tenant_id) return;
     setProcessing(true);
@@ -261,7 +287,7 @@ export default function Invoices() {
     }
   };
   const stats = {
-    outstanding: invoices?.filter(i => getEffectiveStatus(i) === "sent" || getEffectiveStatus(i) === "partial")
+    outstanding: invoices?.filter(i => ["posted", "partial", "overdue"].includes(getEffectiveStatus(i)))
       .reduce((s, i) => s + Number(i.balance_due), 0) || 0,
     paid: invoices?.filter(i => getEffectiveStatus(i) === "paid")
       .reduce((s, i) => s + Number(i.total_amount), 0) || 0,
@@ -279,9 +305,21 @@ export default function Invoices() {
           <p className="page-description">Create and manage customer invoices with automatic journal posting</p>
         </div>
         {canEditSales("sales") && (
-          <Button onClick={() => navigate("/sales/invoices/new")}>
-            <Plus className="w-4 h-4" />New Invoice
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setGovThreshold(settings?.invoice_approval_threshold ? String(settings.invoice_approval_threshold) : "");
+                setGovEnforce(settings?.enforce_credit_limit !== false);
+                setGovOpen(true);
+              }}
+            >
+              <ShieldAlert className="w-4 h-4" /> Controls
+            </Button>
+            <Button onClick={() => navigate("/sales/invoices/new")}>
+              <Plus className="w-4 h-4" />New Invoice
+            </Button>
+          </div>
         )}
       </div>
 
@@ -355,7 +393,8 @@ export default function Invoices() {
                   const status = getEffectiveStatus(inv);
                   const isDraft = inv.status === "draft";
                   const isVoided = inv.status === "voided";
-                  const isPosted = inv.status === "sent" || inv.status === "paid" || inv.status === "partial" || inv.status === "overdue";
+                  // Anything not a draft and not voided has been posted to the GL.
+                  const isPosted = !isDraft && !isVoided;
                   return (
                     <tr key={inv.id} className={`border-t border-border hover:bg-muted/30 transition-colors ${isVoided ? "opacity-50" : ""}`}>
                       <td className="px-4 py-3 font-medium text-foreground">{inv.invoice_number}</td>
@@ -376,9 +415,21 @@ export default function Invoices() {
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[status] || ""}`}>
-                          {status}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[status] || ""}`}>
+                            {status}
+                          </span>
+                          {isDraft && (inv as any).approval_status === "pending" && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400" title="Awaiting approval">
+                              <ShieldAlert className="w-3 h-3" /> approval
+                            </span>
+                          )}
+                          {isDraft && (inv as any).approval_status === "rejected" && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-destructive/10 text-destructive" title="Approval rejected">
+                              rejected
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-right text-foreground">{formatCurrency(Number(inv.total_amount))}</td>
                       <td className="px-4 py-3 text-right text-foreground">
@@ -396,7 +447,13 @@ export default function Invoices() {
                             <Download className="w-4 h-4" />
                           </Button>
                           {isDraft && (
-                            <Button variant="ghost" size="sm" title="Post Invoice" onClick={() => setPostConfirmInvoice(inv)} disabled={processing}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title={(inv as any).approval_status === "pending" ? "Awaiting approval" : (inv as any).approval_status === "rejected" ? "Approval rejected" : "Post Invoice"}
+                              onClick={() => setPostConfirmInvoice(inv)}
+                              disabled={processing || (inv as any).approval_status === "pending" || (inv as any).approval_status === "rejected"}
+                            >
                               <Send className="w-4 h-4 text-primary" />
                             </Button>
                           )}
@@ -416,6 +473,9 @@ export default function Invoices() {
                               </DropdownMenuItem>
                               {!isVoided && (
                                 <>
+                                  <DropdownMenuItem onClick={() => { setSelectedInvoice(inv); setDetailsOpen(true); }}>
+                                    <Mail className="w-4 h-4 mr-2" /> Email Invoice
+                                  </DropdownMenuItem>
                                   <DropdownMenuItem onClick={() => handleShare(inv, "whatsapp")} disabled={processing}>
                                     <MessageCircle className="w-4 h-4 mr-2" /> Send via WhatsApp
                                   </DropdownMenuItem>
@@ -425,12 +485,32 @@ export default function Invoices() {
                                   <DropdownMenuSeparator />
                                 </>
                               )}
-                              {isDraft && (
-                                <DropdownMenuItem onClick={() => setPostConfirmInvoice(inv)} disabled={processing}>
-                                  <Send className="w-4 h-4 mr-2" /> Post & Create Journal
-                                </DropdownMenuItem>
+                              {isDraft && (inv as any).approval_status === "pending" && (
+                                <>
+                                  <DropdownMenuItem onClick={() => approveInvoice.mutate({ id: inv.id, decision: "approved" })}>
+                                    <CheckCircle2 className="w-4 h-4 mr-2 text-green-600" /> Approve
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => approveInvoice.mutate({ id: inv.id, decision: "rejected" })}>
+                                    <XCircle className="w-4 h-4 mr-2 text-destructive" /> Reject
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                </>
                               )}
-                              {isPosted && !isVoided && (
+                              {isDraft && (
+                                <>
+                                  <DropdownMenuItem onClick={() => navigate(`/sales/invoices/${inv.id}/edit`)}>
+                                    <Pencil className="w-4 h-4 mr-2" /> Edit Draft
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => setPostConfirmInvoice(inv)} disabled={processing || (inv as any).approval_status === "pending" || (inv as any).approval_status === "rejected"}>
+                                    <Send className="w-4 h-4 mr-2" /> Post & Create Journal
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem className="text-destructive" onClick={() => setDeleteDialogInvoice(inv)} disabled={processing}>
+                                    <Trash2 className="w-4 h-4 mr-2" /> Delete Draft
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              {isPosted && (
                                 <>
                                   <DropdownMenuItem onClick={() => navigate(`/accounting/receive-payment?invoice_id=${inv.id}`)}>
                                     Receive Payment
@@ -439,11 +519,6 @@ export default function Invoices() {
                                   <DropdownMenuItem className="text-destructive" onClick={() => { setVoidDialogInvoice(inv); setVoidReason(""); }}>
                                     <Ban className="w-4 h-4 mr-2" /> Void Invoice
                                   </DropdownMenuItem>
-                                </>
-                              )}
-                              {!isPosted && !isVoided && (
-                                <>
-                                  <DropdownMenuItem onClick={() => updateInvoice.mutate({ id: inv.id, status: "sent" })}>Mark as Sent</DropdownMenuItem>
                                 </>
                               )}
                             </DropdownMenuContent>
@@ -511,6 +586,73 @@ export default function Invoices() {
               disabled={processing}
             >
               Confirm & Post
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Approval & Credit Control settings */}
+      <Dialog open={govOpen} onOpenChange={setGovOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><ShieldAlert className="w-5 h-5" /> Approval &amp; Credit Control</DialogTitle>
+            <DialogDescription>Tenant-wide policy applied when posting invoices.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div>
+              <label className="text-sm font-medium">Approval threshold</label>
+              <p className="text-xs text-muted-foreground mb-1.5">Invoices with a total at or above this amount require approval from a different finance user before posting. Leave blank or 0 to disable.</p>
+              <input
+                type="number"
+                value={govThreshold}
+                onChange={(e) => setGovThreshold(e.target.value)}
+                placeholder="e.g. 500000"
+                className="w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground"
+              />
+            </div>
+            <label className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+              <span>
+                <span className="text-sm font-medium block">Enforce customer credit limit</span>
+                <span className="text-xs text-muted-foreground">Block posting when a customer's outstanding balance + this invoice exceeds their credit limit.</span>
+              </span>
+              <Switch checked={govEnforce} onCheckedChange={setGovEnforce} />
+            </label>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setGovOpen(false)}>Cancel</Button>
+              <Button
+                onClick={async () => {
+                  await upsertSettings.mutateAsync({
+                    invoice_approval_threshold: govThreshold ? Number(govThreshold) : null,
+                    enforce_credit_limit: govEnforce,
+                  } as any);
+                  setGovOpen(false);
+                }}
+                disabled={upsertSettings.isPending}
+              >
+                {upsertSettings.isPending ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Draft confirmation */}
+      <AlertDialog open={!!deleteDialogInvoice} onOpenChange={(v) => { if (!v) setDeleteDialogInvoice(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete draft {deleteDialogInvoice?.invoice_number}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes the draft and its line items. No journal entry exists yet, so nothing in the ledger changes. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleDeleteInvoice}
+              disabled={processing}
+            >
+              {processing ? "Deleting…" : "Delete draft"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -81,13 +81,17 @@ Deno.serve(async (req) => {
       .eq("is_active", true);
     if (mapErr) throw mapErr;
 
-    const mapByCode = new Map<string, { side: "debit" | "credit"; account_id: string; account_label: string }>();
+    // A component may map to BOTH sides (employer EPF/ETF: Dr expense + Cr liability),
+    // so keep ALL mappings per component, not just the last one seen.
+    const mapByCode = new Map<string, Array<{ side: "debit" | "credit"; account_id: string; account_label: string }>>();
     for (const m of mappings || []) {
-      mapByCode.set(m.component_code, {
+      const arr = mapByCode.get(m.component_code) || [];
+      arr.push({
         side: m.posting_side as "debit" | "credit",
         account_id: m.account_id,
         account_label: `${(m as any).accounts?.account_code} ${(m as any).accounts?.account_name}`,
       });
+      mapByCode.set(m.component_code, arr);
     }
 
     // 4. Load per-department GL overrides (may be empty — falls back to global)
@@ -116,33 +120,36 @@ Deno.serve(async (req) => {
       if (Math.abs(v) < EPSILON) continue;
 
       const dept = (r as any).employees?.department as string | null;
+      const deptOverride = dept ? deptMap.get(`${dept}||${r.component_code}`) : undefined;
+      const globalMappings = mapByCode.get(r.component_code) || [];
 
-      // Dept override takes priority; fall back to global mapping
-      const deptKey = dept ? `${dept}||${r.component_code}` : null;
-      const deptOverride = deptKey ? deptMap.get(deptKey) : undefined;
-      const globalMapping = mapByCode.get(r.component_code);
-
-      let accountId: string | null = null;
-      let side: "debit" | "credit" | null = null;
-
-      if (deptOverride) {
-        accountId = deptOverride.account_id;
-        side = deptOverride.side;
-      } else if (globalMapping) {
-        accountId = globalMapping.account_id;
-        side = globalMapping.side;
+      // Resolve the (account, side) postings for this component. A two-sided
+      // employer contribution posts the full value to BOTH its expense (Dr) and
+      // liability (Cr) accounts. A department override redirects the matching
+      // side's account (liabilities stay on the global payable account).
+      let postings: Array<{ account_id: string; side: "debit" | "credit" }> = [];
+      if (globalMappings.length > 0) {
+        postings = globalMappings.map((gm) => ({
+          account_id: deptOverride && deptOverride.side === gm.side ? deptOverride.account_id : gm.account_id,
+          side: gm.side,
+        }));
+      } else if (deptOverride) {
+        // No global mapping, but a department override exists — post via it.
+        postings = [{ account_id: deptOverride.account_id, side: deptOverride.side }];
       }
 
-      if (!accountId || !side) {
+      if (postings.length === 0) {
         unmappedMap.set(r.component_code, (unmappedMap.get(r.component_code) || 0) + v);
         continue;
       }
 
-      const key = `${accountId}:${side}`;
-      const cur = linesByKey.get(key) || { account_id: accountId, debit: 0, credit: 0 };
-      if (side === "debit") cur.debit += v;
-      else cur.credit += v;
-      linesByKey.set(key, cur);
+      for (const p of postings) {
+        const key = `${p.account_id}:${p.side}`;
+        const cur = linesByKey.get(key) || { account_id: p.account_id, debit: 0, credit: 0 };
+        if (p.side === "debit") cur.debit += v;
+        else cur.credit += v;
+        linesByKey.set(key, cur);
+      }
     }
 
     if (unmappedMap.size > 0) {

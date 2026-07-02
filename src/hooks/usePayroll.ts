@@ -16,6 +16,38 @@ import { calculateApit, type ApitSchedule } from "@/lib/taxEngine";
  * default (tenant_id NULL) otherwise. Returns null when none configured —
  * PAYE is then skipped entirely.
  */
+// 1-based month within the Sri Lanka tax year (April = 1 … March = 12).
+function apitMonthIndex(periodEnd: string): number {
+  const d = new Date(periodEnd);
+  const m = d.getMonth() + 1, y = d.getFullYear();
+  const tyStart = m >= 4 ? y : y - 1;
+  return (y - tyStart) * 12 + (m - 4) + 1;
+}
+
+// Fraction of the tax year elapsed through period_end (0–1) — used for the
+// cumulative APIT scale on NON-monthly schedules (monthly uses exact month/12).
+function apitYearFraction(periodEnd: string): number {
+  const pe = new Date(periodEnd);
+  const m = pe.getMonth() + 1, y = pe.getFullYear();
+  const startYear = m >= 4 ? y : y - 1;
+  const start = new Date(startYear, 3, 1);            // 1 April
+  const nextStart = new Date(startYear + 1, 3, 1);    // next 1 April
+  const dayMs = 86400000;
+  const daysInYear = Math.round((nextStart.getTime() - start.getTime()) / dayMs);
+  const elapsed = Math.round((pe.getTime() - start.getTime()) / dayMs) + 1;
+  return Math.min(1, Math.max(0, elapsed / daysInYear));
+}
+
+// Segregation of duties: when enabled, the run's creator may not approve/process it.
+async function assertSegregationOfDuties(runId: string, tenantId: string, userId?: string) {
+  const { data: ps } = await supabase.from("payroll_settings").select("enforce_sod").eq("tenant_id", tenantId).maybeSingle();
+  if (!ps?.enforce_sod) return;
+  const { data: run } = await supabase.from("payroll_runs").select("created_by").eq("id", runId).maybeSingle();
+  if (userId && run?.created_by && run.created_by === userId) {
+    throw new Error("Segregation of duties: the run's creator cannot approve or process it — another user must.");
+  }
+}
+
 async function loadApitSchedule(tenantId: string, asOf: string): Promise<ApitSchedule | null> {
   const { data: schedules } = await supabase
     .from("apit_schedules" as any)
@@ -38,6 +70,35 @@ async function loadApitSchedule(tenantId: string, asOf: string): Promise<ApitSch
       rate: Number(b.rate),
     })),
   };
+}
+
+// ===== Payroll settings (segregation of duties) =====
+export function usePayrollSettings() {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["payroll_settings", appUser?.tenant_id],
+    enabled: !!appUser?.tenant_id,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("payroll_settings").select("*").eq("tenant_id", appUser!.tenant_id).maybeSingle();
+      if (error) throw error;
+      return data as { enforce_sod: boolean; cash_round_to: number } | null;
+    },
+  });
+}
+
+export function useSavePayrollSettings() {
+  const qc = useQueryClient();
+  const { appUser } = useAuth();
+  return useMutation({
+    mutationFn: async (input: { enforce_sod?: boolean; cash_round_to?: number }) => {
+      if (!appUser?.tenant_id) throw new Error("No tenant");
+      const { error } = await supabase.from("payroll_settings").upsert(
+        { tenant_id: appUser.tenant_id, ...input, updated_at: new Date().toISOString() }, { onConflict: "tenant_id" });
+      if (error) throw error;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["payroll_settings"] }); toast.success("Payroll controls saved"); },
+    onError: (e: Error) => toast.error(e.message),
+  });
 }
 
 // ===== Rule Engine Hooks =====
@@ -221,6 +282,7 @@ export interface PayrollRunInput {
     bonuses?: number;
     allowances?: number;
     non_epf_allowances?: number;
+    arrears?: number;            // back-pay — EPF-able taxable earning
     other_deductions?: number;
     payment_method?: string;
     notes?: string;
@@ -240,35 +302,75 @@ export function useCreatePayrollRun() {
   const { appUser } = useAuth();
   return useMutation({
     mutationFn: async (input: PayrollRunInput) => {
-      // Generate run number
-      const { count } = await supabase.from("payroll_runs").select("*", { count: "exact", head: true });
-      const runNumber = `PR-${String((count || 0) + 1).padStart(5, "0")}`;
+      // Guard against a duplicate run covering the same period (double-pay risk).
+      const { data: overlapping } = await supabase.from("payroll_runs")
+        .select("run_number, period_start, period_end")
+        .neq("status", "voided")
+        .lte("period_start", input.period_end)
+        .gte("period_end", input.period_start)
+        .limit(1);
+      if (overlapping && overlapping.length > 0) {
+        const o = overlapping[0] as any;
+        throw new Error(`A payroll run already covers this period (${o.run_number}: ${o.period_start} → ${o.period_end}). Void it or adjust the dates.`);
+      }
+
+      // Generate a concurrency-safe per-tenant run number (atomic counter).
+      const { data: rnData, error: rnErr } = await supabase.rpc("next_tenant_number", {
+        p_tenant_id: appUser!.tenant_id, p_key: "payroll_run",
+      });
+      if (rnErr) throw rnErr;
+      const runNumber = `PR-${String(Number(rnData) || 1).padStart(5, "0")}`;
 
       // Load rule engine config + employee statutory flags + APIT schedule
       const [config, empRes, apitSchedule] = await Promise.all([
         loadEngineConfig(),
         supabase.from("employees")
-          .select("id,is_epf_applicable,is_etf_applicable,is_paye_applicable,employment_type,pay_rate_type")
+          .select("id,is_epf_applicable,is_etf_applicable,is_paye_applicable,employment_type,pay_rate_type,bik_monthly_value")
           .in("id", input.employees.map((e) => e.employee_id)),
         loadApitSchedule(appUser!.tenant_id, input.period_end),
       ]);
       if (empRes.error) throw empRes.error;
       const empMap = new Map((empRes.data || []).map((e: any) => [e.id, e]));
 
+      // Active salary-loan installments — folded into other deductions (capped at balance).
+      const { data: loansData } = await supabase.from("employee_loans")
+        .select("employee_id, monthly_installment, balance")
+        .eq("status", "active").gt("balance", 0)
+        .in("employee_id", input.employees.map((e) => e.employee_id));
+      const loanByEmp = new Map<string, number>();
+      ((loansData as any[]) || []).forEach((l) => {
+        const amt = Math.min(Number(l.monthly_installment) || 0, Number(l.balance) || 0);
+        if (amt > 0) loanByEmp.set(l.employee_id, (loanByEmp.get(l.employee_id) || 0) + amt);
+      });
+
       // No-pay-leave proration (single source). Pull approved leave for the
       // period grouped by type, plus the period's working-day denominator
       // (Mon–Sat excl holidays), then prorate basic for unpaid leave days.
       const r2 = (n: number) => Math.round(n * 100) / 100;
       const empIdList = input.employees.map((e) => e.employee_id);
-      const [leaveRes, wdRes] = await Promise.all([
+      const [leaveRes, wdRes, ytdRes] = await Promise.all([
         supabase.rpc("rpc_period_leave_summary", { p_period_start: input.period_start, p_period_end: input.period_end, p_employee_ids: empIdList }),
         supabase.rpc("count_working_days", { p_tenant_id: appUser!.tenant_id, p_start: input.period_start, p_end: input.period_end, p_is_half_day: false } as any),
+        supabase.rpc("rpc_ytd_payroll", { p_before: input.period_start, p_employee_ids: empIdList }),
       ]);
       const workingDays = Number(wdRes.data) || 0;
       const unpaidLeaveByEmp = new Map<string, number>();
       ((leaveRes.data as any[]) || []).forEach((r) => {
         if (r.treatment === "unpaid") unpaidLeaveByEmp.set(r.employee_id, (unpaidLeaveByEmp.get(r.employee_id) || 0) + (Number(r.days_taken) || 0));
       });
+      // Year-to-date gross + PAYE for the cumulative APIT method.
+      const ytdByEmp = new Map<string, { gross: number; paye: number }>();
+      ((ytdRes.data as any[]) || []).forEach((r) => {
+        ytdByEmp.set(r.employee_id, { gross: Number(r.ytd_gross) || 0, paye: Number(r.ytd_paye) || 0 });
+      });
+      const apitMonth = apitMonthIndex(input.period_end);
+      // Non-monthly schedules scale the cumulative APIT by the elapsed year fraction.
+      let payFrequency = "monthly";
+      if (input.pay_schedule_id) {
+        const { data: sched } = await supabase.from("pay_schedules").select("frequency").eq("id", input.pay_schedule_id).maybeSingle();
+        if (sched?.frequency) payFrequency = sched.frequency;
+      }
+      const apitYearFrac = payFrequency === "monthly" ? undefined : apitYearFraction(input.period_end);
 
       let totalGross = 0, totalDeductions = 0, totalNet = 0, totalEmployerEpf = 0, totalEmployerEtf = 0, totalPaye = 0;
       const ruleSetHash = hashRuleSet(config.rules);
@@ -295,9 +397,11 @@ export function useCreatePayrollRun() {
         // Hourly staff are paid on hours, so leave doesn't cut their basic here.
         const unpaidLeaveDays = unpaidLeaveByEmp.get(emp.employee_id) || 0;
         const isHourly = (empFlags.pay_rate_type ?? "monthly") === "hourly";
-        // No-pay leave is valued at the contractual day rate, not the absence-reduced basic.
+        // No-pay leave is valued at the contractual day rate, on the employee's own
+        // working-day count (per-shift), falling back to the tenant default.
         const fullBasic = emp.contractual_basic ?? emp.basic_salary;
-        const perDay = workingDays > 0 ? fullBasic / workingDays : 0;
+        const empWorkingDays = emp.working_days && emp.working_days > 0 ? emp.working_days : workingDays;
+        const perDay = empWorkingDays > 0 ? fullBasic / empWorkingDays : 0;
         const leaveDeduction = isHourly ? 0 : r2(perDay * unpaidLeaveDays);
         const attendanceDeduction = r2((emp.attendance_deduction || 0) + leaveDeduction);
         const engineInput: EmployeePayrollInput = {
@@ -309,36 +413,60 @@ export function useCreatePayrollRun() {
           basic_salary: emp.basic_salary - attendanceDeduction,
           overtime_pay: emp.overtime_pay || 0,
           bonuses: emp.bonuses || 0,
-          allowances: emp.allowances || 0,
+          // Arrears are back-pay of salary → EPF-able & taxable, so fold into allowances.
+          allowances: (emp.allowances || 0) + (emp.arrears || 0),
           non_epf_allowances: emp.non_epf_allowances || 0,
           other_deductions: emp.other_deductions || 0,
+          loan_deduction: 0, // capped to available net + re-applied below
         };
+        const desiredLoan = loanByEmp.get(emp.employee_id) || 0;
 
-        const result = runPayrollForEmployee(engineInput, config.rules, config.components);
+        // First pass without the loan, to find what's left for loan recovery.
+        let result = runPayrollForEmployee(engineInput, config.rules, config.components);
 
-        // APIT (PAYE): bracket schedules cannot be expressed in the rule
-        // formula types, so it is computed by the shared tax engine and
-        // injected as the PAYE component with a compatible trace. Credit-side
-        // deduction only (like EPF Employee).
+        // APIT (PAYE) — computed on gross + BIK, independent of the loan.
         let payeAmount = 0;
+        let apitTrace: any = null;
+        // Non-cash benefit (BIK): taxable for APIT only — added to the tax base, not
+        // to cash gross/net or EPF.
+        const bik = Number(empFlags.bik_monthly_value) || 0;
         if (engineInput.is_paye_applicable && apitSchedule) {
-          // Bonus is an irregular lump sum — taxed once, not annualized ×12.
-          const apit = calculateApit(result.gross_pay, apitSchedule, engineInput.bonuses || 0);
+          // Cumulative (YTD) method — self-corrects for variable pay and bonuses.
+          const ytd = ytdByEmp.get(emp.employee_id) || { gross: 0, paye: 0 };
+          const apit = calculateApit(result.gross_pay + bik, apitSchedule, engineInput.bonuses || 0, {
+            priorGross: ytd.gross, priorPaye: ytd.paye, monthIndex: apitMonth, yearFraction: apitYearFrac,
+          });
           payeAmount = apit.monthlyApit;
-          if (payeAmount > 0) {
-            result.traces["PAYE"] = apit.trace as any;
-            result.total_deductions += payeAmount;
-            result.net_pay -= payeAmount;
-            const netTrace = result.traces["NET_PAY"] as any;
-            if (netTrace) {
-              netTrace.result = result.net_pay;
-              netTrace.evaluation_steps = [
-                ...(netTrace.evaluation_steps || []),
-                `Less APIT (PAYE) ${payeAmount} → ${result.net_pay}`,
-              ];
-            }
+          apitTrace = apit.trace;
+        }
+
+        // Cap loan recovery at the net actually available after statutory + other
+        // deductions — never recover more than the employee is paid.
+        const availableForLoan = Math.max(0, result.net_pay - payeAmount);
+        const loanDeduction = Math.min(desiredLoan, availableForLoan);
+
+        // Re-run with the capped loan so the traces/net reflect the real recovery.
+        if (loanDeduction > 0) {
+          result = runPayrollForEmployee({ ...engineInput, loan_deduction: loanDeduction }, config.rules, config.components);
+        }
+
+        // Inject PAYE into the final result.
+        if (payeAmount > 0) {
+          result.traces["PAYE"] = apitTrace as any;
+          result.total_deductions += payeAmount;
+          result.net_pay -= payeAmount;
+          const netTrace = result.traces["NET_PAY"] as any;
+          if (netTrace) {
+            netTrace.result = result.net_pay;
+            netTrace.evaluation_steps = [
+              ...(netTrace.evaluation_steps || []),
+              `Less APIT (PAYE) ${payeAmount} → ${result.net_pay}`,
+            ];
           }
         }
+
+        // Net pay never goes below zero.
+        result.net_pay = Math.max(0, result.net_pay);
 
         perEmployeeTraces.push({ employee_id: emp.employee_id, engineInput, traces: result.traces });
 
@@ -353,6 +481,8 @@ export function useCreatePayrollRun() {
           employee_id: emp.employee_id,
           basic_salary: emp.basic_salary, // earned (biometric) or full (manual) basic
           contractual_basic: emp.contractual_basic ?? emp.basic_salary, // full monthly basic for leave per-day
+          epf_base: result.context?.EPF_BASE ?? null, // actual engine EPF base (for the statutory return)
+          bik_value: bik, // non-cash taxable benefit (APIT base only)
           hours_worked: emp.hours_worked ?? null,
           overtime_hours: emp.overtime_hours || 0,
           overtime_pay: emp.overtime_pay || 0,
@@ -362,9 +492,11 @@ export function useCreatePayrollRun() {
           employer_epf: result.employer_epf,
           employer_etf: result.employer_etf,
           other_deductions: emp.other_deductions || 0,
+          loan_deduction: loanDeduction,
           bonuses: emp.bonuses || 0,
           allowances: emp.allowances || 0,
           non_epf_allowances: emp.non_epf_allowances || 0,
+          arrears: emp.arrears || 0,
           net_pay: result.net_pay,
           payment_method: emp.payment_method || "bank_transfer",
           notes: emp.notes,
@@ -401,6 +533,9 @@ export function useCreatePayrollRun() {
       const runItems = items.map((item) => ({ ...item, run_id: run.id }));
       const { error: itemsError } = await supabase.from("payroll_run_items").insert(runItems);
       if (itemsError) throw itemsError;
+      // Loan balances are reduced when the run is PROCESSED (posted to GL), not at
+      // draft creation — see useProcessPayrollRun. This keeps the receivable in
+      // step with the GL and avoids reducing balances for an abandoned draft.
 
       // ====== Immutable ledger writes ======
       // 1. Run snapshot (frozen rule-set + employee snapshots)
@@ -466,14 +601,14 @@ export function useRecalculateDraftRuns() {
 
       // Get all draft runs and their items
       const { data: drafts, error: dErr } = await supabase
-        .from("payroll_runs").select("id,tenant_id,period_start,period_end").eq("status", "draft");
+        .from("payroll_runs").select("id,tenant_id,period_start,period_end,pay_schedule_id,pay_schedules(frequency)").eq("status", "draft");
       if (dErr) throw dErr;
       if (!drafts || drafts.length === 0) return { runs: 0, items: 0 };
 
       const runIds = drafts.map((r) => r.id);
       const { data: items, error: iErr } = await supabase
         .from("payroll_run_items")
-        .select("id,run_id,employee_id,basic_salary,contractual_basic,overtime_pay,bonuses,allowances,non_epf_allowances,other_deductions,attendance_deduction")
+        .select("id,run_id,employee_id,basic_salary,contractual_basic,overtime_pay,bonuses,allowances,non_epf_allowances,arrears,other_deductions,attendance_deduction,bik_value,loan_deduction")
         .in("run_id", runIds);
       if (iErr) throw iErr;
       if (!items || items.length === 0) return { runs: drafts.length, items: 0 };
@@ -494,15 +629,26 @@ export function useRecalculateDraftRuns() {
       const r2 = (n: number) => Math.round(n * 100) / 100;
       const runWorkingDays = new Map<string, number>();
       const runUnpaidLeave = new Map<string, Map<string, number>>();
+      const runYtd = new Map<string, Map<string, { gross: number; paye: number }>>();
+      const runMonth = new Map<string, number>();
+      const runYearFrac = new Map<string, number | undefined>();
       for (const d of drafts as any[]) {
-        const [lr, wd] = await Promise.all([
+        const empIdsForRun = items.filter((it) => it.run_id === d.id).map((it) => it.employee_id);
+        const [lr, wd, ytd] = await Promise.all([
           supabase.rpc("rpc_period_leave_summary", { p_period_start: d.period_start, p_period_end: d.period_end, p_employee_ids: null }),
           supabase.rpc("count_working_days", { p_tenant_id: d.tenant_id, p_start: d.period_start, p_end: d.period_end, p_is_half_day: false } as any),
+          supabase.rpc("rpc_ytd_payroll", { p_before: d.period_start, p_employee_ids: empIdsForRun }),
         ]);
         runWorkingDays.set(d.id, Number(wd.data) || 0);
         const m = new Map<string, number>();
         ((lr.data as any[]) || []).forEach((r) => { if (r.treatment === "unpaid") m.set(r.employee_id, (m.get(r.employee_id) || 0) + (Number(r.days_taken) || 0)); });
         runUnpaidLeave.set(d.id, m);
+        const y = new Map<string, { gross: number; paye: number }>();
+        ((ytd.data as any[]) || []).forEach((r) => y.set(r.employee_id, { gross: Number(r.ytd_gross) || 0, paye: Number(r.ytd_paye) || 0 }));
+        runYtd.set(d.id, y);
+        runMonth.set(d.id, apitMonthIndex(d.period_end));
+        const freq = (d as any).pay_schedules?.frequency || "monthly";
+        runYearFrac.set(d.id, freq === "monthly" ? undefined : apitYearFraction(d.period_end));
       }
 
       // Recompute each item via the engine
@@ -528,22 +674,28 @@ export function useRecalculateDraftRuns() {
           basic_salary: earnedBasic - attendanceDeduction,
           overtime_pay: Number(it.overtime_pay || 0),
           bonuses: Number(it.bonuses || 0),
-          allowances: Number(it.allowances || 0),
+          allowances: Number(it.allowances || 0) + Number((it as any).arrears || 0),
           non_epf_allowances: Number((it as any).non_epf_allowances || 0),
           other_deductions: Number(it.other_deductions || 0),
+          loan_deduction: Number((it as any).loan_deduction || 0),
         }, config.rules, config.components);
 
         // APIT/PAYE: bracket lookup outside the rule engine (same as create path).
         let payeAmount = 0;
         if (ef.is_paye_applicable && apitSchedule) {
-          // Bonus is an irregular lump sum — taxed once, not annualized ×12.
-          payeAmount = calculateApit(result.gross_pay, apitSchedule, Number(it.bonuses || 0)).monthlyApit || 0;
+          // Cumulative (YTD) method — matches the create path.
+          const ytd = runYtd.get(it.run_id)?.get(it.employee_id) || { gross: 0, paye: 0 };
+          payeAmount = calculateApit(result.gross_pay + Number((it as any).bik_value || 0), apitSchedule, Number(it.bonuses || 0), {
+            priorGross: ytd.gross, priorPaye: ytd.paye, monthIndex: runMonth.get(it.run_id) || 1,
+            yearFraction: runYearFrac.get(it.run_id),
+          }).monthlyApit || 0;
         }
-        const netPay = result.net_pay - payeAmount;
+        const netPay = Math.max(0, result.net_pay - payeAmount); // never below zero
         const totalDed = result.total_deductions + payeAmount;
 
         await supabase.from("payroll_run_items").update({
           gross_pay: result.gross_pay,
+          epf_base: result.context?.EPF_BASE ?? null,
           employee_epf: result.employee_epf,
           employee_paye: payeAmount,
           employer_epf: result.employer_epf,
@@ -591,6 +743,7 @@ export function useApprovePayrollRun() {
   const { appUser } = useAuth();
   return useMutation({
     mutationFn: async (runId: string) => {
+      if (appUser) await assertSegregationOfDuties(runId, appUser.tenant_id, appUser.id);
       const { error } = await supabase.from("payroll_runs").update({
         status: "approved",
         approved_by: appUser ? `${appUser.first_name} ${appUser.last_name}` : "Unknown",
@@ -609,8 +762,10 @@ export function useApprovePayrollRun() {
 
 export function useProcessPayrollRun() {
   const qc = useQueryClient();
+  const { appUser } = useAuth();
   return useMutation({
     mutationFn: async (runId: string) => {
+      if (appUser) await assertSegregationOfDuties(runId, appUser.tenant_id, appUser.id);
       // Delegates to edge function which reads payroll_results, looks up
       // payroll_component_accounts mapping, builds a balanced double-entry
       // journal, and posts it. Returns 422 with `unmapped` array if mapping incomplete.
@@ -622,12 +777,16 @@ export function useProcessPayrollRun() {
         throw new Error((data as any).error || "Failed to post payroll to GL");
       }
       if ((data as any)?.error) throw new Error((data as any).error);
+      // Now that the run is posted, reduce loan balances + record repayments
+      // (idempotent per run via the loan_repayments unique constraint).
+      await supabase.rpc("rpc_apply_loan_repayments", { p_run_id: runId });
       return data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["payroll_runs"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
       qc.invalidateQueries({ queryKey: ["period_account_movements"] });
+      qc.invalidateQueries({ queryKey: ["employee_loans"] });
       toast.success("Payroll posted to General Ledger");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -663,14 +822,19 @@ export function usePayrollGLPreview(runId: string | undefined) {
 export function useVoidPayrollRun() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (runId: string) => {
-      const { error } = await supabase.from("payroll_runs").update({ status: "voided" }).eq("id", runId);
+    mutationFn: async (arg: string | { runId: string; reason?: string }) => {
+      const runId = typeof arg === "string" ? arg : arg.runId;
+      const reason = typeof arg === "string" ? undefined : arg.reason;
+      // Reverses the GL journal entry + restores loan balances, then marks voided.
+      const { error } = await supabase.rpc("rpc_void_payroll_run", { p_run_id: runId, p_reason: reason ?? null });
       if (error) throw error;
       writeAuditLog("Payroll Run Voided", "payroll_runs", runId);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["payroll_runs"] });
-      toast.success("Payroll run voided");
+      qc.invalidateQueries({ queryKey: ["journal_entries"] });
+      qc.invalidateQueries({ queryKey: ["employee_loans"] });
+      toast.success("Payroll run voided — GL reversed, loan balances restored");
     },
     onError: (e: Error) => toast.error(e.message),
   });

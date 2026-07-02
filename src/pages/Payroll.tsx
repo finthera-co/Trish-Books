@@ -4,7 +4,9 @@ import { Plus, Search, Eye, DollarSign, Users, TrendingUp, FileText, Download } 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { usePayrollRuns, usePayrollRunItems } from "@/hooks/usePayroll";
+import { usePayrollRuns, usePayrollRunItems, usePayrollSettings, useSavePayrollSettings } from "@/hooks/usePayroll";
+import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useEmployees } from "@/hooks/useData";
@@ -37,6 +39,8 @@ export default function Payroll() {
   const [payStubOpen, setPayStubOpen] = useState(false);
 
   const { data: runs, isLoading } = usePayrollRuns();
+  const { data: payrollSettings } = usePayrollSettings();
+  const saveSod = useSavePayrollSettings();
   const { data: employees } = useEmployees();
   const { canEdit: canEditPayroll } = useMyPermissions();
 
@@ -194,6 +198,22 @@ export default function Payroll() {
           </Button>}
         </div>
       </div>
+
+      {canEditPayroll("payroll") && (
+        <div className="-mt-2 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
+          <label className="flex items-center gap-2">
+            <Switch checked={!!payrollSettings?.enforce_sod} onCheckedChange={(v) => saveSod.mutate({ enforce_sod: !!v })} />
+            Segregation of duties — a run's creator can't approve or process it
+          </label>
+          <label className="flex items-center gap-2">
+            Round cash pay to nearest
+            <Input type="number" min="0" step="1" defaultValue={payrollSettings?.cash_round_to ?? 0}
+              onBlur={(e) => saveSod.mutate({ cash_round_to: Number(e.target.value) || 0 })}
+              className="h-7 w-20" />
+            LKR (0 = off)
+          </label>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

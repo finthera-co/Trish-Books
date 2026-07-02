@@ -6,10 +6,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useEmployees } from "@/hooks/useData";
 import { usePaySchedules, useCreatePayrollRun, usePeriodLeaveSummary, type PayrollRunInput } from "@/hooks/usePayroll";
 import { useAttendanceSummary, useAttendanceSummaryForPeriod, workingDaysInPeriod, useDefaultWorkShift } from "@/hooks/useAttendance";
+import { useRecurringTotalsByEmployee } from "@/hooks/useRecurringComponents";
 import { computePayFromAttendance } from "@/lib/attendanceMapping";
 import { formatCurrency } from "@/lib/currency";
 import { toast } from "sonner";
-import { ChevronRight, ChevronLeft, Calculator, Users, AlertTriangle, CalendarClock, Search } from "lucide-react";
+import { ChevronRight, ChevronLeft, Calculator, Users, AlertTriangle, CalendarClock, Search, Clock } from "lucide-react";
 
 interface Props {
   open: boolean;
@@ -33,6 +34,7 @@ interface EmployeePayItem {
   bonuses: number;
   allowances: number;          // attract EPF/ETF
   non_epf_allowances: number;  // taxable, excluded from EPF/ETF
+  arrears: number;             // back-pay — EPF-able taxable earning
   other_deductions: number;
   payment_method: string;
   selected: boolean;
@@ -42,6 +44,9 @@ interface EmployeePayItem {
   // contractual_basic preserves the FULL monthly basic so the no-pay-leave
   // per-day rate is always derived from contractual pay, never the reduced figure.
   contractual_basic?: number;
+  // Fraction of the period the employee was actually employed (mid-period
+  // joiner/leaver). 1 for a full-month employee. Allowances are scaled by this.
+  employment_factor?: number;
   working_days: number;
   days_present: number;
   paid_leave_days: number;
@@ -82,6 +87,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
   const { data: attendanceSummary } = useAttendanceSummary(periodStart || undefined, periodEnd || undefined);
   const { data: biometricSummary, isFetching: loadingAttendance } = useAttendanceSummaryForPeriod(periodStart || undefined, periodEnd || undefined);
   const { data: defaultShift } = useDefaultWorkShift();
+  const { data: recurringTotals } = useRecurringTotalsByEmployee();
   const createRun = useCreatePayrollRun();
 
   // Leave taken in the period, grouped by type — drives the grid's leave column.
@@ -115,8 +121,10 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
 
   const handleNext = () => {
     if (step === 1) {
-      // Initialize items from active employees
-      const empItems: EmployeePayItem[] = activeEmployees.map((e: any) => ({
+      // Initialize items from active employees, pre-filling standing recurring items.
+      const empItems: EmployeePayItem[] = activeEmployees.map((e: any) => {
+        const rec = recurringTotals?.[e.id];
+        return {
         employee_id: e.id,
         name: `${e.first_name} ${e.last_name}`,
         department: e.department || "Unassigned",
@@ -127,9 +135,10 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
         overtime_hours: 0,
         overtime_pay: 0,
         bonuses: 0,
-        allowances: 0,
-        non_epf_allowances: 0,
-        other_deductions: 0,
+        allowances: rec?.allowances || 0,
+        non_epf_allowances: rec?.non_epf_allowances || 0,
+        arrears: 0,
+        other_deductions: rec?.other_deductions || 0,
         payment_method: e.bank_account_no ? "bank_transfer" : "cash",
         selected: true,
         working_days: 0,
@@ -141,7 +150,8 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
         has_attendance: false,
         attendance_applied: false,
         attendance_missing: false,
-      }));
+      };
+      });
       setItems(empItems);
       setAutoAppliedBiometric(false); // re-apply biometric for the freshly-built rows
       setStep(2);
@@ -172,6 +182,10 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
         merged.attendance_deduction = hasAttendance
           ? computeAttendanceDeduction(merged.basic_salary, merged.working_days, merged.unpaid_absent_days)
           : 0;
+        // Pro-rate allowances for a mid-period joiner/leaver (manual path).
+        const wd = Number(s.working_days);
+        const nonEmp = Number((s as any).non_employed_days) || 0;
+        merged.employment_factor = wd > 0 ? Math.max(0, (wd - nonEmp) / wd) : 1;
       }
       return merged;
     }));
@@ -225,6 +239,8 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
         otHours: s.ot_hours,
         absentDays: s.absent_days,
         halfDays: s.half_days,
+        nonEmployedDays: s.non_employed_days,
+        undertimeMinutes: (defaultShift as any)?.deduct_undertime ? s.undertime_minutes : 0,
         workingDays,
         otMultiplier: s.ot_multiplier,
         stdHoursPerDay: s.std_hours_per_day,
@@ -237,6 +253,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
         ...item,
         basic_salary: result.basic_salary,
         contractual_basic: contractual,
+        employment_factor: workingDays > 0 ? Math.max(0, (workingDays - s.non_employed_days) / workingDays) : 1,
         hours_worked: result.hours_worked,
         overtime_hours: result.overtime_hours,
         overtime_pay: result.overtime_pay,
@@ -275,8 +292,10 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
       // allowances (matches EPF_BASE); PAYE is computed by the engine on creation and
       // is NOT previewed here, so `net` below is pre-PAYE.
       const earned = earnedBasic(item);
-      const epfBase = earned + item.allowances;
-      const g = earned + item.overtime_pay + item.bonuses + item.allowances + item.non_epf_allowances;
+      const f = item.employment_factor ?? 1; // allowances pro-rate for partial-month employment
+      const allow = item.allowances * f, nonEpfAllow = item.non_epf_allowances * f;
+      const epfBase = earned + allow + item.arrears; // arrears are EPF-able back-pay
+      const g = earned + item.overtime_pay + item.bonuses + allow + nonEpfAllow + item.arrears;
       const eEpf = Math.round(epfBase * EPF_EMPLOYEE_RATE * 100) / 100;
       const erEpf = Math.round(epfBase * EPF_EMPLOYER_RATE * 100) / 100;
       const erEtf = Math.round(epfBase * ETF_EMPLOYER_RATE * 100) / 100;
@@ -311,8 +330,11 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
         overtime_hours: item.overtime_hours,
         overtime_pay: item.overtime_pay,
         bonuses: item.bonuses,
-        allowances: item.allowances,
-        non_epf_allowances: item.non_epf_allowances,
+        // Allowances scale with the employed fraction for a mid-period joiner/leaver
+        // (factor 1 for full-month staff → unchanged).
+        allowances: round2(item.allowances * (item.employment_factor ?? 1)),
+        non_epf_allowances: round2(item.non_epf_allowances * (item.employment_factor ?? 1)),
+        arrears: item.arrears,
         other_deductions: item.other_deductions,
         payment_method: item.payment_method,
         working_days: item.working_days,
@@ -426,6 +448,40 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                 ? `${Object.keys(biometricSummary).length} employee(s) have aggregated attendance in ${periodStart} → ${periodEnd}. Salaried basic is pro-rated over working days (Sundays & public holidays excluded), net of approved leave; hourly basic = worked hours × rate.`
                 : "No aggregated attendance found for this period. Import & aggregate punches first."}
             </p>
+            {biometricSummary && (() => {
+              const rows = Object.values(biometricSummary) as any[];
+              const reviewTotal = rows.reduce((s, r) => s + (Number(r.review_days) || 0), 0);
+              const reviewEmps = rows.filter((r) => (Number(r.review_days) || 0) > 0).length;
+              return reviewTotal > 0 ? (
+                <div className="-mt-2 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{reviewTotal} single-punch day(s) across {reviewEmps} employee(s) need review (a missed punch). Check the Attendance Register before finalizing — these feed pay as recorded.</span>
+                </div>
+              ) : null;
+            })()}
+            {biometricSummary && Number((defaultShift as any)?.ot_cap_hours) > 0 && (() => {
+              const cap = Number((defaultShift as any).ot_cap_hours);
+              const over = (Object.values(biometricSummary) as any[]).filter(
+                (r) => (Number(r.ot_hours) || 0) + (Number(r.holiday_ot_hours) || 0) > cap,
+              ).length;
+              return over > 0 ? (
+                <div className="-mt-2 flex items-start gap-2 rounded-md border border-rose-300 bg-rose-50 p-2.5 text-xs text-rose-800 dark:border-rose-800 dark:bg-rose-950/20 dark:text-rose-300">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{over} employee(s) exceed the {cap}-hour OT cap this period — review for labour-law compliance. (Worked OT is still paid.)</span>
+                </div>
+              ) : null;
+            })()}
+            {biometricSummary && (defaultShift as any)?.deduct_undertime && (() => {
+              const rows = Object.values(biometricSummary) as any[];
+              const mins = rows.reduce((s, r) => s + (Number(r.undertime_minutes) || 0), 0);
+              const emps = rows.filter((r) => (Number(r.undertime_minutes) || 0) > 0).length;
+              return mins > 0 ? (
+                <div className="-mt-2 flex items-start gap-2 rounded-md border border-sky-300 bg-sky-50 p-2.5 text-xs text-sky-800 dark:border-sky-800 dark:bg-sky-950/20 dark:text-sky-300">
+                  <Clock className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>Undertime policy is on: {Math.round(mins / 6) / 10} hour(s) of late/early-leave across {emps} employee(s) reduce salaried pay this period.</span>
+                </div>
+              ) : null;
+            })()}
 
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -456,6 +512,7 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">Bonuses</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Allowances that attract EPF/ETF">Allowances</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Taxable allowances excluded from EPF/ETF (reimbursements, non-pensionable)">Non-EPF Allow.</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap" title="Back-pay / arrears — EPF-able & taxable">Arrears</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">Other Deductions</th>
                   </tr>
                 </thead>
@@ -532,10 +589,18 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                       </td>
                       <td className="px-3 py-2">
                         <input type="number" value={item.allowances || ""} onChange={(e) => updateItem(idx, "allowances", Number(e.target.value))}
-                          className="w-28 text-right text-sm border border-input rounded px-2 py-1 bg-background text-foreground" />
+                          title={(item.employment_factor ?? 1) < 1 ? `Enter the full monthly allowance — it will be pro-rated to ${Math.round((item.employment_factor ?? 1) * 100)}% for partial-month employment.` : undefined}
+                          className={`w-28 text-right text-sm border rounded px-2 py-1 bg-background text-foreground ${(item.employment_factor ?? 1) < 1 ? "border-amber-400" : "border-input"}`} />
+                        {(item.employment_factor ?? 1) < 1 && (
+                          <span className="block text-[10px] text-amber-600 dark:text-amber-400 mt-0.5">×{Math.round((item.employment_factor ?? 1) * 100)}% (partial month)</span>
+                        )}
                       </td>
                       <td className="px-3 py-2">
                         <input type="number" value={item.non_epf_allowances || ""} onChange={(e) => updateItem(idx, "non_epf_allowances", Number(e.target.value))}
+                          className="w-28 text-right text-sm border border-input rounded px-2 py-1 bg-background text-foreground" />
+                      </td>
+                      <td className="px-3 py-2">
+                        <input type="number" value={item.arrears || ""} onChange={(e) => updateItem(idx, "arrears", Number(e.target.value))}
                           className="w-28 text-right text-sm border border-input rounded px-2 py-1 bg-background text-foreground" />
                       </td>
                       <td className="px-3 py-2">
@@ -635,8 +700,10 @@ export default function PayrollRunForm({ open, onOpenChange }: Props) {
                   <tbody>
                     {selectedItems.map((item) => {
                       const earned = earnedBasic(item);
-                      const gross = earned + item.overtime_pay + item.bonuses + item.allowances + item.non_epf_allowances;
-                      const epf = Math.round((earned + item.allowances) * EPF_EMPLOYEE_RATE * 100) / 100;
+                      const f = item.employment_factor ?? 1;
+                      const allow = item.allowances * f, nonEpfAllow = item.non_epf_allowances * f;
+                      const gross = earned + item.overtime_pay + item.bonuses + allow + nonEpfAllow + item.arrears;
+                      const epf = Math.round((earned + allow + item.arrears) * EPF_EMPLOYEE_RATE * 100) / 100;
                       const net = gross - epf - item.other_deductions; // pre-PAYE, indicative
                       return (
                         <tr key={item.employee_id} className="border-t border-border">

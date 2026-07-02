@@ -42,6 +42,10 @@ export interface AccountSettings {
   // Payroll — global fallback (component GL mapping takes priority)
   wages_expense_account_id:             string | null;
   payroll_clearing_account_id:          string | null;
+  // Governance — invoice approval + credit control (optional: columns added later,
+  // not yet in generated DB types until `supabase gen types` is re-run).
+  invoice_approval_threshold?:          number | null;   // total ≥ this requires approval (null/0 = off)
+  enforce_credit_limit?:                boolean | null;   // block posting past customer credit limit
 }
 
 // ─── AccountSettingsCompleteness — shape returned by get_account_settings_completeness RPC
@@ -104,7 +108,7 @@ export function useUpsertAccountSettings() {
       const { data, error } = await supabase
         .from("account_settings")
         .upsert(
-          { tenant_id: appUser.tenant_id, ...settings },
+          { tenant_id: appUser.tenant_id, ...settings } as any,
           { onConflict: "tenant_id" }
         )
         .select()

@@ -378,6 +378,9 @@ export interface AttendanceSummaryRow {
   half_days: number;
   expected_days: number;     // working days in period, Sundays + holidays excluded
   leave_days: number;        // approved/settled leave clipped to the period
+  non_employed_days: number; // working days outside the employment window (unpaid, not absent)
+  review_days: number;       // single-punch days flagged "needs review"
+  undertime_minutes: number; // late minutes on worked days (for optional undertime policy)
   std_hours_per_day: number; // shift standard hours/day (for OT-rate derivation)
   ot_multiplier: number;     // shift normal OT multiplier
   holiday_ot_multiplier: number; // shift rest-day / holiday OT multiplier
@@ -407,6 +410,9 @@ export function useAttendanceSummaryForPeriod(periodStart?: string, periodEnd?: 
           half_days: Number(d.half_days) || 0,
           expected_days: Number(d.expected_days) || 0,
           leave_days: Number(d.leave_days) || 0,
+          non_employed_days: Number(d.non_employed_days) || 0,
+          review_days: Number(d.review_days) || 0,
+          undertime_minutes: Number(d.undertime_minutes) || 0,
           std_hours_per_day: Number(d.std_hours_per_day) || 8,
           ot_multiplier: Number(d.ot_multiplier) || 1.5,
           holiday_ot_multiplier: Number(d.holiday_ot_multiplier) || 2.0,
@@ -485,7 +491,7 @@ export function useSaveStandardHours() {
       standard_hours: number; break_minutes: number;
       ot_multiplier?: number; break_after_hours?: number;
       half_day_hours?: number; holiday_ot_multiplier?: number;
-      ot_includes_allowances?: boolean;
+      ot_includes_allowances?: boolean; deduct_undertime?: boolean; ot_cap_hours?: number;
     }) => {
       const tenant = appUser?.tenant_id;
       if (!tenant) throw new Error("No tenant");
@@ -500,6 +506,8 @@ export function useSaveStandardHours() {
       if (input.half_day_hours != null) fields.half_day_hours = input.half_day_hours;
       if (input.holiday_ot_multiplier != null) fields.holiday_ot_multiplier = input.holiday_ot_multiplier;
       if (input.ot_includes_allowances != null) fields.ot_includes_allowances = input.ot_includes_allowances;
+      if (input.deduct_undertime != null) fields.deduct_undertime = input.deduct_undertime;
+      if (input.ot_cap_hours != null) fields.ot_cap_hours = input.ot_cap_hours;
       // One default shift per tenant (enforced by uq_work_shifts_one_default).
       const { data: existing } = await supabase
         .from("work_shifts")

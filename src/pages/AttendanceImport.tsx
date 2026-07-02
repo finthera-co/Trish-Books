@@ -85,6 +85,8 @@ export default function AttendanceImport() {
   const [halfDayHours, setHalfDayHours] = useState("4");
   const [holidayMult, setHolidayMult] = useState("2");
   const [otInclAllow, setOtInclAllow] = useState(false);
+  const [deductUndertime, setDeductUndertime] = useState(false);
+  const [otCap, setOtCap] = useState("0");
   useEffect(() => {
     if (defaultShift === undefined) return; // still loading
     if (defaultShift) {
@@ -96,6 +98,8 @@ export default function AttendanceImport() {
       setHalfDayHours(String(s.half_day_hours ?? 4));
       setHolidayMult(String(s.holiday_ot_multiplier ?? 2));
       setOtInclAllow(!!s.ot_includes_allowances);
+      setDeductUndertime(!!s.deduct_undertime);
+      setOtCap(String(s.ot_cap_hours ?? 0));
     }
   }, [defaultShift]);
 
@@ -414,10 +418,19 @@ export default function AttendanceImport() {
               <Input type="number" min="1" step="0.1" value={holidayMult} onChange={(e) => setHolidayMult(e.target.value)} />
               <p className="text-[11px] text-muted-foreground mt-1">Rate for work on off-days / holidays.</p>
             </div>
+            <div>
+              <Label>OT cap (hours / period)</Label>
+              <Input type="number" min="0" step="1" value={otCap} onChange={(e) => setOtCap(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground mt-1">Compliance warning if exceeded. 0 = none.</p>
+            </div>
           </div>
           <label className="flex items-center gap-2 text-sm">
             <Checkbox checked={otInclAllow} onCheckedChange={(c) => setOtInclAllow(!!c)} />
             Base overtime on basic + allowances (otherwise basic only)
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={deductUndertime} onCheckedChange={(c) => setDeductUndertime(!!c)} />
+            Deduct undertime — late minutes reduce a salaried employee's paid days
           </label>
           <div className="flex flex-wrap items-center gap-3">
             <Button
@@ -431,6 +444,8 @@ export default function AttendanceImport() {
                 half_day_hours: Number(halfDayHours) || 0,
                 holiday_ot_multiplier: Number(holidayMult) || 2,
                 ot_includes_allowances: otInclAllow,
+                deduct_undertime: deductUndertime,
+                ot_cap_hours: Number(otCap) || 0,
               })}
             >
               {saveStandardHours.isPending ? "Saving..." : "Save standard hours"}

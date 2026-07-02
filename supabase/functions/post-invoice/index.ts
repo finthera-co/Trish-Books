@@ -30,32 +30,53 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
     const admin = createClient(supabaseUrl, serviceKey);
 
-    const { data: { user }, error: authErr } = await userClient.auth.getUser();
-    if (authErr || !user) return json({ ok: false, error: "Unauthorized" }, 200);
-
-    const { data: appUser } = await admin
-      .from("users")
-      .select("id, tenant_id, roles(role_name)")
-      .eq("auth_user_id", user.id)
-      .single();
-    if (!appUser?.tenant_id) return json({ ok: false, error: "User not in a tenant" }, 200);
-
-    // Authorization: only Primary Admin / Company Admin / Super Admin can post
-    const role = (appUser as any).roles?.role_name as string | undefined;
-    const allowed = ["Super Admin", "Primary Admin", "Company Admin", "Accountant"];
-    if (!role || !allowed.includes(role)) {
-      return json({ ok: false, error: `Role "${role || "unknown"}" cannot post invoices` }, 200);
-    }
-
     const body = await req.json();
-    const { invoice_id, action } = body as { invoice_id: string; action: "post" | "void" };
+    const { invoice_id, action } = body as {
+      invoice_id: string;
+      action: "post" | "void";
+      system?: boolean;
+      tenant_id?: string;
+      actor_user_id?: string;
+    };
     if (!invoice_id) return json({ ok: false, error: "invoice_id is required" }, 200);
+
+    // Two auth modes:
+    //  • System (cron) — authenticates with the service-role key and carries the
+    //    acting tenant + user in the body (used by generate-recurring-invoices).
+    //  • Interactive — a user JWT, gated to finance roles.
+    const token = authHeader.replace(/^Bearer\s+/i, "");
+    const isSystem = token === serviceKey;
+
+    let appUser: { id: string; tenant_id: string };
+    if (isSystem) {
+      if (!body.tenant_id || !body.actor_user_id) {
+        return json({ ok: false, error: "System call requires tenant_id and actor_user_id" }, 200);
+      }
+      appUser = { id: body.actor_user_id, tenant_id: body.tenant_id };
+    } else {
+      const userClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: { user }, error: authErr } = await userClient.auth.getUser();
+      if (authErr || !user) return json({ ok: false, error: "Unauthorized" }, 200);
+
+      const { data: au } = await admin
+        .from("users")
+        .select("id, tenant_id, roles(role_name)")
+        .eq("auth_user_id", user.id)
+        .single();
+      if (!au?.tenant_id) return json({ ok: false, error: "User not in a tenant" }, 200);
+
+      // Authorization: only Primary Admin / Company Admin / Super Admin / Accountant can post
+      const role = (au as any).roles?.role_name as string | undefined;
+      const allowed = ["Super Admin", "Primary Admin", "Company Admin", "Accountant"];
+      if (!role || !allowed.includes(role)) {
+        return json({ ok: false, error: `Role "${role || "unknown"}" cannot post invoices` }, 200);
+      }
+      appUser = { id: au.id, tenant_id: au.tenant_id };
+    }
 
     // ── Fetch invoice + lines (with product inventory linkage) ────────
     const { data: invoice, error: invErr } = await admin
@@ -223,6 +244,13 @@ Deno.serve(async (req) => {
     const total = Number(invoice.total_amount || 0);
     if (total <= 0) errors.push("Total must be greater than 0");
 
+    // Multi-currency: document amounts (total/subtotal/tax) are in invoice.currency;
+    // the GL is booked in BASE (LKR) at the invoice's exchange_rate. For LKR
+    // invoices fx === 1 and toBase() is a no-op, so existing behavior is unchanged.
+    // COGS/Inventory are already in base (inventory cost is held in LKR) and are NOT scaled.
+    const fx = Number((invoice as any).exchange_rate) || 1;
+    const toBase = (n: number) => Math.round(n * fx * 100) / 100;
+
     // ── Closed period check ─────────────────────────────────────────
     const { data: closedPeriods } = await admin
       .from("fiscal_periods")
@@ -239,7 +267,7 @@ Deno.serve(async (req) => {
     // ── Resolve account settings ────────────────────────────────────
     const { data: settings } = await admin
       .from("account_settings")
-      .select("ar_account_id, sales_account_id, tax_payable_account_id, vat_output_payable_account_id, cogs_account_id, inventory_asset_account_id")
+      .select("ar_account_id, sales_account_id, tax_payable_account_id, vat_output_payable_account_id, cogs_account_id, inventory_asset_account_id, enforce_credit_limit")
       .eq("tenant_id", appUser.tenant_id)
       .maybeSingle();
 
@@ -387,11 +415,11 @@ Deno.serve(async (req) => {
               source_type: "invoice",
               source_id: invoice_id,
               source_line_id: it.id,
-              base_amount: t.base,
-              tax_amount: t.amount, // TODO(multi-currency): convert at document FX rate once FX infrastructure exists
-              tax_amount_txn_currency: t.amount,
+              base_amount: Math.round(t.base * fx * 100) / 100,
+              tax_amount: Math.round(t.amount * fx * 100) / 100, // base currency (LKR)
+              tax_amount_txn_currency: t.amount,                  // document currency
               currency: invoice.currency || "LKR",
-              fx_rate: 1,
+              fx_rate: fx,
               rate_applied: t.rate,
               transaction_date: issue,
             });
@@ -451,6 +479,47 @@ Deno.serve(async (req) => {
         if (!a) errors.push(`Account ${id} not found`);
         else if (a.tenant_id !== appUser.tenant_id) errors.push(`Account ${a.account_name} belongs to another tenant`);
         else if (!a.is_active) errors.push(`Account "${a.account_name}" is inactive`);
+      }
+    }
+
+    // ── Governance gate: approval workflow + credit control ──────────
+    // An 'approved' invoice overrides credit hold/limit (an approver knowingly
+    // signed off). System (cron) auto-post respects the same gate.
+    const approvalStatus = (invoice as any).approval_status as string | undefined;
+    if (approvalStatus === "pending") {
+      errors.push("Invoice requires approval before it can be posted (Sales → Invoices → Approve)");
+    } else if (approvalStatus === "rejected") {
+      errors.push("Invoice approval was rejected; it cannot be posted");
+    }
+
+    if (invoice.customer_id) {
+      const { data: cust } = await admin
+        .from("customers")
+        .select("name, credit_limit, credit_hold")
+        .eq("id", invoice.customer_id)
+        .eq("tenant_id", appUser.tenant_id)
+        .maybeSingle();
+      if (cust && approvalStatus !== "approved") {
+        if (cust.credit_hold) {
+          errors.push(`Customer "${cust.name}" is on credit hold. Approve the invoice to override.`);
+        }
+        const creditLimit = Number(cust.credit_limit || 0);
+        if (settings?.enforce_credit_limit !== false && creditLimit > 0) {
+          const { data: openTxns } = await admin
+            .from("ar_transactions")
+            .select("outstanding_amount")
+            .eq("tenant_id", appUser.tenant_id)
+            .eq("customer_id", invoice.customer_id)
+            .in("status", ["OPEN", "PARTIALLY_PAID"]);
+          const outstanding = (openTxns || []).reduce((s: number, r: any) => s + Number(r.outstanding_amount || 0), 0);
+          if (outstanding + total > creditLimit + EPSILON) {
+            errors.push(
+              `Posting would exceed "${cust.name}" credit limit ` +
+              `(limit ${creditLimit.toFixed(2)}, current outstanding ${outstanding.toFixed(2)}, ` +
+              `this invoice ${total.toFixed(2)}). Approve the invoice to override.`,
+            );
+          }
+        }
       }
     }
 
@@ -555,24 +624,24 @@ Deno.serve(async (req) => {
 
     const journalLines: { account_id: string; debit: number; credit: number }[] = [];
 
-    // Dr AR (single line, customer-tagged via subledger)
-    journalLines.push({ account_id: arAccountId!, debit: total, credit: 0 });
+    // Dr AR (single line, customer-tagged via subledger) — in base currency
+    journalLines.push({ account_id: arAccountId!, debit: toBase(total), credit: 0 });
 
-    // Cr Revenue accounts (grouped)
+    // Cr Revenue accounts (grouped) — base currency
     for (const [acctId, amt] of revenueByAccount) {
-      if (amt > 0) journalLines.push({ account_id: acctId, debit: 0, credit: amt });
+      if (amt > 0) journalLines.push({ account_id: acctId, debit: 0, credit: toBase(amt) });
     }
 
-    // Cr Tax Payable (legacy header-tax path only)
+    // Cr Tax Payable (legacy header-tax path only) — base currency
     if (taxAmount > 0 && taxPayableId) {
-      journalLines.push({ account_id: taxPayableId, debit: 0, credit: taxAmount });
+      journalLines.push({ account_id: taxPayableId, debit: 0, credit: toBase(taxAmount) });
     }
 
     // Cr each tax code's output liability account separately (aggregated
-    // per code across lines) — tax engine path
+    // per code across lines) — tax engine path, base currency
     for (const [, agg] of taxByCode) {
       if (agg.amount > 0) {
-        journalLines.push({ account_id: agg.account, debit: 0, credit: agg.amount });
+        journalLines.push({ account_id: agg.account, debit: 0, credit: toBase(agg.amount) });
       }
     }
 
@@ -696,10 +765,10 @@ Deno.serve(async (req) => {
       customer_id: invoice.customer_id,
       journal_id: je.id,
       journal_line_id: arLineId,
-      debit: total,
+      debit: toBase(total),
       credit: 0,
-      amount: total,
-      balance: total,
+      amount: toBase(total),
+      balance: toBase(total),
       document_type: "invoice",
       document_id: invoice_id,
       invoice_no: invoice.invoice_number,
@@ -715,8 +784,8 @@ Deno.serve(async (req) => {
       document_ref:     invoice.invoice_number,
       transaction_date: invoice.issue_date,
       due_date:         invoice.due_date,
-      amount:           total,
-      outstanding_amount: total,
+      amount:           toBase(total),
+      outstanding_amount: toBase(total),
       status:           "OPEN",
       journal_entry_id: je.id,
       journal_line_id:  arLineId,

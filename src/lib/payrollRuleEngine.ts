@@ -50,6 +50,7 @@ export interface EmployeePayrollInput {
   allowances?: number;          // attract EPF/ETF
   non_epf_allowances?: number;  // taxable, but excluded from EPF/ETF
   other_deductions?: number;
+  loan_deduction?: number;      // salary-advance / loan repayment this run
 }
 
 export type PayrollContext = Record<string, number>;
@@ -177,12 +178,13 @@ export function runPayrollForEmployee(
   context.ALLOWANCES = employee.allowances || 0;
   context.NON_EPF_ALLOWANCES = employee.non_epf_allowances || 0;
   context.OTHER_DEDUCTIONS = employee.other_deductions || 0;
+  context.LOAN_DEDUCTION = employee.loan_deduction || 0;
 
   const traces: Record<string, CalculationTrace> = {};
   const compMap = new Map(components.map((c) => [c.code, c]));
 
   // Trace the inputs
-  for (const code of ["BASIC", "OVERTIME", "BONUS", "ALLOWANCES", "NON_EPF_ALLOWANCES", "OTHER_DEDUCTIONS"]) {
+  for (const code of ["BASIC", "OVERTIME", "BONUS", "ALLOWANCES", "NON_EPF_ALLOWANCES", "OTHER_DEDUCTIONS", "LOAN_DEDUCTION"]) {
     const comp = compMap.get(code);
     if (comp) traces[code] = inputTrace(code, comp.name, context[code]);
   }
@@ -258,7 +260,7 @@ export function runPayrollForEmployee(
     traces,
     applied_rules: applied,
     gross_pay: context.GROSS_PAY || 0,
-    total_deductions: (context.EPF_EMPLOYEE || 0) + (context.OTHER_DEDUCTIONS || 0),
+    total_deductions: (context.EPF_EMPLOYEE || 0) + (context.OTHER_DEDUCTIONS || 0) + (context.LOAN_DEDUCTION || 0),
     net_pay: context.NET_PAY || 0,
     employee_epf: context.EPF_EMPLOYEE || 0,
     employer_epf: context.EPF_EMPLOYER || 0,

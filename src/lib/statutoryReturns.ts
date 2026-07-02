@@ -7,8 +7,12 @@ export interface StatutoryTable { headers: string[]; rows: Cell[][] }
 
 const n2 = (v: any) => (Number(v) || 0).toFixed(2);
 const name = (e: any) => `${e?.first_name ?? ""} ${e?.last_name ?? ""}`.trim();
-// EPF/ETF base = earned basic (full basic minus no-pay deduction) + allowances — matches EPF_BASE.
-const epfBaseOf = (it: any) => Number(it.basic_salary || 0) - Number(it.attendance_deduction || 0) + Number(it.allowances || 0);
+// EPF/ETF base: prefer the engine's actual EPF_BASE stored on the run item (honours
+// any customised EPF_BASE rule); fall back to recomputing it for older runs.
+const epfBaseOf = (it: any) =>
+  it.epf_base != null
+    ? Number(it.epf_base)
+    : Number(it.basic_salary || 0) - Number(it.attendance_deduction || 0) + Number(it.allowances || 0);
 
 /** EPF/ETF contribution return — one row per employee, totals footer. */
 export function buildEpfEtfReturn(items: any[]): StatutoryTable {

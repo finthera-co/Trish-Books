@@ -80,6 +80,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "GL Verification", path: "/accounting/gl-verify", icon: Shield },
       { label: "Receive Payment", path: "/accounting/receive-payment", icon: CreditCard },
       { label: "Credit Notes", path: "/accounting/credit-notes", icon: Receipt },
+      { label: "Foreign Exchange", path: "/accounting/foreign-exchange", icon: Coins },
       { label: "AR Aging", path: "/accounting/ar-aging", icon: Calendar },
       { label: "Vendors", path: "/accounting/vendors", icon: Store },
       { label: "Bills", path: "/accounting/bills", icon: FileText },
@@ -110,7 +111,9 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
     color: "bg-[hsl(var(--success))]",
     basePath: "/sales",
     sidebarItems: [
+      { label: "Quotes", path: "/sales/quotes", icon: FileText },
       { label: "Invoices", path: "/sales/invoices", icon: Wallet },
+      { label: "Recurring", path: "/sales/recurring-invoices", icon: RefreshCw },
       { label: "Expenses", path: "/expenses/tracker", icon: Receipt },
       { label: "Customers", path: "/sales/customers", icon: Contact },
       { label: "Reminders", path: "/sales/notifications", icon: Bell },
@@ -142,6 +145,9 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "Device Linking", path: "/payroll/biometric-linking", icon: Fingerprint },
       { label: "Leave", path: "/payroll/leave", icon: CalendarOff },
       { label: "Liability Tracking", path: "/payroll/liabilities", icon: AlertTriangle },
+      { label: "Recurring Pay", path: "/payroll/recurring", icon: DollarSign },
+      { label: "Gratuity", path: "/payroll/gratuity", icon: Landmark },
+      { label: "Loans & Advances", path: "/payroll/loans", icon: Banknote },
     ],
   },
   reports: {

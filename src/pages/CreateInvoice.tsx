@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -75,6 +75,10 @@ const addDays = (isoDate: string, days: number) => {
 
 export default function CreateInvoice() {
   const navigate = useNavigate();
+  // When an :id route param is present we are editing an existing DRAFT invoice
+  // in place (same form, no new serial). Posted/voided invoices are not editable.
+  const { id: editId } = useParams<{ id: string }>();
+  const isEdit = !!editId;
   const { appUser } = useAuth();
   const queryClient = useQueryClient();
   const { data: customers } = useCustomers();
@@ -105,23 +109,103 @@ export default function CreateInvoice() {
   const [dateOfSupply, setDateOfSupply] = useState("");
   const [placeOfSupply, setPlaceOfSupply] = useState("");
   const [modeOfPayment, setModeOfPayment] = useState("");  // "" = Not specified
+  // Multi-currency: document currency + foreign→base (LKR) rate at issue date.
+  const [currency, setCurrency] = useState("LKR");
+  const [exchangeRate, setExchangeRate] = useState(1);
   const [notes, setNotes] = useState("");
   const [terms, setTerms] = useState("");
   const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
   const [saving, setSaving] = useState(false);
   const [posting, setPosting] = useState(false);
+  // Guards while an existing draft is being hydrated in edit mode.
+  const [loadingExisting, setLoadingExisting] = useState(isEdit);
 
-  // Inherit the selected customer's default payment term.
+  // ── Edit mode: hydrate the form from the existing DRAFT invoice ──────
+  // Posted/voided invoices are immutable (their GL is already written), so we
+  // bounce the user back to the list if they reach this route for one.
   useEffect(() => {
+    if (!editId) return;
+    let cancelled = false;
+    (async () => {
+      const { data: inv, error } = await supabase
+        .from("invoices")
+        .select("*, invoice_items(*)")
+        .eq("id", editId)
+        .single();
+      if (cancelled) return;
+      if (error || !inv) {
+        toast.error("Invoice not found");
+        navigate("/sales/invoices");
+        return;
+      }
+      if (inv.status !== "draft" || inv.journal_entry_id) {
+        toast.error("Only draft invoices can be edited");
+        navigate("/sales/invoices");
+        return;
+      }
+      setCustomerId(inv.customer_id ?? "");
+      setInvoiceNumber(inv.invoice_number ?? "");
+      setIssueDate(inv.issue_date ?? new Date().toISOString().split("T")[0]);
+      setDueDate(inv.due_date ?? "");
+      setPaymentTerms(inv.payment_terms ?? "net_30");
+      setBranchCode(inv.branch_code ?? "");
+      setDateOfSupply(inv.date_of_supply ?? "");
+      setPlaceOfSupply(inv.place_of_supply ?? "");
+      setModeOfPayment(inv.mode_of_payment ?? "");
+      setCurrency((inv as any).currency ?? "LKR");
+      setExchangeRate(Number((inv as any).exchange_rate) || 1);
+      setNotes(inv.notes ?? "");
+      setTerms(inv.terms ?? "");
+      const items = ((inv as any).invoice_items ?? []) as any[];
+      setLines(
+        items.length
+          ? items.map((it) => ({
+              id: crypto.randomUUID(),
+              product_id: it.product_id ?? "",
+              description: it.description ?? "",
+              qty: Number(it.quantity) || 1,
+              rate: Number(it.unit_price) || 0,
+              tax_sel: it.tax_group_id ? `g:${it.tax_group_id}` : it.tax_code_id ? `c:${it.tax_code_id}` : "",
+              inclusive: !!it.is_tax_inclusive,
+              discount: Number(it.discount_amount) || 0,
+              account_id: it.account_id ?? "",
+            }))
+          : [emptyLine()]
+      );
+      setLoadingExisting(false);
+    })();
+    return () => { cancelled = true; };
+  }, [editId, navigate]);
+
+  // Inherit the selected customer's default payment term. Skipped while an
+  // existing draft is hydrating so we don't clobber its saved term.
+  useEffect(() => {
+    if (loadingExisting) return;
     const c = customers?.find((x) => x.id === customerId);
     if (c?.payment_terms) setPaymentTerms(c.payment_terms);
-  }, [customerId, customers]);
+  }, [customerId, customers, loadingExisting]);
 
   // Auto-compute due date = issue date + term days. The user can still override
   // the date manually afterwards.
   useEffect(() => {
+    if (loadingExisting) return; // don't overwrite a hydrating draft's saved due date
     if (issueDate) setDueDate(addDays(issueDate, termToDays(paymentTerms)));
-  }, [issueDate, paymentTerms]);
+  }, [issueDate, paymentTerms, loadingExisting]);
+
+  // Auto-fill the FX rate from the latest stored rate for the chosen currency.
+  // LKR is the base currency (rate 1). The user can override the fetched rate.
+  useEffect(() => {
+    if (loadingExisting) return;
+    if (currency === "LKR") { setExchangeRate(1); return; }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.rpc("fx_rate" as any, {
+        p_tenant_id: appUser?.tenant_id, p_currency: currency, p_date: issueDate,
+      });
+      if (!cancelled && data != null) setExchangeRate(Number(data) || 1);
+    })();
+    return () => { cancelled = true; };
+  }, [currency, issueDate, loadingExisting, appUser?.tenant_id]);
 
   // Account lookups (for journal preview only)
   const arAccount = useMemo(
@@ -342,42 +426,70 @@ export default function CreateInvoice() {
     setter(true);
 
     try {
-      // Generate the IRD-compliant serial (YYMMM_QQQQ_XXXXX) atomically before
-      // the insert. The RPC increments a row-locked per-tenant/branch/month
-      // counter, so concurrent saves never collide.
-      const { data: serial, error: serialErr } = await supabase
-        .rpc("next_invoice_serial", {
-          p_branch_code: branchCode.trim(),
-          p_issue_date: issueDate,
-        });
-      if (serialErr || !serial) throw new Error(serialErr?.message || "Failed to generate invoice serial");
+      // The shared header payload — identical for create and edit. The serial
+      // and tenant are only set on create (an edit keeps its existing number).
+      const headerFields = {
+        customer_id: customerId,
+        issue_date: issueDate,
+        due_date: dueDate || null,
+        payment_terms: paymentTerms,
+        date_of_supply: dateOfSupply || issueDate,
+        place_of_supply: placeOfSupply.trim() || null,
+        mode_of_payment: modeOfPayment || null,
+        currency,
+        exchange_rate: exchangeRate,
+        branch_code: branchCode.trim(),
+        total_amount: total,
+        subtotal,
+        tax_amount: totalTax,
+        discount_amount: totalDiscount,
+        notes: notes || null,
+        terms: terms || null,
+        status: "draft",
+      };
 
-      const { data: invoice, error: invErr } = await supabase
-        .from("invoices")
-        .insert({
-          tenant_id: appUser?.tenant_id,
-          customer_id: customerId,
-          invoice_number: serial,
-          issue_date: issueDate,
-          due_date: dueDate || null,
-          payment_terms: paymentTerms,
-          date_of_supply: dateOfSupply || issueDate,
-          place_of_supply: placeOfSupply.trim() || null,
-          mode_of_payment: modeOfPayment || null,
-          branch_code: branchCode.trim(),
-          total_amount: total,
-          subtotal,
-          tax_amount: totalTax,
-          discount_amount: totalDiscount,
-          notes: notes || null,
-          terms: terms || null,
-          status: "draft",
-        } as any)
-        .select()
-        .single();
+      let invoice: { id: string };
 
-      if (invErr) throw invErr;
-      setInvoiceNumber(serial);
+      if (isEdit) {
+        // Edit an existing draft in place: update the header, then fully
+        // replace its line items (drafts have no dependent GL/stock rows yet).
+        const { data: upd, error: updErr } = await supabase
+          .from("invoices")
+          .update(headerFields as any)
+          .eq("id", editId!)
+          .eq("status", "draft") // belt-and-braces: never touch a posted invoice
+          .select()
+          .single();
+        if (updErr) throw updErr;
+        if (!upd) throw new Error("Draft no longer editable (it may have been posted)");
+        invoice = upd;
+        const { error: delErr } = await supabase.from("invoice_items").delete().eq("invoice_id", editId!);
+        if (delErr) throw delErr;
+      } else {
+        // Generate the IRD-compliant serial (YYMMM_QQQQ_XXXXX) atomically before
+        // the insert. The RPC increments a row-locked per-tenant/branch/month
+        // counter, so concurrent saves never collide.
+        const { data: serial, error: serialErr } = await supabase
+          .rpc("next_invoice_serial", {
+            p_branch_code: branchCode.trim(),
+            p_issue_date: issueDate,
+          });
+        if (serialErr || !serial) throw new Error(serialErr?.message || "Failed to generate invoice serial");
+
+        const { data: created, error: invErr } = await supabase
+          .from("invoices")
+          .insert({
+            tenant_id: appUser?.tenant_id,
+            invoice_number: serial,
+            created_by: appUser?.id,
+            ...headerFields,
+          } as any)
+          .select()
+          .single();
+        if (invErr) throw invErr;
+        invoice = created;
+        setInvoiceNumber(serial);
+      }
 
       const itemInserts = lines
         .filter((l) => l.rate > 0 || l.description)
@@ -408,7 +520,7 @@ export default function CreateInvoice() {
       if (shouldPost) {
         await postInvoiceFn.mutateAsync({ invoice_id: invoice.id, action: "post" });
       } else {
-        toast.success("Invoice saved as draft");
+        toast.success(isEdit ? "Draft updated" : "Invoice saved as draft");
       }
 
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
@@ -432,18 +544,18 @@ export default function CreateInvoice() {
           </Button>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-semibold tracking-tight text-foreground">New invoice</h1>
+              <h1 className="text-xl font-semibold tracking-tight text-foreground">{isEdit ? "Edit invoice" : "New invoice"}</h1>
               <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">Draft</span>
             </div>
             <p className="text-[13px] text-muted-foreground mt-0.5">Add lines, map each to a revenue account, and post a balanced entry.</p>
           </div>
         </div>
         <div className="flex gap-2 shrink-0">
-          <Button variant="outline" size="sm" onClick={() => handleSave(false)} disabled={saving || posting}>
+          <Button variant="outline" size="sm" onClick={() => handleSave(false)} disabled={saving || posting || loadingExisting}>
             <Save className="w-4 h-4 mr-1.5" />
-            {saving ? "Saving…" : "Save draft"}
+            {saving ? "Saving…" : isEdit ? "Update draft" : "Save draft"}
           </Button>
-          <Button size="sm" onClick={() => handleSave(true)} disabled={saving || posting}>
+          <Button size="sm" onClick={() => handleSave(true)} disabled={saving || posting || loadingExisting}>
             <Send className="w-4 h-4 mr-1.5" />
             {posting ? "Posting…" : "Save & post"}
           </Button>
@@ -519,6 +631,31 @@ export default function CreateInvoice() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Currency</Label>
+                  <Select value={currency} onValueChange={setCurrency}>
+                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {["LKR", "USD", "EUR", "GBP", "INR", "AUD", "SGD", "JPY", "AED"].map((c) => (
+                        <SelectItem key={c} value={c}>{c}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {currency !== "LKR" && (
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Exchange rate (1 {currency} → LKR)</Label>
+                    <Input
+                      type="number"
+                      className="h-9 font-mono"
+                      value={exchangeRate || ""}
+                      onChange={(e) => setExchangeRate(Number(e.target.value))}
+                      min={0}
+                      step="0.0001"
+                    />
+                    <p className="text-[10px] text-muted-foreground">GL posts in LKR at this rate. Set rates in Settings → Exchange Rates.</p>
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
                 <div className="space-y-1.5">

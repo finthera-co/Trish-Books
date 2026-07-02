@@ -396,6 +396,58 @@ export function useUpdateInvoice() {
   });
 }
 
+// Approve or reject an invoice pending approval. The approve_invoice RPC enforces
+// the approver's role AND segregation of duties (approver ≠ creator) server-side.
+export function useApproveInvoice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, decision, note }: { id: string; decision: "approved" | "rejected"; note?: string }) => {
+      const { data, error } = await supabase.rpc("approve_invoice" as any, {
+        p_invoice_id: id,
+        p_decision: decision,
+        p_note: note ?? null,
+      });
+      if (error) throw error;
+      return { data, decision };
+    },
+    onSuccess: ({ decision }) => {
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      toast.success(decision === "approved" ? "Invoice approved" : "Invoice rejected");
+    },
+    onError: (e: Error) => toast.error(e.message.replace(/^.*?:\s*/, "")),
+  });
+}
+
+// Delete a DRAFT invoice (and its line items). Guards against removing a
+// posted invoice — those carry GL/subledger rows and must be voided instead.
+export function useDeleteInvoice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, invoice_number }: { id: string; invoice_number?: string }) => {
+      const { data: inv, error: fetchErr } = await supabase
+        .from("invoices")
+        .select("status, journal_entry_id")
+        .eq("id", id)
+        .single();
+      if (fetchErr) throw fetchErr;
+      if (inv.status !== "draft" || inv.journal_entry_id) {
+        throw new Error("Only unposted draft invoices can be deleted. Void a posted invoice instead.");
+      }
+      const { error: itemErr } = await supabase.from("invoice_items").delete().eq("invoice_id", id);
+      if (itemErr) throw itemErr;
+      // Conditional delete: refuse to remove the header if it slipped out of draft.
+      const { error: delErr } = await supabase.from("invoices").delete().eq("id", id).eq("status", "draft");
+      if (delErr) throw delErr;
+      writeAuditLog("Invoice Deleted", "invoices", id, { invoice_number });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      toast.success("Draft invoice deleted");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
 // Customers
 export function useCustomers() {
   return useQuery({

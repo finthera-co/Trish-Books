@@ -12,12 +12,17 @@ import { formatCurrency } from "@/lib/currency";
 import { useCustomers } from "@/hooks/useData";
 import { useInvoices } from "@/hooks/useData";
 import { useARAccounts, useReceivePaymentWithGL } from "@/hooks/useARModule";
+import { useAccountSettings } from "@/hooks/useAccountSettings";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function ReceivePayment() {
   const navigate = useNavigate();
   const { data: customers } = useCustomers();
   const { data: invoices } = useInvoices();
   const { data: accounts } = useARAccounts();
+  const { data: settings } = useAccountSettings();
+  const { appUser } = useAuth();
   const receivePayment = useReceivePaymentWithGL();
 
   const [customerId, setCustomerId] = useState("");
@@ -61,6 +66,23 @@ export default function ReceivePayment() {
             : Math.round((totalWithheld * amount / totalPayment) * 100) / 100)
         : 0;
       allocatedWht += wht;
+
+      // Realized FX for a foreign-currency invoice: clear AR at the invoice's
+      // booked rate, settle cash at today's rate, plug the difference to FX P&L.
+      const inv = (invoices || []).find((i: any) => i.id === invoiceId) as any;
+      let fx: { invoiceRate: number; paymentRate: number; fxGainAccountId: string; fxLossAccountId: string } | null = null;
+      if (inv?.currency && inv.currency !== "LKR" && settings?.fx_gain_account_id && settings?.fx_loss_account_id) {
+        const { data: rate } = await supabase.rpc("fx_rate" as any, {
+          p_tenant_id: appUser?.tenant_id, p_currency: inv.currency, p_date: paymentDate,
+        });
+        fx = {
+          invoiceRate: Number(inv.exchange_rate) || 1,
+          paymentRate: Number(rate) || Number(inv.exchange_rate) || 1,
+          fxGainAccountId: settings.fx_gain_account_id,
+          fxLossAccountId: settings.fx_loss_account_id,
+        };
+      }
+
       await receivePayment.mutateAsync({
         invoice_id: invoiceId,
         customer_id: customerId,
@@ -71,6 +93,7 @@ export default function ReceivePayment() {
         bank_account_id: bankAccountId,
         ar_account_id: arAccountId,
         wht_amount: wht > 0 ? wht : undefined,
+        fx,
       });
     }
     navigate("/sales/customers/" + customerId);

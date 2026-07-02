@@ -5,7 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { usePayrollRunItems, useApprovePayrollRun, useProcessPayrollRun, useVoidPayrollRun, usePayrollGLPreview, usePublishPayslips } from "@/hooks/usePayroll";
+import { usePayrollRunItems, useApprovePayrollRun, useProcessPayrollRun, useVoidPayrollRun, usePayrollGLPreview, usePublishPayslips, usePayrollSettings } from "@/hooks/usePayroll";
+
+// Round a cash payee's take-home to the nearest configured denomination.
+const cashNet = (item: any, denom: number) => {
+  const net = Number(item.net_pay || 0);
+  if (denom > 0 && item.payment_method !== "bank_transfer") return Math.round(net / denom) * denom;
+  return net;
+};
 import { formatCurrency } from "@/lib/currency";
 import { exportToCsv } from "@/lib/csvExport";
 import { CheckCircle, XCircle, Printer, FileText, Download, Eye, AlertTriangle, ExternalLink, Send } from "lucide-react";
@@ -113,6 +120,8 @@ function GLPreviewDialog({ runId, open, onOpenChange, onPost, isPosting }: {
 export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
   const navigate = useNavigate();
   const { data: items, isLoading } = usePayrollRunItems(run?.id);
+  const { data: payrollSettings } = usePayrollSettings();
+  const cashRound = Number(payrollSettings?.cash_round_to) || 0;
   const approveRun = useApprovePayrollRun();
   const processRun = useProcessPayrollRun();
   const voidRun = useVoidPayrollRun();
@@ -128,7 +137,7 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
     const headers = [
       "Employee", "Department", "EPF No.", "Basic Salary", "Worked Hours", "OT Hours", "Working Days", "Days Present",
       "Unpaid Absent", "No-Pay Deduction", "Overtime Pay", "Bonuses",
-      "Allowances", "Gross Pay", "Employee EPF (8%)", "Employer EPF (12%)", "Employer ETF (3%)",
+      "Allowances", "Non-EPF Allowances", "BIK (taxable)", "Gross Pay", "Employee EPF (8%)", "Employer EPF (12%)", "Employer ETF (3%)",
       "Other Deductions", "Net Pay", "Payment Method",
     ];
     const rows = items.map((item: any) => [
@@ -145,6 +154,8 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
       Number(item.overtime_pay).toFixed(2),
       Number(item.bonuses).toFixed(2),
       Number(item.allowances).toFixed(2),
+      Number(item.non_epf_allowances || 0).toFixed(2),
+      Number(item.bik_value || 0).toFixed(2),
       Number(item.gross_pay).toFixed(2),
       Number(item.employee_epf).toFixed(2),
       Number(item.employer_epf).toFixed(2),
@@ -231,9 +242,11 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground" title="Pro-rata no-pay attendance deduction">No-Pay</th>
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">OT</th>
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">Bonus</th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Allow.</th>
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground" title="Allowances that attract EPF/ETF">Allow.</th>
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground" title="Taxable allowances excluded from EPF/ETF">N-EPF Allow.</th>
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">Gross</th>
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">EPF 8%</th>
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground" title="Salary-advance / loan repayment">Loan</th>
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">Other</th>
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">Net Pay</th>
                   <th className="px-3 py-2 text-left font-medium text-muted-foreground">Method</th>
@@ -241,7 +254,7 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={12} className="text-center py-4 text-muted-foreground">Loading...</td></tr>
+                  <tr><td colSpan={14} className="text-center py-4 text-muted-foreground">Loading...</td></tr>
                 ) : items?.map((item: any) => (
                   <tr key={item.id} className="border-t border-border">
                     <td className="px-3 py-2 font-medium text-foreground">
@@ -259,10 +272,12 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
                     <td className="px-3 py-2 text-right">{Number(item.overtime_pay) > 0 ? formatCurrency(Number(item.overtime_pay)) : "-"}</td>
                     <td className="px-3 py-2 text-right">{Number(item.bonuses) > 0 ? formatCurrency(Number(item.bonuses)) : "-"}</td>
                     <td className="px-3 py-2 text-right">{Number(item.allowances) > 0 ? formatCurrency(Number(item.allowances)) : "-"}</td>
+                    <td className="px-3 py-2 text-right">{Number(item.non_epf_allowances) > 0 ? formatCurrency(Number(item.non_epf_allowances)) : "-"}</td>
                     <td className="px-3 py-2 text-right font-medium">{formatCurrency(Number(item.gross_pay))}</td>
                     <td className="px-3 py-2 text-right text-destructive">-{formatCurrency(Number(item.employee_epf))}</td>
+                    <td className="px-3 py-2 text-right text-destructive">{Number(item.loan_deduction) > 0 ? `-${formatCurrency(Number(item.loan_deduction))}` : "-"}</td>
                     <td className="px-3 py-2 text-right text-destructive">{Number(item.other_deductions) > 0 ? `-${formatCurrency(Number(item.other_deductions))}` : "-"}</td>
-                    <td className="px-3 py-2 text-right font-semibold text-primary">{formatCurrency(Number(item.net_pay))}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-primary" title={cashRound > 0 && item.payment_method !== "bank_transfer" ? `Exact: ${formatCurrency(Number(item.net_pay))} (rounded for cash)` : undefined}>{formatCurrency(cashNet(item, cashRound))}</td>
                     <td className="px-3 py-2">
                       <Badge variant="outline" className="text-xs">{item.payment_method === "bank_transfer" ? "Bank" : "Cash"}</Badge>
                     </td>

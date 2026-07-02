@@ -215,6 +215,8 @@ export interface PayComputeInput {
   otHours: number;
   absentDays: number;
   halfDays: number;
+  nonEmployedDays?: number;   // working days outside employment (mid-period joiner/leaver) — unpaid
+  undertimeMinutes?: number;  // late minutes; converted to a fractional unpaid day when the policy is on
   workingDays: number;        // denominator for salaried pro-rata
   otMultiplier?: number;      // normal OT rate, from the shift (default 1.5)
   stdHoursPerDay?: number;    // standard hours/day, from the shift (default 8)
@@ -254,8 +256,10 @@ export function computePayFromAttendance(i: PayComputeInput): PayComputeResult {
     };
   }
 
-  // monthly: pro-rate basic for unpaid absence (half day = 0.5 day lost), add OT on derived daily/hourly rate
-  const lostDays = i.absentDays + i.halfDays * 0.5;
+  // monthly: pro-rate basic for unpaid days (absence + half-day×0.5 + days outside
+  // employment for a mid-period joiner/leaver + undertime), add OT on the daily rate.
+  const undertimeDays = (i.undertimeMinutes ?? 0) / (60 * stdHoursPerDay);
+  const lostDays = i.absentDays + i.halfDays * 0.5 + (i.nonEmployedDays ?? 0) + undertimeDays;
   const proRataFactor = Math.max(0, (i.workingDays - lostDays) / i.workingDays);
   const earnedBasic = i.contractualBasic * proRataFactor;
 

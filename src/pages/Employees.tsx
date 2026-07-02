@@ -27,8 +27,9 @@ const EMPTY_FORM = {
   date_of_birth: "", gender: "", civil_status: "", personal_phone: "", email: "",
   address_line1: "", address_line2: "", city: "", district: "", postal_code: "",
   designation: "", department: "", hire_date: new Date().toISOString().split("T")[0],
+  termination_date: "",
   employment_type: "salaried", pay_rate_type: "monthly", status: "active", manager_id: "",
-  epf_number: "", is_epf_applicable: true, is_etf_applicable: true, is_paye_applicable: false,
+  epf_number: "", is_epf_applicable: true, is_etf_applicable: true, is_paye_applicable: false, bik_monthly_value: 0,
   bank_name: "", bank_branch: "", bank_account_no: "", bank_account_name: "",
   biometric_id: "", photo_url: "",
   create_login: true, login_password: "",
@@ -337,6 +338,7 @@ export default function Employees() {
                   <div><Label>Designation *</Label><Input value={form.designation} onChange={(e) => set("designation", e.target.value)} /></div>
                   <div><Label>Department</Label><Input value={form.department} onChange={(e) => set("department", e.target.value)} /></div>
                   <div><Label>Hire Date</Label><Input type="date" value={form.hire_date} onChange={(e) => set("hire_date", e.target.value)} /></div>
+                  <div><Label>Termination Date</Label><Input type="date" value={form.termination_date} onChange={(e) => set("termination_date", e.target.value)} /><p className="text-[11px] text-muted-foreground mt-1">Set on exit — pay is pro-rated to this day.</p></div>
                   <div><Label>Employment Type</Label>
                     <Select value={form.employment_type} onValueChange={onEmploymentTypeChange}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
@@ -406,6 +408,7 @@ export default function Employees() {
                 <div className="grid grid-cols-2 gap-4">
                   <div><Label>TIN No *</Label><Input value={form.tin_number} onChange={(e) => set("tin_number", e.target.value)} /></div>
                   <div><Label>EPF No</Label><Input value={form.epf_number} onChange={(e) => set("epf_number", e.target.value)} /></div>
+                  <div><Label>Non-cash benefit / month (BIK)</Label><Input type="number" min="0" value={form.bik_monthly_value} onChange={(e) => set("bik_monthly_value", e.target.value)} /><p className="text-[11px] text-muted-foreground mt-1">Taxable for PAYE only — vehicle, housing, etc.</p></div>
                 </div>
                 <div className="flex gap-6 py-1">
                   <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_epf_applicable} onChange={(e) => set("is_epf_applicable", e.target.checked)} /> EPF applicable</label>

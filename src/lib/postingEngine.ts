@@ -423,33 +423,62 @@ export interface PaymentReceivedWht {
  * When the customer withholds tax: Dr Bank (net) / Dr WHT Receivable /
  * Cr AR (gross) — and a wht_receivable row in the tax sub-ledger.
  */
+/**
+ * Realized FX on settlement of a foreign-currency invoice. invoiceRate is the
+ * rate AR was booked at; paymentRate is the rate on the settlement date. When
+ * both are 1 (LKR), all base conversions are no-ops and behavior is unchanged.
+ */
+export interface PaymentReceivedFx {
+  invoiceRate: number;
+  paymentRate: number;
+  fxGainAccountId: string;
+  fxLossAccountId: string;
+}
+
 export async function postPaymentReceived(params: {
   tenant_id: string;
   payment_id: string;
   customer_id: string;
-  amount: number;          // gross AR settled
+  amount: number;          // gross AR settled, in the invoice's DOCUMENT currency
   payment_date: string;
   bank_account_id: string;
   ar_account_id: string;
   reference?: string;
   invoice_id?: string;
   wht?: PaymentReceivedWht | null;
+  fx?: PaymentReceivedFx | null;
 }): Promise<PostingResult> {
   const wht = params.wht && params.wht.amount > 0 ? params.wht : null;
-  const netBank = Math.round((params.amount - (wht?.amount || 0)) * 100) / 100;
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  // Base-currency conversion. invoiceRate clears AR at its original value;
+  // paymentRate values the cash actually received. Difference = realized FX.
+  const invoiceRate = params.fx?.invoiceRate ?? 1;
+  const paymentRate = params.fx?.paymentRate ?? 1;
+  const arBase = round2(params.amount * invoiceRate);              // Cr AR (original rate)
+  const bankGrossBase = round2(params.amount * paymentRate);       // cash at settlement rate
+  const whtBase = round2((wht?.amount || 0) * paymentRate);
+  const netBank = round2(bankGrossBase - whtBase);
+  // Plug: total non-FX debits (bank + wht) minus AR credit.
+  const fxDelta = round2(bankGrossBase - arBase);
 
   const lines: PostingLine[] = [
     { account_id: params.bank_account_id, debit: netBank, credit: 0 },
-    { account_id: params.ar_account_id, debit: 0, credit: params.amount, customer_id: params.customer_id },
+    { account_id: params.ar_account_id, debit: 0, credit: arBase, customer_id: params.customer_id },
   ];
   if (wht) {
-    lines.splice(1, 0, { account_id: wht.wht_receivable_account_id, debit: wht.amount, credit: 0 });
+    lines.splice(1, 0, { account_id: wht.wht_receivable_account_id, debit: whtBase, credit: 0 });
+  }
+  // Realized FX: gain when cash (base) exceeds AR cleared, loss otherwise.
+  if (params.fx && Math.abs(fxDelta) >= 0.005) {
+    if (fxDelta > 0) lines.push({ account_id: params.fx.fxGainAccountId, debit: 0, credit: fxDelta });
+    else lines.push({ account_id: params.fx.fxLossAccountId, debit: -fxDelta, credit: 0 });
   }
 
   const result = await post({
     tenant_id: params.tenant_id,
     entry_date: params.payment_date,
-    description: `Payment received${params.reference ? ` - ${params.reference}` : ""}${wht ? " (customer withheld tax)" : ""}`,
+    description: `Payment received${params.reference ? ` - ${params.reference}` : ""}${wht ? " (customer withheld tax)" : ""}${params.fx ? " (FX settled)" : ""}`,
     source_type: "payment_received",
     source_id: params.payment_id,
     reference: params.reference,
@@ -461,7 +490,7 @@ export async function postPaymentReceived(params: {
         document_type: "payment_received",
         document_id: params.payment_id,
         debit: 0,
-        credit: params.amount,
+        credit: arBase,
       },
     ],
   });

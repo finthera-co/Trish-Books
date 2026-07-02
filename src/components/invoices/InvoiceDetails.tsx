@@ -10,8 +10,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { formatCurrency } from "@/lib/currency";
 import { downloadInvoicePdf } from "@/lib/invoiceDownload";
 import { shareInvoiceViaWhatsApp, shareInvoiceViaGmail, type ShareInvoiceArgs } from "@/lib/invoiceShare";
+import { useSendInvoiceEmail } from "@/hooks/useSendInvoiceEmail";
 import { toast } from "sonner";
-import { DollarSign, Plus, Clock, CheckCircle2, Download, Tag, Percent, MessageCircle, Mail, Send } from "lucide-react";
+import { DollarSign, Plus, Clock, CheckCircle2, Download, Tag, Percent, MessageCircle, Mail, Send, MailCheck } from "lucide-react";
 
 interface Props {
   invoice: any;
@@ -22,6 +23,7 @@ interface Props {
 const statusColors: Record<string, string> = {
   paid: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
   partial: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
+  posted: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
   sent: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
   overdue: "bg-destructive/10 text-destructive",
   draft: "bg-muted text-muted-foreground",
@@ -43,6 +45,12 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
   // After a payment is recorded we surface the option to send the invoice.
   const [showSend, setShowSend] = useState(false);
   const [sending, setSending] = useState<"whatsapp" | "gmail" | null>(null);
+  // Server-side email (Resend) — recipient/subject/body are editable before send.
+  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [emailTo, setEmailTo] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailMessage, setEmailMessage] = useState("");
+  const sendEmail = useSendInvoiceEmail();
   // Hard guard against a double-click recording the same payment twice.
   const savingRef = useRef(false);
 
@@ -114,13 +122,15 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
   const todayIso = new Date().toISOString().slice(0, 10);
   const isOverdue = isPosted && balanceDue > 0 && !!invoice.due_date && invoice.due_date < todayIso;
 
-  const effectiveStatus = balanceDue <= 0
-    ? "paid"
-    : isOverdue
-      ? "overdue"
-      : amountPaid > 0 || discountTotal > 0
-        ? "partial"
-        : invoice.status;
+  const effectiveStatus = invoice.status === "draft"
+    ? "draft"
+    : balanceDue <= 0
+      ? "paid"
+      : isOverdue
+        ? "overdue"
+        : amountPaid > 0 || discountTotal > 0
+          ? "partial"
+          : invoice.status === "sent" ? "posted" : invoice.status;
 
   // Short human hint shown beside the due date for owing invoices.
   const dueHint = (): { text: string; overdue: boolean } | null => {
@@ -235,6 +245,35 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
       toast.error("Failed to share: " + (e?.message || "unknown error"));
     } finally {
       setSending(null);
+    }
+  };
+
+  const openEmailForm = () => {
+    setEmailTo(customer?.email ?? (invoice.customers as any)?.email ?? "");
+    setEmailSubject(`Invoice ${invoice.invoice_number}`);
+    setEmailMessage(
+      `Hi ${customer?.name ?? (invoice.customers as any)?.name ?? "there"},\n\n` +
+        `Please find invoice ${invoice.invoice_number} attached.\n` +
+        `Total: ${formatCurrency(totalAmount)}\nBalance due: ${formatCurrency(balanceDue)}\n\nThank you.`,
+    );
+    setShowEmailForm(true);
+  };
+
+  const handleSendEmail = async () => {
+    if (!invoice.tenant_id) return toast.error("Missing tenant for this invoice");
+    if (!emailTo.trim()) return toast.error("Enter a recipient email");
+    try {
+      await sendEmail.mutateAsync({
+        invoiceId: invoice.id,
+        tenantId: invoice.tenant_id,
+        invoiceNumber: invoice.invoice_number,
+        recipient: emailTo.trim(),
+        subject: emailSubject.trim() || undefined,
+        message: emailMessage.trim() || undefined,
+      });
+      setShowEmailForm(false);
+    } catch {
+      // toast handled by mutation
     }
   };
 
@@ -501,9 +540,63 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
                 Payment recorded. Send the updated invoice to {customer?.name || "the customer"}.
               </p>
             )}
-            <p className="text-xs text-muted-foreground -mt-1">
-              On a phone the PDF is attached automatically. On desktop the invoice PDF downloads so
-              you can attach it to the prefilled message.
+            {/* Email status badge */}
+            {invoice.email_status && (
+              <p className="-mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <MailCheck className="w-3.5 h-3.5" />
+                {invoice.email_status === "opened" ? "Opened by recipient" : invoice.email_status === "failed" ? "Last email failed" : "Emailed"}
+                {invoice.last_emailed_at ? ` · ${new Date(invoice.last_emailed_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}` : ""}
+                {invoice.email_recipient ? ` · ${invoice.email_recipient}` : ""}
+              </p>
+            )}
+
+            {/* Real server-side email (Resend) with the PDF attached. */}
+            {!showEmailForm ? (
+              <Button variant="default" size="sm" className="w-full" onClick={openEmailForm}>
+                <Mail className="w-4 h-4" /> Email invoice
+              </Button>
+            ) : (
+              <div className="space-y-2 rounded-md border border-border bg-background p-3">
+                <div>
+                  <label className="text-xs text-muted-foreground">To</label>
+                  <input
+                    type="email"
+                    value={emailTo}
+                    onChange={(e) => setEmailTo(e.target.value)}
+                    placeholder="customer@example.com"
+                    className="mt-1 w-full text-sm border border-border rounded-md px-3 py-2 bg-background text-foreground"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Subject</label>
+                  <input
+                    type="text"
+                    value={emailSubject}
+                    onChange={(e) => setEmailSubject(e.target.value)}
+                    className="mt-1 w-full text-sm border border-border rounded-md px-3 py-2 bg-background text-foreground"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Message</label>
+                  <textarea
+                    value={emailMessage}
+                    onChange={(e) => setEmailMessage(e.target.value)}
+                    rows={4}
+                    className="mt-1 w-full text-sm border border-border rounded-md px-3 py-2 bg-background text-foreground"
+                  />
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <Button variant="outline" size="sm" onClick={() => setShowEmailForm(false)}>Cancel</Button>
+                  <Button size="sm" onClick={handleSendEmail} disabled={sendEmail.isPending}>
+                    {sendEmail.isPending ? "Sending…" : "Send email"}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <p className="text-xs text-muted-foreground">
+              Or share manually — on a phone the PDF attaches automatically; on desktop it downloads
+              so you can attach it to the prefilled message.
             </p>
             <div className="grid grid-cols-2 gap-2">
               <Button

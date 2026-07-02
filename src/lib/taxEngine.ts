@@ -325,12 +325,75 @@ function bracketTaxOnAnnual(annualTaxable: number, brackets: ApitBracket[], step
  * regular). Pass the irregular portion (already included in `monthlyGross`) as
  * `monthlyIrregular`; default 0 preserves the pure-regular case.
  */
+/**
+ * Year-to-date context for the cumulative (IRD) method. When supplied, PAYE is
+ * the cumulative tax due to-date minus what was already deducted, which self-
+ * corrects for variable monthly pay and bonuses. `monthIndex` is 1-based within
+ * the tax year (April = 1 … March = 12).
+ */
+export interface ApitCumulative {
+  priorGross: number;  // sum of gross for earlier periods this tax year
+  priorPaye: number;   // PAYE already deducted in those periods
+  monthIndex: number;  // 1..12 within the tax year (April = 1) — monthly schedules
+  // Fraction of the tax year elapsed through this period (0–1). For non-monthly
+  // schedules (weekly, etc.) pass this explicitly; otherwise monthIndex/12 is used.
+  yearFraction?: number;
+}
+
+// Brackets scaled to a fraction of the year (cumulative method runs partial-year
+// ceilings and relief, so a constant salary yields the same monthly tax as Table 1).
+function scaleBrackets(brackets: ApitBracket[], scale: number): ApitBracket[] {
+  return brackets.map((b) => ({
+    ...b,
+    annualAmountUpTo: b.annualAmountUpTo === null ? null : b.annualAmountUpTo * scale,
+  }));
+}
+
 export function calculateApit(
   monthlyGross: number,
   schedule: ApitSchedule,
   monthlyIrregular = 0,
+  cumulative?: ApitCumulative,
 ): ApitResult {
   const steps: string[] = [];
+
+  // ── Cumulative (IRD) method ──────────────────────────────────────────────
+  if (cumulative) {
+    const m = Math.min(12, Math.max(1, Math.round(cumulative.monthIndex)));
+    // Fraction of the tax year elapsed: explicit for non-monthly schedules, else m/12.
+    const scale = Math.min(1, Math.max(0, cumulative.yearFraction ?? m / 12));
+    const cumGross = Math.max(0, cumulative.priorGross) + monthlyGross;
+    const cumRelief = schedule.annualRelief * scale;
+    const cumTaxable = Math.max(0, cumGross - cumRelief);
+    steps.push(`Cumulative gross (${Math.round(scale * 100)}% of year): ${cumulative.priorGross} + ${monthlyGross} = ${cumGross}`);
+    steps.push(`Less pro-rated relief ${schedule.annualRelief} × ${roundAmount(scale, "half_up")} = ${roundAmount(cumRelief, "half_up")} → taxable ${roundAmount(cumTaxable, "half_up")}`);
+    const cumTaxDue = bracketTaxOnAnnual(cumTaxable, scaleBrackets(schedule.brackets, scale), steps);
+    const cumTaxDueR = roundAmount(cumTaxDue, "half_up", 0);
+    const priorPayeR = roundAmount(Math.max(0, cumulative.priorPaye), "half_up", 0);
+    const monthlyApit = Math.max(0, cumTaxDueR - priorPayeR);
+    steps.push(`Cumulative tax due ${cumTaxDueR} − already deducted ${priorPayeR} = ${monthlyApit} this month`);
+    return {
+      monthlyApit,
+      annualTax: cumTaxDueR,
+      annualTaxable: cumTaxable,
+      trace: {
+        rule_id: null,
+        rule_version_id: null,
+        rule_name: "APIT (PAYE) cumulative schedule",
+        formula_type: "CONDITIONAL",
+        formula_applied: `Cumulative APIT to month ${m}: tax(${roundAmount(cumTaxable, "half_up")}) − deducted ${priorPayeR}`,
+        base_component: "GROSS_PAY",
+        base_value: monthlyGross,
+        inputs: { GROSS_PAY: monthlyGross, CUM_GROSS: cumGross, MONTH_INDEX: m, ANNUAL_RELIEF: schedule.annualRelief, PRIOR_PAYE: priorPayeR },
+        condition: { field: "is_paye_applicable", operator: "==", value: true },
+        condition_passed: true,
+        result: monthlyApit,
+        evaluation_steps: steps,
+        timestamp: new Date().toISOString(),
+      },
+    };
+  }
+  // ── Single-month method (no YTD context) ─────────────────────────────────
   const lumpSum = Math.max(0, monthlyIrregular);
   const regularMonthly = Math.max(0, monthlyGross - lumpSum);
 

@@ -50,6 +50,9 @@ import PettyCashCounts from "./pages/PettyCashCounts";
 import PettyCashCount from "./pages/PettyCashCount";
 import Invoices from "./pages/Invoices";
 import CreateInvoice from "./pages/CreateInvoice";
+import RecurringInvoices from "./pages/RecurringInvoices";
+import Quotes from "./pages/Quotes";
+import ForeignExchange from "./pages/ForeignExchange";
 import ProductsTaxes from "./pages/ProductsTaxes";
 import TaxCenter from "./pages/TaxCenter";
 import TaxSettings from "./pages/TaxSettings";
@@ -57,6 +60,9 @@ import Expenses from "./pages/Expenses";
 import Payroll from "./pages/Payroll";
 import PayrollGLMapping from "./pages/PayrollGLMapping";
 import PayrollLiabilities from "./pages/PayrollLiabilities";
+import Gratuity from "./pages/Gratuity";
+import Loans from "./pages/Loans";
+import RecurringPay from "./pages/RecurringPay";
 import Employees from "./pages/Employees";
 import AttendanceRegister from "./pages/AttendanceRegister";
 import FieldVisits from "./pages/FieldVisits";
@@ -181,6 +187,7 @@ const App = () => (
                     <Route path="/accounting/gl-verify" element={<GLVerification />} />
                     <Route path="/accounting/receive-payment" element={<ReceivePayment />} />
                     <Route path="/accounting/credit-notes" element={<CreditNotePage />} />
+                    <Route path="/accounting/foreign-exchange" element={<ForeignExchange />} />
                     <Route path="/accounting/ar-aging" element={<ARAgingReport />} />
                     <Route path="/accounting/vendors" element={<VendorsPage />} />
                     <Route path="/accounting/vendors/:id" element={<VendorDetail />} />
@@ -212,6 +219,9 @@ const App = () => (
                     <Route path="/sales" element={<ModuleDashboard config={MODULE_CONFIGS.sales} />} />
                     <Route path="/sales/invoices" element={<Invoices />} />
                     <Route path="/sales/invoices/new" element={<CreateInvoice />} />
+                    <Route path="/sales/invoices/:id/edit" element={<CreateInvoice />} />
+                    <Route path="/sales/recurring-invoices" element={<RecurringInvoices />} />
+                    <Route path="/sales/quotes" element={<Quotes />} />
                     <Route path="/sales/customers" element={<CustomersPage />} />
                     <Route path="/sales/customers/:id" element={<CustomerDetail />} />
                     <Route path="/sales/notifications" element={<Notifications />} />
@@ -236,6 +246,9 @@ const App = () => (
                     <Route path="/payroll/biometric-linking" element={<BiometricLinking />} />
                     <Route path="/payroll/leave" element={<Leave />} />
                     <Route path="/payroll/liabilities" element={<PayrollLiabilities />} />
+                    <Route path="/payroll/gratuity" element={<Gratuity />} />
+                    <Route path="/payroll/loans" element={<Loans />} />
+                    <Route path="/payroll/recurring" element={<RecurringPay />} />
                   </Route>
 
                   {/* Reports module */}

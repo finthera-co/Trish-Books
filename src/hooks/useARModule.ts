@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { postInvoice, postPaymentReceived, postCreditNote } from "@/lib/postingEngine";
+import { postInvoice, postPaymentReceived, postCreditNote, reverseJournalEntry } from "@/lib/postingEngine";
 
 // ─── Find AR / Revenue accounts ──────────────────────────
 export function useARAccounts() {
@@ -61,7 +61,7 @@ export function useCreateInvoiceWithGL() {
           issue_date: params.issue_date,
           due_date: params.due_date,
           total_amount: params.total_amount,
-          status: "sent",
+          status: "posted",
           ar_account_id: params.ar_account_id,
           revenue_account_id: params.revenue_account_id,
         })
@@ -131,6 +131,8 @@ export function useReceivePaymentWithGL() {
       ar_account_id: string;
       /** Tax the customer withheld from this payment (AIT receivable). */
       wht_amount?: number;
+      /** Realized-FX context for a foreign-currency invoice (omit for LKR). */
+      fx?: { invoiceRate: number; paymentRate: number; fxGainAccountId: string; fxLossAccountId: string } | null;
     }) => {
       const tenantId = appUser!.tenant_id;
 
@@ -185,6 +187,7 @@ export function useReceivePaymentWithGL() {
         reference: params.reference,
         invoice_id: params.invoice_id,
         wht,
+        fx: params.fx ?? null,
       });
 
       // 3. Link journal entry to payment
@@ -214,7 +217,8 @@ export function useCreateCreditNoteWithGL() {
   return useMutation({
     mutationFn: async (params: {
       customer_id: string;
-      credit_note_number: string;
+      /** Optional: when omitted a race-free CN-YYYY-NNNN serial is generated. */
+      credit_note_number?: string;
       credit_date: string;
       amount: number;
       reason?: string;
@@ -224,13 +228,22 @@ export function useCreateCreditNoteWithGL() {
     }) => {
       const tenantId = appUser!.tenant_id;
 
+      // Auto-generate an atomic serial unless the caller supplied a number.
+      let creditNoteNumber = params.credit_note_number?.trim();
+      if (!creditNoteNumber) {
+        const { data: serial, error: serialErr } = await supabase
+          .rpc("next_credit_note_number" as any, { p_tenant_id: tenantId });
+        if (serialErr || !serial) throw new Error(serialErr?.message || "Failed to generate credit-note number");
+        creditNoteNumber = serial as string;
+      }
+
       // 1. Create credit note record first
       const { data, error } = await supabase
         .from("ar_credit_notes")
         .insert({
           tenant_id: tenantId,
           customer_id: params.customer_id,
-          credit_note_number: params.credit_note_number,
+          credit_note_number: creditNoteNumber,
           credit_date: params.credit_date,
           amount: params.amount,
           reason: params.reason || null,
@@ -248,7 +261,7 @@ export function useCreateCreditNoteWithGL() {
         tenant_id: tenantId,
         credit_note_id: data.id,
         customer_id: params.customer_id,
-        credit_note_number: params.credit_note_number,
+        credit_note_number: creditNoteNumber,
         credit_date: params.credit_date,
         amount: params.amount,
         ar_account_id: params.ar_account_id,
@@ -269,6 +282,69 @@ export function useCreateCreditNoteWithGL() {
       qc.invalidateQueries({ queryKey: ["ar_subledger"] });
       qc.invalidateQueries({ queryKey: ["customer_detail"] });
       toast.success("Credit note created and posted to GL");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ─── Void Credit Note (reverse GL + subledger) ───────────
+export function useVoidCreditNote() {
+  const { appUser } = useAuth();
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (params: { credit_note_id: string; reason?: string }) => {
+      const tenantId = appUser!.tenant_id;
+
+      const { data: cn, error } = await supabase
+        .from("ar_credit_notes")
+        .select("id, status, amount, customer_id, credit_note_number, journal_entry_id")
+        .eq("id", params.credit_note_id)
+        .eq("tenant_id", tenantId)
+        .single();
+      if (error) throw error;
+      if (cn.status === "voided") throw new Error("Credit note is already voided");
+      if (!cn.journal_entry_id) throw new Error("Credit note has no journal entry to reverse");
+
+      // Reverse the original journal (swaps Dr/Cr; re-debits AR via the line's customer_id).
+      const today = new Date().toISOString().slice(0, 10);
+      const result = await reverseJournalEntry(
+        cn.journal_entry_id,
+        tenantId,
+        today,
+        params.reason || `Void credit note ${cn.credit_note_number}`,
+      );
+
+      // reverseJournalEntry posts lines but not subledger rows — mirror the AR
+      // subledger ourselves so the customer balance returns to its pre-credit state.
+      // Original CN credited AR; the reversal debits it back.
+      const amount = Number(cn.amount) || 0;
+      await supabase.from("ar_subledger").insert({
+        tenant_id: tenantId,
+        customer_id: cn.customer_id,
+        journal_id: result.journal_entry_id,
+        journal_line_id: result.journal_line_ids?.[0] ?? null,
+        debit: amount,
+        credit: 0,
+        balance: amount,
+        amount: amount,
+        document_type: "credit_note_reversal",
+        document_id: cn.id,
+      } as any);
+
+      await supabase
+        .from("ar_credit_notes")
+        .update({ status: "voided" })
+        .eq("id", cn.id);
+
+      return cn;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["ar_credit_notes"] });
+      qc.invalidateQueries({ queryKey: ["ar_subledger"] });
+      qc.invalidateQueries({ queryKey: ["customer_detail"] });
+      toast.success("Credit note voided");
     },
     onError: (e: Error) => toast.error(e.message),
   });

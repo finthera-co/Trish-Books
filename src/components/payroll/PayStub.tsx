@@ -127,6 +127,11 @@ export default function PayStub({ item, run, open, onOpenChange, tenant: tenantP
               <p className="font-semibold mb-1">Employer Contributions (not deducted from salary)</p>
               <div className="flex justify-between"><span>EPF (12%)</span><span>{formatCurrency(model.employerEpf)}</span></div>
               <div className="flex justify-between"><span>ETF (3%)</span><span>{formatCurrency(model.employerEtf)}</span></div>
+              {model.taxableBenefit != null && (
+                <div className="flex justify-between mt-1 pt-1 border-t border-border/60">
+                  <span>Taxable non-cash benefit (BIK)</span><span>{formatCurrency(model.taxableBenefit)}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
