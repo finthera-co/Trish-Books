@@ -50,3 +50,14 @@ export function amountInWords(amount: number, unit = "Rupees"): string {
   const centPart = cents > 0 ? ` and ${String(cents).padStart(2, "0")}/100` : " only";
   return `${sign}${integerToWords(whole)} ${unit}${centPart}`;
 }
+
+/** ISO currency code → spoken unit for amountInWords. Unknown codes read as the code itself. */
+const CURRENCY_UNITS: Record<string, string> = {
+  LKR: "Rupees", USD: "Dollars", EUR: "Euros", GBP: "Pounds",
+  INR: "Rupees", AUD: "Dollars", SGD: "Dollars", AED: "Dirhams", JPY: "Yen",
+};
+
+/** amountInWords keyed by ISO code: currencyAmountInWords(45200.5, "LKR"). */
+export function currencyAmountInWords(amount: number, currency = "LKR"): string {
+  return amountInWords(amount, CURRENCY_UNITS[currency] || currency);
+}

@@ -106,6 +106,18 @@ export default function PropertiesPanel({ component, tableSettings, onUpdate, on
           {component.type === 'image' && (
             <div className="space-y-3">
               <h4 className="text-xs font-semibold text-muted-foreground uppercase">Image</h4>
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={component.binding === 'company_logo'}
+                  onCheckedChange={v => onUpdate(component.id, { binding: v ? 'company_logo' : undefined })}
+                />
+                <Label className="text-xs">Use company logo</Label>
+              </div>
+              {component.binding === 'company_logo' && (
+                <p className="text-[10px] text-muted-foreground">
+                  Pulls the logo from Settings → Company Information at download time. Upload below only as a fallback.
+                </p>
+              )}
               {style.imageUrl ? (
                 <div className="space-y-2">
                   <div className="relative border border-border rounded overflow-hidden bg-muted/20" style={{ height: 80 }}>
@@ -228,6 +240,90 @@ export default function PropertiesPanel({ component, tableSettings, onUpdate, on
                   <Input type="number" value={style.borderRadius || 0} onChange={e => updateStyle({ borderRadius: Number(e.target.value) })} className="h-7 text-xs" />
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Transform</Label>
+                  <Select value={style.textTransform || 'none'} onValueChange={v => updateStyle({ textTransform: v })}>
+                    <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">As typed</SelectItem>
+                      <SelectItem value="uppercase">UPPERCASE</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Line Height</Label>
+                  <Input type="number" step="0.1" min="0.8" max="3" value={style.lineHeight || 1.3} onChange={e => updateStyle({ lineHeight: Number(e.target.value) })} className="h-7 text-xs" />
+                </div>
+              </div>
+              <Separator />
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase">Border</h4>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Style</Label>
+                  <Select value={style.borderStyle || 'none'} onValueChange={v => updateStyle({ borderStyle: v })}>
+                    <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      <SelectItem value="solid">Solid</SelectItem>
+                      <SelectItem value="dashed">Dashed</SelectItem>
+                      <SelectItem value="dotted">Dotted</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Width</Label>
+                  <Input type="number" min="0" value={style.borderWidth || 1} onChange={e => updateStyle({ borderWidth: Number(e.target.value) })} className="h-7 text-xs" disabled={!style.borderStyle || style.borderStyle === 'none'} />
+                </div>
+              </div>
+              {style.borderStyle && style.borderStyle !== 'none' && (
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Border Color</Label>
+                  <input type="color" value={style.borderColor || '#000000'} onChange={e => updateStyle({ borderColor: e.target.value })} className="w-full h-7 rounded border cursor-pointer" />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Shape / box styling */}
+          {component.type === 'shape' && (
+            <div className="space-y-3">
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase">Box Style</h4>
+              <div className="space-y-1">
+                <Label className="text-[10px]">Fill Color</Label>
+                <div className="flex gap-1">
+                  <input type="color" value={style.backgroundColor || '#f3f4f6'} onChange={e => updateStyle({ backgroundColor: e.target.value })} className="w-7 h-7 rounded border cursor-pointer" />
+                  <Input value={style.backgroundColor || ''} onChange={e => updateStyle({ backgroundColor: e.target.value })} className="h-7 text-[10px] flex-1" placeholder="transparent" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Border Style</Label>
+                  <Select value={style.borderStyle || 'none'} onValueChange={v => updateStyle({ borderStyle: v })}>
+                    <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      <SelectItem value="solid">Solid</SelectItem>
+                      <SelectItem value="dashed">Dashed</SelectItem>
+                      <SelectItem value="dotted">Dotted</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Border Width</Label>
+                  <Input type="number" min="0" value={style.borderWidth || 1} onChange={e => updateStyle({ borderWidth: Number(e.target.value) })} className="h-7 text-xs" />
+                </div>
+              </div>
+              {style.borderStyle && style.borderStyle !== 'none' && (
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Border Color</Label>
+                  <input type="color" value={style.borderColor || '#e5e7eb'} onChange={e => updateStyle({ borderColor: e.target.value })} className="w-full h-7 rounded border cursor-pointer" />
+                </div>
+              )}
+              <div className="space-y-1">
+                <Label className="text-[10px]">Corner Radius</Label>
+                <Input type="number" min="0" value={style.borderRadius || 0} onChange={e => updateStyle({ borderRadius: Number(e.target.value) })} className="h-7 text-xs" />
+              </div>
             </div>
           )}
 
@@ -250,20 +346,39 @@ export default function PropertiesPanel({ component, tableSettings, onUpdate, on
           {component.type === 'table' && (
             <div className="space-y-3">
               <h4 className="text-xs font-semibold text-muted-foreground uppercase">Table Columns</h4>
-              {tableSettings.columns.map((col, i) => (
-                <div key={col.key} className="flex items-center gap-2">
-                  <Switch checked={col.visible} onCheckedChange={v => {
-                    const cols = [...tableSettings.columns];
-                    cols[i] = { ...cols[i], visible: v };
-                    onUpdateTableSettings({ columns: cols });
-                  }} />
-                  <Input value={col.label} onChange={e => {
-                    const cols = [...tableSettings.columns];
-                    cols[i] = { ...cols[i], label: e.target.value };
-                    onUpdateTableSettings({ columns: cols });
-                  }} className="h-7 text-xs flex-1" />
-                </div>
-              ))}
+              {tableSettings.columns.map((col, i) => {
+                const setCol = (patch: Partial<typeof col>) => {
+                  const cols = [...tableSettings.columns];
+                  cols[i] = { ...cols[i], ...patch };
+                  onUpdateTableSettings({ columns: cols });
+                };
+                return (
+                  <div key={col.key} className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Switch checked={col.visible} onCheckedChange={v => setCol({ visible: v })} />
+                      <Input value={col.label} onChange={e => setCol({ label: e.target.value })} className="h-7 text-xs flex-1" />
+                    </div>
+                    {col.visible && (
+                      <div className="flex items-center gap-1 pl-9">
+                        <Input
+                          type="number" min="4" max="60" value={col.width}
+                          onChange={e => setCol({ width: Number(e.target.value) })}
+                          className="h-6 text-[10px] w-14" title="Width %"
+                        />
+                        <span className="text-[9px] text-muted-foreground">%</span>
+                        <Select value={col.align} onValueChange={v => setCol({ align: v as any })}>
+                          <SelectTrigger className="h-6 text-[10px] flex-1"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="left">Left</SelectItem>
+                            <SelectItem value="center">Center</SelectItem>
+                            <SelectItem value="right">Right</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
               <Separator />
               <h4 className="text-xs font-semibold text-muted-foreground uppercase">Table Styling</h4>
               <div className="space-y-1">
@@ -274,10 +389,47 @@ export default function PropertiesPanel({ component, tableSettings, onUpdate, on
                 <Label className="text-[10px]">Header Text Color</Label>
                 <input type="color" value={tableSettings.headerColor} onChange={e => onUpdateTableSettings({ headerColor: e.target.value })} className="w-full h-7 rounded border cursor-pointer" />
               </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Header Font</Label>
+                  <Input type="number" min="6" max="20" value={tableSettings.headerFontSize} onChange={e => onUpdateTableSettings({ headerFontSize: Number(e.target.value) })} className="h-7 text-xs" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Row Font</Label>
+                  <Input type="number" min="6" max="20" value={tableSettings.rowFontSize} onChange={e => onUpdateTableSettings({ rowFontSize: Number(e.target.value) })} className="h-7 text-xs" />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px]">Row Padding</Label>
+                <Input type="number" min="2" max="24" value={tableSettings.rowSpacing} onChange={e => onUpdateTableSettings({ rowSpacing: Number(e.target.value) })} className="h-7 text-xs" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Row Borders</Label>
+                  <Select value={tableSettings.borderStyle} onValueChange={v => onUpdateTableSettings({ borderStyle: v as any })}>
+                    <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      <SelectItem value="solid">Solid</SelectItem>
+                      <SelectItem value="dashed">Dashed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Border Color</Label>
+                  <input type="color" value={tableSettings.borderColor} onChange={e => onUpdateTableSettings({ borderColor: e.target.value })} className="w-full h-7 rounded border cursor-pointer" />
+                </div>
+              </div>
               <div className="flex items-center gap-2">
                 <Switch checked={tableSettings.showAlternateRows} onCheckedChange={v => onUpdateTableSettings({ showAlternateRows: v })} />
                 <Label className="text-xs">Alternate Row Colors</Label>
               </div>
+              {tableSettings.showAlternateRows && (
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Alternate Row Color</Label>
+                  <input type="color" value={tableSettings.alternateRowColor} onChange={e => onUpdateTableSettings({ alternateRowColor: e.target.value })} className="w-full h-7 rounded border cursor-pointer" />
+                </div>
+              )}
             </div>
           )}
         </div>

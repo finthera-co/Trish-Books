@@ -21,7 +21,8 @@ const COMPONENT_GROUPS: { title: string; icon: React.ReactNode; items: Component
       { type: 'text', category: 'company', label: 'Company Phone', binding: 'company_phone', defaultValue: 'Phone', icon: <Type className="w-3 h-3" /> },
       { type: 'text', category: 'company', label: 'Company Email', binding: 'company_email', defaultValue: 'Email', icon: <Type className="w-3 h-3" /> },
       { type: 'text', category: 'company', label: 'Tax Number', binding: 'company_tax_number', defaultValue: 'Tax #', icon: <Type className="w-3 h-3" /> },
-      { type: 'image', category: 'company', label: 'Company Logo', defaultValue: 'Logo', icon: <Square className="w-3 h-3" /> },
+      { type: 'text', category: 'company', label: 'Registration No.', binding: 'company_registration', defaultValue: 'BR No.', icon: <Type className="w-3 h-3" /> },
+      { type: 'image', category: 'company', label: 'Company Logo', binding: 'company_logo', defaultValue: 'Logo', icon: <Square className="w-3 h-3" /> },
     ],
   },
   {
@@ -68,6 +69,7 @@ const COMPONENT_GROUPS: { title: string; icon: React.ReactNode; items: Component
       { type: 'text', category: 'totals', label: 'Total', binding: 'total', defaultValue: '0.00', icon: <Type className="w-3 h-3" /> },
       { type: 'text', category: 'totals', label: 'Paid Amount', binding: 'paid_amount', defaultValue: '0.00', icon: <Type className="w-3 h-3" /> },
       { type: 'text', category: 'totals', label: 'Balance Due', binding: 'balance_due', defaultValue: '0.00', icon: <Type className="w-3 h-3" /> },
+      { type: 'text', category: 'totals', label: 'Amount in Words', binding: 'amount_in_words', defaultValue: 'Rupees … Only', icon: <Type className="w-3 h-3" /> },
     ],
   },
   {
@@ -87,6 +89,7 @@ const COMPONENT_GROUPS: { title: string; icon: React.ReactNode; items: Component
     items: [
       { type: 'divider', category: 'custom', label: 'Horizontal Divider', defaultValue: '', icon: <Minus className="w-3 h-3" /> },
       { type: 'spacer', category: 'custom', label: 'Spacer', defaultValue: '', icon: <Square className="w-3 h-3" /> },
+      { type: 'shape', category: 'custom', label: 'Box / Rectangle', defaultValue: '', icon: <Square className="w-3 h-3" /> },
       { type: 'text', category: 'custom', label: 'Custom Text', defaultValue: 'Custom text here', icon: <Type className="w-3 h-3" /> },
     ],
   },

@@ -104,6 +104,33 @@ export function useSaveInvoiceTemplate() {
   });
 }
 
+export function useSetDefaultInvoiceTemplate() {
+  const queryClient = useQueryClient();
+  const { appUser } = useAuth();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      if (!appUser?.tenant_id) throw new Error("No tenant");
+      const { error: clearErr } = await supabase
+        .from("invoice_templates")
+        .update({ is_default: false } as any)
+        .eq("tenant_id", appUser.tenant_id);
+      if (clearErr) throw clearErr;
+      const { error } = await supabase
+        .from("invoice_templates")
+        .update({ is_default: true } as any)
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["invoice-templates"] });
+      toast.success("Default template updated");
+    },
+    onError: (err: any) => {
+      toast.error("Failed to set default: " + err.message);
+    },
+  });
+}
+
 export function useDeleteInvoiceTemplate() {
   const queryClient = useQueryClient();
   return useMutation({

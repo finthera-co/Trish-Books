@@ -50,6 +50,8 @@ import PettyCashCounts from "./pages/PettyCashCounts";
 import PettyCashCount from "./pages/PettyCashCount";
 import Invoices from "./pages/Invoices";
 import CreateInvoice from "./pages/CreateInvoice";
+import InvoiceTemplates from "./pages/InvoiceTemplates";
+import InvoiceTemplateDesigner from "./pages/InvoiceTemplateDesigner";
 import RecurringInvoices from "./pages/RecurringInvoices";
 import Quotes from "./pages/Quotes";
 import ForeignExchange from "./pages/ForeignExchange";
@@ -96,6 +98,10 @@ import CustomersPage from "./pages/CustomersPage";
 import CustomerDetail from "./pages/CustomerDetail";
 import CustomerStatement from "./pages/CustomerStatement";
 import InvoiceApprovals from "./pages/InvoiceApprovals";
+import Receipts from "./pages/Receipts";
+import DiscountCalculator from "./pages/DiscountCalculator";
+import InvoiceSerialRegister from "./pages/InvoiceSerialRegister";
+import Deposits from "./pages/Deposits";
 import ReceivePayment from "./pages/ReceivePayment";
 import CreditNotePage from "./pages/CreditNotePage";
 import ARAgingReport from "./pages/ARAgingReport";
@@ -221,7 +227,13 @@ const App = () => (
                     <Route path="/sales" element={<ModuleDashboard config={MODULE_CONFIGS.sales} />} />
                     <Route path="/sales/invoices" element={<Invoices />} />
                     <Route path="/sales/invoices/new" element={<CreateInvoice />} />
+                    <Route path="/sales/invoice-templates" element={<InvoiceTemplates />} />
+                    <Route path="/sales/invoices/designer" element={<InvoiceTemplateDesigner />} />
                     <Route path="/sales/approvals" element={<InvoiceApprovals />} />
+                    <Route path="/sales/receipts" element={<Receipts />} />
+                    <Route path="/sales/discount-calculator" element={<DiscountCalculator />} />
+                    <Route path="/sales/number-register" element={<InvoiceSerialRegister />} />
+                    <Route path="/sales/deposits" element={<Deposits />} />
                     <Route path="/sales/invoices/:id/edit" element={<CreateInvoice />} />
                     <Route path="/sales/recurring-invoices" element={<RecurringInvoices />} />
                     <Route path="/sales/quotes" element={<Quotes />} />

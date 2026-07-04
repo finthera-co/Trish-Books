@@ -13,6 +13,7 @@ import {
   TrendingUp,
   BarChart3,
   Shield,
+  ShieldCheck,
   Users,
   UserCheck,
   Building2,
@@ -36,6 +37,7 @@ import {
   Upload,
   Fingerprint,
   MapPin,
+  LayoutTemplate,
 } from "lucide-react";
 import type { ModuleConfig } from "@/components/layout/ModuleLayout";
 
@@ -114,7 +116,12 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "Quotes / Estimates", path: "/sales/quotes", icon: FileText },
       { label: "Invoices", path: "/sales/invoices", icon: Wallet },
       { label: "Approvals", path: "/sales/approvals", icon: Shield, adminOnly: true },
+      { label: "Number Register", path: "/sales/number-register", icon: ShieldCheck, adminOnly: true },
       { label: "Recurring", path: "/sales/recurring-invoices", icon: RefreshCw },
+      { label: "Invoice Templates", path: "/sales/invoice-templates", icon: LayoutTemplate },
+      { label: "Receipts", path: "/sales/receipts", icon: Receipt },
+      { label: "Deposits", path: "/sales/deposits", icon: Wallet },
+      { label: "Discount Calculator", path: "/sales/discount-calculator", icon: Calculator },
       { label: "Expenses", path: "/expenses/tracker", icon: Receipt },
       { label: "Customers", path: "/sales/customers", icon: Contact },
       { label: "Reminders", path: "/sales/notifications", icon: Bell },

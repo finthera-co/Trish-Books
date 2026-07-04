@@ -99,7 +99,7 @@ export async function loadInvoicePdfData(invoiceId: string, tenantId: string): P
 
   const { data: tenant } = await supabase
     .from("tenants")
-    .select("company_name, country, registration_number, logo_url")
+    .select("company_name, country, registration_number, logo_url, address, phone, tax_id")
     .eq("id", tenantId)
     .maybeSingle();
 
@@ -142,142 +142,163 @@ export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdf
   const right = pageW - M;
   const contentW = right - M;
   const currency = String(invoice.currency || "LKR");
+  // Shadow the module-level LKR formatter with one bound to this invoice's currency.
+  const fmt = (n: unknown) => formatCurrency(Number(n) || 0, currency);
 
   const status = invoiceStatus(invoice);
   const paid = Number(invoice.amount_paid) || 0;
   const disc = Number(invoice.discount_total) || 0;
   const balance = Number(invoice.balance_due ?? Number(invoice.total_amount) - paid - disc);
-  // The headline figure: what's still owed, or the grand total once settled.
-  const headlineAmount = balance > 0.005 ? balance : Number(invoice.total_amount) || 0;
-  const headlineLabel = balance > 0.005 ? `Amount due (${currency})` : `Total (${currency})`;
+  const t: any = tenant || {};
+  const SLATE: RGB = [45, 55, 72]; // dark table header, Zoho-style
+  const SHADE: RGB = [243, 244, 246]; // light row highlight
+  const invTitle = Number(invoice.tax_amount) > 0 ? "TAX INVOICE" : "INVOICE";
 
-  // ── Summary card: soft lavender panel, INVOICE title + headline amount ──
-  const cardY = 14, cardH = 36;
-  const padX = 9;
-  setFill(doc, CARD);
-  doc.roundedRect(M, cardY, contentW, cardH, 3, 3, "F");
-
-  // Left: title + issuer
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(26);
-  setText(doc, HEADING);
-  doc.text("Invoice", M + padX, cardY + 17);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9.5);
+  // ── Header: logo + company (left) · title (right) ────────────────────
+  const hy = 16;
+  let cx = M;
+  let logoBottom = hy;
+  if (logo) {
+    const lh = 16;
+    const lw = Math.min((logo.w / logo.h || 1) * lh, 40);
+    try { doc.addImage(logo.dataUrl, "PNG", M, hy, lw, lh); } catch { /* skip */ }
+    cx = M + lw + 5;
+    logoBottom = hy + lh;
+  }
+  let cy = hy + 5;
+  if (t.company_name) {
+    doc.setFont("helvetica", "bold").setFontSize(13);
+    setText(doc, INK);
+    doc.text(String(t.company_name), cx, cy);
+    cy += 5.5;
+  }
+  doc.setFont("helvetica", "normal").setFontSize(8.5);
   setText(doc, MUTED);
-  doc.text(tenant?.company_name || "Your Company", M + padX, cardY + 25);
+  const contact: string[] = [];
+  if (t.address) for (const l of doc.splitTextToSize(String(t.address), 90)) contact.push(l);
+  if (t.phone) contact.push(String(t.phone));
+  if (t.tax_id) contact.push(`TIN: ${t.tax_id}`);
+  else if (t.registration_number) contact.push(`BR No: ${t.registration_number}`);
+  contact.forEach((l) => { doc.text(l, cx, cy); cy += 4.2; });
 
-  // Right: headline amount + status chip
-  const rTextX = right - padX;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  setText(doc, MUTED);
-  doc.text(headlineLabel, rTextX, cardY + 13, { align: "right" });
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(23);
-  setText(doc, ACCENT);
-  doc.text(num(headlineAmount), rTextX, cardY + 25, { align: "right" });
+  // Right: big INVOICE / TAX INVOICE title
+  doc.setFont("helvetica", "bold").setFontSize(22);
+  setText(doc, [90, 96, 104]);
+  doc.text(invTitle, right, hy + 6, { align: "right" });
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.5);
-  const chipW = doc.getTextWidth(status.label) + 7;
-  const chipH = 6;
-  setFill(doc, status.color);
-  doc.roundedRect(rTextX - chipW, cardY + 28, chipW, chipH, 1.5, 1.5, "F");
-  setText(doc, WHITE);
-  doc.text(status.label, rTextX - chipW / 2, cardY + 32.2, { align: "center" });
+  const headerBottom = Math.max(cy - 2, logoBottom);
+  setDraw(doc, RULE); doc.setLineWidth(0.3);
+  doc.line(M, headerBottom + 3, right, headerBottom + 3);
 
-  let y = cardY + cardH + 13;
+  // ── Details block (right) + Bill To (left) ───────────────────────────
+  let y = headerBottom + 12;
 
-  // ── Bill To (left) · Invoice meta (right, key:value) ─────────────────
-  const billW = contentW * 0.5 - 6;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  setText(doc, HEADING);
+  // Right: invoice meta as label (left) / value (right) rows.
+  const dLabelX = right - 74;
+  const meta: [string, string][] = [
+    ["Invoice#", String(invoice.invoice_number || "—")],
+    ["Invoice Date", prettyDate(invoice.issue_date)],
+  ];
+  const termsLabel = prettyTerms(invoice.payment_terms);
+  if (termsLabel) meta.push(["Terms", termsLabel]);
+  meta.push(["Due Date", prettyDate(invoice.due_date)]);
+
+  let my = y;
+  meta.forEach(([label, value]) => {
+    doc.setFont("helvetica", "normal").setFontSize(9);
+    setText(doc, MUTED);
+    doc.text(label, dLabelX, my);
+    doc.setFont("helvetica", "bold");
+    setText(doc, INK);
+    doc.text(value, right, my, { align: "right" });
+    my += 5.6;
+  });
+  // Balance-due highlight box (Zoho puts this prominently near the top).
+  my += 1.5;
+  const bdH = 9;
+  setFill(doc, SHADE);
+  doc.roundedRect(dLabelX - 3, my - 1, right - (dLabelX - 3), bdH, 1.5, 1.5, "F");
+  doc.setFont("helvetica", "bold").setFontSize(9.5);
+  setText(doc, INK);
+  doc.text(`Balance Due (${currency})`, dLabelX, my + 5);
+  setText(doc, balance > 0.005 ? RED : GREEN);
+  doc.text(num(balance), right - 3, my + 5, { align: "right" });
+  const metaBottom = my + bdH;
+
+  // Left: Bill To
+  const billW = contentW * 0.5 - 8;
+  doc.setFont("helvetica", "bold").setFontSize(8);
+  setText(doc, SLATE);
   doc.text("BILL TO", M, y);
-
   const partyAddr = customer?.address ? doc.splitTextToSize(String(customer.address), billW) : [];
   const billLines: { t: string; bold?: boolean }[] = [
     { t: customer?.legal_name || customer?.name || "—", bold: true },
-    ...partyAddr.map((t: string) => ({ t })),
-    ...[customer?.email, customer?.phone || customer?.mobile].filter(Boolean).map((t: any) => ({ t: String(t) })),
+    ...partyAddr.map((tt: string) => ({ t: tt })),
+    ...[customer?.email, customer?.phone || customer?.mobile].filter(Boolean).map((tt: any) => ({ t: String(tt) })),
   ];
   let by = y + 6.5;
   billLines.forEach((ln) => {
-    doc.setFont("helvetica", ln.bold ? "bold" : "normal");
-    doc.setFontSize(ln.bold ? 11 : 9);
+    doc.setFont("helvetica", ln.bold ? "bold" : "normal").setFontSize(ln.bold ? 11 : 9);
     setText(doc, ln.bold ? INK : MUTED);
     doc.text(ln.t, M, by);
     by += ln.bold ? 5.8 : 4.6;
   });
 
-  // Meta: right-aligned label · value rows (value bold, label muted to its left)
-  const meta: [string, string][] = [["Invoice number", String(invoice.invoice_number || "—")]];
-  meta.push(["Invoice date", prettyDate(invoice.issue_date)]);
-  const terms = prettyTerms(invoice.payment_terms);
-  if (terms) meta.push(["Terms", terms]);
-  meta.push(["Payment due", prettyDate(invoice.due_date)]);
+  y = Math.max(by, metaBottom) + 8;
 
-  let my = y;
-  meta.forEach(([label, value]) => {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9.5);
-    setText(doc, INK);
-    doc.text(value, right, my, { align: "right" });
-    const vW = doc.getTextWidth(value);
-    doc.setFont("helvetica", "normal");
-    setText(doc, MUTED);
-    doc.text(`${label}:`, right - vW - 3, my, { align: "right" });
-    my += 6.2;
-  });
-
-  y = Math.max(by, my) + 6;
-
-  // ── Line items table (light theme) ───────────────────────────────────
-  autoTable(doc, {
-    startY: y,
-    margin: { left: M, right: M },
-    head: [["#", "Item & description", "Qty", "Rate", "Amount"]],
-    body: items.map((it, i) => [
+  // ── Line items table — dark header, Zoho-style ───────────────────────
+  // Show a per-line Discount column only when at least one line is discounted.
+  const hasLineDiscount = items.some((it) => Number(it.discount_amount) > 0);
+  const head = hasLineDiscount
+    ? ["#", "Item & Description", "Qty", "Rate", "Discount", "Amount"]
+    : ["#", "Item & Description", "Qty", "Rate", "Amount"];
+  const body = items.map((it, i) => {
+    const row = [
       String(i + 1),
       buildItemCell(it),
       Number(it.quantity) ? String(Number(it.quantity)) : "—",
       fmt(it.unit_price),
-      fmt(it.total),
-    ]),
+    ];
+    if (hasLineDiscount) row.push(Number(it.discount_amount) > 0 ? `-${fmt(it.discount_amount)}` : "—");
+    row.push(fmt(it.total));
+    return row;
+  });
+  const amtCol = hasLineDiscount ? 5 : 4;
+  const colStyles: any = {
+    0: { halign: "center", cellWidth: 10, textColor: [MUTED[0], MUTED[1], MUTED[2]] },
+    1: { cellWidth: "auto" },
+    2: { halign: "center", cellWidth: 16 },
+    3: { halign: "right", cellWidth: 26 },
+    [amtCol]: { halign: "right", cellWidth: 30, fontStyle: "bold" },
+  };
+  if (hasLineDiscount) colStyles[4] = { halign: "right", cellWidth: 26, textColor: [RED[0], RED[1], RED[2]] };
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: M, right: M },
+    head: [head],
+    body,
     styles: {
-      font: "helvetica", fontSize: 9, cellPadding: { top: 3.5, bottom: 3.5, left: 3, right: 3 },
-      textColor: [INK[0], INK[1], INK[2]], lineColor: [RULE[0], RULE[1], RULE[2]], lineWidth: 0,
-      valign: "middle",
+      font: "helvetica", fontSize: 9, cellPadding: { top: 3.5, bottom: 3.5, left: 3.5, right: 3.5 },
+      textColor: [INK[0], INK[1], INK[2]], lineColor: [RULE[0], RULE[1], RULE[2]], lineWidth: 0, valign: "middle",
     },
     headStyles: {
-      fillColor: [TBL_HEAD_BG[0], TBL_HEAD_BG[1], TBL_HEAD_BG[2]], textColor: [HEADING[0], HEADING[1], HEADING[2]],
-      fontStyle: "bold", fontSize: 8.5, halign: "left", cellPadding: { top: 4, bottom: 4, left: 3, right: 3 },
+      fillColor: [SLATE[0], SLATE[1], SLATE[2]], textColor: [WHITE[0], WHITE[1], WHITE[2]],
+      fontStyle: "bold", fontSize: 8.5, halign: "left", cellPadding: { top: 4, bottom: 4, left: 3.5, right: 3.5 },
     },
-    columnStyles: {
-      0: { halign: "center", cellWidth: 10, textColor: [MUTED[0], MUTED[1], MUTED[2]] },
-      1: { cellWidth: "auto" },
-      2: { halign: "center", cellWidth: 18 },
-      3: { halign: "right", cellWidth: 28 },
-      4: { halign: "right", cellWidth: 30, fontStyle: "bold" },
-    },
+    alternateRowStyles: { fillColor: [250, 250, 251] },
+    columnStyles: colStyles,
     theme: "plain",
-    // hairline rule under each body row for a clean, airy ledger feel
-    didParseCell: (data) => {
-      if (data.section === "body") data.cell.styles.lineWidth = { bottom: 0.1, top: 0, left: 0, right: 0 } as any;
-    },
   });
 
-  // ── Totals block (right) ─────────────────────────────────────────────
-  let ty = (doc as any).lastAutoTable.finalY + 9;
-  const totalsW = 92; // wide enough that large amounts never clip
+  // ── Totals block (right), Zoho-style shaded Balance Due ──────────────
+  let ty = (doc as any).lastAutoTable.finalY + 8;
+  const totalsW = 78;
   const labelX = right - totalsW;
   const valX = right;
-  const boxValX = right - 3; // values sit just inside the rounded bars
 
   const totalRow = (label: string, value: string, opts: { color?: RGB; bold?: boolean } = {}) => {
-    doc.setFont("helvetica", opts.bold ? "bold" : "normal");
-    doc.setFontSize(9.5);
+    doc.setFont("helvetica", opts.bold ? "bold" : "normal").setFontSize(9.5);
     setText(doc, opts.color ?? MUTED);
     doc.text(label, labelX, ty);
     setText(doc, opts.color ?? INK);
@@ -285,56 +306,49 @@ export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdf
     ty += 6;
   };
 
-  totalRow("Subtotal", fmt(invoice.subtotal));
-  if (Number(invoice.discount_amount) > 0) totalRow("Line discount", `-${fmt(invoice.discount_amount)}`, { color: RED });
-  if (Number(invoice.tax_amount) > 0) totalRow("Tax", fmt(invoice.tax_amount));
+  // separator above totals
+  setDraw(doc, RULE); doc.setLineWidth(0.2);
+  doc.line(labelX, ty - 4, right, ty - 4);
 
-  // Grand total — soft lavender bar (light, matches the summary card)
-  ty += 0.5;
-  const gtH = 10;
-  setFill(doc, CARD);
-  doc.roundedRect(labelX - 4, ty - 1, totalsW + 4, gtH, 2, 2, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  setText(doc, HEADING);
-  doc.text(`Grand total (${currency})`, labelX, ty + 5.7);
-  doc.setFontSize(12);
-  doc.text(fmt(invoice.total_amount), boxValX, ty + 5.9, { align: "right" });
-  ty += gtH + 4;
-
-  if (paid > 0) totalRow("Amount paid", `-${fmt(paid)}`, { color: GREEN });
-  if (disc > 0) totalRow("Discounts applied", `-${fmt(disc)}`, { color: GREEN });
-  if (paid > 0 || disc > 0) {
-    ty += 0.5;
-    const bH = 9;
-    const bColor = balance > 0.005 ? RED : GREEN;
-    setDraw(doc, bColor);
-    doc.setLineWidth(0.4);
-    doc.roundedRect(labelX - 4, ty - 1, totalsW + 4, bH, 2, 2, "D");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9.5);
-    setText(doc, bColor);
-    doc.text("BALANCE DUE", labelX, ty + 5);
-    doc.setFontSize(11);
-    doc.text(fmt(balance), boxValX, ty + 5.2, { align: "right" });
-    ty += bH + 4;
+  // invoice.subtotal is stored NET of line discounts. Present the breakdown so
+  // Total = (gross subtotal) − discount + tax always reconciles on the page.
+  const lineDiscount = Number(invoice.discount_amount) || 0;
+  const grossSubtotal = (Number(invoice.subtotal) || 0) + lineDiscount;
+  totalRow("Sub Total", fmt(grossSubtotal));
+  if (lineDiscount > 0) {
+    totalRow("Discount", `-${fmt(lineDiscount)}`, { color: RED });
+    totalRow("Taxable amount", fmt(invoice.subtotal));
   }
+  if (Number(invoice.tax_amount) > 0) totalRow("Tax", fmt(invoice.tax_amount));
+  totalRow("Total", `${fmt(invoice.total_amount)}`, { bold: true, color: INK });
+  if (paid > 0) totalRow("Amount Paid", `-${fmt(paid)}`, { color: GREEN });
+  if (disc > 0) totalRow("Credit Notes / Discounts", `-${fmt(disc)}`, { color: GREEN });
 
-  // ── Notes / terms (left column, beside totals) ───────────────────────
+  // Balance Due — shaded highlight bar
+  ty += 0.5;
+  const bH = 10;
+  setFill(doc, SHADE);
+  doc.rect(labelX - 4, ty - 1, totalsW + 4, bH, "F");
+  doc.setFont("helvetica", "bold").setFontSize(10.5);
+  setText(doc, INK);
+  doc.text("Balance Due", labelX, ty + 5.8);
+  setText(doc, balance > 0.005 ? RED : GREEN);
+  doc.text(fmt(balance), valX - 1, ty + 5.9, { align: "right" });
+  ty += bH + 4;
+
+  // ── Notes / terms (left column) ──────────────────────────────────────
   let ny = (doc as any).lastAutoTable.finalY + 9;
   const notesW = contentW - totalsW - 12;
   for (const [heading, text] of [
-    ["Notes / Terms", invoice.notes],
-    ["Terms & conditions", invoice.terms],
+    ["Notes", invoice.notes],
+    ["Terms & Conditions", invoice.terms],
   ] as [string, string | null][]) {
     if (!text) continue;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    setText(doc, HEADING);
+    doc.setFont("helvetica", "bold").setFontSize(8);
+    setText(doc, SLATE);
     doc.text(heading, M, ny);
     ny += 4.8;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
+    doc.setFont("helvetica", "normal").setFontSize(8.5);
     setText(doc, MUTED);
     const wrapped = doc.splitTextToSize(String(text), notesW);
     doc.text(wrapped, M, ny);

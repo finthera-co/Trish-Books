@@ -835,6 +835,14 @@ Deno.serve(async (req) => {
       })
       .eq("id", invoice_id);
 
+    // Serial register: this gazette number is now issued (IRD accounting).
+    await admin
+      .from("invoice_serial_register")
+      .update({ status: "issued", invoice_id, updated_at: new Date().toISOString() })
+      .eq("tenant_id", appUser.tenant_id)
+      .eq("serial", invoice.invoice_number)
+      .neq("status", "cancelled");
+
     await admin.from("audit_logs").insert({
       action: "Invoice Posted",
       table_name: "invoices",

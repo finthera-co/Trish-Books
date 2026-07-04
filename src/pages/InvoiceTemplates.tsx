@@ -4,7 +4,7 @@ import { Plus, Trash2, Star, Copy, Pencil, Layout } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useInvoiceTemplates, useDeleteInvoiceTemplate, useSaveInvoiceTemplate } from "@/hooks/useInvoiceTemplates";
+import { useInvoiceTemplates, useDeleteInvoiceTemplate, useSaveInvoiceTemplate, useSetDefaultInvoiceTemplate } from "@/hooks/useInvoiceTemplates";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,6 +15,7 @@ export default function InvoiceTemplates() {
   const { data: templates, isLoading } = useInvoiceTemplates();
   const deleteTemplate = useDeleteInvoiceTemplate();
   const saveTemplate = useSaveInvoiceTemplate();
+  const setDefaultTemplate = useSetDefaultInvoiceTemplate();
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("New Invoice Template");
   const [newType, setNewType] = useState("standard");
@@ -112,6 +113,12 @@ export default function InvoiceTemplates() {
                   <Button size="sm" variant="outline" onClick={() => handleDuplicate(tmpl)}>
                     <Copy className="w-3.5 h-3.5 mr-1" />Duplicate
                   </Button>
+                  {!tmpl.is_default && (
+                    <Button size="sm" variant="outline" disabled={setDefaultTemplate.isPending}
+                      onClick={() => setDefaultTemplate.mutate(tmpl.id)}>
+                      <Star className="w-3.5 h-3.5 mr-1" />Default
+                    </Button>
+                  )}
                   <Button size="sm" variant="destructive" onClick={() => deleteTemplate.mutate(tmpl.id)} disabled={tmpl.is_default}>
                     <Trash2 className="w-3.5 h-3.5" />
                   </Button>

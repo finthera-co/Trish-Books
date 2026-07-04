@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Printer, FileText } from "lucide-react";
+import { ArrowLeft, Printer, FileText, Download } from "lucide-react";
+import { toast } from "sonner";
+import { downloadStatementPdf, printStatementPdf } from "@/lib/statementPdf";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -61,7 +63,18 @@ export default function CustomerStatement() {
         <div className="flex items-end gap-3">
           <div><Label className="text-xs">From</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-9" /></div>
           <div><Label className="text-xs">To</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-9" /></div>
-          <Button onClick={() => window.print()} disabled={isLoading}><Printer className="w-4 h-4 mr-1.5" /> Print / PDF</Button>
+          <Button variant="outline" disabled={isLoading || !stmt} onClick={async () => {
+            try { await printStatementPdf({ stmt: stmt!, customer, company, from, to }); }
+            catch (e: any) { toast.error(e?.message || "Print failed"); }
+          }}>
+            <Printer className="w-4 h-4 mr-1.5" /> Print
+          </Button>
+          <Button disabled={isLoading || !stmt} onClick={async () => {
+            try { await downloadStatementPdf({ stmt: stmt!, customer, company, from, to }); toast.success("Statement downloaded"); }
+            catch (e: any) { toast.error(e?.message || "Download failed"); }
+          }}>
+            <Download className="w-4 h-4 mr-1.5" /> Download PDF
+          </Button>
         </div>
       </div>
 

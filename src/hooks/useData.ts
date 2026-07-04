@@ -433,7 +433,7 @@ export function useDeleteInvoice() {
     mutationFn: async ({ id, invoice_number }: { id: string; invoice_number?: string }) => {
       const { data: inv, error: fetchErr } = await supabase
         .from("invoices")
-        .select("status, journal_entry_id")
+        .select("status, journal_entry_id, invoice_number")
         .eq("id", id)
         .single();
       if (fetchErr) throw fetchErr;
@@ -445,7 +445,12 @@ export function useDeleteInvoice() {
       // Conditional delete: refuse to remove the header if it slipped out of draft.
       const { error: delErr } = await supabase.from("invoices").delete().eq("id", id).eq("status", "draft");
       if (delErr) throw delErr;
-      writeAuditLog("Invoice Deleted", "invoices", id, { invoice_number });
+      // IRD serial accounting: mark the reserved number cancelled (not a gap).
+      const serial = invoice_number || (inv as any).invoice_number;
+      if (serial) {
+        await supabase.rpc("cancel_invoice_serial" as any, { p_serial: serial, p_reason: "Draft invoice deleted" });
+      }
+      writeAuditLog("Invoice Deleted", "invoices", id, { invoice_number: serial });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["invoices"] });

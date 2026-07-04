@@ -21,6 +21,8 @@ export interface ComponentStyle {
   color?: string;
   backgroundColor?: string;
   textAlign?: 'left' | 'center' | 'right';
+  textTransform?: 'none' | 'uppercase';
+  lineHeight?: number;
   borderWidth?: number;
   borderColor?: string;
   borderStyle?: 'none' | 'solid' | 'dashed' | 'dotted';
@@ -51,6 +53,16 @@ export interface TableSettings {
   showAlternateRows: boolean;
 }
 
+export type TemplateDateFormat = 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'DD MMM YYYY' | 'YYYY-MM-DD';
+
+export interface WatermarkSettings {
+  enabled: boolean;
+  text: string;
+  color: string;
+  /** 0–1 */
+  opacity: number;
+}
+
 export interface PageSettings {
   size: 'A4' | 'Letter';
   orientation: 'portrait' | 'landscape';
@@ -59,6 +71,17 @@ export interface PageSettings {
     bottom: number;
     left: number;
     right: number;
+  };
+  /** Document-wide font stack. Optional — older templates fall back to sans-serif. */
+  fontFamily?: string;
+  /** How invoice/due dates are rendered. Optional — older templates fall back to DD MMM YYYY. */
+  dateFormat?: TemplateDateFormat;
+  /** Diagonal watermark repeated on every page. Optional — off for older templates. */
+  watermark?: WatermarkSettings;
+  /** Per-page footer: rule + logo + company/BR (left), message (centre), page numbers (right). */
+  pageFooter?: {
+    enabled: boolean;
+    message?: string;
   };
 }
 
@@ -82,6 +105,7 @@ export interface InvoiceData {
   company_phone: string;
   company_email: string;
   company_tax_number: string;
+  company_registration: string;
   company_logo?: string;
   customer_name: string;
   customer_address: string;
@@ -98,12 +122,15 @@ export interface InvoiceData {
   items: InvoiceLineItem[];
   subtotal: number;
   discount: number;
+  /** Subtotal net of line discounts — the base the tax applies to. */
+  taxable_amount: number;
   tax: number;
   shipping: number;
   adjustment: number;
   total: number;
   paid_amount: number;
   balance_due: number;
+  amount_in_words: string;
   notes: string;
   terms: string;
   bank_details: string;
@@ -125,7 +152,7 @@ export interface InvoiceLineItem {
 export const BINDING_VARIABLES: Record<string, string[]> = {
   company: [
     'company_name', 'company_address', 'company_phone',
-    'company_email', 'company_tax_number',
+    'company_email', 'company_tax_number', 'company_registration',
   ],
   customer: [
     'customer_name', 'customer_address', 'customer_phone',
@@ -136,8 +163,9 @@ export const BINDING_VARIABLES: Record<string, string[]> = {
     'due_date', 'payment_terms', 'salesperson', 'reference_number',
   ],
   totals: [
-    'subtotal', 'discount', 'tax', 'shipping',
+    'subtotal', 'discount', 'taxable_amount', 'tax', 'shipping',
     'adjustment', 'total', 'paid_amount', 'balance_due',
+    'amount_in_words',
   ],
   footer: [
     'notes', 'terms', 'bank_details',

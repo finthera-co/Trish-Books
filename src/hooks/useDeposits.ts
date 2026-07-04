@@ -1,0 +1,133 @@
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { post } from "@/lib/postingEngine";
+import { toast } from "sonner";
+
+export interface DepositRow {
+  id: string; customer_id: string; deposit_date: string; amount: number; applied_amount: number;
+  status: string; reference: string | null; advance_account_id: string | null; customers?: { name: string };
+}
+
+export function useDeposits() {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["customer_deposits", appUser?.tenant_id],
+    enabled: !!appUser?.tenant_id,
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("customer_deposits")
+        .select("*, customers(name)")
+        .eq("tenant_id", appUser!.tenant_id)
+        .order("deposit_date", { ascending: false });
+      if (error) throw error;
+      return data as DepositRow[];
+    },
+  });
+}
+
+// Record an advance receipt: Dr Bank / Cr Customer Advances.
+export function useRecordDeposit() {
+  const { appUser } = useAuth();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      customer_id: string; amount: number; deposit_date: string;
+      bank_account_id: string; advance_account_id: string; payment_method?: string; reference?: string; notes?: string;
+    }) => {
+      const tenant_id = appUser!.tenant_id;
+      const { data: dep, error } = await (supabase as any)
+        .from("customer_deposits")
+        .insert({
+          tenant_id, customer_id: input.customer_id, amount: input.amount, deposit_date: input.deposit_date,
+          bank_account_id: input.bank_account_id, advance_account_id: input.advance_account_id,
+          payment_method: input.payment_method || null, reference: input.reference || null, notes: input.notes || null,
+          created_by: appUser!.id, status: "unapplied",
+        })
+        .select("id").single();
+      if (error) throw error;
+
+      const result = await post({
+        tenant_id, entry_date: input.deposit_date,
+        description: `Customer advance received${input.reference ? ` — ${input.reference}` : ""}`,
+        source_type: "customer_deposit" as any, source_id: dep.id, reference: input.reference,
+        lines: [
+          { account_id: input.bank_account_id, debit: input.amount, credit: 0 },
+          { account_id: input.advance_account_id, debit: 0, credit: input.amount },
+        ],
+      });
+      await (supabase as any).from("customer_deposits").update({ journal_entry_id: result.journal_entry_id }).eq("id", dep.id);
+      return dep;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["customer_deposits"] });
+      toast.success("Advance recorded");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// Apply a deposit to an invoice: Dr Customer Advances / Cr AR, and reduce the
+// invoice balance via a payments_received row (no new bank movement).
+export function useApplyDeposit() {
+  const { appUser } = useAuth();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      deposit: DepositRow; invoice_id: string; invoice_number: string; amount: number;
+      ar_account_id: string; applied_date: string;
+    }) => {
+      const tenant_id = appUser!.tenant_id;
+      const advanceAcct = input.deposit.advance_account_id;
+      if (!advanceAcct) throw new Error("Deposit has no advances account");
+      const unapplied = Number(input.deposit.amount) - Number(input.deposit.applied_amount);
+      if (input.amount > unapplied + 0.005) throw new Error("Amount exceeds the unapplied deposit balance");
+
+      const { data: appRow, error: appErr } = await (supabase as any)
+        .from("deposit_applications")
+        .insert({ tenant_id, deposit_id: input.deposit.id, invoice_id: input.invoice_id, amount: input.amount, applied_date: input.applied_date })
+        .select("id").single();
+      if (appErr) throw appErr;
+
+      const result = await post({
+        tenant_id, entry_date: input.applied_date,
+        description: `Deposit applied to ${input.invoice_number}`,
+        source_type: "deposit_application" as any, source_id: appRow.id,
+        reference: input.invoice_number,
+        lines: [
+          { account_id: advanceAcct, debit: input.amount, credit: 0 },
+          { account_id: input.ar_account_id, debit: 0, credit: input.amount, customer_id: input.deposit.customer_id },
+        ],
+        subledger_entries: [{
+          type: "ar", entity_id: input.deposit.customer_id,
+          document_type: "deposit_application" as any, document_id: appRow.id, debit: 0, credit: input.amount,
+        }],
+      });
+
+      // Reduce the invoice's balance (amount_paid derives from payments_received).
+      await supabase.from("payments_received").insert({
+        invoice_id: input.invoice_id, amount: input.amount, payment_method: "deposit",
+        payment_date: new Date(input.applied_date).toISOString(),
+        reference: `Deposit${input.deposit.reference ? ` ${input.deposit.reference}` : ""}`,
+        journal_entry_id: result.journal_entry_id, ar_account_id: input.ar_account_id,
+      } as any);
+
+      await (supabase as any).from("deposit_applications").update({ journal_entry_id: result.journal_entry_id }).eq("id", appRow.id);
+
+      const newApplied = Number(input.deposit.applied_amount) + input.amount;
+      await (supabase as any).from("customer_deposits").update({
+        applied_amount: newApplied,
+        status: newApplied >= Number(input.deposit.amount) - 0.005 ? "applied" : "partially_applied",
+        updated_at: new Date().toISOString(),
+      }).eq("id", input.deposit.id);
+
+      return appRow;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["customer_deposits"] });
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      toast.success("Deposit applied to invoice");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}

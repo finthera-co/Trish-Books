@@ -19,6 +19,7 @@ import { formatCurrency } from "@/lib/currency";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePostInvoice } from "@/hooks/useAccountSettings";
+import { useInvoiceTemplates } from "@/hooks/useInvoiceTemplates";
 import { QuickCustomerDialog } from "@/components/invoices/QuickCustomerDialog";
 import { useSetHideSidebar } from "@/stores/useAppStore";
 
@@ -67,6 +68,8 @@ const MODE_OF_PAYMENT_OPTIONS = [
   "Online Payment",
 ];
 const MOP_NONE = "__none__"; // Radix Select cannot use "" as a value
+// PDF template picker sentinel: "" (null in DB) = resolve the tenant default at download time.
+const TPL_DEFAULT = "__default__";
 const addDays = (isoDate: string, days: number) => {
   const d = new Date(isoDate);
   d.setDate(d.getDate() + days);
@@ -88,6 +91,7 @@ export default function CreateInvoice() {
   const { data: taxGroups } = useTaxGroups();
   const { data: taxCodes } = useTaxCodes();
   const postInvoiceFn = usePostInvoice();
+  const { data: invoiceTemplates } = useInvoiceTemplates();
   const setHideSidebar = useSetHideSidebar();
 
   // Collapse the module sidebar while drafting an invoice so the line-item
@@ -109,6 +113,8 @@ export default function CreateInvoice() {
   const [dateOfSupply, setDateOfSupply] = useState("");
   const [placeOfSupply, setPlaceOfSupply] = useState("");
   const [modeOfPayment, setModeOfPayment] = useState("");  // "" = Not specified
+  // Custom PDF template for this invoice; "" = tenant default (resolved at download).
+  const [templateId, setTemplateId] = useState("");
   // Multi-currency: document currency + foreign→base (LKR) rate at issue date.
   const [currency, setCurrency] = useState("LKR");
   const [exchangeRate, setExchangeRate] = useState(1);
@@ -152,6 +158,7 @@ export default function CreateInvoice() {
       setDateOfSupply(inv.date_of_supply ?? "");
       setPlaceOfSupply(inv.place_of_supply ?? "");
       setModeOfPayment(inv.mode_of_payment ?? "");
+      setTemplateId((inv as any).template_id ?? "");
       setCurrency((inv as any).currency ?? "LKR");
       setExchangeRate(Number((inv as any).exchange_rate) || 1);
       setNotes(inv.notes ?? "");
@@ -436,6 +443,7 @@ export default function CreateInvoice() {
         date_of_supply: dateOfSupply || issueDate,
         place_of_supply: placeOfSupply.trim() || null,
         mode_of_payment: modeOfPayment || null,
+        template_id: templateId || null,
         currency,
         exchange_rate: exchangeRate,
         branch_code: branchCode.trim(),
@@ -678,6 +686,25 @@ export default function CreateInvoice() {
                   <DatePicker value={dueDate} onChange={setDueDate} placeholder="Select due date" fromDate={issueDate} />
                 </div>
               </div>
+              {(invoiceTemplates?.length ?? 0) > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">PDF template</Label>
+                    <Select value={templateId || TPL_DEFAULT} onValueChange={(v) => setTemplateId(v === TPL_DEFAULT ? "" : v)}>
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={TPL_DEFAULT}>Default template</SelectItem>
+                        {(invoiceTemplates || []).map((t: any) => (
+                          <SelectItem key={t.id} value={t.id}>
+                            {t.template_name}{t.is_default ? " (default)" : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[10px] text-muted-foreground">Layout used when this invoice is downloaded as a PDF.</p>
+                  </div>
+                </div>
+              )}
               {customer && (
                 <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm">
                   <p className="font-medium text-foreground">{customer.name}</p>
@@ -847,7 +874,7 @@ export default function CreateInvoice() {
                         <div className="col-span-2 space-y-1.5 sm:col-span-2">
                           <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:text-right sm:block">Amount</Label>
                           <div className="flex h-10 items-center justify-end font-mono tabular-nums text-base font-semibold text-foreground">
-                            {formatCurrency(lineCalcs[idx]?.lineTotal ?? 0)}
+                            {formatCurrency(lineCalcs[idx]?.lineTotal ?? 0, currency)}
                           </div>
                         </div>
                       </div>
@@ -887,25 +914,25 @@ export default function CreateInvoice() {
             <CardContent className="space-y-2.5">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Subtotal</span>
-                <span className="font-mono tabular-nums text-foreground">{formatCurrency(subtotal)}</span>
+                <span className="font-mono tabular-nums text-foreground">{formatCurrency(subtotal, currency)}</span>
               </div>
               {totalDiscount > 0 && (
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Discount</span>
-                  <span className="font-mono tabular-nums text-destructive">-{formatCurrency(totalDiscount)}</span>
+                  <span className="font-mono tabular-nums text-destructive">-{formatCurrency(totalDiscount, currency)}</span>
                 </div>
               )}
               {/* One row per tax code */}
               {taxByCode.map((t) => (
                 <div key={t.code} className="flex justify-between text-sm">
                   <span className="text-muted-foreground">{t.code} {t.rate}%</span>
-                  <span className="font-mono tabular-nums text-foreground">{formatCurrency(t.amount)}</span>
+                  <span className="font-mono tabular-nums text-foreground">{formatCurrency(t.amount, currency)}</span>
                 </div>
               ))}
               <Separator />
               <div className="flex items-baseline justify-between">
                 <span className="text-sm font-semibold text-foreground">Total</span>
-                <span className="font-mono tabular-nums text-xl font-bold text-primary">{formatCurrency(total)}</span>
+                <span className="font-mono tabular-nums text-xl font-bold text-primary">{formatCurrency(total, currency)}</span>
               </div>
             </CardContent>
           </Card>
@@ -934,6 +961,11 @@ export default function CreateInvoice() {
                   <p className="text-[10px] leading-relaxed text-muted-foreground">
                     Each tax code posts to its own liability account; the server recomputes tax and rejects mismatches.
                   </p>
+                  {currency !== "LKR" && (
+                    <p className="text-[10px] leading-relaxed text-amber-600 dark:text-amber-400">
+                      Document is in {currency}; the GL posts in LKR at rate {exchangeRate} (≈ {formatCurrency(total * exchangeRate)}).
+                    </p>
+                  )}
                 </div>
               ) : (
                 <p className="text-xs text-muted-foreground">Add line items to preview journal entries</p>

@@ -1,4 +1,4 @@
-import { Plus, Search, MoreHorizontal, Eye, Send, Ban, Download, MessageCircle, Mail, FileText, Pencil, Trash2, CheckCircle2, XCircle, ShieldAlert } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Eye, Send, Ban, Download, MessageCircle, Mail, FileText, Pencil, Trash2, CheckCircle2, XCircle, ShieldAlert, Receipt } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useState, useMemo } from "react";
@@ -11,6 +11,7 @@ import JournalPreview, { type JournalPreviewLine } from "@/components/accounting
 import { useAccountSettings, useUpsertAccountSettings } from "@/hooks/useAccountSettings";
 import { useTenantUsers } from "@/hooks/usePettyCash";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useAccountById } from "@/hooks/useAccountSearch";
 import { formatCurrency } from "@/lib/currency";
 import InvoiceDetails from "@/components/invoices/InvoiceDetails";
@@ -55,6 +56,7 @@ export default function Invoices() {
   const [govApprovers, setGovApprovers] = useState<string[]>([]);
   const [rejectInvoice, setRejectInvoice] = useState<any>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const upsertSettings = useUpsertAccountSettings();
   const { data: tenantUsers } = useTenantUsers();
   const [taxPreviewOpen, setTaxPreviewOpen] = useState(false);
@@ -299,6 +301,58 @@ export default function Invoices() {
       setProcessing(false);
     }
   };
+  // ── Bulk selection + actions ──────────────────────────────────────
+  const toggleSelect = (id: string) => setSelected((prev) => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
+  });
+  const allFilteredSelected = filtered.length > 0 && filtered.every((i) => selected.has(i.id));
+  const toggleAll = () => setSelected(allFilteredSelected ? new Set() : new Set(filtered.map((i) => i.id)));
+  const clearSelection = () => setSelected(new Set());
+  const selectedInvoices = filtered.filter((i) => selected.has(i.id));
+  const selectedDrafts = selectedInvoices.filter((i) => i.status === "draft" && (i as any).approval_status !== "pending" && (i as any).approval_status !== "rejected");
+  const selectedPosted = selectedInvoices.filter((i) => !["draft", "voided"].includes(i.status));
+
+  const csvCell = (v: any) => {
+    const s = v == null ? "" : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const exportCsv = () => {
+    const rows = selected.size > 0 ? selectedInvoices : filtered;
+    const header = ["Invoice", "Customer", "Issue Date", "Due Date", "Status", "Currency", "Total", "Paid", "Balance"];
+    const bodyRows = rows.map((i) => [
+      i.invoice_number, (i.customers as any)?.name || "", i.issue_date, i.due_date || "",
+      getEffectiveStatus(i), i.currency || "LKR", Number(i.total_amount), Number(i.amount_paid || 0), Number(i.balance_due || 0),
+    ]);
+    const csv = [header, ...bodyRows].map((r) => r.map(csvCell).join(",")).join("\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `invoices-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${rows.length} invoice(s)`);
+  };
+  const bulkPost = async () => {
+    if (selectedDrafts.length === 0) return;
+    setProcessing(true);
+    let ok = 0;
+    for (const inv of selectedDrafts) {
+      try { await postInvoice.mutateAsync({ invoice_id: inv.id, action: "post" }); ok++; } catch { /* per-invoice toast */ }
+    }
+    setProcessing(false); clearSelection();
+    toast.success(`Posted ${ok} of ${selectedDrafts.length} draft(s)`);
+  };
+  const bulkVoid = async () => {
+    if (selectedPosted.length === 0) return;
+    if (!window.confirm(`Void ${selectedPosted.length} posted invoice(s)? This creates reversing journals and cannot be undone.`)) return;
+    setProcessing(true);
+    let ok = 0;
+    for (const inv of selectedPosted) {
+      try { await postInvoice.mutateAsync({ invoice_id: inv.id, action: "void" }); ok++; } catch { /* */ }
+    }
+    setProcessing(false); clearSelection();
+    toast.success(`Voided ${ok} of ${selectedPosted.length} invoice(s)`);
+  };
+
   const stats = {
     outstanding: invoices?.filter(i => ["posted", "partial", "overdue"].includes(getEffectiveStatus(i)))
       .reduce((s, i) => s + Number(i.balance_due), 0) || 0,
@@ -387,7 +441,30 @@ export default function Invoices() {
           <Search className="w-4 h-4 text-muted-foreground" />
           <input type="text" placeholder="Search invoices..." value={search} onChange={(e) => setSearch(e.target.value)}
             className="bg-transparent text-sm outline-none flex-1 text-foreground placeholder:text-muted-foreground" />
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0}>
+            <Download className="w-4 h-4 mr-1.5" /> Export CSV
+          </Button>
         </div>
+
+        {/* Bulk action bar */}
+        {selected.size > 0 && (
+          <div className="flex flex-wrap items-center gap-2 mb-4 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+            <span className="text-sm font-medium">{selected.size} selected</span>
+            <div className="flex-1" />
+            {selectedDrafts.length > 0 && (
+              <Button size="sm" variant="outline" onClick={bulkPost} disabled={processing}>
+                <Send className="w-4 h-4 mr-1.5" /> Post {selectedDrafts.length} draft{selectedDrafts.length === 1 ? "" : "s"}
+              </Button>
+            )}
+            {selectedPosted.length > 0 && (
+              <Button size="sm" variant="outline" className="text-destructive" onClick={bulkVoid} disabled={processing}>
+                <Ban className="w-4 h-4 mr-1.5" /> Void {selectedPosted.length}
+              </Button>
+            )}
+            <Button size="sm" variant="outline" onClick={exportCsv}><Download className="w-4 h-4 mr-1.5" /> Export</Button>
+            <Button size="sm" variant="ghost" onClick={clearSelection}>Clear</Button>
+          </div>
+        )}
 
         {isLoading ? (
           <p className="text-center py-8 text-muted-foreground">Loading...</p>
@@ -398,6 +475,7 @@ export default function Invoices() {
             <table className="w-full text-sm">
               <thead className="bg-muted/50">
                 <tr>
+                  <th className="px-4 py-3 w-10"><Checkbox checked={allFilteredSelected} onCheckedChange={toggleAll} aria-label="Select all" /></th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">Invoice</th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">Customer</th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">Date</th>
@@ -417,7 +495,8 @@ export default function Invoices() {
                   // Anything not a draft and not voided has been posted to the GL.
                   const isPosted = !isDraft && !isVoided;
                   return (
-                    <tr key={inv.id} className={`border-t border-border hover:bg-muted/30 transition-colors ${isVoided ? "opacity-50" : ""}`}>
+                    <tr key={inv.id} className={`border-t border-border hover:bg-muted/30 transition-colors ${isVoided ? "opacity-50" : ""} ${selected.has(inv.id) ? "bg-primary/5" : ""}`}>
+                      <td className="px-4 py-3"><Checkbox checked={selected.has(inv.id)} onCheckedChange={() => toggleSelect(inv.id)} aria-label={`Select ${inv.invoice_number}`} /></td>
                       <td className="px-4 py-3 font-medium text-foreground">{inv.invoice_number}</td>
                       <td className="px-4 py-3 text-muted-foreground">{(inv.customers as any)?.name || "-"}</td>
                       <td className="px-4 py-3 text-muted-foreground">{inv.issue_date}</td>
@@ -452,12 +531,12 @@ export default function Invoices() {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-right text-foreground">{formatCurrency(Number(inv.total_amount))}</td>
+                      <td className="px-4 py-3 text-right text-foreground">{formatCurrency(Number(inv.total_amount), inv.currency)}</td>
                       <td className="px-4 py-3 text-right text-foreground">
-                        {inv.amount_paid > 0 ? formatCurrency(inv.amount_paid) : "—"}
+                        {inv.amount_paid > 0 ? formatCurrency(inv.amount_paid, inv.currency) : "—"}
                       </td>
                       <td className={`px-4 py-3 text-right font-semibold ${inv.balance_due > 0 ? "text-destructive" : "text-primary"}`}>
-                        {formatCurrency(inv.balance_due)}
+                        {formatCurrency(inv.balance_due, inv.currency)}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <div className="flex items-center justify-center gap-1">
@@ -535,6 +614,9 @@ export default function Invoices() {
                                 <>
                                   <DropdownMenuItem onClick={() => navigate(`/accounting/receive-payment?invoice_id=${inv.id}`)}>
                                     Receive Payment
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => navigate(`/sales/receipts?invoice_id=${inv.id}`)}>
+                                    <Receipt className="w-4 h-4 mr-2" /> Generate Receipt
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem className="text-destructive" onClick={() => { setVoidDialogInvoice(inv); setVoidReason(""); }}>

@@ -12,7 +12,8 @@ import { downloadInvoicePdf } from "@/lib/invoiceDownload";
 import { shareInvoiceViaWhatsApp, shareInvoiceViaGmail, type ShareInvoiceArgs } from "@/lib/invoiceShare";
 import { useSendInvoiceEmail } from "@/hooks/useSendInvoiceEmail";
 import { toast } from "sonner";
-import { DollarSign, Plus, Clock, CheckCircle2, Download, Tag, Percent, MessageCircle, Mail, Send, MailCheck, ShieldCheck } from "lucide-react";
+import { DollarSign, Plus, Clock, CheckCircle2, Download, Tag, Percent, MessageCircle, Mail, Send, MailCheck, ShieldCheck, Paperclip, Trash2, Upload } from "lucide-react";
+import { useInvoiceAttachments, useUploadAttachment, useDeleteAttachment } from "@/hooks/useInvoiceAttachments";
 
 interface Props {
   invoice: any;
@@ -55,6 +56,9 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
   const savingRef = useRef(false);
 
   const { data: payments, isLoading } = usePaymentsReceived(invoice?.id);
+  const { data: attachments } = useInvoiceAttachments(invoice?.id);
+  const uploadAttachment = useUploadAttachment();
+  const deleteAttachment = useDeleteAttachment();
   const recordPayment = useRecordPayment();
   const updateInvoice = useUpdateInvoice();
   const createCreditNote = useCreateCreditNoteWithGL();
@@ -122,6 +126,7 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
     }
   };
 
+  const cur = invoice.currency || "LKR";
   const totalAmount = Number(invoice.total_amount);
   const amountPaid = invoice.amount_paid ?? 0;
   const discountTotal = (creditNotes ?? [])
@@ -269,7 +274,7 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
     setEmailMessage(
       `Hi ${customer?.name ?? (invoice.customers as any)?.name ?? "there"},\n\n` +
         `Please find invoice ${invoice.invoice_number} attached.\n` +
-        `Total: ${formatCurrency(totalAmount)}\nBalance due: ${formatCurrency(balanceDue)}\n\nThank you.`,
+        `Total: ${formatCurrency(totalAmount, cur)}\nBalance due: ${formatCurrency(balanceDue, cur)}\n\nThank you.`,
     );
     setShowEmailForm(true);
   };
@@ -346,19 +351,19 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
         <div className="grid grid-cols-3 gap-3">
           <div className="stat-card">
             <p className="text-xs text-muted-foreground">Total Amount</p>
-            <p className="text-lg font-semibold text-foreground">{formatCurrency(totalAmount)}</p>
+            <p className="text-lg font-semibold text-foreground">{formatCurrency(totalAmount, cur)}</p>
           </div>
           <div className="stat-card">
             <p className="text-xs text-muted-foreground">Amount Paid</p>
-            <p className="text-lg font-semibold text-green-600 dark:text-green-400">{formatCurrency(amountPaid)}</p>
+            <p className="text-lg font-semibold text-green-600 dark:text-green-400">{formatCurrency(amountPaid, cur)}</p>
             {discountTotal > 0 && (
-              <p className="text-[11px] text-violet-600 dark:text-violet-400 mt-0.5">incl. {formatCurrency(discountTotal)} discount</p>
+              <p className="text-[11px] text-violet-600 dark:text-violet-400 mt-0.5">incl. {formatCurrency(discountTotal, cur)} discount</p>
             )}
           </div>
           <div className="stat-card">
             <p className="text-xs text-muted-foreground">Balance Due</p>
             <p className={`text-lg font-semibold ${balanceDue > 0 ? "text-destructive" : "text-green-600 dark:text-green-400"}`}>
-              {formatCurrency(balanceDue)}
+              {formatCurrency(balanceDue, cur)}
             </p>
           </div>
         </div>
@@ -687,6 +692,42 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
           </div>
         )}
 
+        {/* Attachments */}
+        <div className="border border-border rounded-lg p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Paperclip className="w-4 h-4" /> Attachments
+            </h4>
+            <label className="cursor-pointer">
+              <input type="file" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadAttachment.mutate({ invoiceId: invoice.id, file: f }); e.currentTarget.value = ""; }} />
+              <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-border hover:bg-muted">
+                <Upload className="w-3.5 h-3.5" /> {uploadAttachment.isPending ? "Uploading…" : "Upload"}
+              </span>
+            </label>
+          </div>
+          {(attachments ?? []).length === 0 ? (
+            <p className="text-xs text-muted-foreground">No files attached. Add a PO copy, signed delivery note, etc. (max 10 MB).</p>
+          ) : (
+            <div className="space-y-1.5">
+              {(attachments ?? []).map((a) => (
+                <div key={a.id} className="flex items-center justify-between gap-2 text-sm rounded-md border border-border px-2.5 py-1.5">
+                  <a href={a.file_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 min-w-0 text-primary hover:underline">
+                    <Paperclip className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{a.file_name}</span>
+                  </a>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {a.size_bytes != null && <span className="text-[11px] text-muted-foreground">{(a.size_bytes / 1024).toFixed(0)} KB</span>}
+                    <button onClick={() => deleteAttachment.mutate({ ...a } as any)} className="text-muted-foreground hover:text-destructive">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Payment & Discount Activity Log */}
         <div>
           <h4 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
@@ -716,7 +757,7 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
                     <div className="pb-4 flex-1">
                       <div className="flex items-center justify-between">
                         <p className="text-sm font-medium text-foreground">
-                          {isDiscount ? "−" : ""}{formatCurrency(a.amount)}
+                          {isDiscount ? "−" : ""}{formatCurrency(a.amount, cur)}
                           {isDiscount && <span className="ml-2 text-xs font-normal text-violet-600 dark:text-violet-400">Discount</span>}
                         </p>
                         <span className="text-xs text-muted-foreground">

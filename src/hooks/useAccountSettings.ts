@@ -47,6 +47,7 @@ export interface AccountSettings {
   invoice_approval_threshold?:          number | null;   // total ≥ this requires approval (null/0 = off)
   enforce_credit_limit?:                boolean | null;   // block posting past customer credit limit
   invoice_approver_ids?:                string[] | null;  // appointed approvers; empty → owners (Primary/Super Admin)
+  customer_advance_account_id?:         string | null;    // liability account for customer deposits/advances
   invoice_approval_tiers?:              { min_amount: number; required_approvals: number }[] | null;
 }
 

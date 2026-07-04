@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import type { PageSettings } from "./types";
 
 interface Props {
@@ -70,7 +71,7 @@ export default function DesignerToolbar({
               <Settings2 className="w-3.5 h-3.5 mr-1" />Page
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-sm">
+          <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto">
             <DialogHeader><DialogTitle>Page Settings</DialogTitle></DialogHeader>
             <div className="space-y-4 pt-2">
               <div className="space-y-2">
@@ -105,6 +106,94 @@ export default function DesignerToolbar({
                     />
                   </div>
                 ))}
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">Font Family</Label>
+                <Select value={pageSettings.fontFamily || 'Helvetica'} onValueChange={v => onPageSettingsChange({ fontFamily: v })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Helvetica">Helvetica / Arial</SelectItem>
+                    <SelectItem value="Georgia">Georgia</SelectItem>
+                    <SelectItem value="Times">Times New Roman</SelectItem>
+                    <SelectItem value="Courier">Courier</SelectItem>
+                    <SelectItem value="Verdana">Verdana</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">Date Format</Label>
+                <Select value={pageSettings.dateFormat || 'DD MMM YYYY'} onValueChange={v => onPageSettingsChange({ dateFormat: v as any })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="DD MMM YYYY">03 Jul 2026</SelectItem>
+                    <SelectItem value="DD/MM/YYYY">03/07/2026</SelectItem>
+                    <SelectItem value="MM/DD/YYYY">07/03/2026</SelectItem>
+                    <SelectItem value="YYYY-MM-DD">2026-07-03</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2 rounded-md border border-border p-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-medium">Page Footer</Label>
+                  <Switch
+                    checked={!!pageSettings.pageFooter?.enabled}
+                    onCheckedChange={v => onPageSettingsChange({
+                      pageFooter: { message: 'Thank you for your business', ...pageSettings.pageFooter, enabled: v },
+                    })}
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Logo, company name &amp; BR number, message, and page numbers on every page.
+                </p>
+                {pageSettings.pageFooter?.enabled && (
+                  <Input
+                    value={pageSettings.pageFooter.message ?? 'Thank you for your business'}
+                    onChange={e => onPageSettingsChange({ pageFooter: { ...pageSettings.pageFooter!, message: e.target.value } })}
+                    placeholder="Footer message"
+                    className="h-7 text-xs"
+                  />
+                )}
+              </div>
+              <div className="space-y-2 rounded-md border border-border p-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-medium">Watermark</Label>
+                  <Switch
+                    checked={!!pageSettings.watermark?.enabled}
+                    onCheckedChange={v => onPageSettingsChange({
+                      watermark: { text: 'PAID', color: '#9ca3af', opacity: 0.12, ...pageSettings.watermark, enabled: v },
+                    })}
+                  />
+                </div>
+                {pageSettings.watermark?.enabled && (
+                  <div className="space-y-2 pt-1">
+                    <Input
+                      value={pageSettings.watermark.text}
+                      onChange={e => onPageSettingsChange({ watermark: { ...pageSettings.watermark!, text: e.target.value } })}
+                      placeholder="e.g. PAID, DRAFT, ORIGINAL"
+                      className="h-7 text-xs"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[10px]">Color</Label>
+                        <input
+                          type="color"
+                          value={pageSettings.watermark.color}
+                          onChange={e => onPageSettingsChange({ watermark: { ...pageSettings.watermark!, color: e.target.value } })}
+                          className="w-full h-7 rounded border cursor-pointer"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[10px]">Opacity (%)</Label>
+                        <Input
+                          type="number" min="2" max="50"
+                          value={Math.round((pageSettings.watermark.opacity ?? 0.12) * 100)}
+                          onChange={e => onPageSettingsChange({ watermark: { ...pageSettings.watermark!, opacity: Number(e.target.value) / 100 } })}
+                          className="h-7 text-xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </DialogContent>
