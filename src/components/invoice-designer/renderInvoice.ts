@@ -44,6 +44,17 @@ export function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/**
+ * Escape a designer-supplied value (colors, alignment, border styles) before it
+ * is interpolated into an HTML style="" attribute inside an innerHTML string.
+ * Without this, a template field like `red"><img src=x onerror=…>` would break
+ * out of the attribute and inject markup — stored XSS when another tenant user
+ * views/downloads the invoice.
+ */
+function styleVal(v: unknown): string {
+  return escapeHtml(String(v ?? ""));
+}
+
 export function formatTemplateDate(iso: string, fmt?: PageSettings["dateFormat"]): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso; // free text like "On delivery" passes through
@@ -81,12 +92,13 @@ export function resolveComponentText(
   return String(val);
 }
 
-/** Totals rows other than the headline figures get a "Label: value" prefix. */
+/**
+ * Value printed for a component. Totals values print bare (labels are their
+ * own components in the layout — prefixing here duplicated them, e.g.
+ * "Sub Total | Sub Total: LKR 5,000.00", and the long string wrapped/clipped).
+ */
 export function displayText(comp: DesignerComponent, data: InvoiceData, pageSettings?: PageSettings): string {
-  const text = resolveComponentText(comp, data, pageSettings);
-  const isPlainTotal =
-    comp.label === "Total" || comp.label === "Balance Due" || comp.binding === "amount_in_words";
-  return comp.category === "totals" && !isPlainTotal ? `${comp.label}: ${text}` : text;
+  return resolveComponentText(comp, data, pageSettings);
 }
 
 export interface RenderInput {
@@ -178,7 +190,12 @@ export function renderInvoiceHtml({ components, tableSettings, pageSettings, dat
       const d = document.createElement("div");
       d.dataset.top = String(top);
       d.style.cssText = `position:absolute;left:${left}px;top:${top + height / 2}px;width:${width}px;`;
-      d.innerHTML = `<hr style="border:none;border-top:${comp.style.borderWidth || 1}px ${comp.style.borderStyle && comp.style.borderStyle !== "none" ? comp.style.borderStyle : "solid"} ${comp.style.borderColor || "#e5e7eb"};margin:0;" />`;
+      // Build the <hr> as a DOM node with a CSS-only style — no innerHTML, so
+      // designer border values can never inject markup.
+      const hr = document.createElement("hr");
+      const hrStyle = comp.style.borderStyle && comp.style.borderStyle !== "none" ? comp.style.borderStyle : "solid";
+      hr.style.cssText = `border:none;border-top:${Number(comp.style.borderWidth) || 1}px ${hrStyle} ${comp.style.borderColor || "#e5e7eb"};margin:0;`;
+      d.appendChild(hr);
       root.appendChild(d);
       continue;
     }
@@ -198,10 +215,14 @@ export function renderInvoiceHtml({ components, tableSettings, pageSettings, dat
       const url = comp.binding === "company_logo" ? data.company_logo || comp.style.imageUrl : comp.style.imageUrl;
       if (!url) continue;
       const img = document.createElement("img");
+      img.crossOrigin = "anonymous"; // must precede src so the fetch is CORS-enabled
       img.src = url;
-      img.crossOrigin = "anonymous";
       img.dataset.top = String(top);
-      img.style.cssText = `position:absolute;left:${left}px;top:${top}px;width:${width}px;height:${height}px;object-fit:${comp.style.imageFit || "contain"};border-radius:${comp.style.borderRadius || 0}px;`;
+      // The company logo hugs the left edge of its box (object-fit:contain
+      // would otherwise float a narrow logo into the middle of the box,
+      // leaving it adrift between the margin and the company name).
+      const objPos = comp.binding === "company_logo" ? "left center" : "center";
+      img.style.cssText = `position:absolute;left:${left}px;top:${top}px;width:${width}px;height:${height}px;object-fit:${comp.style.imageFit || "contain"};object-position:${objPos};border-radius:${comp.style.borderRadius || 0}px;`;
       root.appendChild(img);
       continue;
     }
@@ -216,7 +237,7 @@ export function renderInvoiceHtml({ components, tableSettings, pageSettings, dat
       const headCells = visibleCols
         .map(
           (c) =>
-            `<th style="padding:8px 10px;text-align:${c.align};font-size:${tableSettings.headerFontSize}px;font-weight:600;width:${c.width}%;">${escapeHtml(c.label)}</th>`
+            `<th style="padding:8px 10px;text-align:${styleVal(c.align)};font-size:${Number(tableSettings.headerFontSize) || 12}px;font-weight:600;width:${Number(c.width) || 0}%;">${escapeHtml(c.label)}</th>`
         )
         .join("");
       const bodyRows = data.items
@@ -226,21 +247,22 @@ export function renderInvoiceHtml({ components, tableSettings, pageSettings, dat
           const cells = visibleCols
             .map((c) => {
               const cell = tableCellContent(c.key, item as any, i, data.currency);
+              // cell.color values are code-supplied constants, but escape anyway.
               const cellStyle =
-                (cell.color ? `color:${cell.color};` : cell.muted ? "color:#6b7280;" : "") +
+                (cell.color ? `color:${styleVal(cell.color)};` : cell.muted ? "color:#6b7280;" : "") +
                 (cell.bold ? "font-weight:600;" : "");
-              return `<td style="padding:${tableSettings.rowSpacing}px 10px;text-align:${c.align};vertical-align:top;white-space:pre-line;${cellStyle}">${escapeHtml(cell.text)}</td>`;
+              return `<td style="padding:${Number(tableSettings.rowSpacing) || 0}px 10px;text-align:${styleVal(c.align)};vertical-align:top;white-space:pre-line;${cellStyle}">${escapeHtml(cell.text)}</td>`;
             })
             .join("");
           const rowBorder =
             tableSettings.borderStyle !== "none"
-              ? `border-bottom:1px ${tableSettings.borderStyle} ${tableSettings.borderColor};`
+              ? `border-bottom:1px ${styleVal(tableSettings.borderStyle)} ${styleVal(tableSettings.borderColor)};`
               : "";
-          return `<tr style="background:${bg};${rowBorder}">${cells}</tr>`;
+          return `<tr style="background:${styleVal(bg)};${rowBorder}">${cells}</tr>`;
         })
         .join("");
-      wrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:${tableSettings.rowFontSize}px;table-layout:fixed;word-wrap:break-word;">
-        <thead><tr style="background:${tableSettings.headerBg};color:${tableSettings.headerColor};">${headCells}</tr></thead>
+      wrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:${Number(tableSettings.rowFontSize) || 12}px;table-layout:fixed;word-wrap:break-word;">
+        <thead><tr style="background:${styleVal(tableSettings.headerBg)};color:${styleVal(tableSettings.headerColor)};">${headCells}</tr></thead>
         <tbody>${bodyRows}</tbody></table>`;
       root.appendChild(wrap);
       continue;
@@ -258,7 +280,7 @@ export function renderInvoiceHtml({ components, tableSettings, pageSettings, dat
       ${s.textTransform === "uppercase" ? "text-transform:uppercase;" : ""}${borderCss(s)}
       padding:${s.padding || 0}px;border-radius:${s.borderRadius || 0}px;display:flex;align-items:center;
       line-height:${s.lineHeight || 1.3};overflow:hidden;box-sizing:border-box;white-space:pre-line;`;
-    div.innerHTML = `<span style="width:100%;text-align:${s.textAlign || "left"};display:block;">${escapeHtml(text)}</span>`;
+    div.innerHTML = `<span style="width:100%;text-align:${styleVal(s.textAlign || "left")};display:block;">${escapeHtml(text)}</span>`;
     root.appendChild(div);
   }
   return root;
@@ -270,7 +292,12 @@ export function renderInvoiceHtml({ components, tableSettings, pageSettings, dat
  * the overflow so totals/footer never sit on top of line items, then grow the
  * page to hold the shifted content.
  */
-export function reflowTables(root: HTMLElement): void {
+// Height reserved at the bottom of every page for the per-page footer, in
+// canvas px. applyPageFooter draws inside this band; reflowTables keeps
+// content out of it so the two never overlap.
+export const PAGE_FOOTER_H = 56;
+
+export function reflowTables(root: HTMLElement, footerReserve = 0): void {
   const tables = Array.from(root.querySelectorAll<HTMLElement>("[data-table-top]"));
   for (const wrap of tables) {
     const tableTop = Number(wrap.dataset.tableTop);
@@ -291,7 +318,7 @@ export function reflowTables(root: HTMLElement): void {
   for (const el of Array.from(root.children) as HTMLElement[]) {
     contentBottom = Math.max(contentBottom, el.offsetTop + el.offsetHeight);
   }
-  const needed = contentBottom + mBottom;
+  const needed = contentBottom + Math.max(mBottom, footerReserve);
   const pages = Math.max(1, Math.ceil(needed / CANVAS_H));
   root.style.minHeight = `${pages * CANVAS_H}px`;
   root.dataset.pages = String(pages);
@@ -326,16 +353,18 @@ export function applyPageFooter(root: HTMLElement, pageSettings: PageSettings, d
   const message = pageSettings.pageFooter.message ?? "Thank you for your business";
   for (let p = 0; p < pages; p++) {
     const f = document.createElement("div");
-    f.style.cssText = `position:absolute;left:16px;top:${(p + 1) * CANVAS_H - 34}px;width:${CANVAS_W - 32}px;
-      border-top:0.5px solid #e5e7eb;padding-top:6px;display:flex;align-items:center;gap:8px;
+    // Sits at the top of the reserved footer band, lifting it clear of the
+    // physical page edge so it survives printer margins.
+    f.style.cssText = `position:absolute;left:16px;top:${(p + 1) * CANVAS_H - PAGE_FOOTER_H}px;width:${CANVAS_W - 32}px;
+      border-top:0.5px solid #e5e7eb;padding-top:8px;display:flex;align-items:center;gap:8px;
       font-size:8px;color:#6b7280;pointer-events:none;`;
 
     const left = document.createElement("div");
     left.style.cssText = "display:flex;align-items:center;gap:6px;flex:1;min-width:0;";
     if (data.company_logo) {
       const img = document.createElement("img");
+      img.crossOrigin = "anonymous"; // must precede src so the fetch is CORS-enabled
       img.src = data.company_logo;
-      img.crossOrigin = "anonymous";
       img.style.cssText = "height:18px;max-width:40px;object-fit:contain;";
       left.appendChild(img);
     }
@@ -381,12 +410,81 @@ export async function waitForImages(node: HTMLElement): Promise<void> {
   );
 }
 
+interface ImageOverlay {
+  dataUrl: string;
+  x: number; // CSS px relative to the node
+  y: number;
+  w: number;
+  h: number;
+  img: HTMLImageElement; // hidden during rasterisation so the logo paints once
+}
+
+/**
+ * Capture every <img> in the mounted node at NATURAL resolution with its
+ * painted rect (honouring object-fit:contain letterboxing). These are
+ * re-drawn natively into the PDF over the html2canvas raster, so logos stay
+ * crisp instead of inheriting the raster's dpi. CORS-tainted images are
+ * skipped — the rasterised copy remains as the fallback.
+ */
+function collectImageOverlays(node: HTMLElement): ImageOverlay[] {
+  const rootRect = node.getBoundingClientRect();
+  const out: ImageOverlay[] = [];
+  for (const img of Array.from(node.querySelectorAll("img"))) {
+    if (!img.complete || !img.naturalWidth || !img.naturalHeight) continue;
+    const r = img.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) continue;
+    const cs = getComputedStyle(img);
+    const fit = cs.objectFit || "fill";
+    let w = r.width;
+    let h = r.height;
+    if (fit === "contain" || fit === "scale-down") {
+      const ratio = img.naturalWidth / img.naturalHeight;
+      if (w / h > ratio) w = h * ratio;
+      else h = w / ratio;
+    } else if (fit !== "fill") {
+      continue; // cover/none crop the source — leave the raster as-is
+    }
+    // Letterbox offset from object-position (computed style resolves keywords
+    // to percentages, e.g. "left center" → "0% 50%").
+    const [posX = "50%", posY = "50%"] = (cs.objectPosition || "").split(" ");
+    const fx = posX.endsWith("%") ? parseFloat(posX) / 100 : 0.5;
+    const fy = posY.endsWith("%") ? parseFloat(posY) / 100 : 0.5;
+    try {
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      const ctx = c.getContext("2d");
+      if (!ctx) continue;
+      ctx.drawImage(img, 0, 0);
+      out.push({
+        dataUrl: c.toDataURL("image/png"),
+        x: r.left - rootRect.left + (r.width - w) * fx,
+        y: r.top - rootRect.top + (r.height - h) * fy,
+        w,
+        h,
+        img,
+      });
+    } catch {
+      /* tainted canvas — keep the rasterised version */
+    }
+  }
+  return out;
+}
+
 /**
  * Rasterise a mounted node and write it into real pages. Content taller than
- * one sheet is SLICED across pages at full size — never scaled down.
+ * one sheet is SLICED across pages at full size — never scaled down. Images
+ * are then overlaid natively at full resolution (see collectImageOverlays).
  */
 export async function nodeToPdf(node: HTMLElement, pageSettings: PageSettings): Promise<jsPDF> {
-  const canvas = await html2canvas(node, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+  const overlays = collectImageOverlays(node); // before rasterising, while layout is live
+  // Captured images are excluded from the raster: html2canvas doesn't honour
+  // object-position, so leaving them in paints a second, misplaced copy under
+  // the native overlay. Images that couldn't be captured stay visible.
+  for (const o of overlays) o.img.style.visibility = "hidden";
+  // scale 3 ≈ 216dpi on A4 — at 2 (~144dpi) fine text looks smudged.
+  const canvas = await html2canvas(node, { scale: 3, useCORS: true, backgroundColor: "#ffffff" });
+  for (const o of overlays) o.img.style.visibility = "";
   const pdf = new jsPDF({
     orientation: pageSettings.orientation === "portrait" ? "portrait" : "landscape",
     unit: "mm",
@@ -414,6 +512,22 @@ export async function nodeToPdf(node: HTMLElement, pageSettings: PageSettings): 
     y += pageHpx;
     page++;
   }
+
+  // Native full-resolution image pass over the raster.
+  const cssW = node.offsetWidth || CANVAS_W;
+  const pageHcss = pageHpx / (canvas.width / cssW);
+  const mmPerPx = pdfW / cssW;
+  const pageCount = pdf.getNumberOfPages();
+  for (const o of overlays) {
+    const pageIdx = Math.min(Math.floor((o.y + o.h / 2) / pageHcss), pageCount - 1);
+    pdf.setPage(pageIdx + 1);
+    try {
+      pdf.addImage(o.dataUrl, "PNG", o.x * mmPerPx, (o.y - pageIdx * pageHcss) * mmPerPx, o.w * mmPerPx, o.h * mmPerPx);
+    } catch {
+      /* unsupported image — raster copy already shows it */
+    }
+  }
+  pdf.setPage(pageCount);
   return pdf;
 }
 
@@ -426,7 +540,7 @@ export async function renderToPdf(input: RenderInput): Promise<jsPDF> {
   document.body.appendChild(node);
   try {
     await waitForImages(node);
-    reflowTables(node);
+    reflowTables(node, input.pageSettings.pageFooter?.enabled ? PAGE_FOOTER_H : 0);
     applyWatermarks(node, input.pageSettings);
     applyPageFooter(node, input.pageSettings, input.data);
     await waitForImages(node); // footer may add a logo <img>

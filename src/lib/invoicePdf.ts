@@ -159,8 +159,12 @@ export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdf
   let cx = M;
   let logoBottom = hy;
   if (logo) {
-    const lh = 16;
-    const lw = Math.min((logo.w / logo.h || 1) * lh, 40);
+    // Fit inside 16×40mm preserving aspect ratio — capping only the width
+    // squashes wide logos into a smudge.
+    const ratio = logo.w / logo.h || 1;
+    let lh = 16;
+    let lw = ratio * lh;
+    if (lw > 40) { lw = 40; lh = lw / ratio; }
     try { doc.addImage(logo.dataUrl, "PNG", M, hy, lw, lh); } catch { /* skip */ }
     cx = M + lw + 5;
     logoBottom = hy + lh;
@@ -359,7 +363,7 @@ export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdf
   const pageCount = doc.getNumberOfPages();
   for (let p = 1; p <= pageCount; p++) {
     doc.setPage(p);
-    const fy = pageH - 11;
+    const fy = pageH - 14; // lifted clear of the physical page edge / printer margin
     setDraw(doc, RULE);
     doc.setLineWidth(0.2);
     doc.line(M, fy - 5, right, fy - 5);
@@ -367,8 +371,10 @@ export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdf
     // Left: small logo (if any) + company name / BR
     let fx = M;
     if (logo) {
-      const lh = 7, ratio = logo.w / logo.h || 1;
-      const lw = Math.min(lh * ratio, 16);
+      const ratio = logo.w / logo.h || 1;
+      let lh = 7;
+      let lw = lh * ratio;
+      if (lw > 16) { lw = 16; lh = lw / ratio; }
       doc.addImage(logo.dataUrl, "PNG", fx, fy - 5, lw, lh);
       fx += lw + 3;
     }

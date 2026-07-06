@@ -25,3 +25,6 @@ dist-ssr
 
 # Claude Code personal settings (per-developer, not shared)
 .claude/settings.local.json
+
+# Local environment (values are public but should not be tracked)
+.env

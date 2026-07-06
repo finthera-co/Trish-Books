@@ -327,12 +327,6 @@ export function useUploadReceipt() {
   });
 }
 
-export function useReceiptUrl(path?: string) {
-  if (!path) return null;
-  const { data } = supabase.storage.from("petty-cash-receipts").getPublicUrl(path);
-  return data?.publicUrl || null;
-}
-
 export async function getReceiptSignedUrl(path: string): Promise<string> {
   const { data, error } = await supabase.storage
     .from("petty-cash-receipts")

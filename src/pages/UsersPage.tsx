@@ -231,7 +231,7 @@ export default function UsersPage() {
                 <div>
                   <label className="text-sm font-medium text-foreground">Password <span className="text-destructive">*</span></label>
                   <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Min 6 characters"
+                    placeholder="Min 8 characters" minLength={8}
                     className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground" />
                 </div>
                 <div>
@@ -306,7 +306,7 @@ export default function UsersPage() {
                   </div>
                 )}
                 <Button onClick={handleCreate} disabled={
-                  !email || !firstName || !lastName || !roleId || password.length < 6 || createUser.isPending ||
+                  !email || !firstName || !lastName || !roleId || password.length < 8 || createUser.isPending ||
                   (isSuperAdmin && tenantMode === "existing" && !tenantId) ||
                   (isSuperAdmin && tenantMode === "new" && !newCompanyName.trim())
                 } className="w-full">

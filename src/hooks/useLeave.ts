@@ -104,7 +104,7 @@ export function useLeaveRequests(status?: string) {
     queryKey: ["leave_requests", status ?? "all"],
     queryFn: async () => {
       let q = supabase.from("leave_requests")
-        .select("*, leave_types(name, code, is_paid, color), employees(first_name, last_name, employee_number)")
+        .select("*, leave_types(name, code, is_paid, color), employees(first_name, last_name, employee_number, user_id)")
         .order("created_at", { ascending: false });
       if (status && status !== "all") q = q.eq("status", status);
       const { data, error } = await q;

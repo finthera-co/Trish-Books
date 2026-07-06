@@ -80,7 +80,7 @@ export default function ModuleLayout({ config }: ModuleLayoutProps) {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Breadcrumb bar */}
-        <div className="h-10 flex items-center gap-1.5 px-5 border-b border-border bg-card text-xs shrink-0">
+        <div className="h-10 flex items-center gap-1.5 px-5 border-b border-border bg-card text-xs shrink-0 print:hidden">
           <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
             <Home className="w-3.5 h-3.5" />
             <span>Home</span>
@@ -104,7 +104,7 @@ export default function ModuleLayout({ config }: ModuleLayoutProps) {
         </div>
 
         {/* Mobile module nav */}
-        <div className="md:hidden flex items-center gap-2 px-4 py-2 border-b border-border overflow-x-auto bg-card">
+        <div className="md:hidden flex items-center gap-2 px-4 py-2 border-b border-border overflow-x-auto bg-card print:hidden">
           <Button variant="ghost" size="sm" className="shrink-0 h-7 px-2 text-xs" onClick={() => navigate("/")}>
             <Home className="w-3.5 h-3.5 mr-1" /> Home
           </Button>

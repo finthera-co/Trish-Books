@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, parseISO } from "date-fns";
 import { ChevronLeft, ChevronRight, Clock, MapPin, StickyNote } from "lucide-react";
 import { useAttendanceRecords, type AttendanceStatus } from "@/hooks/useAttendance";
+import { useMyEmployee } from "@/hooks/useMyEmployee";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -38,11 +39,13 @@ export default function MyAttendance() {
   const [cursor, setCursor] = useState(() => new Date());
   const [selected, setSelected] = useState<{ date: Date; rec?: DayRecord; isField: boolean; glyph?: Glyph } | null>(null);
   const month = format(cursor, "yyyy-MM");
+  const { data: me } = useMyEmployee();
   const { data: records, isLoading } = useAttendanceRecords(month);
 
   const byDate = useMemo(() => {
     const m: Record<string, DayRecord> = {};
-    (records ?? []).forEach((r: any) => {
+    // Admins can read the whole tenant's records — keep only our own.
+    (records ?? []).filter((r: any) => !me?.id || r.employee_id === me.id).forEach((r: any) => {
       m[r.attendance_date] = {
         status: r.status, entry_source: r.entry_source,
         check_in_time: r.check_in_time, check_out_time: r.check_out_time,
@@ -50,7 +53,7 @@ export default function MyAttendance() {
       };
     });
     return m;
-  }, [records]);
+  }, [records, me?.id]);
 
   // Month summary counts.
   const stats = useMemo(() => {

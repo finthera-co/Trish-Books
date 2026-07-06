@@ -86,6 +86,37 @@ Deno.serve(async (req) => {
       escapeHtml(messageText).replace(/\n/g, "<br/>") +
       `</div>`;
 
+    // Include the invoice's uploaded attachments as links. The bucket is private,
+    // so we mint fresh signed URLs here at send time (service role) with a long
+    // validity so the recipient can still open them from their inbox for weeks.
+    // Re-signing on every send means each email carries its own live links.
+    const SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+    let attachmentLinksHtml = "";
+    const { data: atts } = await admin
+      .from("invoice_attachments")
+      .select("file_name, file_path")
+      .eq("invoice_id", invoice_id)
+      .eq("tenant_id", appUser.tenant_id);
+    if (atts && atts.length) {
+      const items: string[] = [];
+      for (const a of atts) {
+        const { data: signed } = await admin.storage
+          .from("invoice-attachments")
+          .createSignedUrl(a.file_path, SIGNED_URL_TTL_SECONDS);
+        if (signed?.signedUrl) {
+          items.push(
+            `<li style="margin:2px 0"><a href="${signed.signedUrl}" style="color:#2563eb">${escapeHtml(a.file_name)}</a></li>`
+          );
+        }
+      }
+      if (items.length) {
+        attachmentLinksHtml =
+          `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;color:#1f2937;margin-top:16px">` +
+          `<p style="font-weight:600;margin:0 0 4px">Attachments</p>` +
+          `<ul style="margin:0;padding-left:18px">${items.join("")}</ul></div>`;
+      }
+    }
+
     // Log the attempt up front so a provider failure is still auditable.
     const { data: logRow } = await admin
       .from("invoice_emails")
@@ -116,7 +147,7 @@ Deno.serve(async (req) => {
         from: `${companyName} <${fromEmail}>`,
         to: [recipient],
         subject,
-        html,
+        html: html + attachmentLinksHtml,
         attachments,
       }),
     });

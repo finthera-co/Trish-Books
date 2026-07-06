@@ -19,6 +19,7 @@ import {
 } from "@/hooks/useLeave";
 import { useEmployees } from "@/hooks/useData";
 import { useMyPermissions } from "@/hooks/usePermissions";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -29,6 +30,7 @@ const STATUSES = ["all", "pending", "approved", "rejected", "cancelled", "settle
 
 export default function Leave() {
   const { canEdit } = useMyPermissions();
+  const { appUser } = useAuth();
   const allowed = canEdit("payroll");
 
   const [statusFilter, setStatusFilter] = useState("all");
@@ -185,7 +187,11 @@ export default function Leave() {
                 {filteredRequests.map((r: any) => (
                   <tr key={r.id}>
                     <td className="text-muted-foreground">{r.request_number || "—"}</td>
-                    <td className="font-medium text-foreground">{r.employees ? empName(r.employees) : "—"}<div className="text-xs text-muted-foreground">{r.employees?.employee_number}</div></td>
+                    <td className="font-medium text-foreground">
+                      {r.employees ? empName(r.employees) : "—"}
+                      {r.employees?.user_id === appUser?.id && <Badge variant="outline" className="ml-2 text-[10px] align-middle">Yours</Badge>}
+                      <div className="text-xs text-muted-foreground">{r.employees?.employee_number}</div>
+                    </td>
                     <td><Badge style={{ backgroundColor: r.leave_types?.color || undefined }} className="text-white">{r.leave_types?.name}</Badge></td>
                     <td className="text-muted-foreground">{r.start_date}{r.end_date !== r.start_date ? ` → ${r.end_date}` : ""}{r.is_half_day ? ` (½ ${r.half_day_period === "afternoon" ? "PM" : "AM"})` : ""}</td>
                     <td className="text-right">{r.days}</td>

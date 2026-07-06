@@ -280,12 +280,17 @@
 
 /* Print Styles */
 @media print {
-  @page { size: A4; margin: 1cm; }
+  /* Zero page margins suppress the browser-generated print header/footer
+     (date/time, document title, URL, page numbers) — they render in the
+     margin area, so with no margin there is nowhere to draw them. Content
+     margins are restored via body padding instead. */
+  @page { size: A4; margin: 0; }
   body {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
     background: white !important;
     color: black !important;
+    padding: 1.2cm 1.4cm !important;
   }
   aside, header, nav, .print\:hidden, button, input, select { display: none !important; }
   main { padding: 0 !important; margin: 0 !important; width: 100% !important; max-width: 100% !important; }
@@ -309,6 +314,22 @@
   #voucher-print .grid > * { margin-bottom: 0 !important; }
   #statement-doc .grid { display: grid !important; }
   #statement-doc .grid > * { margin-bottom: 0 !important; }
+
+  /* Financial Reports: formal statement layout.
+     Only the statement itself prints (summary cards/charts carry print:hidden);
+     the card chrome is stripped so the page reads as a document, column
+     headers repeat on every page, and rows never split across pages. */
+  .page-header { display: none !important; }
+  #financial-report-doc .stat-card {
+    border: none !important;
+    padding: 0 !important;
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+  }
+  #financial-report-doc { font-size: 10pt; }
+  #financial-report-doc .data-table thead { display: table-header-group; }
+  #financial-report-doc .data-table tr { page-break-inside: avoid; break-inside: avoid; }
+  #financial-report-doc .overflow-x-auto { overflow: visible !important; }
 }
 
 /* Estimate preview prints from inside its modal: isolate the document only. */
@@ -318,6 +339,7 @@
   body:has(#estimate-doc) #estimate-doc * { visibility: visible !important; }
   body:has(#estimate-doc) #estimate-doc {
     position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important;
+    padding: 1.2cm 1.4cm !important;
   }
 }
 
@@ -328,6 +350,7 @@
   body:has(#receipt-doc) #receipt-doc * { visibility: visible !important; }
   body:has(#receipt-doc) #receipt-doc {
     position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important;
+    padding: 1.2cm 1.4cm !important;
   }
 }
 

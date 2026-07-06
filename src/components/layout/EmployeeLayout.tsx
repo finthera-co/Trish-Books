@@ -1,9 +1,10 @@
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import { LayoutDashboard, CalendarDays, MapPin, FileText, CalendarPlus, History, LogOut, User, ChevronRight } from "lucide-react";
+import { LayoutDashboard, CalendarDays, MapPin, FileText, CalendarPlus, History, LogOut, User, ChevronRight, ArrowLeft } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMyEmployee } from "@/hooks/useMyEmployee";
 import { useNotificationsRealtime } from "@/hooks/useNotificationsRealtime";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { StoredAvatarImage } from "@/components/StoredAvatarImage";
 import NotificationBell from "@/components/NotificationBell";
 import ThemeToggle from "@/components/ThemeToggle";
 import { cn } from "@/lib/utils";
@@ -30,7 +31,7 @@ const BOTTOM_NAV = [
 export default function EmployeeLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signOut } = useAuth();
+  const { signOut, isEmployee } = useAuth();
   const { data: me } = useMyEmployee();
   useNotificationsRealtime(); // one realtime subscription for the whole portal (bell renders twice)
 
@@ -63,7 +64,7 @@ export default function EmployeeLayout() {
           className="px-5 py-5 flex items-center gap-3 border-b border-white/15 text-left hover:bg-white/10 transition-colors group"
         >
           <Avatar className="w-11 h-11 ring-2 ring-white/40">
-            <AvatarImage src={me?.photo_url ?? undefined} alt={fullName} />
+            <StoredAvatarImage path={me?.photo_url} alt={fullName} />
             <AvatarFallback className="bg-white/20 text-white text-sm">{initials || "ME"}</AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">
@@ -92,7 +93,17 @@ export default function EmployeeLayout() {
           })}
         </nav>
 
-        <div className="px-3 py-4 border-t border-white/15">
+        <div className="px-3 py-4 border-t border-white/15 space-y-1">
+          {/* Non-Employee roles arrive from the main app — give them a way back */}
+          {!isEmployee && (
+            <button
+              onClick={() => navigate("/")}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-white/85 hover:bg-white/15 transition-colors"
+            >
+              <ArrowLeft className="w-[18px] h-[18px] shrink-0" />
+              <span>Back to Main App</span>
+            </button>
+          )}
           <button
             onClick={handleSignOut}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-white/85 hover:bg-white/15 transition-colors"
@@ -112,7 +123,14 @@ export default function EmployeeLayout() {
         </header>
         {/* Mobile top bar */}
         <header className="md:hidden h-14 border-b border-border bg-card flex items-center justify-between px-4 shrink-0">
-          <span className="font-semibold">Employee Portal</span>
+          <div className="flex items-center gap-2">
+            {!isEmployee && (
+              <button onClick={() => navigate("/")} className="text-muted-foreground" aria-label="Back to main app">
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+            )}
+            <span className="font-semibold">Employee Portal</span>
+          </div>
           <div className="flex items-center gap-1">
             <ThemeToggle />
             <NotificationBell seeAllLink="/me/notifications" />

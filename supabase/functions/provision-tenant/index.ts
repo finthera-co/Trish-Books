@@ -46,8 +46,8 @@ Deno.serve(async (req) => {
       throw new Error("Missing required fields");
     }
 
-    if (admin_password.length < 6) {
-      throw new Error("Password must be at least 6 characters");
+    if (admin_password.length < 8) {
+      throw new Error("Password must be at least 8 characters");
     }
 
     // 1. Create the auth user (auto-confirm email)

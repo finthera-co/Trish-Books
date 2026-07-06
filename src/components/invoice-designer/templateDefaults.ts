@@ -29,7 +29,10 @@ export const DEFAULT_TABLE_SETTINGS: TableSettings = {
 export const DEFAULT_PAGE_SETTINGS: PageSettings = {
   size: 'A4',
   orientation: 'portrait',
-  margins: { top: 40, bottom: 40, left: 40, right: 40 },
+  // Left/right must satisfy: left + 12 cols × 45px + right ≤ 595px page width.
+  // At 40px the last grid column fell off the sheet and value boxes were
+  // clamped to 65px, wrapping every right-aligned amount.
+  margins: { top: 40, bottom: 40, left: 24, right: 24 },
   fontFamily: 'Helvetica',
   dateFormat: 'DD MMM YYYY',
   pageFooter: { enabled: true, message: 'Thank you for your business' },
@@ -99,11 +102,13 @@ export function getStandardTemplate(): DesignerComponent[] {
   idCounter = 0;
   return [
     // ── Header: logo + company (left) · INVOICE title (right) ────────────
+    // Company text starts at x:2.4 — a 0.4-col (18px) gutter after the logo
+    // box, so a full-width logo never touches the name/TIN text.
     { id: uid(), type: 'image', category: 'company', label: 'Company Logo', binding: 'company_logo', x: 0, y: 0, w: 2, h: 2, style: { imageFit: 'contain', borderRadius: 0 } },
-    { id: uid(), type: 'text', category: 'company', label: 'Company Name', binding: 'company_name', defaultValue: 'Company Name', x: 2, y: 0, w: 6, h: 1, style: { fontSize: 13, fontWeight: 'bold', color: INK, textAlign: 'left' } },
-    { id: uid(), type: 'text', category: 'company', label: 'Tax Number', binding: 'company_tax_number', defaultValue: 'TIN: 123456789', x: 2, y: 1, w: 6, h: 1, style: { fontSize: 9, color: MUTED, textAlign: 'left' } },
-    { id: uid(), type: 'text', category: 'company', label: 'Company Address', binding: 'company_address', defaultValue: '', x: 2, y: 2, w: 6, h: 1, style: { fontSize: 9, color: MUTED, textAlign: 'left' } },
-    { id: uid(), type: 'text', category: 'company', label: 'Company Phone', binding: 'company_phone', defaultValue: '', x: 2, y: 3, w: 6, h: 1, style: { fontSize: 9, color: MUTED, textAlign: 'left' } },
+    { id: uid(), type: 'text', category: 'company', label: 'Company Name', binding: 'company_name', defaultValue: 'Company Name', x: 2.4, y: 0, w: 5.5, h: 1, style: { fontSize: 13, fontWeight: 'bold', color: INK, textAlign: 'left' } },
+    { id: uid(), type: 'text', category: 'company', label: 'Tax Number', binding: 'company_tax_number', defaultValue: 'TIN: 123456789', x: 2.4, y: 1, w: 5.5, h: 1, style: { fontSize: 9, color: MUTED, textAlign: 'left' } },
+    { id: uid(), type: 'text', category: 'company', label: 'Company Address', binding: 'company_address', defaultValue: '', x: 2.4, y: 2, w: 5.5, h: 1, style: { fontSize: 9, color: MUTED, textAlign: 'left' } },
+    { id: uid(), type: 'text', category: 'company', label: 'Company Phone', binding: 'company_phone', defaultValue: '', x: 2.4, y: 3, w: 5.5, h: 1, style: { fontSize: 9, color: MUTED, textAlign: 'left' } },
     { id: uid(), type: 'text', category: 'meta', label: 'Invoice Title', binding: 'invoice_title', defaultValue: 'INVOICE', x: 8, y: 0, w: 4, h: 2, style: { fontSize: 26, fontWeight: 'bold', color: TITLE_GRAY, textAlign: 'right' } },
 
     // ── Rule under the header ────────────────────────────────────────────
@@ -130,22 +135,23 @@ export function getStandardTemplate(): DesignerComponent[] {
     { id: uid(), type: 'text', category: 'totals', label: 'Balance Due', binding: 'balance_due', defaultValue: '0.00', x: 10, y: 9, w: 2, h: 1, style: { fontSize: 9, fontWeight: 'bold', color: DUE_RED, textAlign: 'right', backgroundColor: SHADE, padding: 3 } },
 
     // ── Items table: # · Item & Description · Qty · Rate · Discount · Amount
-    { id: uid(), type: 'table', category: 'table', label: 'Invoice Items Table', x: 0, y: 10, w: 12, h: 6, style: {} },
+    // y:11 leaves a full grid row of air under the Balance Due chip (y:9).
+    { id: uid(), type: 'table', category: 'table', label: 'Invoice Items Table', x: 0, y: 11, w: 12, h: 6, style: {} },
 
     // ── Totals (right): Sub Total / Discount / Taxable amount / Total ────
-    { id: uid(), type: 'text', category: 'custom', label: 'Sub Total Label', defaultValue: 'Sub Total', x: 7, y: 16, w: 3, h: 1, style: { fontSize: 9, color: MUTED, textAlign: 'left' } },
-    { id: uid(), type: 'text', category: 'totals', label: 'Sub Total', binding: 'subtotal', defaultValue: '0.00', x: 10, y: 16, w: 2, h: 1, style: { fontSize: 9, color: INK, textAlign: 'right' } },
-    { id: uid(), type: 'text', category: 'custom', label: 'Discount Label', defaultValue: 'Discount', x: 7, y: 17, w: 3, h: 1, style: { fontSize: 9, color: DUE_RED, textAlign: 'left' } },
-    { id: uid(), type: 'text', category: 'totals', label: 'Discount', binding: 'discount', defaultValue: '0.00', x: 10, y: 17, w: 2, h: 1, style: { fontSize: 9, color: DUE_RED, textAlign: 'right' } },
-    { id: uid(), type: 'text', category: 'custom', label: 'Taxable Label', defaultValue: 'Taxable amount', x: 7, y: 18, w: 3, h: 1, style: { fontSize: 9, color: MUTED, textAlign: 'left' } },
-    { id: uid(), type: 'text', category: 'totals', label: 'Taxable Amount', binding: 'taxable_amount', defaultValue: '0.00', x: 10, y: 18, w: 2, h: 1, style: { fontSize: 9, color: INK, textAlign: 'right' } },
-    { id: uid(), type: 'text', category: 'custom', label: 'Total Label', defaultValue: 'Total', x: 7, y: 19, w: 3, h: 1, style: { fontSize: 10, fontWeight: 'bold', color: INK, textAlign: 'left' } },
-    { id: uid(), type: 'text', category: 'totals', label: 'Total', binding: 'total', defaultValue: '0.00', x: 10, y: 19, w: 2, h: 1, style: { fontSize: 10, fontWeight: 'bold', color: INK, textAlign: 'right' } },
-    { id: uid(), type: 'text', category: 'custom', label: 'Balance Due Label', defaultValue: 'Balance Due', x: 7, y: 20, w: 3, h: 1, style: { fontSize: 10, fontWeight: 'bold', color: INK, textAlign: 'left', backgroundColor: SHADE, padding: 3 } },
-    { id: uid(), type: 'text', category: 'totals', label: 'Balance Due', binding: 'balance_due', defaultValue: '0.00', x: 10, y: 20, w: 2, h: 1, style: { fontSize: 10, fontWeight: 'bold', color: DUE_RED, textAlign: 'right', backgroundColor: SHADE, padding: 3 } },
+    { id: uid(), type: 'text', category: 'custom', label: 'Sub Total Label', defaultValue: 'Sub Total', x: 7, y: 17, w: 3, h: 1, style: { fontSize: 9, color: MUTED, textAlign: 'left' } },
+    { id: uid(), type: 'text', category: 'totals', label: 'Sub Total', binding: 'subtotal', defaultValue: '0.00', x: 10, y: 17, w: 2, h: 1, style: { fontSize: 9, color: INK, textAlign: 'right' } },
+    { id: uid(), type: 'text', category: 'custom', label: 'Discount Label', defaultValue: 'Discount', x: 7, y: 18, w: 3, h: 1, style: { fontSize: 9, color: DUE_RED, textAlign: 'left' } },
+    { id: uid(), type: 'text', category: 'totals', label: 'Discount', binding: 'discount', defaultValue: '0.00', x: 10, y: 18, w: 2, h: 1, style: { fontSize: 9, color: DUE_RED, textAlign: 'right' } },
+    { id: uid(), type: 'text', category: 'custom', label: 'Taxable Label', defaultValue: 'Taxable amount', x: 7, y: 19, w: 3, h: 1, style: { fontSize: 9, color: MUTED, textAlign: 'left' } },
+    { id: uid(), type: 'text', category: 'totals', label: 'Taxable Amount', binding: 'taxable_amount', defaultValue: '0.00', x: 10, y: 19, w: 2, h: 1, style: { fontSize: 9, color: INK, textAlign: 'right' } },
+    { id: uid(), type: 'text', category: 'custom', label: 'Total Label', defaultValue: 'Total', x: 7, y: 20, w: 3, h: 1, style: { fontSize: 10, fontWeight: 'bold', color: INK, textAlign: 'left' } },
+    { id: uid(), type: 'text', category: 'totals', label: 'Total', binding: 'total', defaultValue: '0.00', x: 10, y: 20, w: 2, h: 1, style: { fontSize: 10, fontWeight: 'bold', color: INK, textAlign: 'right' } },
+    { id: uid(), type: 'text', category: 'custom', label: 'Balance Due Label', defaultValue: 'Balance Due', x: 7, y: 21, w: 3, h: 1, style: { fontSize: 10, fontWeight: 'bold', color: INK, textAlign: 'left', backgroundColor: SHADE, padding: 3 } },
+    { id: uid(), type: 'text', category: 'totals', label: 'Balance Due', binding: 'balance_due', defaultValue: '0.00', x: 10, y: 21, w: 2, h: 1, style: { fontSize: 10, fontWeight: 'bold', color: DUE_RED, textAlign: 'right', backgroundColor: SHADE, padding: 3 } },
 
     // ── Notes / terms (left, print only when the invoice has them) ───────
-    { id: uid(), type: 'text', category: 'footer', label: 'Notes', binding: 'notes', defaultValue: '', x: 0, y: 16, w: 6, h: 2, style: { fontSize: 9, color: MUTED, textAlign: 'left' } },
-    { id: uid(), type: 'text', category: 'footer', label: 'Terms', binding: 'terms', defaultValue: '', x: 0, y: 18, w: 6, h: 2, style: { fontSize: 9, color: MUTED, textAlign: 'left' } },
+    { id: uid(), type: 'text', category: 'footer', label: 'Notes', binding: 'notes', defaultValue: '', x: 0, y: 17, w: 6, h: 2, style: { fontSize: 9, color: MUTED, textAlign: 'left' } },
+    { id: uid(), type: 'text', category: 'footer', label: 'Terms', binding: 'terms', defaultValue: '', x: 0, y: 19, w: 6, h: 2, style: { fontSize: 9, color: MUTED, textAlign: 'left' } },
   ];
 }

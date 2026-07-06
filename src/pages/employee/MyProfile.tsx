@@ -1,7 +1,8 @@
 import { format, parseISO, differenceInMonths } from "date-fns";
 import { Mail, Briefcase, Building2, CalendarDays, BadgeCheck, Hash, Clock } from "lucide-react";
 import { useMyEmployee, useTenantBranding } from "@/hooks/useMyEmployee";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { StoredAvatarImage } from "@/components/StoredAvatarImage";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function tenure(hire?: string | null) {
@@ -55,7 +56,7 @@ export default function MyProfile() {
         ) : (
           <div className="flex items-center gap-5">
             <Avatar className="w-20 h-20 ring-4 ring-white/30">
-              <AvatarImage src={me?.photo_url ?? undefined} alt={fullName} />
+              <StoredAvatarImage path={me?.photo_url} alt={fullName} />
               <AvatarFallback className="bg-white/20 text-white text-xl">{initials || "ME"}</AvatarFallback>
             </Avatar>
             <div className="min-w-0">

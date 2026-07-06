@@ -19,19 +19,15 @@ vi.mock("sonner", () => ({
   toast: { error: (msg: string) => mockToastError(msg), success: (msg: string) => mockToastSuccess(msg) },
 }));
 
-// Build a chainable supabase mock
-const mockSingle = vi.fn();
-const mockSelect = vi.fn(() => ({ eq: vi.fn(() => ({ single: mockSingle })) }));
-const mockFromInsert = vi.fn(() => ({ select: vi.fn(() => ({ single: mockSingle })) }));
-const mockFrom = vi.fn((table: string) =>
-  table === "tenants" ? { insert: mockFromInsert } : { select: mockSelect, insert: mockFromInsert }
-);
+// Signup now provisions the tenant + user via a single server-side RPC
+// (signup_provision) instead of client-side inserts, so we only mock rpc().
 const mockSignUp = vi.fn();
+const mockRpc = vi.fn();
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     auth: { signUp: (...args: any[]) => mockSignUp(...args) },
-    from: (...args: any[]) => mockFrom(...args),
+    rpc: (...args: any[]) => mockRpc(...args),
   },
 }));
 
@@ -73,16 +69,7 @@ describe("Signup page", () => {
 
     // Default happy-path supabase responses
     mockSignUp.mockResolvedValue({ data: { user: { id: "user-123" } }, error: null });
-    mockSingle
-      .mockResolvedValueOnce({ data: { id: "plan-456" }, error: null })   // subscription_plans
-      .mockResolvedValueOnce({ data: { id: "tenant-789" }, error: null }) // tenants insert
-      .mockResolvedValueOnce({ data: { id: "role-101" }, error: null });  // roles
-    mockFromInsert.mockReturnValue({ select: vi.fn(() => ({ single: mockSingle })) });
-    mockFrom.mockImplementation((table: string) => {
-      if (table === "tenants") return { insert: mockFromInsert };
-      if (table === "users") return { insert: vi.fn().mockResolvedValue({ error: null }) };
-      return { select: mockSelect };
-    });
+    mockRpc.mockResolvedValue({ data: "tenant-789", error: null });
   });
 
   describe("Rendering", () => {
@@ -161,33 +148,34 @@ describe("Signup page", () => {
     });
   });
 
-  describe("Failed signup — database error", () => {
-    it("shows an error toast when tenant creation fails", async () => {
-      mockSignUp.mockResolvedValueOnce({ data: { user: { id: "user-123" } }, error: null });
+  describe("Provisioning", () => {
+    it("calls signup_provision with the company and name, not client-side inserts", async () => {
+      renderSignup();
+      fillForm({ firstName: "Jane", lastName: "Doe", company: "Acme Inc" });
+      fireEvent.submit(screen.getByRole("button", { name: /create account/i }));
 
-      // plan fetch succeeds, tenant insert fails
-      mockFrom.mockImplementation((table: string) => {
-        if (table === "subscription_plans") {
-          return { select: vi.fn(() => ({ eq: vi.fn(() => ({ single: vi.fn().mockResolvedValue({ data: { id: "plan-1" }, error: null }) })) })) };
-        }
-        if (table === "tenants") {
-          return {
-            insert: vi.fn(() => ({
-              select: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({ data: null, error: { message: "DB error creating tenant" } }),
-              })),
-            })),
-          };
-        }
-        return { select: mockSelect, insert: mockFromInsert };
+      await waitFor(() => {
+        expect(mockRpc).toHaveBeenCalledWith(
+          "signup_provision",
+          expect.objectContaining({
+            p_company_name: "Acme Inc",
+            p_first_name: "Jane",
+            p_last_name: "Doe",
+          })
+        );
       });
+    });
+
+    it("shows an error toast and does not navigate when provisioning fails", async () => {
+      mockSignUp.mockResolvedValueOnce({ data: { user: { id: "user-123" } }, error: null });
+      mockRpc.mockResolvedValueOnce({ data: null, error: { message: "User already provisioned" } });
 
       renderSignup();
       fillForm();
       fireEvent.submit(screen.getByRole("button", { name: /create account/i }));
 
       await waitFor(() => {
-        expect(mockToastError).toHaveBeenCalledWith("DB error creating tenant");
+        expect(mockToastError).toHaveBeenCalledWith("User already provisioned");
         expect(mockNavigate).not.toHaveBeenCalled();
       });
     });

@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
-import { ArrowRight, BookOpen, Landmark, ShoppingCart, Receipt, DollarSign, BarChart3, FileText, Users, Warehouse, Settings, Building2, UserCheck, Activity, Shield, AlertTriangle, CreditCard } from "lucide-react";
+import { ArrowRight, BookOpen, Landmark, ShoppingCart, Receipt, DollarSign, BarChart3, FileText, Users, Warehouse, Settings, Building2, UserCheck, Activity, Shield, AlertTriangle, CreditCard, CircleUserRound } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const TENANT_MODULES = [
@@ -11,6 +11,7 @@ const TENANT_MODULES = [
   { id: "assets", label: "Assets", desc: "Asset tracking & depreciation", icon: Warehouse, path: "/assets/register", bg: "bg-[hsl(160,60%,40%)]/10", iconBg: "bg-[hsl(160,60%,40%)]" },
   { id: "reports", label: "Reports", desc: "Financial reports & analytics", icon: BarChart3, path: "/reports/financial", bg: "bg-[hsl(0,84%,60%)]/10", iconBg: "bg-[hsl(0,84%,60%)]" },
   { id: "journals", label: "Journals", desc: "Double-entry bookkeeping", icon: BookOpen, path: "/accounting/journals", bg: "bg-[hsl(217,91%,60%)]/10", iconBg: "bg-[hsl(217,91%,60%)]" },
+  { id: "employee-profile", label: "Employee Profile", desc: "My dashboard, leave & check-in", icon: CircleUserRound, path: "/me", bg: "bg-[hsl(280,65%,60%)]/10", iconBg: "bg-[hsl(280,65%,60%)]" },
 ];
 
 const SUPER_ADMIN_MODULES = [

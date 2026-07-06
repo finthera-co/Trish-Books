@@ -11,7 +11,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useMyPermissions } from "@/hooks/usePermissions";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import CompensationDialog from "@/components/employees/CompensationDialog";
 import { useAuth } from "@/contexts/AuthContext";
+import { StoredAvatarImage } from "@/components/StoredAvatarImage";
 
 const EMPTY_FORM = {
   full_name: "",
@@ -107,11 +108,12 @@ export default function Employees() {
     setUploadingPhoto(true);
     try {
       const ext = file.name.split(".").pop() || "jpg";
-      const path = `${crypto.randomUUID()}.${ext}`;
+      // Tenant-prefixed path so storage RLS can scope reads/writes to the tenant.
+      const path = `${appUser!.tenant_id}/${crypto.randomUUID()}.${ext}`;
       const { error } = await supabase.storage.from("employee-photos").upload(path, file, { upsert: true });
       if (error) throw error;
-      const { data } = supabase.storage.from("employee-photos").getPublicUrl(path);
-      set("photo_url", data.publicUrl);
+      // Private bucket: store the object path; it is signed on render.
+      set("photo_url", path);
     } catch (e: any) {
       toast.error("Photo upload failed: " + (e?.message ?? "unknown error"));
     } finally {
@@ -161,8 +163,8 @@ export default function Employees() {
       await updateEmployee.mutateAsync({ id: editingId, ...payload });
     } else if (create_login) {
       if (!form.email) { toast.error("Email is required to create a login account"); return; }
-      if (!form.login_password || form.login_password.length < 6) {
-        toast.error("Set a temporary password of at least 6 characters");
+      if (!form.login_password || form.login_password.length < 8) {
+        toast.error("Set a temporary password of at least 8 characters");
         return;
       }
       await provisionEmployee.mutateAsync({ ...payload, password: login_password });
@@ -269,7 +271,7 @@ export default function Employees() {
                 {/* Photo + full name */}
                 <div className="flex items-center gap-4">
                   <Avatar className="w-20 h-20 rounded-2xl ring-1 ring-border">
-                    <AvatarImage src={form.photo_url || undefined} className="object-cover" />
+                    <StoredAvatarImage path={form.photo_url} className="object-cover" />
                     <AvatarFallback className="rounded-2xl bg-muted text-muted-foreground">
                       {(form.first_name?.[0] ?? "") + (form.last_name?.[0] ?? "") || "?"}
                     </AvatarFallback>
@@ -434,7 +436,7 @@ export default function Employees() {
                 {form.create_login ? (
                   <div className="grid grid-cols-2 gap-4">
                     <div><Label>Login Email *</Label><Input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="employee@company.com" /></div>
-                    <div><Label>Temporary Password *</Label><Input type="text" value={form.login_password} onChange={(e) => set("login_password", e.target.value)} placeholder="At least 6 characters" /></div>
+                    <div><Label>Temporary Password *</Label><Input type="text" value={form.login_password} onChange={(e) => set("login_password", e.target.value)} placeholder="At least 8 characters" /></div>
                     <p className="col-span-2 text-xs text-muted-foreground">
                       The employee signs in with this email and temporary password to reach their own dashboard (attendance, payslips, leave).
                     </p>
@@ -487,7 +489,7 @@ export default function Employees() {
                       title="View full details"
                     >
                       <Avatar className="w-8 h-8">
-                        <AvatarImage src={(emp as any).photo_url || undefined} className="object-cover" />
+                        <StoredAvatarImage path={(emp as any).photo_url} className="object-cover" />
                         <AvatarFallback className="text-xs bg-muted">{(emp.first_name?.[0] ?? "") + (emp.last_name?.[0] ?? "")}</AvatarFallback>
                       </Avatar>
                       <span className="hover:underline">{emp.first_name} {emp.last_name}</span>
@@ -559,7 +561,7 @@ export default function Employees() {
 
                 <div className="flex items-center gap-4 pt-1">
                   <Avatar className="w-20 h-20 rounded-2xl ring-1 ring-border">
-                    <AvatarImage src={emp.photo_url || undefined} className="object-cover" />
+                    <StoredAvatarImage path={emp.photo_url} className="object-cover" />
                     <AvatarFallback className="rounded-2xl bg-muted text-muted-foreground text-lg">
                       {(emp.first_name?.[0] ?? "") + (emp.last_name?.[0] ?? "") || "?"}
                     </AvatarFallback>

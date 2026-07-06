@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { Upload, Loader2, X } from "lucide-react";
+import { MfaCard } from "@/components/security/MfaCard";
 
 export default function SettingsPage() {
   const { appUser } = useAuth();
@@ -235,6 +236,8 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+
+        <MfaCard />
       </div>
     </div>
   );

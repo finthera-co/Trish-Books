@@ -44,10 +44,14 @@ Deno.serve(async (req) => {
   const secret = Deno.env.get("RESEND_WEBHOOK_SECRET");
   const raw = await req.text();
 
-  if (secret) {
-    const valid = await verifySvix(secret, req.headers, raw).catch(() => false);
-    if (!valid) return json({ ok: false, error: "Invalid signature" }, 401);
+  // Fail closed: without a signing secret we cannot verify authenticity, so we
+  // must reject rather than trust an unsigned event and mutate invoice state.
+  if (!secret) {
+    return json({ ok: false, error: "Webhook secret not configured" }, 500);
   }
+
+  const valid = await verifySvix(secret, req.headers, raw).catch(() => false);
+  if (!valid) return json({ ok: false, error: "Invalid signature" }, 401);
 
   let event: any;
   try { event = JSON.parse(raw); } catch { return json({ ok: false, error: "Bad JSON" }, 400); }

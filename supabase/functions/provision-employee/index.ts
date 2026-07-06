@@ -49,8 +49,8 @@ Deno.serve(async (req) => {
     if (!email || !password || !first_name) {
       throw new Error("Email, password and first name are required");
     }
-    if (password.length < 6) {
-      throw new Error("Password must be at least 6 characters");
+    if (password.length < 8) {
+      throw new Error("Password must be at least 8 characters");
     }
 
     // Super admin may target another tenant; everyone else is pinned to their own.
@@ -94,11 +94,10 @@ Deno.serve(async (req) => {
       throw new Error(userError.message);
     }
 
-    // 3. Create the employee row, linked to the login
-    const employeePayload: Record<string, unknown> = {
-      tenant_id: targetTenantId,
-      user_id: userData.id,
-    };
+    // 3. Fill in the employee row. The users AFTER INSERT trigger
+    //    (ensure_employee_profile) already created/linked a bare employee
+    //    record for this login, so update it with the full HR payload.
+    const employeePayload: Record<string, unknown> = {};
     for (const key of EMPLOYEE_FIELDS) {
       const v = body[key];
       if (typeof v === "boolean") employeePayload[key] = v;
@@ -106,13 +105,33 @@ Deno.serve(async (req) => {
     }
     employeePayload.last_name = last_name || "";
 
-    const { data: empData, error: empError } = await adminClient
+    let empData: Record<string, unknown> | null = null;
+    let empError: { message: string } | null = null;
+    const { data: updated, error: updateErr } = await adminClient
       .from("employees")
-      .insert(employeePayload)
+      .update(employeePayload)
+      .eq("user_id", userData.id)
+      .eq("tenant_id", targetTenantId)
       .select("*")
-      .single();
+      .maybeSingle();
+    if (updateErr) {
+      empError = updateErr;
+    } else if (updated) {
+      empData = updated;
+    } else {
+      // Defensive fallback: trigger didn't create a row (shouldn't happen)
+      const { data: inserted, error: insertErr } = await adminClient
+        .from("employees")
+        .insert({ ...employeePayload, tenant_id: targetTenantId, user_id: userData.id })
+        .select("*")
+        .single();
+      empData = inserted;
+      empError = insertErr;
+    }
     if (empError) {
-      // Roll back both the users row and the auth user
+      // Roll back the users row and the auth user. The employee row is kept
+      // but unlinked (FK is ON DELETE SET NULL) — it may be a pre-existing HR
+      // record the trigger linked, and a retry will re-link it by email.
       await adminClient.from("users").delete().eq("id", userData.id);
       await adminClient.auth.admin.deleteUser(authUserId);
       throw new Error(empError.message);

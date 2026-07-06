@@ -54,7 +54,9 @@ export default function EmployeeDashboard() {
   // Every active leave type with its available balance (fall back to the type's
   // default quota when the employee has no balance row yet — created on approval).
   const leaveRows = useMemo(() => {
-    const byType = new Map((balances ?? []).map((b: any) => [b.leave_type_id, b]));
+    // Admins can read the whole tenant's balances — keep only our own rows.
+    const own = (balances ?? []).filter((b: any) => !me?.id || b.employee_id === me.id);
+    const byType = new Map(own.map((b: any) => [b.leave_type_id, b]));
     return (types ?? [])
       .filter((t: any) => t.is_active !== false)
       .map((t: any) => {
@@ -62,7 +64,7 @@ export default function EmployeeDashboard() {
         const available = b ? Number(b.available) : Number(t.default_annual_quota ?? 0);
         return { id: t.id, name: t.name, color: t.color, available };
       });
-  }, [types, balances]);
+  }, [types, balances, me?.id]);
 
   const totalAvailable = useMemo(
     () => leaveRows.reduce((s, b) => s + (Number(b.available) || 0), 0),
@@ -70,7 +72,7 @@ export default function EmployeeDashboard() {
   );
 
   const { presentEquiv, workingDays, attendancePct } = useMemo(() => {
-    const recs = attendance ?? [];
+    const recs = (attendance ?? []).filter((r: any) => !me?.id || r.employee_id === me.id);
     const present = recs.reduce((s: number, r: any) =>
       s + (r.status === "present" ? 1 : r.status === "half_day" ? 0.5 : 0), 0);
     const working = recs.filter((r: any) => WORKING_STATUSES.includes(r.status)).length;
@@ -79,17 +81,17 @@ export default function EmployeeDashboard() {
       workingDays: working,
       attendancePct: working > 0 ? Math.round((present / working) * 100) : null,
     };
-  }, [attendance]);
+  }, [attendance, me?.id]);
 
   const todayKey = format(new Date(), "yyyy-MM-dd");
   const todayRecord = useMemo(
-    () => (attendance ?? []).find((r: any) => r.attendance_date === todayKey),
-    [attendance, todayKey],
+    () => (attendance ?? []).find((r: any) => r.attendance_date === todayKey && (!me?.id || r.employee_id === me.id)),
+    [attendance, todayKey, me?.id],
   );
 
   const pendingCount = useMemo(
-    () => (requests ?? []).filter((r: any) => r.status === "pending").length,
-    [requests],
+    () => (requests ?? []).filter((r: any) => r.status === "pending" && (!me?.id || r.employee_id === me.id)).length,
+    [requests, me?.id],
   );
 
   // Upcoming holidays within the next 60 days (the lightweight "company feed").

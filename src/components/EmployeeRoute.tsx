@@ -2,15 +2,16 @@ import { Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 
 /**
- * Gates the employee self-service portal. Only the 'Employee' role lands here;
- * everyone else is sent back to their normal home.
+ * Gates the employee self-service portal (/me). Every tenant user — any role —
+ * has a linked employee profile, so all of them may enter. Super admins have
+ * no tenant (and no employee record), so they go back to the control plane.
  */
 export default function EmployeeRoute() {
-  const { isEmployee, loading, appUser } = useAuth();
+  const { isSuperAdmin, loading, appUser } = useAuth();
 
   if (loading || !appUser) return null;
 
-  if (!isEmployee) {
+  if (isSuperAdmin || !appUser.tenant_id) {
     return <Navigate to="/" replace />;
   }
 

@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect, Fragment } from "react";
-import { FileText, TrendingUp, DollarSign, BarChart3, Printer, ArrowLeft, Activity, Warehouse } from "lucide-react";
+import { FileText, TrendingUp, DollarSign, BarChart3, Printer, ArrowLeft, Activity, Warehouse, Download } from "lucide-react";
+import { toast } from "sonner";
+import { downloadReportPdf } from "@/lib/reportPdf";
 import { Button } from "@/components/ui/button";
 import { useAccounts, useJournalEntries, useInvoices, useExpenses, useBudgets } from "@/hooks/useData";
 import { useQuery } from "@tanstack/react-query";
@@ -55,6 +57,21 @@ export default function Reports() {
     queryKey: ["opening_balances_for_reports"],
     queryFn: async () => {
       const { data, error } = await supabase.from("opening_balances").select("*");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Company identity for printed statement headers
+  const { data: company } = useQuery({
+    queryKey: ["tenant_company_for_reports", appUser?.tenant_id],
+    enabled: !!appUser?.tenant_id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("tenants")
+        .select("company_name, address, phone, tax_id")
+        .eq("id", appUser!.tenant_id)
+        .maybeSingle();
       if (error) throw error;
       return data;
     },
@@ -214,43 +231,67 @@ export default function Reports() {
     },
   });
 
-  // Find the fiscal period that best matches the report date range
-  const matchingPeriod = useMemo(() => {
-    if (!fiscalPeriods) return null;
-    // Find period whose start date is closest to (and <= ) periodFrom
-    return fiscalPeriods.find(p => p.period_start <= periodFrom && p.period_end >= periodFrom)
-      || fiscalPeriods.find(p => p.period_start >= periodFrom && p.period_start <= periodTo)
-      || null;
-  }, [fiscalPeriods, periodFrom, periodTo]);
+  // The opening-balance baseline: the latest fiscal period that (a) has opening
+  // balance rows entered and (b) starts on or before the report end date. All
+  // "as at" balances are opening balances + every posted entry from that
+  // period's start through periodTo — independent of the selected From date,
+  // so the Balance Sheet and Trial Balance never lose pre-window activity.
+  const obPeriod = useMemo(() => {
+    if (!fiscalPeriods || !allOpeningBalances) return null;
+    const obPeriodIds = new Set(allOpeningBalances.map(ob => ob.fiscal_period_id));
+    const candidates = fiscalPeriods.filter(p => obPeriodIds.has(p.id) && p.period_start <= periodTo);
+    return candidates.length ? candidates[candidates.length - 1] : null;
+  }, [fiscalPeriods, allOpeningBalances, periodTo]);
 
-  // Build opening balance map for the matching period
   const openingBalanceMap = useMemo(() => {
     const m = new Map<string, number>();
-    if (!matchingPeriod || !allOpeningBalances) return m;
+    if (!obPeriod || !allOpeningBalances) return m;
     allOpeningBalances
-      .filter(ob => ob.fiscal_period_id === matchingPeriod.id)
+      .filter(ob => ob.fiscal_period_id === obPeriod.id)
       .forEach(ob => m.set(ob.account_id, Number(ob.balance)));
     return m;
-  }, [matchingPeriod, allOpeningBalances]);
+  }, [obPeriod, allOpeningBalances]);
 
-  // Filter journal entries by period
+  const postedEntries = useMemo(() => {
+    return journalEntries?.filter(e => e.status === "posted" && !(e as any).voided_at) || [];
+  }, [journalEntries]);
+
+  // Entries inside the selected window — drives the P&L, Cash Flow sections
+  // and other period-based reports.
   const filteredEntries = useMemo(() => {
-    return journalEntries?.filter(e => 
-      e.status === "posted" && 
-      !(e as any).voided_at &&
-      e.entry_date >= periodFrom && 
-      e.entry_date <= periodTo
-    ) || [];
-  }, [journalEntries, periodFrom, periodTo]);
+    return postedEntries.filter(e => e.entry_date >= periodFrom && e.entry_date <= periodTo);
+  }, [postedEntries, periodFrom, periodTo]);
 
-  // Build account balances from opening balances + filtered journal lines
-  const accountBalances = useMemo(() => {
-    const map = new Map<string, { id: string; name: string; code: string; type: string; subledger_type: string | null; debit: number; credit: number; openingBalance: number }>();
+  // Entries from the opening-balance baseline through periodTo — drives the
+  // "as at" reports (Trial Balance, Balance Sheet) and beginning cash.
+  const cumulativeEntries = useMemo(() => {
+    return postedEntries.filter(e =>
+      e.entry_date <= periodTo && (!obPeriod || e.entry_date >= obPeriod.period_start)
+    );
+  }, [postedEntries, periodTo, obPeriod]);
+
+  const prePeriodEntries = useMemo(() => {
+    return cumulativeEntries.filter(e => e.entry_date < periodFrom);
+  }, [cumulativeEntries, periodFrom]);
+
+  type AccountBal = { id: string; name: string; code: string; type: string; subtype: string | null; subledger_type: string | null; debit: number; credit: number; openingBalance: number };
+
+  const buildBalanceMap = (entries: any[], includeOpening: boolean) => {
+    const map = new Map<string, AccountBal>();
     accounts?.forEach(a => {
-      const ob = openingBalanceMap.get(a.id) || 0;
-      map.set(a.id, { id: a.id, name: a.account_name, code: a.account_code, type: a.account_type, subledger_type: (a as any).subledger_type ?? null, debit: 0, credit: 0, openingBalance: ob });
+      map.set(a.id, {
+        id: a.id,
+        name: a.account_name,
+        code: a.account_code,
+        type: a.account_type,
+        subtype: (a as any).account_subtype ?? null,
+        subledger_type: (a as any).subledger_type ?? null,
+        debit: 0,
+        credit: 0,
+        openingBalance: includeOpening ? (openingBalanceMap.get(a.id) || 0) : 0,
+      });
     });
-    filteredEntries.forEach(entry => {
+    entries.forEach(entry => {
       ((entry.journal_lines as any[]) || []).forEach(line => {
         const acc = map.get(line.account_id);
         if (acc) {
@@ -260,9 +301,57 @@ export default function Reports() {
       });
     });
     return map;
-  }, [accounts, filteredEntries, openingBalanceMap]);
+  };
 
-  const balances = Array.from(accountBalances.values()).filter(a => a.debit > 0 || a.credit > 0 || a.openingBalance !== 0);
+  // Period activity only (no opening balances) — P&L, expense analysis.
+  const accountBalances = useMemo(
+    () => buildBalanceMap(filteredEntries, false),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [accounts, filteredEntries]
+  );
+
+  // As-at-periodTo balances (opening balances + cumulative activity) —
+  // Trial Balance, Balance Sheet.
+  const cumulativeBalances = useMemo(
+    () => buildBalanceMap(cumulativeEntries, true),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [accounts, cumulativeEntries, openingBalanceMap]
+  );
+
+  // As-at-periodFrom balances — beginning cash for the Cash Flow statement.
+  const prePeriodBalances = useMemo(
+    () => buildBalanceMap(prePeriodEntries, true),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [accounts, prePeriodEntries, openingBalanceMap]
+  );
+
+  const balances = Array.from(accountBalances.values()).filter(a => a.debit > 0 || a.credit > 0);
+  const cumulativeList = Array.from(cumulativeBalances.values()).filter(a => a.debit > 0 || a.credit > 0 || a.openingBalance !== 0);
+
+  // Signed closing balance in the account's normal-balance direction
+  // (positive = normal side). Works for any balance map built above.
+  const getNetBalance = (a: AccountBal) => {
+    const journalNet = checkDebitNormal(a.type) ? (a.debit - a.credit) : (a.credit - a.debit);
+    return a.openingBalance + journalNet;
+  };
+
+  // Account classification helpers used by the Balance Sheet and Cash Flow.
+  const lowerSub = (a: AccountBal) => (a.subtype ?? "").toLowerCase();
+  const isAccumDepAccount = (a: AccountBal) =>
+    a.subledger_type === "asset_depreciation" || lowerSub(a).includes("accumulated depreciation");
+  const isPPEAccount = (a: AccountBal) =>
+    a.subledger_type === "fixed_asset" ||
+    ["fixed asset", "furniture", "vehicle", "building"].some(k => lowerSub(a).includes(k));
+  const isIntangibleAccount = (a: AccountBal) => lowerSub(a).includes("intangible");
+  const isNonCurrentLiability = (a: AccountBal) =>
+    lowerSub(a).includes("long-term") || lowerSub(a).includes("long term");
+  const isCashAccount = (a: AccountBal) =>
+    a.type === "Asset" &&
+    !isPPEAccount(a) && !isAccumDepAccount(a) &&
+    (["cash", "checking", "savings", "bank"].some(k => lowerSub(a).includes(k)) ||
+      a.name.toLowerCase().includes("cash") || a.name.toLowerCase().includes("bank"));
+
+  const PNL_TYPES = ["Income", "Cost of Goods Sold", "Expense", "Other Income", "Other Expense"];
 
   const reports = [
     { id: "trial-balance" as ReportType, name: "Trial Balance", description: "Verify total debits equal total credits across all accounts", icon: FileText, category: "Accounting" },
@@ -281,47 +370,59 @@ export default function Reports() {
     return n < 0 ? `(LKR ${str})` : `LKR ${str}`;
   };
 
-  const StatementHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (
+  // Standard financial-statement heading: company identity (print only —
+  // the app chrome already shows it on screen), report title, basis line.
+  const StatementHeader = ({ title, subtitle, asAt }: { title: string; subtitle?: string; asAt?: boolean }) => (
     <div className="text-center mb-6 print:mb-4">
+      <div className="hidden print:block mb-3 pb-3 border-b border-border">
+        <p className="text-xl font-bold text-foreground">{company?.company_name || ""}</p>
+        {company?.address && <p className="text-xs text-muted-foreground whitespace-pre-line">{company.address}</p>}
+        {(company?.phone || company?.tax_id) && (
+          <p className="text-xs text-muted-foreground">
+            {company?.phone}{company?.phone && company?.tax_id ? " · " : ""}{company?.tax_id ? `TIN: ${company.tax_id}` : ""}
+          </p>
+        )}
+      </div>
       <h2 className="text-lg font-bold text-foreground">{title}</h2>
       {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
       <p className="text-xs text-muted-foreground mt-1">
-        Period: {format(new Date(periodFrom), "MMM d, yyyy")} — {format(new Date(periodTo), "MMM d, yyyy")}
+        {asAt
+          ? <>As at {format(new Date(periodTo), "MMM d, yyyy")}</>
+          : <>For the period {format(new Date(periodFrom), "MMM d, yyyy")} — {format(new Date(periodTo), "MMM d, yyyy")}</>}
+      </p>
+      <p className="hidden print:block text-[10px] text-muted-foreground mt-1">
+        All amounts in LKR · Generated on {format(new Date(), "MMM d, yyyy h:mm a")}
       </p>
     </div>
   );
 
   const renderTrialBalance = () => {
-    const sorted = [...balances].sort((a, b) => a.code.localeCompare(b.code));
-    
-    // Include opening balances in debit/credit totals (industry standard)
-    const getEffectiveAmounts = (a: typeof balances[0]) => {
-      const isDebitNormal = checkDebitNormal(a.type);
-      let dr = a.debit;
-      let cr = a.credit;
-      if (a.openingBalance > 0) {
-        if (isDebitNormal) dr += a.openingBalance;
-        else cr += a.openingBalance;
-      } else if (a.openingBalance < 0) {
-        if (isDebitNormal) cr += Math.abs(a.openingBalance);
-        else dr += Math.abs(a.openingBalance);
-      }
-      return { debit: dr, credit: cr };
-    };
-    
-    let totalDebit = 0, totalCredit = 0;
-    sorted.forEach(a => {
-      const eff = getEffectiveAmounts(a);
-      totalDebit += eff.debit;
-      totalCredit += eff.credit;
-    });
+    // Trial balance of closing balances as at periodTo: each account's net
+    // balance (opening + cumulative activity) sits in either the Debit or the
+    // Credit column — the standard closing TB presentation.
+    const rows = cumulativeList
+      .map(a => {
+        // Net balance expressed as debit-positive
+        const net = getNetBalance(a);
+        const debitSigned = checkDebitNormal(a.type) ? net : -net;
+        return {
+          ...a,
+          debitBal: debitSigned > 0 ? debitSigned : 0,
+          creditBal: debitSigned < 0 ? -debitSigned : 0,
+        };
+      })
+      .filter(r => r.debitBal > 0.005 || r.creditBal > 0.005)
+      .sort((a, b) => a.code.localeCompare(b.code));
+
+    const totalDebit = rows.reduce((s, r) => s + r.debitBal, 0);
+    const totalCredit = rows.reduce((s, r) => s + r.creditBal, 0);
     const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
-    
+
     return (
       <div className="stat-card print:shadow-none">
-        <StatementHeader title="Trial Balance" />
-        {sorted.length === 0 ? (
-          <p className="text-center py-12 text-muted-foreground">No journal entries found for this period. Post journal entries to generate the trial balance.</p>
+        <StatementHeader title="Trial Balance" subtitle="Closing balances by account" asAt />
+        {rows.length === 0 ? (
+          <p className="text-center py-12 text-muted-foreground">No journal entries found. Post journal entries to generate the trial balance.</p>
         ) : (
           <>
             <table className="data-table">
@@ -330,33 +431,26 @@ export default function Reports() {
                   <th className="w-24">Code</th>
                   <th>Account Name</th>
                   <th className="w-28">Type</th>
-                  <th className="text-right w-32">Debit</th>
-                  <th className="text-right w-32">Credit</th>
-                  <th className="text-right w-32">Net Balance</th>
+                  <th className="text-right w-36">Debit</th>
+                  <th className="text-right w-36">Credit</th>
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((a, i) => {
-                  const eff = getEffectiveAmounts(a);
-                  const net = eff.debit - eff.credit;
-                  return (
-                    <tr key={i}>
-                      <td className="font-mono text-xs text-muted-foreground">{a.code}</td>
-                      <td className="font-medium text-foreground">{a.name}</td>
-                      <td><span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-secondary text-secondary-foreground">{a.type}</span></td>
-                      <td className="text-right font-mono">{eff.debit > 0 ? fmt(eff.debit) : "—"}</td>
-                      <td className="text-right font-mono">{eff.credit > 0 ? fmt(eff.credit) : "—"}</td>
-                      <td className={`text-right font-mono font-medium ${net >= 0 ? "text-foreground" : "text-destructive"}`}>{fmt(net)}</td>
-                    </tr>
-                  );
-                })}
+                {rows.map((r) => (
+                  <tr key={r.id}>
+                    <td className="font-mono text-xs text-muted-foreground">{r.code}</td>
+                    <td className="font-medium text-foreground">{r.name}</td>
+                    <td><span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-secondary text-secondary-foreground">{r.type}</span></td>
+                    <td className="text-right font-mono">{r.debitBal > 0 ? fmt(r.debitBal) : "—"}</td>
+                    <td className="text-right font-mono">{r.creditBal > 0 ? fmt(r.creditBal) : "—"}</td>
+                  </tr>
+                ))}
               </tbody>
               <tfoot>
                 <tr className="font-bold border-t-2 border-foreground/20">
                   <td colSpan={3} className="text-foreground">Totals</td>
                   <td className="text-right font-mono text-foreground">{fmt(totalDebit)}</td>
                   <td className="text-right font-mono text-foreground">{fmt(totalCredit)}</td>
-                  <td className="text-right font-mono text-foreground">{fmt(totalDebit - totalCredit)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -370,8 +464,10 @@ export default function Reports() {
   };
 
   const renderPnL = () => {
-    const revenue = balances.filter(a => a.type === "Income" || a.type === "Revenue");
-    const cogs = balances.filter(a => a.type === "Cost of Goods Sold" || a.type === "COGS");
+    // Canonical account types only — "Revenue"/"COGS" literals do not exist
+    // in this system (see accountTypes.ts).
+    const revenue = balances.filter(a => a.type === "Income");
+    const cogs = balances.filter(a => a.type === "Cost of Goods Sold");
     const opex = balances.filter(a => a.type === "Expense");
     const otherIncome = balances.filter(a => a.type === "Other Income");
     const otherExpense = balances.filter(a => a.type === "Other Expense");
@@ -404,7 +500,7 @@ export default function Reports() {
 
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 print:hidden">
           <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Revenue</p><p className="text-xl font-bold text-foreground mt-1">{fmt(totalRevenue)}</p></div>
           <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Gross Profit</p><p className="text-xl font-bold text-foreground mt-1">{fmt(grossProfit)}</p><p className="text-xs text-muted-foreground">{grossMargin.toFixed(1)}% margin</p></div>
           <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Operating Income</p><p className={`text-xl font-bold mt-1 ${operatingIncome >= 0 ? "text-success" : "text-destructive"}`}>{fmt(operatingIncome)}</p></div>
@@ -426,7 +522,7 @@ export default function Reports() {
                 
                 {cogs.length > 0 && <Section title="Cost of Goods Sold" items={cogs} sign="debit" />}
                 {cogs.length > 0 && (
-                  <tr className="font-semibold border-t"><td className="pl-4">Total COGS</td><td className="text-right font-mono text-destructive">({fmt(totalCOGS)})</td></tr>
+                  <tr className="font-semibold border-t"><td className="pl-4">Total Cost of Goods Sold</td><td className="text-right font-mono text-destructive">{fmt(-totalCOGS)}</td></tr>
                 )}
                 
                 <tr className="font-bold border-t-2 border-foreground/20 bg-muted/20">
@@ -436,7 +532,7 @@ export default function Reports() {
 
                 {opex.length > 0 && <Section title="Operating Expenses" items={opex} sign="debit" />}
                 {opex.length > 0 && (
-                  <tr className="font-semibold border-t"><td className="pl-4">Total Operating Expenses</td><td className="text-right font-mono text-destructive">({fmt(totalOpex)})</td></tr>
+                  <tr className="font-semibold border-t"><td className="pl-4">Total Operating Expenses</td><td className="text-right font-mono text-destructive">{fmt(-totalOpex)}</td></tr>
                 )}
 
                 <tr className="font-bold border-t-2 border-foreground/20 bg-muted/20">
@@ -445,7 +541,13 @@ export default function Reports() {
                 </tr>
 
                 {otherIncome.length > 0 && <Section title="Other Income" items={otherIncome} sign="credit" />}
-                {otherExpense.length > 0 && <Section title="Other Expense" items={otherExpense} sign="debit" />}
+                {otherIncome.length > 0 && (
+                  <tr className="font-semibold border-t"><td className="pl-4">Total Other Income</td><td className="text-right font-mono">{fmt(totalOtherIncome)}</td></tr>
+                )}
+                {otherExpense.length > 0 && <Section title="Other Expenses" items={otherExpense} sign="debit" />}
+                {otherExpense.length > 0 && (
+                  <tr className="font-semibold border-t"><td className="pl-4">Total Other Expenses</td><td className="text-right font-mono text-destructive">{fmt(-totalOtherExpense)}</td></tr>
+                )}
 
                 <tr className="font-bold text-base border-t-2 border-foreground/30 bg-primary/5">
                   <td>Net Income</td>
@@ -460,37 +562,44 @@ export default function Reports() {
   };
 
   const renderBalanceSheet = () => {
-    const allAssets = balances.filter(a => a.type === "Asset");
-    const ppeAccounts = allAssets.filter(a => a.subledger_type === "fixed_asset");
-    const accumDepAccounts = allAssets.filter(a => a.subledger_type === "asset_depreciation");
+    // Statement of financial position as at periodTo: opening balances plus
+    // ALL posted activity from the opening-balance baseline through periodTo
+    // (not just the selected window).
+    const allAssets = cumulativeList.filter(a => a.type === "Asset");
+    const ppeAccounts = allAssets.filter(isPPEAccount);
+    const accumDepAccounts = allAssets.filter(a => isAccumDepAccount(a) && !isPPEAccount(a));
+    const intangibleAccounts = allAssets.filter(a => isIntangibleAccount(a) && !isPPEAccount(a) && !isAccumDepAccount(a));
     const currentAssets = allAssets.filter(
-      a => a.subledger_type !== "fixed_asset" && a.subledger_type !== "asset_depreciation"
+      a => !isPPEAccount(a) && !isAccumDepAccount(a) && !isIntangibleAccount(a)
     );
 
-    const liabilities = balances.filter(a => a.type === "Liability");
-    const equity = balances.filter(a => a.type === "Equity");
+    const liabilities = cumulativeList.filter(a => a.type === "Liability");
+    const currentLiabilities = liabilities.filter(a => !isNonCurrentLiability(a));
+    const nonCurrentLiabilities = liabilities.filter(isNonCurrentLiability);
+    const equity = cumulativeList.filter(a => a.type === "Equity");
 
-    // Helper to get net balance including opening balance
-    const getNetBalance = (a: typeof balances[0]) => {
-      const isDebitNormal = checkDebitNormal(a.type);
-      const journalNet = isDebitNormal ? (a.debit - a.credit) : (a.credit - a.debit);
-      return a.openingBalance + journalNet;
-    };
-
-    // Retained earnings = net income (revenue credits - expense debits)
-    const revenue = balances.filter(a => a.type === "Income" || a.type === "Revenue" || a.type === "Other Income");
-    const expenseAccounts = balances.filter(a => a.type === "Expense" || a.type === "Cost of Goods Sold" || a.type === "COGS" || a.type === "Other Expense");
-    const retainedEarnings = revenue.reduce((s, a) => s + (a.credit - a.debit), 0) - expenseAccounts.reduce((s, a) => s + (a.debit - a.credit), 0);
+    // Net income accumulated since the opening-balance baseline. Opening
+    // balances carry prior retained earnings inside Equity, so the unclosed
+    // P&L activity since then is the "Net Income" equity line.
+    const pnlAccounts = cumulativeList.filter(a => PNL_TYPES.includes(a.type));
+    const retainedEarnings = pnlAccounts.reduce((s, a) => {
+      const isIncomeSide = a.type === "Income" || a.type === "Other Income";
+      return s + (isIncomeSide ? (a.credit - a.debit) : -(a.debit - a.credit));
+    }, 0);
 
     const grossPPE = ppeAccounts.reduce((s, a) => s + getNetBalance(a), 0);
     // Accumulated depreciation accounts are credit-normal (contra-asset).
     // getNetBalance returns positive = credit balance, representing the accumulated amount.
     const totalAccumDep = accumDepAccounts.reduce((s, a) => s + getNetBalance(a), 0);
     const netPPE = grossPPE - totalAccumDep;
+    const totalIntangibles = intangibleAccounts.reduce((s, a) => s + getNetBalance(a), 0);
+    const totalNonCurrentAssets = netPPE + totalIntangibles;
     const totalCurrentAssets = currentAssets.reduce((s, a) => s + getNetBalance(a), 0);
-    const totalAssets = totalCurrentAssets + netPPE;
+    const totalAssets = totalCurrentAssets + totalNonCurrentAssets;
 
-    const totalLiabilities = liabilities.reduce((s, a) => s + getNetBalance(a), 0);
+    const totalCurrentLiabilities = currentLiabilities.reduce((s, a) => s + getNetBalance(a), 0);
+    const totalNonCurrentLiabilities = nonCurrentLiabilities.reduce((s, a) => s + getNetBalance(a), 0);
+    const totalLiabilities = totalCurrentLiabilities + totalNonCurrentLiabilities;
     const totalEquity = equity.reduce((s, a) => s + getNetBalance(a), 0) + retainedEarnings;
     const totalLiabEquity = totalLiabilities + totalEquity;
 
@@ -518,7 +627,7 @@ export default function Reports() {
 
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-3 gap-4 print:hidden">
           <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Total Assets</p><p className="text-xl font-bold text-foreground mt-1">{fmt(totalAssets)}</p></div>
           <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Total Liabilities</p><p className="text-xl font-bold text-foreground mt-1">{fmt(totalLiabilities)}</p></div>
           <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Total Equity</p><p className="text-xl font-bold text-primary mt-1">{fmt(totalEquity)}</p></div>
@@ -526,7 +635,7 @@ export default function Reports() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2 stat-card print:shadow-none">
-            <StatementHeader title="Statement of Financial Position" subtitle="Balance Sheet" />
+            <StatementHeader title="Statement of Financial Position" subtitle="Balance Sheet" asAt />
             {!hasAssetData && liabilities.length === 0 && equity.length === 0 ? (
               <p className="text-center py-12 text-muted-foreground">No balance sheet data. Create accounts and post journal entries.</p>
             ) : (
@@ -549,13 +658,11 @@ export default function Reports() {
                     </>
                   )}
 
-                  {/* Non-Current Assets — Property, Plant & Equipment */}
-                  {(ppeAccounts.length > 0 || accumDepAccounts.length > 0) && (
+                  {/* Non-Current Assets */}
+                  {(ppeAccounts.length > 0 || accumDepAccounts.length > 0 || intangibleAccounts.length > 0) && (
                     <>
                       <tr className="bg-muted/30">
-                        <td colSpan={2} className="font-semibold text-foreground text-sm py-1.5 pl-2">
-                          Non-Current Assets — Property, Plant &amp; Equipment
-                        </td>
+                        <td colSpan={2} className="font-semibold text-foreground text-sm py-1.5 pl-2">Non-Current Assets</td>
                       </tr>
                       <SectionRows items={ppeAccounts} sign="debit" />
                       {accumDepAccounts.map((a, i) => {
@@ -563,15 +670,22 @@ export default function Reports() {
                         return (
                           <tr key={`accum-${i}`}>
                             <td className="pl-8 text-foreground italic text-sm">Less: {a.name}</td>
-                            <td className="text-right font-mono text-destructive/80">({fmt(bal)})</td>
+                            <td className="text-right font-mono text-destructive/80">{fmt(-bal)}</td>
                           </tr>
                         );
                       })}
+                      {(ppeAccounts.length > 0 || accumDepAccounts.length > 0) && (
+                        <tr className="border-t border-border/50">
+                          <td className="pl-4 text-sm text-muted-foreground italic">Property, Plant &amp; Equipment — Net</td>
+                          <td className={`text-right font-mono font-semibold ${netPPE >= 0 ? "" : "text-destructive"}`}>
+                            {fmt(netPPE)}
+                          </td>
+                        </tr>
+                      )}
+                      <SectionRows items={intangibleAccounts} sign="debit" />
                       <tr className="border-t border-border/50">
-                        <td className="pl-4 text-sm text-muted-foreground italic">Net Book Value — PPE</td>
-                        <td className={`text-right font-mono font-semibold ${netPPE >= 0 ? "" : "text-destructive"}`}>
-                          {fmt(netPPE)}
-                        </td>
+                        <td className="pl-4 text-sm text-muted-foreground italic">Total Non-Current Assets</td>
+                        <td className="text-right font-mono font-semibold">{fmt(totalNonCurrentAssets)}</td>
                       </tr>
                     </>
                   )}
@@ -580,15 +694,38 @@ export default function Reports() {
                     <td>Total Assets</td>
                     <td className="text-right font-mono">{fmt(totalAssets)}</td>
                   </tr>
-                  
+
                   {liabilities.length > 0 && <tr><td colSpan={2} className="font-semibold text-foreground bg-muted/40 py-2">Liabilities</td></tr>}
-                  <SectionRows items={liabilities} sign="credit" />
+                  {currentLiabilities.length > 0 && (
+                    <>
+                      <tr className="bg-muted/30">
+                        <td colSpan={2} className="font-semibold text-foreground text-sm py-1.5 pl-2">Current Liabilities</td>
+                      </tr>
+                      <SectionRows items={currentLiabilities} sign="credit" />
+                      <tr className="border-t border-border/50">
+                        <td className="pl-4 text-sm text-muted-foreground italic">Total Current Liabilities</td>
+                        <td className="text-right font-mono font-semibold">{fmt(totalCurrentLiabilities)}</td>
+                      </tr>
+                    </>
+                  )}
+                  {nonCurrentLiabilities.length > 0 && (
+                    <>
+                      <tr className="bg-muted/30">
+                        <td colSpan={2} className="font-semibold text-foreground text-sm py-1.5 pl-2">Non-Current Liabilities</td>
+                      </tr>
+                      <SectionRows items={nonCurrentLiabilities} sign="credit" />
+                      <tr className="border-t border-border/50">
+                        <td className="pl-4 text-sm text-muted-foreground italic">Total Non-Current Liabilities</td>
+                        <td className="text-right font-mono font-semibold">{fmt(totalNonCurrentLiabilities)}</td>
+                      </tr>
+                    </>
+                  )}
                   {liabilities.length > 0 && <tr className="font-semibold border-t"><td className="pl-4">Total Liabilities</td><td className="text-right font-mono">{fmt(totalLiabilities)}</td></tr>}
 
                   <tr><td colSpan={2} className="font-semibold text-foreground bg-muted/40 py-2">Equity</td></tr>
                   <SectionRows items={equity} sign="credit" />
                   {retainedEarnings !== 0 && (
-                    <tr><td className="pl-8 text-foreground italic">Retained Earnings (Current Period)</td><td className="text-right font-mono">{fmt(retainedEarnings)}</td></tr>
+                    <tr><td className="pl-8 text-foreground italic">Net Income (Current Earnings)</td><td className="text-right font-mono">{fmt(retainedEarnings)}</td></tr>
                   )}
                   <tr className="font-semibold border-t"><td className="pl-4">Total Equity</td><td className="text-right font-mono">{fmt(totalEquity)}</td></tr>
 
@@ -623,46 +760,47 @@ export default function Reports() {
   };
 
   const renderCashFlow = () => {
-    // Classify cash flows based on account types — Direct Method
-    const cashAccounts = balances.filter(a => 
-      a.name.toLowerCase().includes("cash") || a.name.toLowerCase().includes("bank")
-    );
-    
-    // Beginning cash = sum of opening balances for cash/bank accounts
-    const beginningCash = cashAccounts.reduce((s, a) => {
-      const isDebitNormal = checkDebitNormal(a.type);
-      return s + (isDebitNormal ? a.openingBalance : -a.openingBalance);
-    }, 0);
-    
+    // Beginning cash = cash & bank balances as at the day before periodFrom
+    // (opening balances + all posted activity before the window).
+    const beginningCash = Array.from(prePeriodBalances.values())
+      .filter(isCashAccount)
+      .reduce((s, a) => s + getNetBalance(a), 0);
+
+    // Classify each cash movement by the counterpart accounts of its entry.
+    // Order matters: fixed-asset counterparts (purchase/sale of PPE) are
+    // investing even when a gain/loss line is present; long-term debt and
+    // equity are financing; everything else — P&L activity and working
+    // capital (AR, AP, inventory, taxes, payroll) — is operating.
+    const classifyCashLine = (counterparts: AccountBal[]): "operating" | "investing" | "financing" => {
+      if (counterparts.some(c => isPPEAccount(c) || isAccumDepAccount(c) || isIntangibleAccount(c))) return "investing";
+      if (counterparts.some(c => c.type === "Equity" || (c.type === "Liability" && isNonCurrentLiability(c)))) return "financing";
+      return "operating";
+    };
+
     // Build monthly cash flow data
     const monthlyData = new Map<string, { operating: number; investing: number; financing: number }>();
     filteredEntries.forEach(entry => {
       const month = entry.entry_date.slice(0, 7); // YYYY-MM
       if (!monthlyData.has(month)) monthlyData.set(month, { operating: 0, investing: 0, financing: 0 });
       const m = monthlyData.get(month)!;
-      
+
       const lines = (entry.journal_lines as any[]) || [];
       lines.forEach(line => {
         const acc = accountBalances.get(line.account_id);
         if (!acc) return;
+        // Only track cash movements (lines hitting cash/bank asset accounts)
+        if (!isCashAccount(acc)) return;
         const net = (Number(line.debit) || 0) - (Number(line.credit) || 0);
-        // Only track cash movements (lines hitting cash/bank accounts)
-        const isCash = acc.name.toLowerCase().includes("cash") || acc.name.toLowerCase().includes("bank");
-        if (!isCash) return;
-        
-        // Classify based on the OTHER side of the entry
-        const otherLines = lines.filter(l => l.account_id !== line.account_id);
-        const otherTypes = otherLines.map(l => accountBalances.get(l.account_id)?.type).filter(Boolean);
-        
-        if (otherTypes.some(t => t === "Revenue" || t === "Expense" || t === "COGS")) {
-          m.operating += net;
-        } else if (otherTypes.some(t => t === "Asset")) {
-          m.investing += net;
-        } else if (otherTypes.some(t => t === "Liability" || t === "Equity")) {
-          m.financing += net;
-        } else {
-          m.operating += net; // default to operating
-        }
+
+        const counterparts = lines
+          .filter(l => l.account_id !== line.account_id)
+          .map(l => accountBalances.get(l.account_id))
+          .filter((c): c is AccountBal => !!c && !isCashAccount(c));
+        // Cash-to-cash transfers have no non-cash counterpart; they net to
+        // zero within operating and are excluded from classification noise.
+        if (counterparts.length === 0) return;
+
+        m[classifyCashLine(counterparts)] += net;
       });
     });
 
@@ -690,7 +828,7 @@ export default function Reports() {
 
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 print:hidden">
           <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Operating</p><p className={`text-xl font-bold mt-1 ${totalOperating >= 0 ? "text-success" : "text-destructive"}`}>{fmt(totalOperating)}</p></div>
           <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Investing</p><p className={`text-xl font-bold mt-1 ${totalInvesting >= 0 ? "text-success" : "text-destructive"}`}>{fmt(totalInvesting)}</p></div>
           <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Financing</p><p className={`text-xl font-bold mt-1 ${totalFinancing >= 0 ? "text-success" : "text-destructive"}`}>{fmt(totalFinancing)}</p></div>
@@ -743,8 +881,8 @@ export default function Reports() {
                   <td>Net Change in Cash</td>
                   <td className={`text-right font-mono ${netChange >= 0 ? "text-success" : "text-destructive"}`}>{fmt(netChange)}</td>
                 </tr>
-                <tr><td className="text-foreground">Beginning Cash Balance</td><td className="text-right font-mono">{fmt(beginningCash)}</td></tr>
-                <tr className="font-bold border-t-2"><td>Ending Cash Balance</td><td className="text-right font-mono">{fmt(endingCash)}</td></tr>
+                <tr><td className="text-foreground">Cash &amp; Cash Equivalents at Beginning of Period</td><td className="text-right font-mono">{fmt(beginningCash)}</td></tr>
+                <tr className="font-bold border-t-2"><td>Cash &amp; Cash Equivalents at End of Period</td><td className="text-right font-mono">{fmt(endingCash)}</td></tr>
               </tbody>
             </table>
           )}
@@ -768,14 +906,14 @@ export default function Reports() {
 
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 print:hidden">
           <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Total</p><p className="text-xl font-bold text-foreground mt-1">{fmt(total)}</p></div>
           <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Approved</p><p className="text-xl font-bold text-success mt-1">{fmt(approved)}</p></div>
           <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Pending</p><p className="text-xl font-bold text-warning mt-1">{fmt(pending)}</p></div>
           <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Rejected</p><p className="text-xl font-bold text-destructive mt-1">{fmt(rejected)}</p></div>
         </div>
         {chartData.length > 0 ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 print:hidden">
             <div className="stat-card">
               <h3 className="text-sm font-medium text-foreground mb-4">By Category</h3>
               <ResponsiveContainer width="100%" height={300}>
@@ -803,22 +941,67 @@ export default function Reports() {
             </div>
           </div>
         ) : (
-          <div className="stat-card"><p className="text-center py-12 text-muted-foreground">No expenses found for this period.</p></div>
+          <div className="stat-card print:hidden"><p className="text-center py-12 text-muted-foreground">No expenses found for this period.</p></div>
         )}
+
+        <div className="stat-card print:shadow-none">
+          <StatementHeader title="Expense Analysis" subtitle="Expenses by category" />
+          {chartData.length === 0 ? (
+            <p className="text-center py-12 text-muted-foreground">No expenses found for this period.</p>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th className="text-right w-40">Amount</th>
+                  <th className="text-right w-28">% of Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {chartData.map((d) => (
+                  <tr key={d.name}>
+                    <td className="font-medium text-foreground">{d.name}</td>
+                    <td className="text-right font-mono">{fmt(d.amount)}</td>
+                    <td className="text-right font-mono text-muted-foreground">{total > 0 ? ((d.amount / total) * 100).toFixed(1) : "0.0"}%</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="font-bold border-t-2 border-foreground/20">
+                  <td>Total Expenses</td>
+                  <td className="text-right font-mono">{fmt(total)}</td>
+                  <td className="text-right font-mono">100.0%</td>
+                </tr>
+                <tr className="text-sm">
+                  <td className="text-muted-foreground italic" colSpan={3}>
+                    Approved {fmt(approved)} · Pending {fmt(pending)} · Rejected {fmt(rejected)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+        </div>
       </div>
     );
   };
 
   const renderAgedReceivables = () => {
-    const now = new Date();
+    // Aged as at the report end date. Outstanding = posted invoices with a
+    // remaining balance after payments and credit notes (balance_due), so
+    // partially paid invoices show only what is still owed.
+    const asOf = new Date(periodTo + "T00:00:00");
     const buckets = { current: 0, days30: 0, days60: 0, days90: 0, over90: 0 };
-    const outstanding = invoices?.filter(i => i.status === "sent" || i.status === "overdue") || [];
+    const outstanding = invoices?.filter(i =>
+      i.status !== "draft" && i.status !== "voided" &&
+      Number((i as any).balance_due) > 0.005 &&
+      i.issue_date <= periodTo
+    ) || [];
     const customerBuckets = new Map<string, typeof buckets>();
 
     outstanding.forEach(inv => {
       const due = inv.due_date ? new Date(inv.due_date) : new Date(inv.issue_date);
-      const daysOverdue = Math.floor((now.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
-      const amt = Number(inv.total_amount);
+      const daysOverdue = Math.floor((asOf.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+      const amt = Number((inv as any).balance_due);
       const custName = (inv.customers as any)?.name || "Unknown";
       
       if (!customerBuckets.has(custName)) customerBuckets.set(custName, { current: 0, days30: 0, days60: 0, days90: 0, over90: 0 });
@@ -842,7 +1025,7 @@ export default function Reports() {
 
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 print:hidden">
           {chartData.map((d, i) => (
             <div key={i} className="stat-card">
               <p className="text-xs text-muted-foreground uppercase tracking-wide">{d.name}</p>
@@ -853,7 +1036,7 @@ export default function Reports() {
         </div>
 
         {total > 0 && (
-          <div className="stat-card">
+          <div className="stat-card print:hidden">
             <h3 className="text-sm font-medium text-foreground mb-4">Aging Distribution</h3>
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={chartData}>
@@ -870,7 +1053,7 @@ export default function Reports() {
         )}
 
         <div className="stat-card print:shadow-none">
-          <StatementHeader title="Aged Receivables Report" />
+          <StatementHeader title="Aged Receivables Report" subtitle="Outstanding balances by due date" asAt />
           {total === 0 ? (
             <p className="text-center py-12 text-muted-foreground">No outstanding invoices. All invoices have been paid.</p>
           ) : (
@@ -935,7 +1118,7 @@ export default function Reports() {
 
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 print:hidden">
           {[
             { label: "Total Cost", value: totalCost, cls: "text-foreground" },
             { label: "Accum. Depreciation", value: totalAccumDep, cls: "text-destructive" },
@@ -978,8 +1161,8 @@ export default function Reports() {
                   const catPeriod = assets.reduce((s, a) => s + a.depreciation_in_period, 0);
                   const catNBV = assets.reduce((s, a) => s + a.net_book_value, 0);
                   return (
-                    <>
-                      <tr key={`cat-${category}`} className="bg-muted/40">
+                    <Fragment key={category}>
+                      <tr className="bg-muted/40">
                         <td colSpan={9} className="font-semibold text-foreground pl-2 py-1.5 text-sm">
                           {category}
                         </td>
@@ -1027,7 +1210,7 @@ export default function Reports() {
                         <td className="text-right font-mono font-semibold">{fmt(catNBV)}</td>
                         <td colSpan={2} />
                       </tr>
-                    </>
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -1068,7 +1251,7 @@ export default function Reports() {
 
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 print:hidden">
           {[
             { label: "Total Cost", value: totals.cost, cls: "text-foreground" },
             { label: "Accumulated Depreciation", value: totals.accumulated, cls: "text-destructive" },
@@ -1216,9 +1399,54 @@ export default function Reports() {
     }
   };
 
+  // Print with a document title that becomes the suggested PDF filename,
+  // e.g. "Acme (Pvt) Ltd — Balance Sheet 2026-07-05".
+  const handlePrint = () => {
+    const reportName = reports.find(r => r.id === activeReport)?.name ?? "Report";
+    const previousTitle = document.title;
+    document.title = `${company?.company_name ? `${company.company_name} — ` : ""}${reportName} ${periodTo}`;
+    window.print();
+    document.title = previousTitle;
+  };
+
+  // Reports presented "as at" a date rather than over a period — must match
+  // the asAt flag each report passes to StatementHeader.
+  const AS_AT_REPORTS: ReportType[] = ["trial-balance", "balance-sheet", "aged-receivables"];
+  const REPORT_SUBTITLES: Partial<Record<Exclude<ReportType, null>, string>> = {
+    "trial-balance": "Closing balances by account",
+    "pnl": "Statement of Comprehensive Income",
+    "balance-sheet": "Statement of Financial Position",
+    "cash-flow": "Direct Method",
+    "expense-summary": "Expenses by category",
+    "aged-receivables": "Outstanding balances by due date",
+    "fixed-asset-schedule": "Property, Plant & Equipment",
+    "ppe-schedule": "Property, Plant & Equipment (IAS 16)",
+  };
+
+  // Vector PDF built from the rendered statement table(s).
+  const handleDownloadPdf = () => {
+    const container = document.getElementById("financial-report-doc");
+    if (!container || !activeReport) return;
+    const reportName = reports.find(r => r.id === activeReport)?.name ?? "Report";
+    const dateLine = AS_AT_REPORTS.includes(activeReport)
+      ? `As at ${format(new Date(periodTo), "MMM d, yyyy")}`
+      : `For the period ${format(new Date(periodFrom), "MMM d, yyyy")} — ${format(new Date(periodTo), "MMM d, yyyy")}`;
+    const ok = downloadReportPdf(container, {
+      companyName: company?.company_name,
+      address: company?.address,
+      phone: company?.phone,
+      taxId: company?.tax_id,
+      title: reportName,
+      subtitle: REPORT_SUBTITLES[activeReport],
+      dateLine,
+      fileName: `${company?.company_name ? `${company.company_name} — ` : ""}${reportName} ${periodTo}.pdf`,
+    });
+    if (!ok) toast.error("Nothing to download — this report has no data for the selected period.");
+  };
+
   return (
     <div className="space-y-6">
-      <div className="page-header">
+      <div className="page-header print:hidden">
         <div>
           <h1 className="page-title">Financial Reports</h1>
           <p className="page-description">Generate and analyze financial statements and management reports</p>
@@ -1226,7 +1454,10 @@ export default function Reports() {
         <div className="flex items-center gap-2">
           {activeReport && (
             <>
-              <Button variant="outline" size="sm" onClick={() => window.print()} className="print:hidden">
+              <Button variant="outline" size="sm" onClick={handleDownloadPdf} className="print:hidden">
+                <Download className="w-4 h-4 mr-1" /> Download PDF
+              </Button>
+              <Button variant="outline" size="sm" onClick={handlePrint} className="print:hidden">
                 <Printer className="w-4 h-4 mr-1" /> Print
               </Button>
               <Button variant="outline" size="sm" onClick={() => setActiveReport(null)} className="print:hidden">
@@ -1272,7 +1503,7 @@ export default function Reports() {
           ))}
         </div>
       ) : (
-        renderReport()
+        <div id="financial-report-doc">{renderReport()}</div>
       )}
     </div>
   );

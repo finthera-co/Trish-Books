@@ -77,7 +77,7 @@ export default function DesignCanvas({ components, tableSettings, pageSettings, 
       return (
         <div key={comp.id} className={baseClasses} onClick={(e) => { e.stopPropagation(); onSelect(comp.id); }}>
           {url ? (
-            <img src={url} alt={comp.label} style={{ width: '100%', height: '100%', objectFit: fit, borderRadius: comp.style.borderRadius || 0 }} />
+            <img src={url} alt={comp.label} style={{ width: '100%', height: '100%', objectFit: fit, objectPosition: comp.binding === 'company_logo' ? 'left center' : 'center', borderRadius: comp.style.borderRadius || 0 }} />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-[9px] text-muted-foreground bg-muted/20 border border-dashed border-muted-foreground/30 rounded text-center px-1">
               {comp.binding === 'company_logo' ? 'Company logo (from Settings)' : <>Select &amp; upload logo →</>}

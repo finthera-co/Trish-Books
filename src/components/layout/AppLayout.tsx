@@ -1,7 +1,9 @@
 import { useEffect } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import GlobalTopNav from "./GlobalTopNav";
 import { useAuth } from "@/contexts/AuthContext";
+import { listVerifiedTotpFactors } from "@/hooks/useMfa";
 import { useIdleTimer } from "@/hooks/useIdleTimer";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import IdleWarningModal from "@/components/IdleWarningModal";
@@ -11,7 +13,8 @@ import { useAppStore, useIsSwitching, useTenantId } from "@/stores/useAppStore";
 import { useQueryClient } from "@tanstack/react-query";
 
 export default function AppLayout() {
-  const { user, appUser, signOut } = useAuth();
+  const { user, appUser, signOut, isCompanyAdmin, isSuperAdmin } = useAuth();
+  const navigate = useNavigate();
   const { isIdle, countdown, resetIdle } = useIdleTimer(!!user);
   const { isOffline, isSlow } = useNetworkStatus();
   const isSwitching = useIsSwitching();
@@ -36,6 +39,27 @@ export default function AppLayout() {
       signOut();
     }
   }, [isIdle, countdown, signOut]);
+
+  // Once per session, nudge admins who haven't enabled two-factor auth.
+  useEffect(() => {
+    if (!user || !(isCompanyAdmin || isSuperAdmin)) return;
+    if (sessionStorage.getItem("mfa-nudge-shown")) return;
+    let active = true;
+    listVerifiedTotpFactors()
+      .then((factors) => {
+        if (!active || factors.length > 0) return;
+        sessionStorage.setItem("mfa-nudge-shown", "1");
+        toast("Protect your admin account", {
+          description: "Enable two-factor authentication for stronger security.",
+          duration: 10000,
+          action: { label: "Enable", onClick: () => navigate("/settings/general") },
+        });
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [user, isCompanyAdmin, isSuperAdmin, navigate]);
 
   return (
     <div className="flex flex-col h-screen w-full overflow-hidden">

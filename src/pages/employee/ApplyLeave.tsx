@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { format, eachDayOfInterval, parseISO, getDay } from "date-fns";
 import { toast } from "sonner";
-import { CalendarPlus, AlertTriangle, CalendarRange } from "lucide-react";
+import { CalendarPlus, AlertTriangle, CalendarRange, ShieldCheck } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 import { useMyEmployee } from "@/hooks/useMyEmployee";
 import { useLeaveTypes, useLeaveBalances, useCreateLeaveRequest, useLeaveRequests } from "@/hooks/useLeave";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 
 export default function ApplyLeave() {
   const navigate = useNavigate();
+  const { isEmployee } = useAuth();
   const { data: me } = useMyEmployee();
   const { data: types } = useLeaveTypes();
   const { data: balances } = useLeaveBalances();
@@ -29,19 +31,23 @@ export default function ApplyLeave() {
   const set = (k: keyof typeof form, v: any) => setForm((f) => ({ ...f, [k]: v }));
 
   // Days already covered by the employee's own approved/pending/settled leave.
+  // Admins can read the whole tenant's requests, so filter to own explicitly.
   const bookedDates = useMemo(() => {
     const out: Date[] = [];
     (requests ?? []).forEach((r: any) => {
+      if (me?.id && r.employee_id !== me.id) return;
       if (!["pending", "approved", "settled"].includes(r.status)) return;
       eachDayOfInterval({ start: parseISO(r.start_date), end: parseISO(r.end_date) }).forEach((d) => out.push(d));
     });
     return out;
-  }, [requests]);
+  }, [requests, me?.id]);
 
   // Show every active leave type with its balance — fall back to the type's
   // default quota when the employee has no balance row yet (created on approval).
   const balanceRows = useMemo(() => {
-    const byType = new Map((balances ?? []).map((b: any) => [b.leave_type_id, b]));
+    // Admins can read the whole tenant's balances — keep only our own rows.
+    const own = (balances ?? []).filter((b: any) => !me?.id || b.employee_id === me.id);
+    const byType = new Map(own.map((b: any) => [b.leave_type_id, b]));
     return (types ?? [])
       .filter((t: any) => t.is_active !== false)
       .map((t: any) => {
@@ -50,7 +56,7 @@ export default function ApplyLeave() {
         const available = b ? Number(b.available) : Number(t.default_annual_quota ?? 0);
         return { id: t.id, name: t.name, color: t.color, is_paid: t.is_paid, entitled, available };
       });
-  }, [types, balances]);
+  }, [types, balances, me?.id]);
 
   const balanceFor = (typeId: string) =>
     balanceRows.find((b) => b.id === typeId)?.available ?? null;
@@ -107,6 +113,17 @@ export default function ApplyLeave() {
         </div>
         <Button onClick={() => onPickDay(new Date())}><CalendarPlus className="w-4 h-4" /> New Request</Button>
       </div>
+
+      {/* Admins are subject to four-eyes approval — surface the routing rule */}
+      {!isEmployee && (
+        <div className="rounded-xl border border-border bg-muted/40 px-4 py-3 flex items-start gap-2.5 text-sm text-muted-foreground">
+          <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5 text-primary" />
+          <span>
+            As an administrator, your leave request must be approved by <span className="font-medium text-foreground">another administrator</span> (Payroll → Leave).
+            If you're the only administrator in the company, you can approve your own request there — it's recorded as self-approved.
+          </span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
         {/* Calendar */}

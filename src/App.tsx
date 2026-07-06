@@ -89,6 +89,7 @@ import Tenants from "./pages/Tenants";
 import Subscriptions from "./pages/Subscriptions";
 import AuditLogs from "./pages/AuditLogs";
 import NotFound from "./pages/NotFound";
+import ResetPassword from "./pages/ResetPassword";
 import AnomalyDashboard from "./pages/AnomalyDashboard";
 
 import ForecastDashboard from "./pages/ForecastDashboard";
@@ -133,6 +134,7 @@ const App = () => (
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route element={<ProtectedRoute />}>
               <Route path="/onboarding" element={<Onboarding />} />
 

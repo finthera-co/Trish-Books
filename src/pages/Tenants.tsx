@@ -90,8 +90,8 @@ export default function Tenants() {
       toast.error("Please fill in all required fields");
       return;
     }
-    if (adminPassword.length < 6) {
-      toast.error("Password must be at least 6 characters");
+    if (adminPassword.length < 8) {
+      toast.error("Password must be at least 8 characters");
       return;
     }
 
@@ -300,7 +300,7 @@ export default function Tenants() {
                       <div className="relative mt-1">
                         <input type={showPassword ? "text" : "password"} value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)}
                           className="w-full text-sm border border-input rounded-lg px-3 py-2 pr-10 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
-                          placeholder="Min 6 characters" minLength={6} />
+                          placeholder="Min 8 characters" minLength={8} />
                         <button type="button" onClick={() => setShowPassword(!showPassword)}
                           className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                           {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}

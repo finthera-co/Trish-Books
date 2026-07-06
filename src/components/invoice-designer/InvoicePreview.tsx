@@ -11,6 +11,7 @@ import {
   applyPageFooter,
   waitForImages,
   renderToPdf,
+  PAGE_FOOTER_H,
   type RenderInput,
 } from "./renderInvoice";
 
@@ -40,7 +41,7 @@ function PreviewSurface({ input, hostRef }: { input: RenderInput; hostRef: RefOb
     (async () => {
       await waitForImages(node);
       if (cancelled) return;
-      reflowTables(node);
+      reflowTables(node, input.pageSettings.pageFooter?.enabled ? PAGE_FOOTER_H : 0);
       applyWatermarks(node, input.pageSettings);
       applyPageFooter(node, input.pageSettings, input.data);
     })();
