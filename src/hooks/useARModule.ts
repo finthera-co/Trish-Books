@@ -2,7 +2,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { postInvoice, postPaymentReceived, postCreditNote, reverseJournalEntry } from "@/lib/postingEngine";
 
 // ─── Find AR / Revenue accounts ──────────────────────────
 export function useARAccounts() {
@@ -33,192 +32,221 @@ export function useARAccounts() {
   });
 }
 
-// ─── Create Invoice with GL Auto-Post ────────────────────
-export function useCreateInvoiceWithGL() {
-  const { appUser } = useAuth();
-  const qc = useQueryClient();
+// Everything a receipt / credit note touches.
+function invalidateARCaches(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ["invoices"] });
+  qc.invalidateQueries({ queryKey: ["payments_received"] });
+  qc.invalidateQueries({ queryKey: ["customer_receipts"] });
+  qc.invalidateQueries({ queryKey: ["ar_subledger"] });
+  qc.invalidateQueries({ queryKey: ["ar_transactions"] });
+  qc.invalidateQueries({ queryKey: ["ar_credit_notes"] });
+  qc.invalidateQueries({ queryKey: ["customer_detail"] });
+  qc.invalidateQueries({ queryKey: ["customer_deposits"] });
+  qc.invalidateQueries({ queryKey: ["journal_entries"] });
+  qc.invalidateQueries({ queryKey: ["ar_aging"] });
+}
 
+// ─── Receive customer payment (server-side posting) ──────
+// One receipt can settle MANY invoices. The edge function validates ownership,
+// outstanding balances, closed periods, WHT and FX, and books the GL + both AR
+// sub-ledgers atomically-with-resume. request_id makes double-clicks harmless.
+export interface ReceiptAllocation {
+  invoice_id: string;
+  /** Document-currency amount applied to this invoice. */
+  amount: number;
+}
+
+export function useReceiveCustomerPayment() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: async (params: {
       customer_id: string;
-      invoice_number: string;
-      issue_date: string;
-      due_date: string;
-      total_amount: number;
-      ar_account_id: string;
-      revenue_account_id: string;
-      items?: { description: string; quantity: number; unit_price: number; total: number }[];
+      payment_date: string; // YYYY-MM-DD
+      payment_method?: string;
+      reference?: string;
+      bank_account_id?: string;
+      ar_account_id?: string;
+      allocations: ReceiptAllocation[];
+      /** Overpayment kept on account as a customer deposit (requires overpayment_action="deposit"). */
+      unapplied_amount?: number;
+      overpayment_action?: "deposit" | "reject";
+      /** Tax the customer withheld from this payment (AIT receivable). */
+      wht_amount?: number;
+      /** Override the payment-date FX rate for foreign-currency receipts. */
+      exchange_rate?: number;
+      /** Settle from an existing customer deposit instead of bank (no cash movement). */
+      funded_by_deposit_id?: string;
     }) => {
-      const tenantId = appUser!.tenant_id;
-
-      // 1. Create invoice record first to get ID
-      const { data: inv, error } = await supabase
-        .from("invoices")
-        .insert({
-          tenant_id: tenantId,
-          customer_id: params.customer_id,
-          invoice_number: params.invoice_number,
-          issue_date: params.issue_date,
-          due_date: params.due_date,
-          total_amount: params.total_amount,
-          status: "posted",
-          ar_account_id: params.ar_account_id,
-          revenue_account_id: params.revenue_account_id,
-        })
-        .select()
-        .single();
-      if (error) throw error;
-
-      // 2. Post via posting engine: Dr AR / Cr Revenue + AR subledger
-      const result = await postInvoice({
-        tenant_id: tenantId,
-        invoice_id: inv.id,
-        customer_id: params.customer_id,
-        invoice_number: params.invoice_number,
-        issue_date: params.issue_date,
-        due_date: params.due_date,
-        total_amount: params.total_amount,
-        ar_account_id: params.ar_account_id,
-        revenue_account_id: params.revenue_account_id,
+      const { data, error } = await supabase.functions.invoke("post-payment-received", {
+        body: { action: "post", request_id: crypto.randomUUID(), ...params },
       });
-
-      // 3. Link journal entry to invoice
-      await supabase
-        .from("invoices")
-        .update({ journal_entry_id: result.journal_entry_id })
-        .eq("id", inv.id);
-
-      // 4. Insert invoice items
-      if (params.items?.length) {
-        const { error: itemErr } = await supabase.from("invoice_items").insert(
-          params.items.map((item) => ({
-            invoice_id: inv.id,
-            description: item.description,
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            total: item.total,
-          }))
-        );
-        if (itemErr) throw itemErr;
-      }
-
-      return inv;
+      if (error) throw new Error(error.message);
+      if (!data?.ok) throw new Error(data?.error || "Failed to record payment");
+      return data as { payment_id: string; payment_number?: string; held_on_account?: number };
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["invoices"] });
-      qc.invalidateQueries({ queryKey: ["customers"] });
-      qc.invalidateQueries({ queryKey: ["ar_subledger"] });
-      toast.success("Invoice created and posted to GL");
+    onSuccess: (data) => {
+      invalidateARCaches(qc);
+      const held = Number(data?.held_on_account || 0);
+      toast.success(
+        held > 0
+          ? `Payment posted — ${held.toFixed(2)} held on account as a customer deposit`
+          : "Payment received and posted to GL",
+      );
     },
     onError: (e: Error) => toast.error(e.message),
   });
 }
 
-// ─── Receive Payment with GL Auto-Post ───────────────────
-export function useReceivePaymentWithGL() {
+// ─── Void a receipt (NSF / bounced cheque / recorded in error) ─────────
+export function useVoidPaymentReceived() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: { payment_id: string; reason?: string }) => {
+      const { data, error } = await supabase.functions.invoke("post-payment-received", {
+        body: { action: "void", ...params },
+      });
+      if (error) throw new Error(error.message);
+      if (!data?.ok) throw new Error(data?.error || "Failed to void receipt");
+      return data;
+    },
+    onSuccess: () => {
+      invalidateARCaches(qc);
+      toast.success("Receipt voided — invoice balances restored");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ─── Credit notes ─────────────────────────────────────────
+export interface CreditNoteItemInput {
+  description?: string;
+  quantity: number;
+  unit_price: number;
+  discount_amount?: number;
+  is_tax_inclusive?: boolean;
+  account_id?: string | null;
+  product_id?: string | null;
+  inventory_item_id?: string | null;
+  tax_code_id?: string | null;
+  tax_group_id?: string | null;
+  /** Return the credited goods to stock (inventory-tracked products only). */
+  restock?: boolean;
+  sort_order?: number;
+}
+
+/** Create a DRAFT credit note (+ lines). Posting happens server-side. */
+export function useCreateCreditNote() {
   const { appUser } = useAuth();
   const qc = useQueryClient();
-
   return useMutation({
     mutationFn: async (params: {
-      invoice_id: string;
       customer_id: string;
+      credit_date: string;
+      reason?: string;
+      invoice_id?: string | null;
+      currency?: string;
+      exchange_rate?: number;
+      ar_account_id?: string | null;
+      revenue_account_id?: string | null;
+      /** Document totals (client-computed with the shared tax engine; the server recomputes and rejects drift). */
       amount: number;
-      payment_date: string;
-      payment_method?: string;
-      reference?: string;
-      bank_account_id: string;
-      ar_account_id: string;
-      /** Tax the customer withheld from this payment (AIT receivable). */
-      wht_amount?: number;
-      /** Realized-FX context for a foreign-currency invoice (omit for LKR). */
-      fx?: { invoiceRate: number; paymentRate: number; fxGainAccountId: string; fxLossAccountId: string } | null;
+      subtotal?: number;
+      tax_amount?: number;
+      items?: CreditNoteItemInput[];
     }) => {
       const tenantId = appUser!.tenant_id;
 
-      // Customer-side WHT: resolve the withholding_receivable tax code
-      let wht: { amount: number; tax_code_id: string; wht_receivable_account_id: string; rate: number } | null = null;
-      if (params.wht_amount && params.wht_amount > 0) {
-        const { data: whtCode } = await supabase
-          .from("tax_codes" as any)
-          .select("id, code, wht_receivable_account_id")
-          .eq("tenant_id", tenantId)
-          .eq("collection_mode", "withholding_receivable")
-          .eq("is_active", true)
-          .limit(1)
-          .maybeSingle();
-        if (!whtCode || !(whtCode as any).wht_receivable_account_id) {
-          throw new Error("No active withholding-receivable tax code with a WHT Receivable account is configured (Settings → Tax Configuration)");
-        }
-        wht = {
-          amount: params.wht_amount,
-          tax_code_id: (whtCode as any).id,
-          wht_receivable_account_id: (whtCode as any).wht_receivable_account_id,
-          rate: params.amount > 0 ? Math.round((params.wht_amount / params.amount) * 10000) / 100 : 0,
-        };
-      }
+      const { data: serial, error: serialErr } = await supabase
+        .rpc("next_credit_note_number" as any, { p_tenant_id: tenantId });
+      if (serialErr || !serial) throw new Error(serialErr?.message || "Failed to generate credit-note number");
 
-      // 1. Record payment first to get ID
-      const { data: pmt, error } = await supabase
-        .from("payments_received")
+      const { data: cn, error } = await supabase
+        .from("ar_credit_notes")
         .insert({
-          invoice_id: params.invoice_id,
+          tenant_id: tenantId,
+          customer_id: params.customer_id,
+          credit_note_number: serial as string,
+          credit_date: params.credit_date,
           amount: params.amount,
-          payment_date: params.payment_date,
-          payment_method: params.payment_method || "bank_transfer",
-          reference: params.reference || null,
-          bank_account_id: params.bank_account_id,
-          ar_account_id: params.ar_account_id,
-          wht_amount: params.wht_amount ?? 0,
+          subtotal: params.subtotal ?? params.amount,
+          tax_amount: params.tax_amount ?? 0,
+          currency: params.currency || "LKR",
+          exchange_rate: params.exchange_rate ?? 1,
+          reason: params.reason || null,
+          status: "draft",
+          ar_account_id: params.ar_account_id || null,
+          revenue_account_id: params.revenue_account_id || null,
+          invoice_id: params.invoice_id || null,
+          created_by: appUser!.id,
         } as any)
         .select()
         .single();
       if (error) throw error;
 
-      // 2. Post: Dr Bank (net) / Dr WHT Receivable / Cr AR (gross)
-      const result = await postPaymentReceived({
-        tenant_id: tenantId,
-        payment_id: pmt.id,
-        customer_id: params.customer_id,
-        amount: params.amount,
-        payment_date: params.payment_date,
-        bank_account_id: params.bank_account_id,
-        ar_account_id: params.ar_account_id,
-        reference: params.reference,
-        invoice_id: params.invoice_id,
-        wht,
-        fx: params.fx ?? null,
-      });
-
-      // 3. Link journal entry to payment
-      await supabase
-        .from("payments_received")
-        .update({ journal_entry_id: result.journal_entry_id })
-        .eq("id", pmt.id);
-
-      return pmt;
+      if (params.items?.length) {
+        const { error: itemErr } = await supabase.from("ar_credit_note_items" as any).insert(
+          params.items.map((it, idx) => ({
+            credit_note_id: cn.id,
+            description: it.description || null,
+            quantity: it.quantity,
+            unit_price: it.unit_price,
+            discount_amount: it.discount_amount ?? 0,
+            is_tax_inclusive: it.is_tax_inclusive ?? false,
+            account_id: it.account_id || null,
+            product_id: it.product_id || null,
+            inventory_item_id: it.inventory_item_id || null,
+            tax_code_id: it.tax_code_id || null,
+            tax_group_id: it.tax_group_id || null,
+            restock: it.restock ?? false,
+            sort_order: it.sort_order ?? idx,
+          })),
+        );
+        if (itemErr) {
+          // Keep drafts consistent: a header without its lines is worse than no draft.
+          await supabase.from("ar_credit_notes").delete().eq("id", cn.id);
+          throw itemErr;
+        }
+      }
+      return cn;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["invoices"] });
-      qc.invalidateQueries({ queryKey: ["payments_received"] });
-      qc.invalidateQueries({ queryKey: ["ar_subledger"] });
-      qc.invalidateQueries({ queryKey: ["customer_detail"] });
-      toast.success("Payment received and posted to GL");
+      invalidateARCaches(qc);
     },
     onError: (e: Error) => toast.error(e.message),
   });
 }
 
-// ─── Create Credit Note with GL Auto-Post ────────────────
-export function useCreateCreditNoteWithGL() {
-  const { appUser } = useAuth();
+/** Post a draft credit note: server recomputes tax, reverses output VAT/SSCL,
+ *  restocks flagged lines, enforces approval + period guards, books the GL. */
+export function usePostCreditNote() {
   const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: { credit_note_id: string }) => {
+      const { data, error } = await supabase.functions.invoke("post-credit-note", {
+        body: { action: "post", credit_note_id: params.credit_note_id },
+      });
+      if (error) throw new Error(error.message);
+      if (!data?.ok) throw new Error(data?.error || "Failed to post credit note");
+      return data;
+    },
+    onSuccess: () => {
+      invalidateARCaches(qc);
+      toast.success("Credit note posted to GL");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
 
+/** Back-compat convenience used by InvoiceDetails' discount flow: creates a
+ *  header-only draft and immediately posts it. If the amount trips the approval
+ *  threshold the draft is kept and the server's explanation is surfaced. */
+export function useCreateCreditNoteWithGL() {
+  const createDraft = useCreateCreditNote();
+  const postNote = usePostCreditNote();
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: async (params: {
       customer_id: string;
-      /** Optional: when omitted a race-free CN-YYYY-NNNN serial is generated. */
-      credit_note_number?: string;
       credit_date: string;
       amount: number;
       reason?: string;
@@ -226,125 +254,85 @@ export function useCreateCreditNoteWithGL() {
       revenue_account_id: string;
       invoice_id?: string;
     }) => {
-      const tenantId = appUser!.tenant_id;
-
-      // Auto-generate an atomic serial unless the caller supplied a number.
-      let creditNoteNumber = params.credit_note_number?.trim();
-      if (!creditNoteNumber) {
-        const { data: serial, error: serialErr } = await supabase
-          .rpc("next_credit_note_number" as any, { p_tenant_id: tenantId });
-        if (serialErr || !serial) throw new Error(serialErr?.message || "Failed to generate credit-note number");
-        creditNoteNumber = serial as string;
-      }
-
-      // 1. Create credit note record first
-      const { data, error } = await supabase
-        .from("ar_credit_notes")
-        .insert({
-          tenant_id: tenantId,
-          customer_id: params.customer_id,
-          credit_note_number: creditNoteNumber,
-          credit_date: params.credit_date,
-          amount: params.amount,
-          reason: params.reason || null,
-          status: "applied",
-          ar_account_id: params.ar_account_id,
-          revenue_account_id: params.revenue_account_id,
-          invoice_id: params.invoice_id || null,
-        })
-        .select()
-        .single();
-      if (error) throw error;
-
-      // 2. Post via posting engine: Dr Revenue / Cr AR + AR subledger
-      const result = await postCreditNote({
-        tenant_id: tenantId,
-        credit_note_id: data.id,
+      const cn = await createDraft.mutateAsync({
         customer_id: params.customer_id,
-        credit_note_number: creditNoteNumber,
         credit_date: params.credit_date,
         amount: params.amount,
+        reason: params.reason,
         ar_account_id: params.ar_account_id,
         revenue_account_id: params.revenue_account_id,
+        invoice_id: params.invoice_id ?? null,
       });
+      await postNote.mutateAsync({ credit_note_id: cn.id });
+      return cn;
+    },
+    onSuccess: () => {
+      invalidateARCaches(qc);
+    },
+    // Errors are already toasted by the inner mutations.
+    onError: () => {},
+  });
+}
 
-      // 3. Link journal entry
-      await supabase
-        .from("ar_credit_notes")
-        .update({ journal_entry_id: result.journal_entry_id })
-        .eq("id", data.id);
-
+export function useVoidCreditNote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: { credit_note_id: string; reason?: string }) => {
+      const { data, error } = await supabase.functions.invoke("post-credit-note", {
+        body: { action: "void", credit_note_id: params.credit_note_id, reason: params.reason },
+      });
+      if (error) throw new Error(error.message);
+      if (!data?.ok) throw new Error(data?.error || "Failed to void credit note");
       return data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["invoices"] });
-      qc.invalidateQueries({ queryKey: ["ar_credit_notes"] });
-      qc.invalidateQueries({ queryKey: ["ar_subledger"] });
-      qc.invalidateQueries({ queryKey: ["customer_detail"] });
-      toast.success("Credit note created and posted to GL");
+      invalidateARCaches(qc);
+      toast.success("Credit note voided");
     },
     onError: (e: Error) => toast.error(e.message),
   });
 }
 
-// ─── Void Credit Note (reverse GL + subledger) ───────────
-export function useVoidCreditNote() {
+/** Approve or reject a pending credit note (tiered, SoD-enforced, audit-logged). */
+export function useApproveCreditNote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: { credit_note_id: string; decision: "approved" | "rejected"; note?: string }) => {
+      const { data, error } = await supabase.rpc("approve_credit_note" as any, {
+        p_credit_note_id: params.credit_note_id,
+        p_decision: params.decision,
+        p_note: params.note ?? null,
+      });
+      if (error) throw new Error(error.message);
+      return data as { status: string; collected?: number; required?: number };
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["ar_credit_notes"] });
+      if (data?.status === "approved") toast.success("Credit note approved");
+      else if (data?.status === "rejected") toast.success("Credit note rejected");
+      else toast.success(`Approval recorded (${data?.collected}/${data?.required})`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+/** Delete a DRAFT credit note (lines cascade; posted notes must be voided). */
+export function useDeleteDraftCreditNote() {
   const { appUser } = useAuth();
   const qc = useQueryClient();
-
   return useMutation({
-    mutationFn: async (params: { credit_note_id: string; reason?: string }) => {
-      const tenantId = appUser!.tenant_id;
-
-      const { data: cn, error } = await supabase
+    mutationFn: async (params: { credit_note_id: string }) => {
+      const { error } = await supabase
         .from("ar_credit_notes")
-        .select("id, status, amount, customer_id, credit_note_number, journal_entry_id")
+        .delete()
         .eq("id", params.credit_note_id)
-        .eq("tenant_id", tenantId)
-        .single();
+        .eq("tenant_id", appUser!.tenant_id)
+        .eq("status", "draft");
       if (error) throw error;
-      if (cn.status === "voided") throw new Error("Credit note is already voided");
-      if (!cn.journal_entry_id) throw new Error("Credit note has no journal entry to reverse");
-
-      // Reverse the original journal (swaps Dr/Cr; re-debits AR via the line's customer_id).
-      const today = new Date().toISOString().slice(0, 10);
-      const result = await reverseJournalEntry(
-        cn.journal_entry_id,
-        tenantId,
-        today,
-        params.reason || `Void credit note ${cn.credit_note_number}`,
-      );
-
-      // reverseJournalEntry posts lines but not subledger rows — mirror the AR
-      // subledger ourselves so the customer balance returns to its pre-credit state.
-      // Original CN credited AR; the reversal debits it back.
-      const amount = Number(cn.amount) || 0;
-      await supabase.from("ar_subledger").insert({
-        tenant_id: tenantId,
-        customer_id: cn.customer_id,
-        journal_id: result.journal_entry_id,
-        journal_line_id: result.journal_line_ids?.[0] ?? null,
-        debit: amount,
-        credit: 0,
-        balance: amount,
-        amount: amount,
-        document_type: "credit_note_reversal",
-        document_id: cn.id,
-      } as any);
-
-      await supabase
-        .from("ar_credit_notes")
-        .update({ status: "voided" })
-        .eq("id", cn.id);
-
-      return cn;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["invoices"] });
       qc.invalidateQueries({ queryKey: ["ar_credit_notes"] });
-      qc.invalidateQueries({ queryKey: ["ar_subledger"] });
-      qc.invalidateQueries({ queryKey: ["customer_detail"] });
-      toast.success("Credit note voided");
+      toast.success("Draft deleted");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -360,28 +348,39 @@ export function useCustomerDetail(customerId: string | undefined) {
 
       const [customerRes, invoicesRes, paymentsRes, creditNotesRes, arRes] = await Promise.all([
         supabase.from("customers").select("*").eq("id", customerId!).single(),
-        supabase.from("invoices").select("*, payments_received(amount)").eq("customer_id", customerId!).eq("tenant_id", tid).order("issue_date", { ascending: false }),
-        supabase.from("payments_received").select("*").order("payment_date", { ascending: false }),
+        supabase
+          .from("invoices")
+          .select("*, payment_received_allocations(amount, payments_received(status)), ar_credit_notes(amount, status)")
+          .eq("customer_id", customerId!)
+          .eq("tenant_id", tid)
+          .order("issue_date", { ascending: false }),
+        supabase
+          .from("payments_received")
+          .select("*, payment_received_allocations(invoice_id, amount)")
+          .eq("customer_id", customerId!)
+          .eq("tenant_id", tid)
+          .order("payment_date", { ascending: false }),
         supabase.from("ar_credit_notes").select("*").eq("customer_id", customerId!).eq("tenant_id", tid).order("credit_date", { ascending: false }),
         supabase.from("ar_subledger").select("*").eq("customer_id", customerId!).eq("tenant_id", tid).order("created_at"),
       ]);
 
       if (customerRes.error) throw customerRes.error;
 
-      // Filter payments to only those linked to this customer's invoices
-      const customerInvoiceIds = new Set((invoicesRes.data || []).map((i: any) => i.id));
-      const customerPayments = (paymentsRes.data || []).filter((p: any) => customerInvoiceIds.has(p.invoice_id));
-
-      // Calculate totals from invoices for the invoices tab
+      // Per-invoice paid = non-voided receipt allocations; credits reduce what's owed.
       const invoices = (invoicesRes.data || []).map((inv: any) => {
-        const paid = ((inv.payments_received as any[]) || []).reduce((s: number, p: any) => s + Number(p.amount), 0);
-        return { ...inv, amount_paid: paid, balance_due: Number(inv.total_amount) - paid };
+        const paid = ((inv.payment_received_allocations as any[]) || [])
+          .filter((a: any) => a.payments_received?.status !== "voided")
+          .reduce((s: number, a: any) => s + Number(a.amount), 0);
+        const creditTotal = ((inv.ar_credit_notes as any[]) || [])
+          .filter((c: any) => c.status !== "voided")
+          .reduce((s: number, c: any) => s + Number(c.amount), 0);
+        return { ...inv, amount_paid: paid, credit_total: creditTotal, balance_due: Number(inv.total_amount) - paid - creditTotal };
       });
 
       return {
         customer: customerRes.data,
         invoices,
-        payments: customerPayments,
+        payments: paymentsRes.data || [],
         creditNotes: creditNotesRes.data || [],
         arEntries: arRes.data || [],
       };
@@ -575,9 +574,30 @@ export function useCreditNotes() {
         .from("ar_credit_notes")
         .select("*, customers(name)")
         .eq("tenant_id", appUser!.tenant_id)
-        .order("credit_date", { ascending: false });
+        .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
+    },
+    enabled: !!appUser?.tenant_id,
+  });
+}
+
+// ─── Receipts list (payments across the tenant, allocation-aware) ────────────
+export function useCustomerReceipts(customerId?: string) {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["customer_receipts", appUser?.tenant_id, customerId ?? "all"],
+    queryFn: async () => {
+      let q = supabase
+        .from("payments_received")
+        .select("*, customers(name), payment_received_allocations(invoice_id, amount, invoices(invoice_number))")
+        .eq("tenant_id", appUser!.tenant_id)
+        .order("payment_date", { ascending: false })
+        .limit(200);
+      if (customerId) q = q.eq("customer_id", customerId);
+      const { data, error } = await q;
+      if (error) throw error;
+      return data ?? [];
     },
     enabled: !!appUser?.tenant_id,
   });

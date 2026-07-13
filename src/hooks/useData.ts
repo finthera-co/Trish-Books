@@ -298,13 +298,15 @@ export function useInvoices() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("invoices")
-        .select("*, customers(name, phone, email), payments_received(amount), ar_credit_notes(amount, status)")
+        .select("*, customers(name, phone, email), payment_received_allocations(amount, payments_received(status)), ar_credit_notes(amount, status)")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data?.map((inv) => {
-        const amountPaid = ((inv.payments_received as any[]) || []).reduce(
-          (sum: number, p: any) => sum + Number(p.amount), 0
-        );
+        // Paid = receipt allocations whose parent receipt is not voided. A single
+        // receipt may cover several invoices; allocations carry the per-invoice split.
+        const amountPaid = (((inv as any).payment_received_allocations as any[]) || [])
+          .filter((a: any) => a.payments_received?.status !== "voided")
+          .reduce((sum: number, a: any) => sum + Number(a.amount), 0);
         // Discounts/credits applied to this invoice reduce what's still owed
         const creditTotal = ((inv.ar_credit_notes as any[]) || [])
           .filter((c: any) => c.status !== "voided")
@@ -320,44 +322,34 @@ export function useInvoices() {
   });
 }
 
+// Per-invoice payment history via allocations (one receipt can span invoices;
+// `amount` here is the slice applied to THIS invoice).
 export function usePaymentsReceived(invoiceId?: string) {
   return useQuery({
     queryKey: ["payments_received", invoiceId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("payments_received")
-        .select("*")
-        .eq("invoice_id", invoiceId!)
-        .order("payment_date", { ascending: false });
+        .from("payment_received_allocations" as any)
+        .select("amount, payments_received(*)")
+        .eq("invoice_id", invoiceId!);
       if (error) throw error;
-      return data;
+      return (data || [])
+        .filter((row: any) => row.payments_received)
+        .map((row: any) => ({
+          ...row.payments_received,
+          amount: Number(row.amount),
+          receipt_total: Number(row.payments_received.amount),
+        }))
+        .sort((a: any, b: any) => String(b.payment_date).localeCompare(String(a.payment_date)));
     },
     enabled: !!invoiceId,
   });
 }
 
-export function useRecordPayment() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (payment: { invoice_id: string; amount: number; payment_method?: string; reference?: string; payment_date?: string }) => {
-      const { data, error } = await supabase.from("payments_received").insert({
-        ...payment,
-        payment_date: payment.payment_date || new Date().toISOString(),
-      }).select().single();
-      if (error) throw error;
-      writeAuditLog("Payment Received", "payments_received", data.id, {
-        invoice_id: payment.invoice_id, amount: payment.amount, method: payment.payment_method,
-      });
-      return data;
-    },
-    onSuccess: (_, vars) => {
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["payments_received", vars.invoice_id] });
-      toast.success("Payment recorded");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-}
+// NOTE: the old useRecordPayment (raw payments_received insert with no GL) was
+// removed — receipts are posted server-side via useReceiveCustomerPayment
+// (post-payment-received edge function), which books the journal, allocations
+// and AR sub-ledgers together.
 
 export function useCreateInvoice() {
   const queryClient = useQueryClient();

@@ -3,8 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { usePaymentsReceived, useRecordPayment, useUpdateInvoice } from "@/hooks/useData";
-import { useCreateCreditNoteWithGL } from "@/hooks/useARModule";
+import { usePaymentsReceived } from "@/hooks/useData";
+import { useARAccounts, useCreateCreditNoteWithGL, useReceiveCustomerPayment } from "@/hooks/useARModule";
 import { useAccountSettings } from "@/hooks/useAccountSettings";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCurrency } from "@/lib/currency";
@@ -36,6 +36,7 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
   const [payMethod, setPayMethod] = useState("bank_transfer");
   const [payReference, setPayReference] = useState("");
   const [payDate, setPayDate] = useState(new Date().toISOString().split("T")[0]);
+  const [payBankAccountId, setPayBankAccountId] = useState("");
 
   const [downloading, setDownloading] = useState(false);
 
@@ -59,8 +60,8 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
   const { data: attachments } = useInvoiceAttachments(invoice?.id);
   const uploadAttachment = useUploadAttachment();
   const deleteAttachment = useDeleteAttachment();
-  const recordPayment = useRecordPayment();
-  const updateInvoice = useUpdateInvoice();
+  const recordPayment = useReceiveCustomerPayment();
+  const { data: arAccounts } = useARAccounts();
   const createCreditNote = useCreateCreditNoteWithGL();
   const { data: settings } = useAccountSettings();
   const queryClient = useQueryClient();
@@ -203,6 +204,7 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
 
   const handleRecordPayment = async () => {
     // Guard against a rapid double-click submitting before isPending re-renders.
+    // (The server also carries a request_id idempotency key as the hard guard.)
     if (savingRef.current) return;
     const amount = Number(payAmount);
     if (!amount || amount <= 0) return;
@@ -210,24 +212,24 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
       toast.error("Payment cannot exceed the outstanding balance");
       return;
     }
+    const bankId = payBankAccountId || arAccounts?.bankAccounts?.[0]?.id;
+    if (!bankId) {
+      toast.error("No bank/cash account found — create one in the chart of accounts first");
+      return;
+    }
 
     savingRef.current = true;
     try {
+      // Posted server-side: GL, allocation, AR sub-ledgers and outstanding all
+      // move together (paid/partial status is derived from the balance).
       await recordPayment.mutateAsync({
-        invoice_id: invoice.id,
-        amount,
+        customer_id: invoice.customer_id,
+        payment_date: payDate,
         payment_method: payMethod,
         reference: payReference || undefined,
-        payment_date: new Date(payDate).toISOString(),
+        bank_account_id: bankId,
+        allocations: [{ invoice_id: invoice.id, amount }],
       });
-
-      // Auto-update invoice status (partial vs fully paid)
-      const newPaid = amountPaid + amount;
-      if (newPaid + discountTotal >= totalAmount - 0.005) {
-        updateInvoice.mutate({ id: invoice.id, status: "paid" });
-      } else if (invoice.status !== "partial") {
-        updateInvoice.mutate({ id: invoice.id, status: "partial" as any });
-      }
 
       setPayAmount("");
       setPayReference("");
@@ -464,6 +466,18 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
                       className="mt-1 w-full text-sm border border-border rounded-md px-3 py-2 bg-background text-foreground"
                       placeholder="Cheque #, Ref #"
                     />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-xs text-muted-foreground">Deposit to</label>
+                    <select
+                      value={payBankAccountId || arAccounts?.bankAccounts?.[0]?.id || ""}
+                      onChange={(e) => setPayBankAccountId(e.target.value)}
+                      className="mt-1 w-full text-sm border border-border rounded-md px-3 py-2 bg-background text-foreground"
+                    >
+                      {(arAccounts?.bankAccounts || []).map((a: any) => (
+                        <option key={a.id} value={a.id}>{a.account_code} - {a.account_name}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
                 <div className="flex gap-2 justify-end">

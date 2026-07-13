@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, CreditCard } from "lucide-react";
+import { ArrowLeft, CreditCard, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,94 +9,87 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatCurrency } from "@/lib/currency";
-import { useCustomers } from "@/hooks/useData";
-import { useInvoices } from "@/hooks/useData";
-import { useARAccounts, useReceivePaymentWithGL } from "@/hooks/useARModule";
-import { useAccountSettings } from "@/hooks/useAccountSettings";
-import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { useCustomers, useInvoices } from "@/hooks/useData";
+import { useARAccounts, useReceiveCustomerPayment } from "@/hooks/useARModule";
 
+// One customer receipt settling many invoices in a single server-posted
+// transaction: journal + allocations + AR sub-ledgers move together, any
+// overpayment is held on account as a customer deposit.
 export default function ReceivePayment() {
   const navigate = useNavigate();
   const { data: customers } = useCustomers();
   const { data: invoices } = useInvoices();
   const { data: accounts } = useARAccounts();
-  const { data: settings } = useAccountSettings();
-  const { appUser } = useAuth();
-  const receivePayment = useReceivePaymentWithGL();
+  const receivePayment = useReceiveCustomerPayment();
 
   const [customerId, setCustomerId] = useState("");
   const [bankAccountId, setBankAccountId] = useState("");
-  const [arAccountId, setArAccountId] = useState("");
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
   const [paymentMethod, setPaymentMethod] = useState("bank_transfer");
   const [reference, setReference] = useState("");
   const [selectedInvoices, setSelectedInvoices] = useState<Record<string, number>>({});
   const [withheldAmount, setWithheldAmount] = useState("");
+  // Optional: total money actually received. When it exceeds the allocations,
+  // the difference is held on account as a customer deposit.
+  const [amountReceived, setAmountReceived] = useState("");
 
-  // Auto-select first AR and bank accounts
-  useState(() => {
-    if (accounts?.arAccounts?.[0]) setArAccountId(accounts.arAccounts[0].id);
-    if (accounts?.bankAccounts?.[0]) setBankAccountId(accounts.bankAccounts[0].id);
-  });
-
-  const customerInvoices = (invoices || []).filter(
-    (i: any) => i.customer_id === customerId && i.balance_due > 0
+  const customerInvoices = useMemo(
+    () =>
+      ((invoices || []) as any[])
+        .filter((i) => i.customer_id === customerId && i.balance_due > 0 && i.status !== "draft" && i.status !== "voided")
+        .sort((a, b) => String(a.due_date || "9999").localeCompare(String(b.due_date || "9999"))),
+    [invoices, customerId],
   );
 
-  const totalPayment = Object.values(selectedInvoices).reduce((s, v) => s + v, 0);
+  const allocatedTotal = Object.values(selectedInvoices).reduce((s, v) => s + v, 0);
+  const received = parseFloat(amountReceived || "") || 0;
+  const overpayment = received > 0 ? Math.max(0, Math.round((received - allocatedTotal) * 100) / 100) : 0;
+  const underAllocated = received > 0 && received < allocatedTotal - 0.005;
 
   const customer = (customers || []).find((c: any) => c.id === customerId) as any;
   const customerWithholds = !!customer?.withholds_tax;
-  const totalWithheld = customerWithholds ? Math.min(parseFloat(withheldAmount || "0") || 0, totalPayment) : 0;
-  const netBank = Math.round((totalPayment - totalWithheld) * 100) / 100;
+  const grossReceipt = allocatedTotal + overpayment;
+  const totalWithheld = customerWithholds ? Math.min(parseFloat(withheldAmount || "0") || 0, grossReceipt) : 0;
+  const netBank = Math.round((grossReceipt - totalWithheld) * 100) / 100;
+
+  // Mixed-currency receipts are rejected server-side; keep the UI honest too.
+  const selectedCurrencies = new Set(
+    Object.keys(selectedInvoices)
+      .map((id) => (customerInvoices.find((i: any) => i.id === id) as any)?.currency || "LKR"),
+  );
+  const mixedCurrency = selectedCurrencies.size > 1;
 
   const handleApply = async () => {
-    // Distribute the customer-withheld amount proportionally across the
-    // selected invoices; push any rounding remainder onto the last one so
-    // the sum of per-invoice WHT equals the entered total.
-    const entries = Object.entries(selectedInvoices).filter(([, a]) => a > 0);
-    let allocatedWht = 0;
-    for (let i = 0; i < entries.length; i++) {
-      const [invoiceId, amount] = entries[i];
-      const isLast = i === entries.length - 1;
-      const wht = totalWithheld > 0
-        ? (isLast
-            ? Math.round((totalWithheld - allocatedWht) * 100) / 100
-            : Math.round((totalWithheld * amount / totalPayment) * 100) / 100)
-        : 0;
-      allocatedWht += wht;
+    const allocations = Object.entries(selectedInvoices)
+      .filter(([, a]) => a > 0)
+      .map(([invoice_id, amount]) => ({ invoice_id, amount }));
 
-      // Realized FX for a foreign-currency invoice: clear AR at the invoice's
-      // booked rate, settle cash at today's rate, plug the difference to FX P&L.
-      const inv = (invoices || []).find((i: any) => i.id === invoiceId) as any;
-      let fx: { invoiceRate: number; paymentRate: number; fxGainAccountId: string; fxLossAccountId: string } | null = null;
-      if (inv?.currency && inv.currency !== "LKR" && settings?.fx_gain_account_id && settings?.fx_loss_account_id) {
-        const { data: rate } = await supabase.rpc("fx_rate" as any, {
-          p_tenant_id: appUser?.tenant_id, p_currency: inv.currency, p_date: paymentDate,
-        });
-        fx = {
-          invoiceRate: Number(inv.exchange_rate) || 1,
-          paymentRate: Number(rate) || Number(inv.exchange_rate) || 1,
-          fxGainAccountId: settings.fx_gain_account_id,
-          fxLossAccountId: settings.fx_loss_account_id,
-        };
-      }
-
-      await receivePayment.mutateAsync({
-        invoice_id: invoiceId,
-        customer_id: customerId,
-        amount,
-        payment_date: paymentDate,
-        payment_method: paymentMethod,
-        reference,
-        bank_account_id: bankAccountId,
-        ar_account_id: arAccountId,
-        wht_amount: wht > 0 ? wht : undefined,
-        fx,
-      });
-    }
+    await receivePayment.mutateAsync({
+      customer_id: customerId,
+      payment_date: paymentDate,
+      payment_method: paymentMethod,
+      reference: reference || undefined,
+      bank_account_id: bankAccountId,
+      allocations,
+      unapplied_amount: overpayment > 0 ? overpayment : undefined,
+      overpayment_action: overpayment > 0 ? "deposit" : undefined,
+      wht_amount: totalWithheld > 0 ? totalWithheld : undefined,
+    });
     navigate("/sales/customers/" + customerId);
+  };
+
+  // Oldest-first auto-application of the amount received.
+  const autoApply = () => {
+    if (!(received > 0)) return;
+    let remaining = received;
+    const next: Record<string, number> = {};
+    for (const inv of customerInvoices as any[]) {
+      if (remaining <= 0.004) break;
+      const take = Math.min(remaining, Number(inv.balance_due));
+      next[inv.id] = Math.round(take * 100) / 100;
+      remaining = Math.round((remaining - take) * 100) / 100;
+    }
+    setSelectedInvoices(next);
   };
 
   const toggleInvoice = (invId: string, balanceDue: number) => {
@@ -110,6 +103,15 @@ export default function ReceivePayment() {
     });
   };
 
+  const canSubmit =
+    !!customerId &&
+    !!bankAccountId &&
+    grossReceipt > 0 &&
+    allocatedTotal >= 0 &&
+    !mixedCurrency &&
+    !underAllocated &&
+    !receivePayment.isPending;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -120,7 +122,7 @@ export default function ReceivePayment() {
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <CreditCard className="w-6 h-6 text-primary" /> Receive Payment
           </h1>
-          <p className="text-sm text-muted-foreground">Apply payments to outstanding invoices</p>
+          <p className="text-sm text-muted-foreground">One receipt can settle several invoices; any excess is held on the customer's account</p>
         </div>
       </div>
 
@@ -168,19 +170,34 @@ export default function ReceivePayment() {
               </Select>
             </div>
             <div>
-              <Label>AR Account *</Label>
-              <Select value={arAccountId} onValueChange={setArAccountId}>
-                <SelectTrigger><SelectValue placeholder="Select AR account" /></SelectTrigger>
-                <SelectContent>
-                  {(accounts?.arAccounts || []).map((a: any) => (
-                    <SelectItem key={a.id} value={a.id}>{a.account_code} - {a.account_name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
               <Label>Reference / Check #</Label>
               <Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. CHK-001" />
+            </div>
+
+            <div className="pt-3 border-t border-border space-y-2">
+              <Label>Amount received (optional)</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="number" step="0.01" min="0"
+                  value={amountReceived}
+                  onChange={(e) => setAmountReceived(e.target.value)}
+                  placeholder={allocatedTotal > 0 ? allocatedTotal.toFixed(2) : "0.00"}
+                />
+                <Button type="button" variant="outline" size="icon" title="Auto-apply oldest first"
+                  onClick={autoApply} disabled={!(received > 0) || customerInvoices.length === 0}>
+                  <Wand2 className="w-4 h-4" />
+                </Button>
+              </div>
+              {overpayment > 0 && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                  {formatCurrency(overpayment)} exceeds the allocations and will be held on account as a customer deposit.
+                </p>
+              )}
+              {underAllocated && (
+                <p className="text-[11px] text-destructive">
+                  Allocations ({formatCurrency(allocatedTotal)}) exceed the amount received — reduce them or clear this field.
+                </p>
+              )}
             </div>
 
             {customerWithholds && (
@@ -192,7 +209,7 @@ export default function ReceivePayment() {
                 </div>
                 {totalWithheld > 0 && (
                   <div className="p-2 rounded-md bg-muted/30 text-sm space-y-1">
-                    <div className="flex justify-between"><span className="text-muted-foreground">Gross AR settled</span><span className="font-mono">{formatCurrency(totalPayment)}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Gross AR settled</span><span className="font-mono">{formatCurrency(grossReceipt)}</span></div>
                     <div className="flex justify-between"><span className="text-muted-foreground">Withheld</span><span className="font-mono text-destructive">-{formatCurrency(totalWithheld)}</span></div>
                     <div className="flex justify-between font-semibold border-t pt-1"><span>Net bank</span><span className="font-mono">{formatCurrency(netBank)}</span></div>
                   </div>
@@ -201,16 +218,21 @@ export default function ReceivePayment() {
             )}
 
             <div className="pt-4 border-t border-border">
-              <p className="text-sm text-muted-foreground">Total Payment</p>
-              <p className="text-2xl font-bold text-primary tabular-nums">{formatCurrency(totalPayment)}</p>
+              <p className="text-sm text-muted-foreground">Applied to invoices</p>
+              <p className="text-2xl font-bold text-primary tabular-nums">{formatCurrency(allocatedTotal)}</p>
+              {overpayment > 0 && (
+                <p className="text-xs text-muted-foreground mt-1">+ {formatCurrency(overpayment)} on account</p>
+              )}
             </div>
 
-            <Button
-              className="w-full"
-              onClick={handleApply}
-              disabled={!customerId || !bankAccountId || !arAccountId || totalPayment <= 0 || receivePayment.isPending}
-            >
-              {receivePayment.isPending ? "Processing..." : "Apply Payment"}
+            {mixedCurrency && (
+              <p className="text-[11px] text-destructive">
+                Selected invoices are in different currencies — record separate receipts per currency.
+              </p>
+            )}
+
+            <Button className="w-full" onClick={handleApply} disabled={!canSubmit}>
+              {receivePayment.isPending ? "Posting..." : "Record Receipt"}
             </Button>
           </CardContent>
         </Card>
@@ -244,10 +266,15 @@ export default function ReceivePayment() {
                           onCheckedChange={() => toggleInvoice(inv.id, inv.balance_due)}
                         />
                       </TableCell>
-                      <TableCell className="font-medium">{inv.invoice_number}</TableCell>
+                      <TableCell className="font-medium">
+                        {inv.invoice_number}
+                        {(inv.currency || "LKR") !== "LKR" && (
+                          <span className="ml-1 text-[10px] text-muted-foreground">{inv.currency}</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-muted-foreground">{inv.due_date || "—"}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(Number(inv.total_amount))}</TableCell>
-                      <TableCell className="text-right tabular-nums text-destructive font-semibold">{formatCurrency(inv.balance_due)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(Number(inv.total_amount), inv.currency)}</TableCell>
+                      <TableCell className="text-right tabular-nums text-destructive font-semibold">{formatCurrency(inv.balance_due, inv.currency)}</TableCell>
                       <TableCell className="text-right">
                         {selectedInvoices[inv.id] !== undefined ? (
                           <Input

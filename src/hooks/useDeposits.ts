@@ -67,65 +67,38 @@ export function useRecordDeposit() {
   });
 }
 
-// Apply a deposit to an invoice: Dr Customer Advances / Cr AR, and reduce the
-// invoice balance via a payments_received row (no new bank movement).
+// Apply a deposit to an invoice: Dr Customer Advances / Cr AR (no new bank
+// movement). Posted server-side via post-payment-received with
+// funded_by_deposit_id — the function validates the unapplied balance, books
+// the JE + allocation + AR sub-ledgers together, and updates the deposit.
 export function useApplyDeposit() {
-  const { appUser } = useAuth();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: {
       deposit: DepositRow; invoice_id: string; invoice_number: string; amount: number;
       ar_account_id: string; applied_date: string;
     }) => {
-      const tenant_id = appUser!.tenant_id;
-      const advanceAcct = input.deposit.advance_account_id;
-      if (!advanceAcct) throw new Error("Deposit has no advances account");
-      const unapplied = Number(input.deposit.amount) - Number(input.deposit.applied_amount);
-      if (input.amount > unapplied + 0.005) throw new Error("Amount exceeds the unapplied deposit balance");
-
-      const { data: appRow, error: appErr } = await (supabase as any)
-        .from("deposit_applications")
-        .insert({ tenant_id, deposit_id: input.deposit.id, invoice_id: input.invoice_id, amount: input.amount, applied_date: input.applied_date })
-        .select("id").single();
-      if (appErr) throw appErr;
-
-      const result = await post({
-        tenant_id, entry_date: input.applied_date,
-        description: `Deposit applied to ${input.invoice_number}`,
-        source_type: "deposit_application" as any, source_id: appRow.id,
-        reference: input.invoice_number,
-        lines: [
-          { account_id: advanceAcct, debit: input.amount, credit: 0 },
-          { account_id: input.ar_account_id, debit: 0, credit: input.amount, customer_id: input.deposit.customer_id },
-        ],
-        subledger_entries: [{
-          type: "ar", entity_id: input.deposit.customer_id,
-          document_type: "deposit_application" as any, document_id: appRow.id, debit: 0, credit: input.amount,
-        }],
+      const { data, error } = await supabase.functions.invoke("post-payment-received", {
+        body: {
+          action: "post",
+          request_id: crypto.randomUUID(),
+          customer_id: input.deposit.customer_id,
+          payment_date: input.applied_date,
+          reference: `Deposit${input.deposit.reference ? ` ${input.deposit.reference}` : ""}`,
+          ar_account_id: input.ar_account_id,
+          funded_by_deposit_id: input.deposit.id,
+          allocations: [{ invoice_id: input.invoice_id, amount: input.amount }],
+        },
       });
-
-      // Reduce the invoice's balance (amount_paid derives from payments_received).
-      await supabase.from("payments_received").insert({
-        invoice_id: input.invoice_id, amount: input.amount, payment_method: "deposit",
-        payment_date: new Date(input.applied_date).toISOString(),
-        reference: `Deposit${input.deposit.reference ? ` ${input.deposit.reference}` : ""}`,
-        journal_entry_id: result.journal_entry_id, ar_account_id: input.ar_account_id,
-      } as any);
-
-      await (supabase as any).from("deposit_applications").update({ journal_entry_id: result.journal_entry_id }).eq("id", appRow.id);
-
-      const newApplied = Number(input.deposit.applied_amount) + input.amount;
-      await (supabase as any).from("customer_deposits").update({
-        applied_amount: newApplied,
-        status: newApplied >= Number(input.deposit.amount) - 0.005 ? "applied" : "partially_applied",
-        updated_at: new Date().toISOString(),
-      }).eq("id", input.deposit.id);
-
-      return appRow;
+      if (error) throw new Error(error.message);
+      if (!data?.ok) throw new Error(data?.error || "Failed to apply deposit");
+      return data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["customer_deposits"] });
       qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["payments_received"] });
+      qc.invalidateQueries({ queryKey: ["ar_transactions"] });
       toast.success("Deposit applied to invoice");
     },
     onError: (e: Error) => toast.error(e.message),
