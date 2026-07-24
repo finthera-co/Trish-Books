@@ -13,6 +13,9 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { useSetupBankImportChart } from "@/hooks/useBankStatementImport";
 import {
   Settings,
   Save,
@@ -164,6 +167,7 @@ export default function AccountMapping() {
   const { data: settings, isLoading } = useAccountSettings();
   const { data: completeness } = useAccountSettingsCompleteness();
   const upsert = useUpsertAccountSettings();
+  const setupChart = useSetupBankImportChart();
 
   const [form, setForm] = useState<Partial<AccountSettings>>({});
   const [previewOpen, setPreviewOpen] = useState<Record<string, boolean>>({});
@@ -275,6 +279,7 @@ export default function AccountMapping() {
           <TabsTrigger value="assets">Fixed Assets</TabsTrigger>
           <TabsTrigger value="equity">Equity &amp; FX</TabsTrigger>
           <TabsTrigger value="payroll">Payroll</TabsTrigger>
+          <TabsTrigger value="bankimport">Bank Import</TabsTrigger>
         </TabsList>
 
         {/* ── Tab 1: Core ─────────────────────────────────────────────────── */}
@@ -490,6 +495,95 @@ export default function AccountMapping() {
                 rows={[
                   { account: "Salaries & Wages Expense", dr: "80,000.00" },
                   { account: "Payroll Clearing", cr: "80,000.00", indent: true },
+                ]}
+                previewOpen={previewOpen}
+                setPreviewOpen={setPreviewOpen}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="bankimport" className="mt-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Bank Statement Import</CardTitle>
+              <CardDescription>
+                Where unresolved-but-valid statement lines are posted, and how imported entries are staged.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-4">
+                Both accounts below are required before you can import. The engine never guesses — any line it
+                cannot resolve to an exact rule posts to the matching holding account (visibly, reason-coded) and
+                is cleared to its final account later in Suspense Clearing.
+              </p>
+
+              <div className="rounded-md border border-border bg-muted/30 px-3 py-3 mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium">Set up the bank import chart</p>
+                  <p className="text-xs text-muted-foreground">
+                    Creates any missing income / expense / PPE accounts from the standard chart, wires every
+                    statement category to its ledger account, and fills in the two accounts below. Safe to re-run —
+                    existing accounts are never modified.
+                  </p>
+                </div>
+                <Button variant="outline" size="sm" className="shrink-0" disabled={setupChart.isPending}
+                  onClick={() => setupChart.mutate()}>
+                  {setupChart.isPending ? "Setting up…" : "Run setup"}
+                </Button>
+              </div>
+
+              <FieldRow fieldKey="bank_import_unrecognized_deposit_account_id" label="Unrecognized Deposits" badge={<Cr />}
+                types={["Income", "Other Income", "Liability"]}
+                hint="Holding account for unresolved money IN (statement Credit column). Must net to zero as items are cleared."
+                quickType="Income" quickSubtype="Suspense" quickName="Unrecognized Deposits"
+                {...sharedProps} />
+              <FieldRow fieldKey="bank_import_unrecognized_payment_account_id" label="Unrecognized Payments" badge={<Dr />}
+                types={["Expense", "Other Expense", "Asset"]}
+                hint="Holding account for unresolved money OUT (statement Debit column). Must net to zero as items are cleared."
+                quickType="Expense" quickSubtype="Suspense" quickName="Unrecognized Payments"
+                {...sharedProps} />
+
+              <div className="flex items-start gap-3 py-3 border-b border-border/50">
+                <div className="flex-1 space-y-1.5">
+                  <Label className="text-sm font-medium">Posting mode</Label>
+                  <Select
+                    value={(form.bank_import_posting_mode as string) ?? "auto_post"}
+                    onValueChange={(v) => set("bank_import_posting_mode")(v)}
+                  >
+                    <SelectTrigger className="max-w-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto_post">Auto-post (default) — entries post immediately</SelectItem>
+                      <SelectItem value="draft">Draft — entries staged for review before posting</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground italic">
+                    Default is auto-post: import completes with the bank GL fully posted. Draft stages every entry instead.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 py-3">
+                <div className="flex-1 space-y-1.5">
+                  <Label className="text-sm font-medium">Per-line amount ceiling (LKR)</Label>
+                  <Input
+                    type="number"
+                    className="max-w-xs"
+                    value={(form.bank_import_amount_ceiling as number) ?? 100000000}
+                    onChange={(e) => setForm((prev) => ({ ...prev, bank_import_amount_ceiling: Number(e.target.value) }))}
+                  />
+                  <p className="text-xs text-muted-foreground italic">
+                    Lines above this amount go to Suspense for review even when a rule matches. Default LKR 100,000,000.
+                  </p>
+                </div>
+              </div>
+
+              <SampleJournal
+                tabKey="bankimport"
+                title="Sample journal — import line to Suspense"
+                rows={[
+                  { account: "Bank Import Suspense", dr: "12,500.00" },
+                  { account: "Bank — Sampath", cr: "12,500.00", indent: true },
                 ]}
                 previewOpen={previewOpen}
                 setPreviewOpen={setPreviewOpen}

@@ -49,6 +49,14 @@ export interface AccountSettings {
   invoice_approver_ids?:                string[] | null;  // appointed approvers; empty → owners (Primary/Super Admin)
   customer_advance_account_id?:         string | null;    // liability account for customer deposits/advances
   invoice_approval_tiers?:              { min_amount: number; required_approvals: number }[] | null;
+  // Bank Statement Import — DIRECTIONAL suspense, mirroring the client's own
+  // workbook: unresolved money IN → Unrecognized Deposits, unresolved money OUT
+  // → Unrecognized Payments. Both REQUIRED before importing; tracked to zero in
+  // Suspense Clearing. (Columns added by 20260721000000; not yet in gen types.)
+  bank_import_unrecognized_deposit_account_id?: string | null;
+  bank_import_unrecognized_payment_account_id?: string | null;
+  bank_import_posting_mode?:            "auto_post" | "draft" | null;
+  bank_import_amount_ceiling?:          number | null;
 }
 
 // ─── AccountSettingsCompleteness — shape returned by get_account_settings_completeness RPC

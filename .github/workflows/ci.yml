@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+
+jobs:
+  # ── Unit + SQL-text tests (fast, no database) ──────────────────────────────
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Note: a repo-wide `tsc --noEmit` gate is intentionally omitted — the
+      # codebase carries pre-existing type errors in unrelated modules. Vitest
+      # (esbuild) runs the suite regardless, and the bank-import sources are
+      # kept tsc-clean on their own.
+      - name: Unit tests (includes bank-import guard assertions)
+        run: npm test
+
+  # ── Database end-to-end suite against a real, throwaway Postgres ───────────
+  # Spins up the full local Supabase stack (applies every migration), then runs
+  # supabase/tests/bank_import_e2e.sql — which exercises the real RPCs and
+  # triggers (posting, isolation, immutability, concurrency, undo/reverse
+  # guards, cash-flow sync) and RAISEs on any failure. ON_ERROR_STOP makes psql
+  # exit non-zero, failing the job. The suite rolls itself back.
+  db-e2e:
+    name: Database E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Start Supabase (applies all migrations)
+        run: supabase start
+      - name: Run bank-import E2E suite
+        # Supabase local always exposes Postgres on this fixed URL.
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 -f supabase/tests/bank_import_e2e.sql
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop

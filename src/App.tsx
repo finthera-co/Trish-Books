@@ -40,6 +40,9 @@ import CloseOBE from "./pages/CloseOBE";
 import TrialBalance from "./pages/TrialBalance";
 import FiscalPeriods from "./pages/FiscalPeriods";
 import BankReconciliation from "./pages/BankReconciliation";
+import BankStatementImport from "./pages/BankStatementImport";
+import SuspenseClearing from "./pages/SuspenseClearing";
+import BankImportRules from "./pages/BankImportRules";
 import PaymentVouchers from "./pages/PaymentVouchers";
 import PettyCash from "./pages/PettyCash";
 import PettyCashVoucherForm from "./pages/PettyCashVoucherForm";
@@ -213,6 +216,9 @@ const App = () => (
                   <Route element={<ModuleLayout config={MODULE_CONFIGS.banking} />}>
                     <Route path="/banking" element={<ModuleDashboard config={MODULE_CONFIGS.banking} />} />
                     <Route path="/banking/reconciliation" element={<BankReconciliation />} />
+                    <Route path="/banking/statement-import" element={<BankStatementImport />} />
+                    <Route path="/banking/suspense-clearing" element={<SuspenseClearing />} />
+                    <Route path="/banking/import-rules" element={<BankImportRules />} />
                     <Route path="/banking/payment-vouchers" element={<PaymentVouchers />} />
                     <Route path="/banking/petty-cash" element={<PettyCash />} />
                     <Route path="/banking/petty-cash/voucher/new" element={<PettyCashVoucherForm />} />
