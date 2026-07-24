@@ -10,7 +10,7 @@ export default function SuperAdminRoute() {
   if (loading || !appUser) return null;
 
   if (!isSuperAdmin) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/home" replace />;
   }
 
   return <Outlet />;

@@ -97,7 +97,7 @@ export default function EmployeeLayout() {
           {/* Non-Employee roles arrive from the main app — give them a way back */}
           {!isEmployee && (
             <button
-              onClick={() => navigate("/")}
+              onClick={() => navigate("/home")}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-white/85 hover:bg-white/15 transition-colors"
             >
               <ArrowLeft className="w-[18px] h-[18px] shrink-0" />
@@ -125,7 +125,7 @@ export default function EmployeeLayout() {
         <header className="md:hidden h-14 border-b border-border bg-card flex items-center justify-between px-4 shrink-0">
           <div className="flex items-center gap-2">
             {!isEmployee && (
-              <button onClick={() => navigate("/")} className="text-muted-foreground" aria-label="Back to main app">
+              <button onClick={() => navigate("/home")} className="text-muted-foreground" aria-label="Back to main app">
                 <ArrowLeft className="w-5 h-5" />
               </button>
             )}

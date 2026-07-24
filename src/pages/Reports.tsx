@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect, Fragment } from "react";
-import { FileText, TrendingUp, DollarSign, BarChart3, Printer, ArrowLeft, Activity, Warehouse, Download } from "lucide-react";
+import { FileText, TrendingUp, DollarSign, BarChart3, Printer, ArrowLeft, Activity, Warehouse, Download, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { downloadReportPdf } from "@/lib/reportPdf";
+import { downloadReportExcel } from "@/lib/reportExcel";
 import { Button } from "@/components/ui/button";
 import { useAccounts, useJournalEntries, useInvoices, useExpenses, useBudgets } from "@/hooks/useData";
 import { useQuery } from "@tanstack/react-query";
@@ -1423,15 +1424,14 @@ export default function Reports() {
     "ppe-schedule": "Property, Plant & Equipment (IAS 16)",
   };
 
-  // Vector PDF built from the rendered statement table(s).
-  const handleDownloadPdf = () => {
-    const container = document.getElementById("financial-report-doc");
-    if (!container || !activeReport) return;
+  // Shared heading/identity metadata for the PDF and Excel exports.
+  const exportMeta = (extension: "pdf" | "xlsx") => {
+    if (!activeReport) return null;
     const reportName = reports.find(r => r.id === activeReport)?.name ?? "Report";
     const dateLine = AS_AT_REPORTS.includes(activeReport)
       ? `As at ${format(new Date(periodTo), "MMM d, yyyy")}`
       : `For the period ${format(new Date(periodFrom), "MMM d, yyyy")} — ${format(new Date(periodTo), "MMM d, yyyy")}`;
-    const ok = downloadReportPdf(container, {
+    return {
       companyName: company?.company_name,
       address: company?.address,
       phone: company?.phone,
@@ -1439,9 +1439,28 @@ export default function Reports() {
       title: reportName,
       subtitle: REPORT_SUBTITLES[activeReport],
       dateLine,
-      fileName: `${company?.company_name ? `${company.company_name} — ` : ""}${reportName} ${periodTo}.pdf`,
-    });
-    if (!ok) toast.error("Nothing to download — this report has no data for the selected period.");
+      fileName: `${company?.company_name ? `${company.company_name} — ` : ""}${reportName} ${periodTo}.${extension}`,
+    };
+  };
+
+  const NO_DATA = "Nothing to download — this report has no data for the selected period.";
+
+  // Vector PDF built from the rendered statement table(s).
+  const handleDownloadPdf = () => {
+    const container = document.getElementById("financial-report-doc");
+    const meta = exportMeta("pdf");
+    if (!container || !meta) return;
+    if (!downloadReportPdf(container, meta)) toast.error(NO_DATA);
+  };
+
+  // Workbook built from the same rendered table(s), with amounts as numbers.
+  const handleDownloadExcel = () => {
+    const container = document.getElementById("financial-report-doc");
+    const meta = exportMeta("xlsx");
+    if (!container || !meta) return;
+    if (!downloadReportExcel(container, { ...meta, sheetName: meta.title }, "table.data-table")) {
+      toast.error(NO_DATA);
+    }
   };
 
   return (
@@ -1456,6 +1475,9 @@ export default function Reports() {
             <>
               <Button variant="outline" size="sm" onClick={handleDownloadPdf} className="print:hidden">
                 <Download className="w-4 h-4 mr-1" /> Download PDF
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleDownloadExcel} className="print:hidden">
+                <FileSpreadsheet className="w-4 h-4 mr-1" /> Download Excel
               </Button>
               <Button variant="outline" size="sm" onClick={handlePrint} className="print:hidden">
                 <Printer className="w-4 h-4 mr-1" /> Print

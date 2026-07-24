@@ -2,10 +2,12 @@ import { useState, useMemo, Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { FileText, Printer, Download, Plus } from "lucide-react";
+import { FileText, Printer, Download, Plus, FileSpreadsheet } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { ACCOUNT_TYPES, getTypeLabel } from "@/lib/accountTypes";
+import { downloadReportExcel } from "@/lib/reportExcel";
 
 interface AccountBalance {
   id: string;
@@ -150,6 +152,19 @@ export default function TrialBalance() {
     URL.revokeObjectURL(url);
   };
 
+  // Workbook built from the rendered statement, with amounts as real numbers.
+  const handleExportExcel = () => {
+    const container = document.getElementById("trial-balance-doc");
+    if (!container) return;
+    const ok = downloadReportExcel(container, {
+      title: "Trial Balance",
+      subtitle: "Closing balances by account",
+      dateLine: `As of ${format(new Date(asOfDate), "MMMM d, yyyy")}`,
+      fileName: `Trial Balance ${asOfDate}.xlsx`,
+    }, "table.data-table");
+    if (!ok) toast.error("Nothing to download — no posted journal entries for this date.");
+  };
+
   return (
     <div className="space-y-6">
       <div className="page-header">
@@ -163,6 +178,9 @@ export default function TrialBalance() {
           </Button>
           <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={balances.length === 0}>
             <Download className="w-4 h-4 mr-1" /> Export CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={balances.length === 0}>
+            <FileSpreadsheet className="w-4 h-4 mr-1" /> Export Excel
           </Button>
           <Button variant="outline" size="sm" onClick={() => window.print()}>
             <Printer className="w-4 h-4 mr-1" /> Print
@@ -211,7 +229,7 @@ export default function TrialBalance() {
       </div>
 
       {/* Trial Balance table */}
-      <div className="stat-card print:shadow-none">
+      <div id="trial-balance-doc" className="stat-card print:shadow-none">
         <div className="text-center mb-6 print:mb-4">
           <h2 className="text-lg font-bold text-foreground">Trial Balance</h2>
           <p className="text-sm text-muted-foreground">As of {format(new Date(asOfDate), "MMMM d, yyyy")}</p>

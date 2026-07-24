@@ -1,17 +1,16 @@
 import { Moon, Sun } from "lucide-react";
-import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
+import { useTenantTheme } from "@/hooks/useTenantTheme";
 
 export default function ThemeToggle() {
-  const { resolvedTheme, setTheme } = useTheme();
-  const isDark = resolvedTheme === "dark";
+  const { isDark, setTenantTheme } = useTenantTheme();
 
   return (
     <Button
       variant="ghost"
       size="icon"
       className="h-9 w-9 rounded-lg"
-      onClick={() => setTheme(isDark ? "light" : "dark")}
+      onClick={() => setTenantTheme(isDark ? "light" : "dark")}
       aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
       title={isDark ? "Switch to light mode" : "Switch to dark mode"}
     >

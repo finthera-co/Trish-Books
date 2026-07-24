@@ -14,7 +14,7 @@ export default function Onboarding() {
 
   useEffect(() => {
     if (!loading && !user) navigate("/login", { replace: true });
-    if (!loading && appUser) navigate("/", { replace: true });
+    if (!loading && appUser) navigate("/home", { replace: true });
   }, [user, appUser, loading, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {

@@ -12,7 +12,7 @@ export default function EmployeeRoute() {
   if (loading || !appUser) return null;
 
   if (isSuperAdmin || !appUser.tenant_id) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/home" replace />;
   }
 
   return <Outlet />;

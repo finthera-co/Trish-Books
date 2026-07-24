@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, Navigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { BookOpen, Eye, EyeOff } from "lucide-react";
@@ -12,7 +12,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const { signIn } = useAuth();
+  const { signIn, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -23,7 +23,7 @@ export default function Login() {
       toast.error(error.message);
     } else {
       toast.success("Welcome back!");
-      navigate("/");
+      navigate("/home");
     }
     setLoading(false);
   };
@@ -45,6 +45,9 @@ export default function Login() {
       toast.success("If that email has an account, a password reset link is on its way.");
     }
   };
+
+  // Arriving from the landing page with a live session — skip the form.
+  if (!authLoading && user) return <Navigate to="/home" replace />;
 
   return (
     <div className="min-h-screen flex bg-background">

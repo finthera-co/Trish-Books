@@ -28,6 +28,7 @@ import { format } from "date-fns";
 import { formatCurrency } from "@/lib/currency";
 import { isDebitNormal, getNormalBalance, getTypeLabel, getStatementPlacement, isOpeningBalanceEquityAccount, isPeriodBasedAccount, typeColors } from "@/lib/accountTypes";
 import { netAccountBalance } from "@/lib/accountBalances";
+import { downloadDataExcel } from "@/lib/reportExcel";
 import EditTransactionModal from "@/components/account-report/EditTransactionModal";
 
 interface TransactionRow {
@@ -255,6 +256,58 @@ export default function AccountReport() {
     URL.revokeObjectURL(url);
   };
 
+  const handleExportExcel = () => {
+    if (!account) return;
+    type ExportRow = {
+      date: string; entryType: string; journalNo: string; reference: string;
+      name: string; memo: string;
+      debit: number | null; credit: number | null; balance: number;
+    };
+    const exportRows: ExportRow[] = [
+      // Balance Sheet accounts carry an opening balance into the window.
+      ...(!isPeriodBased && openingBalance !== 0
+        ? [{
+            date: dateFrom, entryType: "Opening Balance", journalNo: "", reference: "",
+            name: "", memo: "", debit: null, credit: null, balance: openingBalance,
+          }]
+        : []),
+      ...rows.map((r) => ({
+        date: r.date,
+        entryType: r.entryType,
+        journalNo: r.journalNo,
+        reference: r.reference,
+        name: r.name,
+        memo: r.memo,
+        debit: r.debit > 0 ? r.debit : null,
+        credit: r.credit > 0 ? r.credit : null,
+        balance: r.balance,
+      })),
+    ];
+
+    downloadDataExcel<ExportRow>(
+      {
+        title: `Account Report — ${account.account_code} ${account.account_name}`,
+        subtitle: getTypeLabel(account.account_type),
+        dateLine: `${dateFrom} → ${dateTo}`,
+        sheetName: `${account.account_code} Report`,
+        fileName: `${account.account_code} ${account.account_name} Report.xlsx`,
+      },
+      [
+        { header: "Date", value: (r) => r.date },
+        { header: "Type", value: (r) => r.entryType },
+        { header: "Journal No", value: (r) => r.journalNo },
+        { header: "Reference", value: (r) => r.reference },
+        { header: "Name", value: (r) => r.name },
+        { header: "Memo", value: (r) => r.memo },
+        { header: "Debit", numeric: true, value: (r) => r.debit },
+        { header: "Credit", numeric: true, value: (r) => r.credit },
+        { header: "Balance", numeric: true, value: (r) => r.balance },
+      ],
+      exportRows,
+      ["", "TOTALS", "", "", "", "", totalDebit, totalCredit, closingBalance],
+    );
+  };
+
   if (!account) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -278,7 +331,10 @@ export default function AccountReport() {
             <RefreshCw className="w-4 h-4 mr-1" /> Refresh
           </Button>
           <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={rows.length === 0}>
-            <FileSpreadsheet className="w-4 h-4 mr-1" /> Export CSV
+            <Download className="w-4 h-4 mr-1" /> Export CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={rows.length === 0}>
+            <FileSpreadsheet className="w-4 h-4 mr-1" /> Export Excel
           </Button>
           <Button variant="outline" size="sm" onClick={() => window.print()}>
             <Printer className="w-4 h-4 mr-1" /> Print

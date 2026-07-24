@@ -6,6 +6,7 @@ import { queryClient } from "@/lib/queryClient";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/components/theme-provider";
+import TenantThemeSync from "@/hooks/useTenantTheme";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import TenantRoute from "@/components/TenantRoute";
 import SuperAdminRoute from "@/components/SuperAdminRoute";
@@ -27,6 +28,7 @@ import ModuleDashboard from "./pages/ModuleDashboard";
 // Pages
 import Home from "./pages/Home";
 import Notifications from "./pages/Notifications";
+import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Onboarding from "./pages/Onboarding";
@@ -129,12 +131,15 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
     <AuthProvider>
+      <TenantThemeSync />
       <TooltipProvider>
         <Toaster />
         <Sonner />
         <BrowserRouter>
           <ErrorBoundary>
           <Routes>
+            {/* Public marketing page — forwards signed-in users to /home */}
+            <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/reset-password" element={<ResetPassword />} />
@@ -159,7 +164,7 @@ const App = () => (
 
               <Route element={<AppLayout />}>
                 {/* Home — renders different dashboard based on role */}
-                <Route path="/" element={<Home />} />
+                <Route path="/home" element={<Home />} />
 
                 {/* Notifications feed (all alerts) — available to any signed-in user */}
                 <Route path="/notifications" element={<Notifications />} />

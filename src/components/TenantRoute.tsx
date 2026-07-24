@@ -11,7 +11,7 @@ export default function TenantRoute() {
   if (loading || !appUser) return null;
 
   if (isSuperAdmin) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/home" replace />;
   }
 
   if (isEmployee) {

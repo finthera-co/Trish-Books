@@ -28,7 +28,7 @@ export default function GlobalTopNav() {
     <header className="h-14 border-b border-border bg-card flex items-center justify-between px-5 shrink-0 shadow-sm">
       {/* Left: Logo + Search */}
       <div className="flex items-center gap-5">
-        <button onClick={() => navigate("/")} className="flex items-center gap-2.5 shrink-0 group">
+        <button onClick={() => navigate("/home")} className="flex items-center gap-2.5 shrink-0 group">
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shadow-sm transition-transform duration-200 group-hover:scale-105">
             <span className="text-xs font-bold text-primary-foreground">FT</span>
           </div>

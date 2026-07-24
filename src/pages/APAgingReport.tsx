@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Clock, Printer, CheckCircle2, AlertTriangle, RefreshCw, Download } from "lucide-react";
+import { ArrowLeft, Clock, Printer, CheckCircle2, AlertTriangle, RefreshCw, Download, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { downloadDataExcel } from "@/lib/reportExcel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +55,28 @@ export default function APAgingReport() {
     URL.revokeObjectURL(url);
   };
 
+  const handleExportExcel = () => {
+    downloadDataExcel(
+      {
+        title: "AP Aging Report",
+        subtitle: "Outstanding payables by age from due date",
+        dateLine: `As of ${asOfDate}`,
+        fileName: `AP Aging ${asOfDate}.xlsx`,
+      },
+      [
+        { header: "Vendor", value: (r: typeof rows[number]) => r.vendor_name },
+        ...BUCKETS.map((b) => ({
+          header: b.label,
+          numeric: true,
+          value: (r: typeof rows[number]) => Number(r[b.key as keyof typeof r] ?? 0),
+        })),
+        { header: "Total", numeric: true, value: (r: typeof rows[number]) => Number(r.total) },
+      ],
+      rows,
+      ["TOTAL", ...BUCKETS.map((b) => Number(totals[b.key as keyof typeof totals] ?? 0)), Number(totals.grand_total)],
+    );
+  };
+
   return (
     <div className="space-y-6 print:space-y-4">
       {/* ── Header ── */}
@@ -82,6 +105,9 @@ export default function APAgingReport() {
           </Button>
           <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={rows.length === 0}>
             <Download className="w-4 h-4 mr-1.5" /> Export CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={rows.length === 0}>
+            <FileSpreadsheet className="w-4 h-4 mr-1.5" /> Export Excel
           </Button>
           <Button variant="outline" size="sm" onClick={() => window.print()}>
             <Printer className="w-4 h-4 mr-1.5" /> Print

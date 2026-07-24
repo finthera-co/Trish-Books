@@ -7,7 +7,8 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useBudgetVsActual, useBudgetControls, useUpsertBudgetControls } from "@/hooks/useBudgetReporting";
 import { formatCurrency } from "@/lib/currency";
-import { Save } from "lucide-react";
+import { downloadReportExcel } from "@/lib/reportExcel";
+import { Save, FileSpreadsheet } from "lucide-react";
 
 function VarianceBadge({ pct }: { pct: number }) {
   const tone =
@@ -47,6 +48,18 @@ export default function BudgetVsActualReport() {
     { allocated: 0, actual: 0 }
   );
 
+  const handleExportExcel = () => {
+    const container = document.getElementById("budget-vs-actual-doc");
+    if (!container) return;
+    downloadReportExcel(container, {
+      title: "Budget vs Actual",
+      subtitle: accountType === "all" ? "All account types" : accountType,
+      dateLine: `Fiscal year ${fiscalYear}`,
+      sheetName: `Budget vs Actual ${fiscalYear}`,
+      fileName: `Budget vs Actual ${fiscalYear}.xlsx`,
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="page-header">
@@ -54,6 +67,9 @@ export default function BudgetVsActualReport() {
           <h1 className="page-title">Budget vs Actual</h1>
           <p className="page-description">Compare planned vs actual spending across periods, departments, and account types.</p>
         </div>
+        <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={!rows?.length}>
+          <FileSpreadsheet className="w-4 h-4 mr-1" /> Export Excel
+        </Button>
       </div>
 
       {/* Controls panel */}
@@ -156,7 +172,7 @@ export default function BudgetVsActualReport() {
       </div>
 
       {/* Report table */}
-      <div className="stat-card overflow-x-auto">
+      <div id="budget-vs-actual-doc" className="stat-card overflow-x-auto">
         {isLoading ? (
           <p className="text-center py-8 text-muted-foreground">Loading…</p>
         ) : !rows?.length ? (

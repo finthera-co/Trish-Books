@@ -8,8 +8,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import {
   Download, Printer, Search, BookOpen, Filter, FileText, Users, Building2,
   ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, X,
-  ChevronsLeft, ChevronsRight, AlertCircle,
+  ChevronsLeft, ChevronsRight, AlertCircle, FileSpreadsheet,
 } from "lucide-react";
+import { downloadDataExcel } from "@/lib/reportExcel";
 import { format } from "date-fns";
 import { isDebitNormal as checkDebitNormal, isPeriodBasedAccount, getTypeLabel, ACCOUNT_TYPES, typeColors } from "@/lib/accountTypes";
 import { formatCurrency } from "@/lib/currency";
@@ -404,6 +405,59 @@ export default function Ledger() {
     URL.revokeObjectURL(url);
   }, [selectedAccount, rowsWithBalance, openingBalance, totalDebit, totalCredit, closingBalance, effectiveDateFrom]);
 
+  // Excel Export — built from the full filtered register, not the current
+  // page, so the workbook covers every transaction in the selection.
+  const handleExportExcel = useCallback(() => {
+    if (!selectedAccount) return;
+    type ExportRow = {
+      date: string; type: string; ref: string; name: string;
+      account: string; memo: string;
+      debit: number | null; credit: number | null; balance: number;
+    };
+    const exportRows: ExportRow[] = [
+      {
+        date: effectiveDateFrom || "", type: "Opening Balance", ref: "", name: "",
+        account: "", memo: "", debit: null, credit: null, balance: openingBalance,
+      },
+      ...rowsWithBalance.map(r => ({
+        date: r.date,
+        type: r.transactionType,
+        ref: r.refNumber,
+        name: r.entityName,
+        account: r.contraAccount,
+        memo: r.memo,
+        debit: r.debit > 0 ? r.debit : null,
+        credit: r.credit > 0 ? r.credit : null,
+        balance: r.balance,
+      })),
+    ];
+
+    downloadDataExcel<ExportRow>(
+      {
+        title: `Account Register — ${selectedAccount.account_code} ${selectedAccount.account_name}`,
+        subtitle: getTypeLabel(selectedAccount.account_type),
+        dateLine: (effectiveDateFrom || dateTo)
+          ? `${effectiveDateFrom || "Inception"} → ${dateTo || "Today"}`
+          : undefined,
+        sheetName: `${selectedAccount.account_code} Register`,
+        fileName: `Register ${selectedAccount.account_code} ${selectedAccount.account_name}.xlsx`,
+      },
+      [
+        { header: "Date", value: r => r.date },
+        { header: "Type", value: r => r.type },
+        { header: "Ref No", value: r => r.ref },
+        { header: "Name", value: r => r.name },
+        { header: "Account", value: r => r.account },
+        { header: "Memo", value: r => r.memo },
+        { header: "Debit", numeric: true, value: r => r.debit },
+        { header: "Credit", numeric: true, value: r => r.credit },
+        { header: "Balance", numeric: true, value: r => r.balance },
+      ],
+      exportRows,
+      ["", "TOTALS", "", "", "", "", totalDebit, totalCredit, closingBalance],
+    );
+  }, [selectedAccount, rowsWithBalance, openingBalance, totalDebit, totalCredit, closingBalance, effectiveDateFrom, dateTo]);
+
   // Reset filters
   const clearFilters = () => {
     setDateFrom(""); setDateTo(""); setSearchTerm(""); setTypeFilter("all"); setPeriodFilter("all"); setPage(0);
@@ -481,6 +535,9 @@ export default function Ledger() {
                   </Button>
                   <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={filteredRows.length === 0}>
                     <Download className="w-4 h-4 mr-1" /> Export
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={filteredRows.length === 0}>
+                    <FileSpreadsheet className="w-4 h-4 mr-1" /> Excel
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => window.print()}>
                     <Printer className="w-4 h-4 mr-1" /> Print

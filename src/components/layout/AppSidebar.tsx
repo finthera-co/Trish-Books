@@ -55,7 +55,7 @@ const navGroups: NavGroup[] = [
   {
     label: "Overview",
     items: [
-      { label: "Dashboard", path: "/", icon: LayoutDashboard },
+      { label: "Dashboard", path: "/home", icon: LayoutDashboard },
     ],
   },
   {

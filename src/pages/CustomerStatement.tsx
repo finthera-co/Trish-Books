@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Printer, FileText, Download } from "lucide-react";
+import { ArrowLeft, Printer, FileText, Download, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { downloadStatementPdf, printStatementPdf } from "@/lib/statementPdf";
+import { downloadReportExcel } from "@/lib/reportExcel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -68,6 +69,25 @@ export default function CustomerStatement() {
             catch (e: any) { toast.error(e?.message || "Print failed"); }
           }}>
             <Printer className="w-4 h-4 mr-1.5" /> Print
+          </Button>
+          <Button variant="outline" disabled={isLoading || !stmt} onClick={() => {
+            const container = document.getElementById("statement-doc");
+            if (!container) return;
+            const ok = downloadReportExcel(container, {
+              companyName: company?.company_name,
+              address: company?.address,
+              phone: company?.phone,
+              taxId: company?.tax_id,
+              title: "Statement of Account",
+              subtitle: customer?.legal_name || customer?.name || undefined,
+              dateLine: `${from} → ${to}`,
+              sheetName: "Statement",
+              fileName: `Statement — ${customer?.name ?? "Customer"} ${to}.xlsx`,
+            });
+            if (ok) toast.success("Statement downloaded");
+            else toast.error("Nothing to download for this period.");
+          }}>
+            <FileSpreadsheet className="w-4 h-4 mr-1.5" /> Download Excel
           </Button>
           <Button disabled={isLoading || !stmt} onClick={async () => {
             try { await downloadStatementPdf({ stmt: stmt!, customer, company, from, to }); toast.success("Statement downloaded"); }
