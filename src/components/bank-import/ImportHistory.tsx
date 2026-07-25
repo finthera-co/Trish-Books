@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { History, Undo2, RotateCcw, Loader2, AlertTriangle } from "lucide-react";
+import { History, Undo2, RotateCcw, Loader2, AlertTriangle, ShieldCheck } from "lucide-react";
+import VerifyBatchDialog from "./VerifyBatchDialog";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -37,6 +38,7 @@ export default function ImportHistory() {
   const voidReverse = useVoidBankImport();
 
   const [target, setTarget] = useState<BatchRow | null>(null);
+  const [verifyBatch, setVerifyBatch] = useState<BatchRow | null>(null);
   const [mode, setMode] = useState<"undo" | "reverse">("undo");
   const [reason, setReason] = useState("");
 
@@ -109,9 +111,14 @@ export default function ImportHistory() {
                     </TableCell>
                     <TableCell className="text-right">
                       {b.status === "posted" && (
-                        <Button size="sm" variant="ghost" onClick={() => openUndo(b)} title="Undo this import">
-                          <Undo2 className="w-4 h-4" />
-                        </Button>
+                        <>
+                          <Button size="sm" variant="ghost" onClick={() => setVerifyBatch(b)} title="Verify in database">
+                            <ShieldCheck className="w-4 h-4" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => openUndo(b)} title="Undo this import">
+                            <Undo2 className="w-4 h-4" />
+                          </Button>
+                        </>
                       )}
                     </TableCell>
                   </TableRow>
@@ -175,6 +182,12 @@ export default function ImportHistory() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <VerifyBatchDialog
+        batchId={verifyBatch?.id ?? null}
+        label={verifyBatch ? periodLabel(verifyBatch) : undefined}
+        open={!!verifyBatch}
+        onOpenChange={(o) => !o && setVerifyBatch(null)}
+      />
     </Card>
   );
 }

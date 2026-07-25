@@ -5,11 +5,15 @@
  *   Blocked  — corrupt data: cannot legally post anywhere, including Suspense.
  *   Tier 1   — normalized account_type → canonical category → tenant mapping.
  *   Tier 2   — no account_type: exact normalized description/name rule match.
- *   Tier 3   — Suspense, with a reason code. Never a guess.
+ *   Tier 4   — nothing matched but the description is usable: a ledger named
+ *              from the description is auto-generated (classified by direction).
+ *   Tier 3   — Suspense, with a reason code, when even a name can't be derived
+ *              or the row is structurally risky (future/over-ceiling/…).
  */
 
 import { normalizeText } from "./normalize.ts";
 import { canonicalize } from "./canonicalize.ts";
+import { deriveAccountName } from "./derive.ts";
 import {
   MAX_POSTABLE_AMOUNT,
   SUSPENSE_CATEGORY,
@@ -23,6 +27,18 @@ import {
 
 function suspense(reason: SuspenseReason, suggestions: Suggestion[] = []): Resolution {
   return { kind: "suspense", reason, suggestions };
+}
+
+/**
+ * Last resort before Suspense: when no mapping or rule matched, turn the
+ * description into an auto-generated ledger (Tier 4). Falls back to Suspense
+ * with the original reason when the description yields nothing usable (all
+ * numeric / all noise) — a junk name is never posted.
+ */
+function deriveOrSuspense(line: ParsedLine, side: Side, fallback: SuspenseReason): Resolution {
+  const accountName = deriveAccountName(line.description, line.name);
+  if (accountName) return { kind: "derive", accountName, side };
+  return suspense(fallback);
 }
 
 function lineSide(line: ParsedLine): Side {
@@ -81,12 +97,15 @@ export function classifyLine(line: ParsedLine, ctx: ResolutionContext): Resoluti
   const rawCat = normalizeText(line.rawAccountType);
   if (rawCat) {
     const canonEntry = canonicalize(rawCat, ctx.canonicalMap);
-    if (!canonEntry) return suspense("unknown_category_variant");
+    // account_type present but unrecognized → derive a ledger from the
+    // description rather than parking it (its nature is still the description).
+    if (!canonEntry) return deriveOrSuspense(line, side, "unknown_category_variant");
     if (canonEntry.canonicalCategory === SUSPENSE_CATEGORY) {
       return suspense("source_marked_suspense");
     }
     const mapping = ctx.accountMap.get(canonEntry.canonicalCategory);
-    if (!mapping) return suspense("unmapped_category");
+    // Known category the tenant has not mapped to an account yet → derive.
+    if (!mapping) return deriveOrSuspense(line, side, "unmapped_category");
     if (!mapping.isActive) return suspense("inactive_account_mapping");
     const acctGate = gateAccount(mapping.accountId, ctx);
     if (acctGate) return acctGate;
@@ -101,7 +120,7 @@ export function classifyLine(line: ParsedLine, ctx: ResolutionContext): Resoluti
   // ── Tier 2: exact rule on normalized description (or name if empty) ───
   const normDesc = normalizeText(line.description) || normalizeText(line.name);
   const normName = normalizeText(line.name);
-  if (!normDesc && !normName) return suspense("no_category_no_rule");
+  if (!normDesc && !normName) return deriveOrSuspense(line, side, "no_category_no_rule");
 
   const candidates = ctx.rules.filter(
     (r) =>
@@ -109,7 +128,8 @@ export function classifyLine(line: ParsedLine, ctx: ResolutionContext): Resoluti
       r.matchValue !== "" &&
       r.matchValue === (r.matchField === "name" ? normName : normDesc)
   );
-  if (candidates.length === 0) return suspense("no_category_no_rule");
+  // No account_type and no rule matched → derive a ledger from the description.
+  if (candidates.length === 0) return deriveOrSuspense(line, side, "no_category_no_rule");
 
   const topPriority = Math.min(...candidates.map((r) => r.priority));
   const winners = candidates.filter((r) => r.priority === topPriority);

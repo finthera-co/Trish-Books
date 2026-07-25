@@ -52,8 +52,12 @@ describe("vendored SheetJS", () => {
     expect(cdnImports).toEqual([]);
   });
 
-  it("uses selective sheet loading to bound memory", () => {
+  it("chunks by transaction date, keeping only the requested month", () => {
+    // The whole-year workbook is parsed once and filtered to the call's period
+    // by each row's own date, so a single 50k transaction never posts.
     const src = readFileSync(EDGE_FN, "utf8");
-    expect(src).toMatch(/sheets: \[sheet\.sheet_name\]/);
+    expect(src).toMatch(/const inThisMonth = /);
+    expect(src).toMatch(/if \(inThisMonth\(line\.txnDate\)\) periodLines\.push\(line\)/);
+    expect(src).toMatch(/periodLines\.length > MAX_ROWS_PER_MONTH/);
   });
 });

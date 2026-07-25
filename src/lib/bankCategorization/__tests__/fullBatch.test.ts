@@ -24,8 +24,8 @@ const MAY_SHEET: unknown[][] = [
   ["2024-05-06", "", "Field harvest", "Harvset", "8000", "", "65850"],           // T1 harvest (typo variant)
   ["2024-05-07", "PAYEE_004", "Capital injection", "", "", "50000", "115850"],    // T2 capital
   ["2024-05-08", "", "Reversed salary", "Salary Reverse", "", "5000", "120850"],  // T1 salary_reversal (credit)
-  ["2024-05-09", "", "Odd expense", "Mystery Category", "900", "", "119950"],     // suspense unknown_variant
-  ["2024-05-10", "", "Unknown inflow", "", "", "700", "120650"],                  // suspense no_category_no_rule
+  ["2024-05-09", "", "Odd expense", "Mystery Category", "900", "", "119950"],     // T4 derive (unmapped type, money out)
+  ["2024-05-10", "", "Unknown inflow", "", "", "700", "120650"],                  // T4 derive (no type/rule, money in)
   ["2024-01-07", "", "Wrong month salary", "Salary", "300", "", "120350"],        // suspense out_of_period
   ["2024-05-11", "", "Corrupt both sides", "Salary", "100", "100", "120350"],     // blocked both_sides
 ];
@@ -61,9 +61,12 @@ describe("full-batch golden simulation (anonymized May 2024)", () => {
     // Tier 2 resolved
     expect(byDesc("Capital injection").resolution).toMatchObject({ kind: "resolved", accountId: ACC.capital, tier: 2 });
 
-    // Suspense
-    expect(byDesc("Odd expense").resolution).toMatchObject({ kind: "suspense", reason: "unknown_category_variant" });
-    expect(byDesc("Unknown inflow").resolution).toMatchObject({ kind: "suspense", reason: "no_category_no_rule" });
+    // Tier 4 auto-generated — unmapped but a clean name is derived from the
+    // description; classification follows cash direction.
+    expect(byDesc("Odd expense").resolution).toMatchObject({ kind: "derive", accountName: "Odd Expense", side: "debit" });
+    expect(byDesc("Unknown inflow").resolution).toMatchObject({ kind: "derive", accountName: "Unknown Inflow", side: "credit" });
+
+    // Suspense — structurally risky, never auto-generated.
     expect(byDesc("Wrong month salary").resolution).toMatchObject({ kind: "suspense", reason: "out_of_period_date" });
 
     // Blocked
@@ -72,12 +75,12 @@ describe("full-batch golden simulation (anonymized May 2024)", () => {
 
   it("aggregate tier counts match", () => {
     const { resolved } = runMay();
-    const tally = { resolved: 0, suspense: 0, blocked: 0, excluded: 0 };
+    const tally = { resolved: 0, derive: 0, suspense: 0, blocked: 0, excluded: 0 };
     for (const r of resolved) {
       if (r.resolution === null) tally.excluded++;
       else tally[r.resolution.kind]++;
     }
-    expect(tally).toEqual({ resolved: 8, suspense: 3, blocked: 1, excluded: 1 });
+    expect(tally).toEqual({ resolved: 8, derive: 2, suspense: 1, blocked: 1, excluded: 1 });
   });
 
   it("control totals: Σdebit / Σcredit computed once, stable", () => {

@@ -65,7 +65,7 @@ describe("scale: full workbook shape", () => {
     const batch = validateBatch(all);
     const validateMs = performance.now() - tVal;
 
-    const tally = { resolved: 0, suspense: 0, blocked: 0, excluded: 0 };
+    const tally = { resolved: 0, derive: 0, suspense: 0, blocked: 0, excluded: 0 };
     for (const r of resolved) r.resolution === null ? tally.excluded++ : tally[r.resolution.kind]++;
 
     // eslint-disable-next-line no-console

@@ -6,10 +6,13 @@
  * lives at supabase/functions/_shared/bankCategorization/ (same convention as
  * taxEngine.ts) — keep both in sync.
  *
- * Design principle: the engine NEVER guesses. A line either matches an exact,
- * auditable rule (Tier 1/2), goes to Suspense with a reason code (Tier 3), or
- * is blocked as corrupt. Fuzzy/AI logic may only produce suggestions attached
- * to suspense items — it can never set an account.
+ * Design principle: the engine never guesses an account's MEANING. A line
+ * either matches an exact, auditable rule (Tier 1/2); or — when nothing matches
+ * but the description is usable — an account NAMED from that description is
+ * auto-generated and posted to, with its classification fixed by cash direction
+ * (Tier 4, "derive"); or it goes to Suspense with a reason code (Tier 3); or it
+ * is blocked as corrupt. Deriving never infers what kind of account it is, only
+ * what to call it. Fuzzy/AI logic may only produce suggestions on suspense items.
  */
 
 export const ENGINE_VERSION = "bank-cat-1.1.0";
@@ -55,6 +58,10 @@ export interface Suggestion {
 
 export type Resolution =
   | { kind: "resolved"; accountId: string; ruleId: string; tier: 1 | 2 }
+  // Auto-generated (Tier 4): no mapping matched, but the description is usable,
+  // so a ledger named from it is created and posted to. `side` fixes the
+  // classification — debit (money out) → Expense, credit (money in) → Income.
+  | { kind: "derive"; accountName: string; side: Side }
   | { kind: "suspense"; reason: SuspenseReason; suggestions: Suggestion[] }
   | { kind: "blocked"; reason: BlockReason };
 

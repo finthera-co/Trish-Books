@@ -17,62 +17,78 @@ import * as XLSX from "xlsx";
 import {
   normalizeText,
   parseSheetMatrix,
-  parseSheetPeriod,
   type ParsedLine,
 } from "@/lib/bankCategorization";
+
+const MONTH_LABELS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export const periodLabelOf = (p: { year: number; month: number }) => `${MONTH_LABELS[p.month]} ${p.year}`;
 
 const BUCKET = "bank-statements";
 
 // Guard rails mirrored from the edge function; enforced there too.
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
-export const MAX_ROWS_PER_SHEET = 10_000;
+export const MAX_ROWS_PER_MONTH = 20_000;
 export const MAX_SHEETS = 36;
 
-export interface SheetPreview {
-  sheet_name: string;
-  month: number;
+export interface PeriodPreview {
   year: number;
-  row_count: number;
-  excluded_count: number;
-  header_ok: boolean;
-  error?: string;
+  month: number;
+  row_count: number;      // datable, includable rows in this month
+  excluded_count: number; // B/F rows in this month
+  too_big: boolean;
 }
 
 export interface WorkbookPreview {
   file: File;
-  sheets: SheetPreview[];
+  periods: PeriodPreview[];
+  total_rows: number;
+  undated_count: number;  // rows with no parseable date (held as corrupt)
+  sheet_count: number;
+  errors: string[];
 }
 
-/** Parse a workbook in the browser for the preview + per-sheet period confirm. */
+/**
+ * Parse a workbook in the browser for the preview, grouping rows by the MONTH
+ * of their transaction date (across every sheet). A bank's whole-year file is
+ * one giant sheet; the dates — not the sheet layout — drive the monthly chunks
+ * that get imported. Undated/corrupt rows are counted separately (they are held
+ * on import, folded into the earliest month).
+ */
 export async function previewWorkbook(file: File): Promise<WorkbookPreview> {
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
-  const sheets: SheetPreview[] = [];
+  const byPeriod = new Map<string, PeriodPreview>();
+  const errors: string[] = [];
+  let total = 0;
+  let undated = 0;
+  let sheetCount = 0;
+
   for (const name of wb.SheetNames) {
     const sheet = wb.Sheets[name];
     if (!sheet) continue;
     const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: null }) as unknown[][];
     const nonEmpty = matrix.some((r) => (r ?? []).some((c) => c !== null && c !== undefined && String(c).trim() !== ""));
     if (!nonEmpty) continue;
-    const guess = parseSheetPeriod(name);
-    const period = guess ?? { month: new Date().getMonth() + 1, year: new Date().getFullYear() };
-    const result = parseSheetMatrix(matrix, name, period);
-    const included = result.lines.filter((l: ParsedLine) => !l.isExcluded).length;
-    const excluded = result.lines.length - included;
-    const tooBig = matrix.length > MAX_ROWS_PER_SHEET;
-    sheets.push({
-      sheet_name: name,
-      month: period.month,
-      year: period.year,
-      row_count: included,
-      excluded_count: excluded,
-      header_ok: result.errors.length === 0 && !tooBig,
-      error: tooBig
-        ? `${matrix.length} rows exceeds the ${MAX_ROWS_PER_SHEET}-row per-sheet limit`
-        : result.errors[0],
-    });
+    sheetCount++;
+    // The declared period is irrelevant here — we regroup by each row's own date.
+    const result = parseSheetMatrix(matrix, name, { month: 1, year: 2000 });
+    errors.push(...result.errors);
+    for (const line of result.lines as ParsedLine[]) {
+      total++;
+      if (!line.txnDate) { undated++; continue; }
+      const [y, m] = line.txnDate.split("-").map(Number);
+      const key = `${y}-${m}`;
+      const p = byPeriod.get(key) ?? { year: y, month: m, row_count: 0, excluded_count: 0, too_big: false };
+      if (line.isExcluded) p.excluded_count++; else p.row_count++;
+      byPeriod.set(key, p);
+    }
   }
-  return { file, sheets };
+
+  const periods = [...byPeriod.values()]
+    .map((p) => ({ ...p, too_big: p.row_count > MAX_ROWS_PER_MONTH }))
+    .sort((a, b) => a.year - b.year || a.month - b.month);
+
+  return { file, periods, total_rows: total, undated_count: undated, sheet_count: sheetCount, errors };
 }
 
 export interface SheetResult {
@@ -94,6 +110,8 @@ export interface ImportResult {
   totals: {
     posted_to_ledger_count: number;
     posted_to_ledger_value: number;
+    posted_to_generated_count: number;
+    posted_to_generated_value: number;
     posted_to_suspense_count: number;
     posted_to_suspense_value: number;
     blocked_count: number;
@@ -109,12 +127,14 @@ export interface ImportProgress {
 }
 
 /**
- * Imports a workbook one SHEET AT A TIME.
+ * Imports a workbook one CALENDAR MONTH AT A TIME, chunked by each row's own
+ * transaction date (so a bank's single whole-year sheet still posts month by
+ * month).
  *
  * Posting cost is superlinear in batch size (1k rows ≈ 0.5s, 33k ≈ 60s), and a
  * whole-workbook pass also holds the entire file in memory server-side. Each
- * monthly sheet is therefore its own atomic batch: ~2s each, bounded memory,
- * and a month that fails leaves the others posted and independently re-runnable.
+ * month is therefore its own atomic batch: bounded time and memory, and a month
+ * that fails leaves the others posted and independently re-runnable.
  */
 export function useImportBankStatement(onProgress?: (p: ImportProgress) => void) {
   const { appUser } = useAuth();
@@ -123,7 +143,7 @@ export function useImportBankStatement(onProgress?: (p: ImportProgress) => void)
     mutationFn: async (params: {
       file: File;
       bank_account_id: string;
-      sheet_periods: { sheet_name: string; month: number; year: number }[];
+      periods: { year: number; month: number }[];
       posting_mode?: "auto_post" | "draft";
     }): Promise<ImportResult> => {
       const tenant_id = appUser?.tenant_id;
@@ -133,11 +153,11 @@ export function useImportBankStatement(onProgress?: (p: ImportProgress) => void)
           `Workbook is ${(params.file.size / 1048576).toFixed(1)} MB; the limit is ${MAX_FILE_BYTES / 1048576} MB.`
         );
       }
-      if (params.sheet_periods.length > MAX_SHEETS) {
-        throw new Error(`${params.sheet_periods.length} sheets selected; the limit is ${MAX_SHEETS}.`);
+      if (params.periods.length > MAX_SHEETS) {
+        throw new Error(`${params.periods.length} months selected; the limit is ${MAX_SHEETS}.`);
       }
 
-      // Upload once; every per-sheet call re-reads it server-side.
+      // Upload once; every per-month call re-reads it server-side.
       const safe = params.file.name.replace(/[^a-zA-Z0-9._-]+/g, "_");
       const storage_path = `${tenant_id}/${Date.now()}-${safe}`;
       const { error: upErr } = await supabase.storage
@@ -151,17 +171,22 @@ export function useImportBankStatement(onProgress?: (p: ImportProgress) => void)
       const sheets: SheetResult[] = [];
       const totals: ImportResult["totals"] = {
         posted_to_ledger_count: 0, posted_to_ledger_value: 0,
+        posted_to_generated_count: 0, posted_to_generated_value: 0,
         posted_to_suspense_count: 0, posted_to_suspense_value: 0,
         blocked_count: 0, excluded_count: 0, suspense_reasons: {},
       };
       let engine_version: string | undefined;
 
-      // Sequential on purpose: each month claims its period and posts inside a
-      // transaction. Running them in parallel would just contend on the same
-      // tables for no wall-clock win.
-      for (let i = 0; i < params.sheet_periods.length; i++) {
-        const sp = params.sheet_periods[i];
-        onProgress?.({ done: i, total: params.sheet_periods.length, current: sp.sheet_name });
+      // Chunk the whole-year file by the ROWS' OWN dates: one atomic batch per
+      // calendar month. Sequential on purpose — each month claims its period and
+      // posts inside a transaction; running them in parallel would just contend
+      // on the same tables for no wall-clock win. Undated/corrupt rows can't be
+      // attributed to a month, so they ride along with the earliest one (i === 0).
+      const periods = [...params.periods].sort((a, b) => a.year - b.year || a.month - b.month);
+      for (let i = 0; i < periods.length; i++) {
+        const p = periods[i];
+        const label = periodLabelOf(p);
+        onProgress?.({ done: i, total: periods.length, current: label });
 
         let res: SheetResult;
         try {
@@ -169,7 +194,8 @@ export function useImportBankStatement(onProgress?: (p: ImportProgress) => void)
             body: {
               storage_path,
               bank_account_id: params.bank_account_id,
-              sheet: sp,
+              period: { year: p.year, month: p.month },
+              include_undated: i === 0,
               posting_mode: params.posting_mode,
             },
           });
@@ -177,7 +203,7 @@ export function useImportBankStatement(onProgress?: (p: ImportProgress) => void)
           const d = data as any;
           engine_version = d?.engine_version ?? engine_version;
           res = {
-            sheet_name: sp.sheet_name,
+            sheet_name: label,
             ok: !!d?.ok,
             batch_id: d?.batch_id,
             error: d?.ok ? undefined : (d?.error || d?.parse_errors?.join("; ") || "Import failed"),
@@ -188,13 +214,15 @@ export function useImportBankStatement(onProgress?: (p: ImportProgress) => void)
           };
         } catch (e) {
           // One month failing must not abandon the rest.
-          res = { sheet_name: sp.sheet_name, ok: false, error: String(e instanceof Error ? e.message : e) };
+          res = { sheet_name: label, ok: false, error: String(e instanceof Error ? e.message : e) };
         }
 
         if (res.ok && res.summary) {
           const s = res.summary as any;
           totals.posted_to_ledger_count += Number(s.posted_to_ledger_count ?? 0);
           totals.posted_to_ledger_value += Number(s.posted_to_ledger_value ?? 0);
+          totals.posted_to_generated_count += Number(s.posted_to_generated_count ?? 0);
+          totals.posted_to_generated_value += Number(s.posted_to_generated_value ?? 0);
           totals.posted_to_suspense_count += Number(s.posted_to_suspense_count ?? 0);
           totals.posted_to_suspense_value += Number(s.posted_to_suspense_value ?? 0);
           totals.blocked_count += Number(s.blocked_count ?? 0);
@@ -205,7 +233,7 @@ export function useImportBankStatement(onProgress?: (p: ImportProgress) => void)
         }
         sheets.push(res);
       }
-      onProgress?.({ done: params.sheet_periods.length, total: params.sheet_periods.length, current: "" });
+      onProgress?.({ done: periods.length, total: periods.length, current: "" });
 
       return {
         engine_version,
@@ -483,6 +511,34 @@ export function useBankImportRefs() {
 export function useBankImportPayees() {
   const q = useBankImportRefs();
   return { ...q, data: q.data?.payee } as typeof q & { data: Map<string, string> | undefined };
+}
+
+export interface VerifyCheck { name: string; ok: boolean; detail: string }
+export interface VerifyReport {
+  ok: boolean;
+  batch_id: string;
+  status: string;
+  counts: {
+    rows_expected: number; lines_in_db: number; excluded: number; blocked: number;
+    posted_to_ledger: number; posted_to_suspense: number;
+    journal_entries: number; journal_lines: number; transactions: number;
+  };
+  totals: { debit: number; credit: number; balanced: boolean };
+  checks: VerifyCheck[];
+  verified_at: string;
+}
+
+/** Independently re-reads the database and confirms an import actually persisted
+ * — a per-check pass/fail report. Read-only; safe to run any time. */
+export function useVerifyBankBatch() {
+  return useMutation({
+    mutationFn: async (batchId: string): Promise<VerifyReport> => {
+      const { data, error } = await (supabase as any).rpc("verify_bank_import_batch", { p_batch_id: batchId });
+      if (error) throw new Error(error.message);
+      return data as VerifyReport;
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 }
 
 export interface BatchRow {

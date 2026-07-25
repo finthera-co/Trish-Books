@@ -129,9 +129,9 @@ describe("classifyLine — Tier 2 (no account_type: exact description/name rule)
     expect(r).toMatchObject({ kind: "resolved", accountId: ACC.capital, tier: 2 });
   });
 
-  it("no rule match → suspense no_category_no_rule", () => {
+  it("no rule match but usable description → derive (Tier 4)", () => {
     const r = classifyLine(makeLine({ credit: 10000, description: "Unrecognized inflow" }), makeCtx());
-    expect(r).toMatchObject({ kind: "suspense", reason: "no_category_no_rule" });
+    expect(r).toMatchObject({ kind: "derive", accountName: "Unrecognized Inflow", side: "credit" });
   });
 
   it("empty description and name → suspense no_category_no_rule", () => {
@@ -174,10 +174,11 @@ describe("classifyLine — Tier 2 (no account_type: exact description/name rule)
     expect(r).toMatchObject({ kind: "suspense", reason: "inactive_account_mapping" });
   });
 
-  it("inactive rules are ignored", () => {
+  it("inactive rules are ignored (line derives instead of using the dead rule)", () => {
     const ctx = makeCtx({ rules: [rule({ matchValue: "cash deposit", accountId: ACC.capital, expectedSide: "credit", isActive: false })] });
     const r = classifyLine(makeLine({ credit: 10000, description: "Cash Deposit" }), ctx);
-    expect(r).toMatchObject({ kind: "suspense", reason: "no_category_no_rule" });
+    expect(r).toMatchObject({ kind: "derive", accountName: "Cash Deposit", side: "credit" });
+    expect((r as any).accountId).toBeUndefined(); // never resolved via the inactive rule
   });
 });
 

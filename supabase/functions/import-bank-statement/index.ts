@@ -1,18 +1,18 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// import-bank-statement — parse → categorize → validate → post, ONE SHEET.
+// import-bank-statement — parse → categorize → validate → post, ONE MONTH.
 //
-// Scope is deliberately a single monthly sheet, not the whole workbook. The
-// cost of posting is superlinear in batch size (measured: 1k rows 0.45s,
-// 3k 1.9s, 8k 12s, 33k 60s), and a whole-workbook import both blows the edge
-// function's wall clock and holds the entire file in memory. One sheet posts
-// in ~2s with bounded memory, so the client loops sheet by sheet and shows
-// progress. Each month is its own atomic batch: a failure on one month leaves
-// the others posted and re-runnable on its own.
+// A bank's whole financial year is one giant sheet (50k+ rows) whose rows span
+// every month. Posting cost grows with batch size, so a single 50k transaction
+// is unsafe. Instead the client drives ONE call per month; this function parses
+// the workbook, keeps only the rows whose transaction DATE is in that month,
+// and posts them as one atomic batch. 50k lines become ~12 batches of a few
+// thousand, each ~2–3s, each independently re-runnable — and a failure on one
+// month leaves the others posted.
 //
-// The server still re-parses the file itself — client rows are never trusted.
+// The server re-parses the file itself — client rows are never trusted.
 //
-// Input: { storage_path, bank_account_id, sheet: {sheet_name, month, year},
-//          posting_mode? }
+// Input: { storage_path, bank_account_id, period: {year, month},
+//          include_undated?, posting_mode? }
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -25,12 +25,14 @@ import * as XLSX from "../_shared/vendor/xlsx.mjs";
 import {
   ENGINE_VERSION,
   buildCanonicalMap,
+  deriveAccountKey,
   parseSheetMatrix,
   resolveBatch,
   validateBatch,
   type AccountMapEntry,
   type CanonicalMapEntry,
   type CategorizationRule,
+  type ParsedLine,
   type ResolutionContext,
   type ResolvedLine,
 } from "../_shared/bankCategorization/index.ts";
@@ -44,7 +46,7 @@ const corsHeaders = {
 // Guard rails. Without these a large or malformed workbook can exhaust the
 // function's memory or wall clock with no useful error.
 const MAX_FILE_BYTES = 25 * 1024 * 1024;   // 25 MB uploaded workbook
-const MAX_ROWS_PER_SHEET = 10_000;         // ~18s post; typical sheet is ~3,000
+const MAX_ROWS_PER_MONTH = 20_000;         // one month rarely exceeds a few thousand
 const INSERT_CHUNK = 1_000;
 
 function json(body: unknown, status = 200) {
@@ -89,15 +91,21 @@ Deno.serve(async (req) => {
     const actorId = au.id as string;
 
     // ── Input ─────────────────────────────────────────────────────────────
+    // One call = one PERIOD (year+month). A bank's whole-year workbook is a
+    // single giant sheet whose rows span every month; the client drives one
+    // call per month, and this function parses the file and posts only the rows
+    // whose transaction date falls in that month. Each month is its own atomic
+    // batch, so 50k+ lines never post in a single transaction.
     const body = await req.json();
-    const { storage_path, bank_account_id, sheet, posting_mode } = body as {
+    const { storage_path, bank_account_id, period, include_undated, posting_mode } = body as {
       storage_path: string;
       bank_account_id: string;
-      sheet: { sheet_name: string; month: number; year: number };
+      period: { year: number; month: number };
+      include_undated?: boolean;   // fold undated/corrupt rows into the earliest month
       posting_mode?: "auto_post" | "draft";
     };
-    if (!storage_path || !bank_account_id || !sheet?.sheet_name) {
-      return json({ ok: false, error: "storage_path, bank_account_id and sheet are required" }, 200);
+    if (!storage_path || !bank_account_id || !period) {
+      return json({ ok: false, error: "storage_path, bank_account_id and period are required" }, 200);
     }
     if (!storage_path.startsWith(`${tenantId}/`)) {
       return json({ ok: false, error: "storage_path outside tenant folder" }, 200);
@@ -105,16 +113,14 @@ Deno.serve(async (req) => {
 
     const now = new Date();
     const todayIso = now.toISOString().slice(0, 10);
-    if (!Number.isInteger(sheet.month) || sheet.month < 1 || sheet.month > 12 ||
-        !Number.isInteger(sheet.year) || sheet.year < 1990 || sheet.year > 2100) {
-      return json({ ok: false, error: `Invalid period for sheet "${sheet.sheet_name}"` }, 200);
+    const periodLabel = `${period.year}-${String(period.month).padStart(2, "0")}`;
+    if (!Number.isInteger(period.month) || period.month < 1 || period.month > 12 ||
+        !Number.isInteger(period.year) || period.year < 1990 || period.year > 2100) {
+      return json({ ok: false, error: `Invalid period ${periodLabel}` }, 200);
     }
-    if (sheet.year > now.getUTCFullYear() ||
-        (sheet.year === now.getUTCFullYear() && sheet.month > now.getUTCMonth() + 1)) {
-      return json({
-        ok: false,
-        error: `Sheet "${sheet.sheet_name}" is dated ${sheet.year}-${String(sheet.month).padStart(2, "0")}, which is in the future.`,
-      }, 200);
+    if (period.year > now.getUTCFullYear() ||
+        (period.year === now.getUTCFullYear() && period.month > now.getUTCMonth() + 1)) {
+      return json({ ok: false, error: `Period ${periodLabel} is in the future.` }, 200);
     }
 
     // ── Fail fast on configuration ────────────────────────────────────────
@@ -155,29 +161,46 @@ Deno.serve(async (req) => {
       }, 200);
     }
 
-    // `sheets:` makes SheetJS materialise only the sheet we need, so peak
-    // memory tracks one month rather than the whole workbook.
-    const wb = XLSX.read(await fileBlob.arrayBuffer(), {
-      type: "array", cellDates: true, sheets: [sheet.sheet_name],
-    });
-    const ws = wb.Sheets[sheet.sheet_name];
-    if (!ws) return json({ ok: false, error: `Sheet "${sheet.sheet_name}" not found in workbook` }, 200);
+    // Parse every sheet, then keep only the rows whose transaction date falls
+    // in this call's month (plus, on the earliest month, the undated/corrupt
+    // rows so they are still recorded and held). Each parsed line is stamped
+    // with THIS period so the engine's out-of-period gate is a no-op for the
+    // rows we keep.
+    const wb = XLSX.read(await fileBlob.arrayBuffer(), { type: "array", cellDates: true });
+    const inThisMonth = (isoDate: string | null): boolean => {
+      if (!isoDate) return false;
+      const [y, m] = isoDate.split("-").map(Number);
+      return y === period.year && m === period.month;
+    };
 
-    const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }) as unknown[][];
-    if (matrix.length > MAX_ROWS_PER_SHEET) {
+    const periodLines: ParsedLine[] = [];
+    const parseErrors: string[] = [];
+    for (const name of wb.SheetNames) {
+      const ws = wb.Sheets[name];
+      if (!ws) continue;
+      const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }) as unknown[][];
+      const nonEmpty = matrix.some((r) => (r ?? []).some((c) => c !== null && c !== undefined && String(c).trim() !== ""));
+      if (!nonEmpty) continue;
+      const result = parseSheetMatrix(matrix, name, { month: period.month, year: period.year });
+      parseErrors.push(...result.errors);
+      for (const line of result.lines) {
+        if (inThisMonth(line.txnDate)) periodLines.push(line);
+        else if (include_undated && !line.txnDate && !line.isExcluded) periodLines.push(line);
+      }
+    }
+    if (parseErrors.length > 0) {
+      return json({ ok: false, error: parseErrors.join("; "), parse_errors: parseErrors }, 200);
+    }
+    if (periodLines.length > MAX_ROWS_PER_MONTH) {
       return json({
         ok: false,
-        error: `Sheet "${sheet.sheet_name}" has ${matrix.length} rows; the limit is ${MAX_ROWS_PER_SHEET} per sheet. Split the month across sheets.`,
+        error: `Month ${periodLabel} has ${periodLines.length} rows; the limit is ${MAX_ROWS_PER_MONTH} per month.`,
       }, 200);
     }
-
-    const parsed = parseSheetMatrix(matrix, sheet.sheet_name, { month: sheet.month, year: sheet.year });
-    if (parsed.errors.length > 0) {
-      return json({ ok: false, error: parsed.errors.join("; "), parse_errors: parsed.errors }, 200);
+    if (periodLines.length === 0) {
+      return json({ ok: false, error: `No rows dated ${periodLabel} found in the workbook` }, 200);
     }
-    if (parsed.lines.length === 0) {
-      return json({ ok: false, error: `No data rows found in sheet "${sheet.sheet_name}"` }, 200);
-    }
+    const parsed = { lines: periodLines, errors: [] as string[] };
 
     // ── Load resolution context ───────────────────────────────────────────
     const [{ data: canonRows }, { data: mapRows }, { data: ruleRows }, { data: acctRows }] =
@@ -243,8 +266,34 @@ Deno.serve(async (req) => {
       for (const ref of dup.rowRefs) duplicateRows.add(`${ref.sheetName}|${ref.rowIndex}`);
     }
 
+    // ── Tier 4: auto-generated ledgers ────────────────────────────────────
+    // Every "derive" line names a ledger from its description; get-or-create one
+    // account per distinct (name, direction) so unmapped-but-clear rows post to
+    // a real account instead of Suspense. Direction fixes the classification.
+    const deriveTargets = new Map<string, { derive_key: string; name: string; side: "debit" | "credit" }>();
+    for (const r of resolved) {
+      if (r.resolution?.kind === "derive") {
+        const derive_key = deriveAccountKey(r.resolution.accountName);
+        deriveTargets.set(`${derive_key}|${r.resolution.side}`, {
+          derive_key, name: r.resolution.accountName, side: r.resolution.side,
+        });
+      }
+    }
+    const deriveAccountByKey = new Map<string, string>(); // `${derive_key}|${side}` → account_id
+    if (deriveTargets.size > 0) {
+      const { data: derivedRows, error: derErr } = await admin.rpc("get_or_create_derived_accounts", {
+        p_tenant_id: tenantId,
+        p_actor_user_id: actorId,
+        p_items: [...deriveTargets.values()],
+      });
+      if (derErr) return json({ ok: false, error: `Could not create auto-generated ledgers: ${derErr.message}` }, 200);
+      for (const row of (derivedRows ?? []) as { derive_key: string; side: string; account_id: string }[]) {
+        deriveAccountByKey.set(`${row.derive_key}|${row.side}`, row.account_id);
+      }
+    }
+
     // ── Persist batch (one sheet = one batch) + lines ─────────────────────
-    const sheetPeriods = [{ sheet_name: sheet.sheet_name, month: sheet.month, year: sheet.year }];
+    const sheetPeriods = [{ sheet_name: periodLabel, month: period.month, year: period.year }];
     const { data: batchRow, error: batchErr } = await admin
       .from("bank_statement_batches")
       .insert({
@@ -275,7 +324,7 @@ Deno.serve(async (req) => {
     if (claimErr) {
       await admin.from("bank_statement_batches")
         .update({ status: "failed", error_message: claimErr.message }).eq("id", batchId);
-      return json({ ok: false, batch_id: batchId, sheet_name: sheet.sheet_name, error: claimErr.message }, 200);
+      return json({ ok: false, batch_id: batchId, sheet_name: periodLabel, error: claimErr.message }, 200);
     }
 
     const sanitizeAmount = (n: number) =>
@@ -284,6 +333,23 @@ Deno.serve(async (req) => {
     const lineRows = resolved.map(({ line, resolution, canonicalCategory }) => {
       const flags: string[] = [...line.parseFlags];
       if (duplicateRows.has(`${line.sheetName}|${line.rowIndex}`)) flags.push("duplicate_in_batch");
+
+      // Tier: 1/2 mapped, 3 suspense, 4 auto-generated; blocked/excluded → null.
+      let resolutionTier: number | null = null;
+      let resolvedAccountId: string | null = null;
+      let resolvedByMapId: string | null = null;
+      if (resolution?.kind === "resolved") {
+        resolutionTier = resolution.tier;
+        resolvedAccountId = resolution.accountId;
+        resolvedByMapId = resolution.ruleId;
+      } else if (resolution?.kind === "derive") {
+        resolutionTier = 4;
+        resolvedAccountId =
+          deriveAccountByKey.get(`${deriveAccountKey(resolution.accountName)}|${resolution.side}`) ?? null;
+      } else if (resolution?.kind === "suspense") {
+        resolutionTier = 3;
+      }
+
       return {
         tenant_id: tenantId,
         batch_id: batchId,
@@ -303,9 +369,9 @@ Deno.serve(async (req) => {
         bank_fee: line.bankFee,
         balance: line.balance,
         is_excluded: line.isExcluded,
-        resolution_tier: resolution === null ? null : resolution.kind === "resolved" ? resolution.tier : resolution.kind === "suspense" ? 3 : null,
-        resolved_account_id: resolution?.kind === "resolved" ? resolution.accountId : null,
-        resolved_by_map_id: resolution?.kind === "resolved" ? resolution.ruleId : null,
+        resolution_tier: resolutionTier,
+        resolved_account_id: resolvedAccountId,
+        resolved_by_map_id: resolvedByMapId,
         suspense_reason: resolution?.kind === "suspense" ? resolution.reason : null,
         block_reason: resolution?.kind === "blocked" ? resolution.reason : null,
         suggestions: resolution?.kind === "suspense" ? resolution.suggestions : [],
@@ -320,7 +386,7 @@ Deno.serve(async (req) => {
       if (insErr) {
         await admin.from("bank_statement_batches")
           .update({ status: "failed", error_message: insErr.message }).eq("id", batchId);
-        return json({ ok: false, batch_id: batchId, sheet_name: sheet.sheet_name, error: `Could not store lines: ${insErr.message}` }, 200);
+        return json({ ok: false, batch_id: batchId, sheet_name: periodLabel, error: `Could not store lines: ${insErr.message}` }, 200);
       }
     }
 
@@ -332,13 +398,13 @@ Deno.serve(async (req) => {
     if (postErr) {
       await admin.from("bank_statement_batches")
         .update({ status: "failed", error_message: postErr.message }).eq("id", batchId);
-      return json({ ok: false, batch_id: batchId, sheet_name: sheet.sheet_name, error: postErr.message }, 200);
+      return json({ ok: false, batch_id: batchId, sheet_name: periodLabel, error: postErr.message }, 200);
     }
 
     return json({
       ok: true,
       batch_id: batchId,
-      sheet_name: sheet.sheet_name,
+      sheet_name: periodLabel,
       engine_version: ENGINE_VERSION,
       summary,
       control_totals: {
