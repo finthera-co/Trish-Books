@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAccounts, useJournalEntries } from "@/hooks/useData";
+import { useBankImportRefs } from "@/hooks/useBankStatementImport";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -28,6 +29,7 @@ interface RegisterRow {
   date: string;
   transactionType: string;
   refNumber: string;
+  chequeNo: string;
   entityName: string;
   contraAccount: string;
   memo: string;
@@ -94,6 +96,7 @@ const txnTypeBadge: Record<string, string> = {
 export default function Ledger() {
   const navigate = useNavigate();
   const { data: accounts, isLoading: accountsLoading } = useAccounts();
+  const { data: bankRefs } = useBankImportRefs();
   const { data: journalEntries, isLoading: entriesLoading } = useJournalEntries();
 
   // Reverse-lookup: journal_entry_id → source transaction
@@ -254,6 +257,7 @@ export default function Ledger() {
           date: entry.entry_date,
           transactionType: txnType,
           refNumber: entry.reference || "",
+          chequeNo: bankRefs?.cheque.get(entry.id) || "",
           entityName,
           contraAccount,
           memo: desc,
@@ -267,7 +271,7 @@ export default function Ledger() {
           transaction_type,
         }));
       });
-  }, [journalEntries, selectedAccount, accounts, effectiveDateFrom, effectiveDateTo, resolveSourceTransaction]);
+  }, [journalEntries, selectedAccount, accounts, effectiveDateFrom, effectiveDateTo, resolveSourceTransaction, bankRefs]);
 
   // Collect transaction types for filter dropdown
   const availableTypes = useMemo(() => {
@@ -383,11 +387,11 @@ export default function Ledger() {
   // CSV Export
   const handleExportCSV = useCallback(() => {
     if (!selectedAccount) return;
-    const header = ["Date", "Type", "Ref No", "Name", "Account", "Memo", "Debit (LKR)", "Credit (LKR)", "Balance (LKR)"];
+    const header = ["Date", "Type", "Ref No", "Cheque No", "Name", "Account", "Memo", "Debit (LKR)", "Credit (LKR)", "Balance (LKR)"];
     const rows = [
       [effectiveDateFrom || "", "Opening Balance", "", "", "", "", "", "", openingBalance.toFixed(2)],
       ...rowsWithBalance.map(r => [
-        r.date, r.transactionType, r.refNumber, r.entityName,
+        r.date, r.transactionType, r.refNumber, r.chequeNo, r.entityName,
         r.contraAccount, r.memo.replace(/"/g, '""'),
         r.debit > 0 ? r.debit.toFixed(2) : "",
         r.credit > 0 ? r.credit.toFixed(2) : "",
@@ -410,19 +414,20 @@ export default function Ledger() {
   const handleExportExcel = useCallback(() => {
     if (!selectedAccount) return;
     type ExportRow = {
-      date: string; type: string; ref: string; name: string;
+      date: string; type: string; ref: string; chequeNo: string; name: string;
       account: string; memo: string;
       debit: number | null; credit: number | null; balance: number;
     };
     const exportRows: ExportRow[] = [
       {
-        date: effectiveDateFrom || "", type: "Opening Balance", ref: "", name: "",
+        date: effectiveDateFrom || "", type: "Opening Balance", ref: "", chequeNo: "", name: "",
         account: "", memo: "", debit: null, credit: null, balance: openingBalance,
       },
       ...rowsWithBalance.map(r => ({
         date: r.date,
         type: r.transactionType,
         ref: r.refNumber,
+        chequeNo: r.chequeNo,
         name: r.entityName,
         account: r.contraAccount,
         memo: r.memo,
@@ -446,6 +451,7 @@ export default function Ledger() {
         { header: "Date", value: r => r.date },
         { header: "Type", value: r => r.type },
         { header: "Ref No", value: r => r.ref },
+        { header: "Cheque No", value: r => r.chequeNo || "" },
         { header: "Name", value: r => r.name },
         { header: "Account", value: r => r.account },
         { header: "Memo", value: r => r.memo },
@@ -690,6 +696,9 @@ export default function Ledger() {
                             Ref No <SortIcon field="refNumber" />
                           </button>
                         </th>
+                        <th className="text-left px-3 py-2.5 w-24">
+                          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cheque No</span>
+                        </th>
                         <th className="text-left px-3 py-2.5 w-32">
                           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Name</span>
                         </th>
@@ -724,6 +733,7 @@ export default function Ledger() {
                           </td>
                           <td className="px-3 py-2 text-muted-foreground">—</td>
                           <td className="px-3 py-2 text-muted-foreground">—</td>
+                          <td className="px-3 py-2 text-muted-foreground">—</td>
                           <td className="px-3 py-2 text-muted-foreground italic" colSpan={2}>Carried forward from prior period</td>
                           <td className="text-right px-3 py-2 font-mono text-muted-foreground">—</td>
                           <td className="text-right px-3 py-2 font-mono text-muted-foreground">—</td>
@@ -749,6 +759,7 @@ export default function Ledger() {
                             )}
                           </td>
                           <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{row.refNumber || "—"}</td>
+                          <td className="px-3 py-2 font-mono text-xs text-foreground">{row.chequeNo || "—"}</td>
                           <td className="px-3 py-2 text-foreground text-xs truncate max-w-[120px]">{row.entityName || "—"}</td>
                           <td className="px-3 py-2 text-foreground text-xs truncate max-w-[160px]" title={row.contraAccount}>{row.contraAccount}</td>
                           <td className="px-3 py-2 text-muted-foreground text-xs truncate max-w-[200px]" title={row.memo}>{row.memo}</td>
@@ -774,7 +785,7 @@ export default function Ledger() {
                     </tbody>
                     <tfoot>
                       <tr className="border-t-2 border-border bg-muted/30">
-                        <td colSpan={6} className="px-3 py-2.5 font-bold text-foreground text-xs">Period Totals</td>
+                        <td colSpan={7} className="px-3 py-2.5 font-bold text-foreground text-xs">Period Totals</td>
                         <td className="text-right px-3 py-2.5 font-mono font-bold tabular-nums text-foreground">
                           {totalDebit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </td>
@@ -784,7 +795,7 @@ export default function Ledger() {
                         <td className="text-right px-3 py-2.5 text-muted-foreground">—</td>
                       </tr>
                       <tr className="border-t border-border/50">
-                        <td colSpan={6} className="px-3 py-2.5 font-bold text-foreground text-xs">Closing Balance</td>
+                        <td colSpan={7} className="px-3 py-2.5 font-bold text-foreground text-xs">Closing Balance</td>
                         <td colSpan={2}></td>
                         <td className={`text-right px-3 py-2.5 font-mono font-bold tabular-nums ${closingBalance < 0 ? "text-destructive" : "text-foreground"}`}>
                           {fmtBal(closingBalance)}

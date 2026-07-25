@@ -15,6 +15,11 @@ const POSTING_SQL = readFileSync(
   resolvePath(ROOT, "supabase/migrations/20260721000001_bank_import_posting_rpc.sql"), "utf8");
 const UNDO_SQL = readFileSync(
   resolvePath(ROOT, "supabase/migrations/20260722000002_bank_import_undo_hardening.sql"), "utf8");
+// Undo was later changed to delete reclassifications (…000005) and then to
+// follow the reversal chain (…000006, the current definition). Void still
+// lives in …000002.
+const UNDO_LATEST_SQL = readFileSync(
+  resolvePath(ROOT, "supabase/migrations/20260722000006_bank_import_undo_reversal_chain.sql"), "utf8");
 const TXSYNC_SQL = readFileSync(
   resolvePath(ROOT, "supabase/migrations/20260722000003_bank_import_transactions_sync.sql"), "utf8");
 
@@ -156,17 +161,24 @@ describe("database integrity guards are declared", () => {
     expect(POSTING_SQL).toMatch(/CROSS_TENANT_LINE/);
   });
 
-  it("undo (delete) is gated by closed-period, reconciliation and reclass guards", () => {
+  it("undo (delete) is gated by closed-period and reconciliation, and removes reclassifications", () => {
     // Deleting posted GL entries is only safe in an open, unreconciled state.
-    const undo = UNDO_SQL.slice(UNDO_SQL.indexOf("FUNCTION public.undo_bank_statement_batch"));
+    const undo = UNDO_LATEST_SQL.slice(UNDO_LATEST_SQL.indexOf("FUNCTION public.undo_bank_statement_batch"));
     expect(undo).toMatch(/CLOSED_PERIOD/);
     expect(undo).toMatch(/RECONCILED/);
-    expect(undo).toMatch(/HAS_RECLASSIFICATIONS/);
     // Reconciliation is detected through both link tables.
     expect(undo).toMatch(/bank_feed_transactions/);
     expect(undo).toMatch(/reconciliation_transactions/);
     // Only a posted batch may be undone.
     expect(undo).toMatch(/NOT_POSTED/);
+    // Undo now takes back EVERYTHING — postings AND suspense-clearing reclass
+    // entries — so it no longer refuses when items were cleared.
+    expect(undo).not.toMatch(/HAS_RECLASSIFICATIONS/);
+    expect(undo).toMatch(/reclass_journal_entry_id/);
+    // …and follows the reversal_of chain so a reversed entry does not block the
+    // delete with the self-FK (journal_entries_reversal_of_fkey).
+    expect(undo).toMatch(/RECURSIVE/);
+    expect(undo).toMatch(/je\.reversal_of = c\.id/);
   });
 
   it("reverse also refuses to post into a closed period", () => {
@@ -180,7 +192,7 @@ describe("database integrity guards are declared", () => {
 
   it("undo deletes statement lines before their referenced journal entries", () => {
     // The lines FK-reference journal_entries with no cascade; wrong order aborts.
-    const undo = UNDO_SQL.slice(UNDO_SQL.indexOf("FUNCTION public.undo_bank_statement_batch"));
+    const undo = UNDO_LATEST_SQL.slice(UNDO_LATEST_SQL.indexOf("FUNCTION public.undo_bank_statement_batch"));
     const lineDel = undo.indexOf("DELETE FROM public.bank_statement_lines");
     const jeDel = undo.indexOf("DELETE FROM public.journal_entries");
     expect(lineDel).toBeGreaterThan(-1);
@@ -188,7 +200,7 @@ describe("database integrity guards are declared", () => {
   });
 
   it("undo rebuilds the budget cache after deleting entries", () => {
-    const undo = UNDO_SQL.slice(UNDO_SQL.indexOf("FUNCTION public.undo_bank_statement_batch"));
+    const undo = UNDO_LATEST_SQL.slice(UNDO_LATEST_SQL.indexOf("FUNCTION public.undo_bank_statement_batch"));
     expect(undo).toMatch(/recalc_budget_consumption/);
   });
 

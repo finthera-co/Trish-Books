@@ -41,8 +41,10 @@ export default function ProtectedRoute() {
     return <Loading />;
   }
 
+  // Anyone without a session lands on the public homepage first, whatever
+  // URL they arrived at. The login form is reached from there.
   if (!user) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/" replace />;
   }
 
   // Block until the email is confirmed (no-op when the project auto-confirms).

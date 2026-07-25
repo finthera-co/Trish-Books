@@ -13,7 +13,7 @@ export default function Onboarding() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!loading && !user) navigate("/login", { replace: true });
+    if (!loading && !user) navigate("/", { replace: true });
     if (!loading && appUser) navigate("/home", { replace: true });
   }, [user, appUser, loading, navigate]);
 

@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/components/theme-provider";
 import TenantThemeSync from "@/hooks/useTenantTheme";
@@ -93,7 +93,6 @@ import UsersPage from "./pages/UsersPage";
 import Tenants from "./pages/Tenants";
 import Subscriptions from "./pages/Subscriptions";
 import AuditLogs from "./pages/AuditLogs";
-import NotFound from "./pages/NotFound";
 import ResetPassword from "./pages/ResetPassword";
 import AnomalyDashboard from "./pages/AnomalyDashboard";
 
@@ -138,7 +137,7 @@ const App = () => (
         <BrowserRouter>
           <ErrorBoundary>
           <Routes>
-            {/* Public marketing page — forwards signed-in users to /home */}
+            {/* Public homepage — always the first page, session or not */}
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
@@ -316,7 +315,8 @@ const App = () => (
                 </Route>
               </Route>
             </Route>
-            <Route path="*" element={<NotFound />} />
+            {/* Any unknown URL falls back to the public homepage */}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           </ErrorBoundary>
         </BrowserRouter>

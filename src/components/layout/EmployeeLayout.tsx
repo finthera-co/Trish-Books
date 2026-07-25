@@ -40,7 +40,7 @@ export default function EmployeeLayout() {
 
   const handleSignOut = async () => {
     await signOut();
-    navigate("/login");
+    navigate("/");
   };
 
   const isActive = (path: string, end?: boolean) =>

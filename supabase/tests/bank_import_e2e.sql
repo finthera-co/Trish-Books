@@ -222,6 +222,18 @@ BEGIN
   PERFORM pg_temp.eq('clear.no_double_row',
     (SELECT count(*) FROM public.transactions WHERE tenant_id=t.tenant_id AND date='2025-07-06')::int, 1);
 
+  -- ══ 10. Undo AFTER clearing deletes everything, reclass included ═════════
+  -- v_b2 above had its suspense line cleared; undoing it must now succeed and
+  -- remove the posting entry, the reclass entry, its lines and cash-flow rows.
+  PERFORM public.undo_bank_statement_batch(v_b2, 'delete the month');
+  PERFORM pg_temp.eq('undo_after_clear.jes_gone',
+    (SELECT count(*) FROM public.journal_entries je
+      JOIN public.bank_statement_lines l ON l.journal_entry_id=je.id WHERE l.batch_id=v_b2)::int, 0);
+  PERFORM pg_temp.eq('undo_after_clear.lines_gone',
+    (SELECT count(*) FROM public.bank_statement_lines WHERE batch_id=v_b2)::int, 0);
+  PERFORM pg_temp.eq('undo_after_clear.cashflow_gone',
+    (SELECT count(*) FROM public.transactions WHERE tenant_id=t.tenant_id AND date='2025-07-06')::int, 0);
+
   RAISE NOTICE 'bank_import_e2e: ALL CHECKS PASSED';
 END $main$;
 

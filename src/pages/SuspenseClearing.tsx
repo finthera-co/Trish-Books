@@ -10,8 +10,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox as Check2 } from "@/components/ui/checkbox";
+import { Plus } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
-import { useAccounts } from "@/hooks/useData";
+import { useAccounts, useCreateAccount } from "@/hooks/useData";
+import { useAccountCategories, useCreateAccountCategory } from "@/hooks/useAccountCategories";
+import AccountForm from "@/components/chart-of-accounts/AccountForm";
 import {
   useSuspenseLines,
   useClearSuspense,
@@ -25,6 +28,15 @@ function ageDays(iso: string): number {
 export default function SuspenseClearing() {
   const { data: lines, isLoading } = useSuspenseLines();
   const { data: accounts } = useAccounts();
+  const { data: categories } = useAccountCategories();
+  const createAccount = useCreateAccount();
+  const createCategory = useCreateAccountCategory();
+  const [accountFormOpen, setAccountFormOpen] = useState(false);
+
+  const existingCodes = useMemo(
+    () => new Set((accounts as any[] | undefined)?.map((a) => a.account_code) || []),
+    [accounts]
+  );
   const clearMut = useClearSuspense();
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -181,14 +193,27 @@ export default function SuspenseClearing() {
           <div className="space-y-4">
             <div>
               <Label className="text-sm">Final account</Label>
-              <Select value={targetAccount} onValueChange={setTargetAccount}>
-                <SelectTrigger><SelectValue placeholder="Choose the final ledger account…" /></SelectTrigger>
-                <SelectContent>
-                  {postable.map((a: any) => (
-                    <SelectItem key={a.id} value={a.id}>{a.account_code} — {a.account_name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex items-start gap-2">
+                <div className="flex-1">
+                  <Select value={targetAccount} onValueChange={setTargetAccount}>
+                    <SelectTrigger><SelectValue placeholder="Choose the final ledger account…" /></SelectTrigger>
+                    <SelectContent>
+                      {postable.map((a: any) => (
+                        <SelectItem key={a.id} value={a.id}>{a.account_code} — {a.account_name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* No suitable ledger yet? Open the full Chart-of-Accounts
+                    creation dialog. On save we pre-select the new account here. */}
+                <Button type="button" variant="outline" size="sm" className="shrink-0 gap-1 h-9"
+                  onClick={() => setAccountFormOpen(true)}>
+                  <Plus className="w-3.5 h-3.5" /> New account
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                No matching account? Use <strong>New account</strong> to create a ledger account — it appears here selected.
+              </p>
             </div>
             <div>
               <Label className="text-sm">Note (optional)</Label>
@@ -212,6 +237,25 @@ export default function SuspenseClearing() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* The exact Chart-of-Accounts creation dialog. On save we create the
+          account and pre-select it in the Final-account dropdown above. */}
+      <AccountForm
+        open={accountFormOpen}
+        onOpenChange={setAccountFormOpen}
+        accounts={(accounts as any[]) || []}
+        categories={categories || []}
+        existingCodes={existingCodes}
+        isPending={createAccount.isPending}
+        onSubmit={async (data) => {
+          const result = await createAccount.mutateAsync(data as any);
+          if (result?.id) setTargetAccount(result.id);
+          setAccountFormOpen(false);
+        }}
+        onCreateCategory={async (data) => {
+          return await createCategory.mutateAsync(data);
+        }}
+      />
     </div>
   );
 }

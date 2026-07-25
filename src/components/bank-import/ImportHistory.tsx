@@ -147,9 +147,10 @@ export default function ImportHistory() {
               <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>
-                  Undo is refused if this import touches a <strong>closed period</strong>, has any
-                  <strong> bank-reconciled</strong> line, or had Suspense items <strong>already cleared</strong>.
-                  In those cases reopen the period / unreconcile, or use <strong>Reverse</strong>.
+                  Undo deletes the whole import — including any Suspense items you already cleared. It is only
+                  refused if the import touches a <strong>closed period</strong> or has a
+                  <strong> bank-reconciled</strong> line; in those cases reopen the period / unreconcile, or use
+                  <strong> Reverse</strong>.
                 </span>
               </div>
             )}

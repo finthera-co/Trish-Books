@@ -1,8 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAccounts, useJournalEntries } from "@/hooks/useData";
+import { useBankImportRefs } from "@/hooks/useBankStatementImport";
 import { useFiscalPeriods, usePeriodOpeningBalances } from "@/hooks/useFiscalPeriodBalances";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,7 +38,9 @@ interface TransactionRow {
   journalNo: string;
   journalEntryId: string;
   reference: string;
+  chequeNo: string;
   name: string;
+  payee: string;
   memo: string;
   debit: number;
   credit: number;
@@ -52,6 +55,7 @@ export default function AccountReport() {
 
   const { data: accounts } = useAccounts();
   const { data: journalEntries, isLoading: entriesLoading } = useJournalEntries();
+  const { data: bankRefs } = useBankImportRefs();
   const { data: periods } = useFiscalPeriods();
 
   const [dateFrom, setDateFrom] = useState(() => {
@@ -70,6 +74,31 @@ export default function AccountReport() {
     [accounts, accountId]
   );
   const isOBEAccount = useMemo(() => isOpeningBalanceEquityAccount(account), [account]);
+
+  // Open the ledger showing this account's FULL history. The default window is
+  // the last six months, but a ledger reached from the Chart of Accounts must
+  // show every posted transaction — including imported prior-period bank
+  // statements (e.g. a June-2025 import viewed in 2026), which the six-month
+  // default would silently hide. Widen dateFrom to the account's earliest
+  // posted entry whenever the account or the underlying data changes; the user
+  // can still narrow the range afterwards.
+  useEffect(() => {
+    if (!journalEntries || !account) return;
+    let earliest: string | null = null;
+    for (const e of journalEntries as any[]) {
+      if (e.status !== "posted" || (e as any).voided_at) continue;
+      const touchesAccount = ((e.journal_lines as any[]) || []).some(
+        (l: any) => l.account_id === account.id
+      );
+      if (touchesAccount && (!earliest || e.entry_date < earliest)) earliest = e.entry_date;
+    }
+    if (earliest && earliest < dateFrom) {
+      setDateFrom(earliest.slice(0, 8) + "01"); // first day of that month
+    }
+    // Intentionally keyed on account + data only: re-widens when either changes,
+    // but does not fight a manual date narrowing (deps unchanged between edits).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId, journalEntries, account]);
 
   // Find matching fiscal period for opening balance
   const matchingPeriod = useMemo(() => {
@@ -162,7 +191,9 @@ export default function AccountReport() {
               journalNo: entry.id.slice(0, 8).toUpperCase(),
               journalEntryId: entry.id,
               reference: entry.reference || "",
+              chequeNo: bankRefs?.cheque.get(entry.id) || "",
               name: contraAccount ? contraAccount.account_name : (contraLines.length > 1 ? "— Split —" : ""),
+              payee: bankRefs?.payee.get(entry.id) || "",
               memo: entry.description || "",
               debit: Number(line.debit) || 0,
               credit: Number(line.credit) || 0,
@@ -214,7 +245,7 @@ export default function AccountReport() {
       closingBalance,
       isPeriodBased: periodBased,
     };
-  }, [account, journalEntries, dateFrom, dateTo, search, typeFilter, matchingPeriod, openingBalances, accounts, isOBEAccount]);
+  }, [account, journalEntries, dateFrom, dateTo, search, typeFilter, matchingPeriod, openingBalances, accounts, isOBEAccount, bankRefs]);
 
   const entryTypes = useMemo(() => {
     if (!journalEntries) return [];
@@ -234,13 +265,14 @@ export default function AccountReport() {
 
   const handleExportCSV = () => {
     if (!account) return;
-    const header = ["Date", "Type", "Journal No", "Reference", "Name", "Memo", "Debit", "Credit", "Balance"];
+    const header = ["Date", "Type", "Journal No", "Reference", "Cheque No", "Name", "Payee", "Memo", "Debit", "Credit", "Balance"];
     const csvRows = rows.map((r) => [
       r.date,
       r.entryType,
       r.journalNo,
       r.reference,
       r.name,
+      `"${(r.payee || "").replace(/"/g, '""')}"`,
       `"${r.memo.replace(/"/g, '""')}"`,
       r.debit > 0 ? r.debit.toFixed(2) : "",
       r.credit > 0 ? r.credit.toFixed(2) : "",
@@ -260,7 +292,7 @@ export default function AccountReport() {
     if (!account) return;
     type ExportRow = {
       date: string; entryType: string; journalNo: string; reference: string;
-      name: string; memo: string;
+      name: string; payee: string; chequeNo: string; memo: string;
       debit: number | null; credit: number | null; balance: number;
     };
     const exportRows: ExportRow[] = [
@@ -268,7 +300,7 @@ export default function AccountReport() {
       ...(!isPeriodBased && openingBalance !== 0
         ? [{
             date: dateFrom, entryType: "Opening Balance", journalNo: "", reference: "",
-            name: "", memo: "", debit: null, credit: null, balance: openingBalance,
+            name: "", payee: "", chequeNo: "", memo: "", debit: null, credit: null, balance: openingBalance,
           }]
         : []),
       ...rows.map((r) => ({
@@ -276,7 +308,9 @@ export default function AccountReport() {
         entryType: r.entryType,
         journalNo: r.journalNo,
         reference: r.reference,
+        chequeNo: r.chequeNo,
         name: r.name,
+        payee: r.payee,
         memo: r.memo,
         debit: r.debit > 0 ? r.debit : null,
         credit: r.credit > 0 ? r.credit : null,
@@ -297,7 +331,9 @@ export default function AccountReport() {
         { header: "Type", value: (r) => r.entryType },
         { header: "Journal No", value: (r) => r.journalNo },
         { header: "Reference", value: (r) => r.reference },
+        { header: "Cheque No", value: (r) => r.chequeNo },
         { header: "Name", value: (r) => r.name },
+        { header: "Payee", value: (r) => r.payee },
         { header: "Memo", value: (r) => r.memo },
         { header: "Debit", numeric: true, value: (r) => r.debit },
         { header: "Credit", numeric: true, value: (r) => r.credit },
@@ -512,7 +548,9 @@ export default function AccountReport() {
                   <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground w-24">Type</th>
                   <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground w-24">Journal No</th>
                   <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground w-24">Reference</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground w-24">Cheque No</th>
                   <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground w-32">Name</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground w-32">Payee</th>
                   <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground">Memo</th>
                   <th className="text-right px-4 py-2.5 text-xs font-medium text-muted-foreground w-28">Debit</th>
                   <th className="text-right px-4 py-2.5 text-xs font-medium text-muted-foreground w-28">Credit</th>
@@ -524,7 +562,7 @@ export default function AccountReport() {
                 {!isPeriodBased && openingBalance !== 0 && (
                   <tr className="bg-muted/10 border-b">
                     <td className="px-4 py-2 text-muted-foreground">{dateFrom}</td>
-                    <td colSpan={5} className="px-4 py-2 italic text-muted-foreground">Opening Balance</td>
+                    <td colSpan={7} className="px-4 py-2 italic text-muted-foreground">Opening Balance</td>
                     <td className="text-right px-4 py-2 font-mono text-muted-foreground">—</td>
                     <td className="text-right px-4 py-2 font-mono text-muted-foreground">—</td>
                     <td className="text-right px-4 py-2 font-mono font-semibold text-foreground">
@@ -535,13 +573,13 @@ export default function AccountReport() {
 
                 {entriesLoading ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-12">
+                    <td colSpan={11} className="text-center py-12">
                       <span className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin inline-block" />
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-12 text-muted-foreground">
+                    <td colSpan={11} className="text-center py-12 text-muted-foreground">
                       No transactions found for this period
                     </td>
                   </tr>
@@ -563,7 +601,9 @@ export default function AccountReport() {
                         {row.journalNo}
                       </td>
                       <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{row.reference || "—"}</td>
+                      <td className="px-4 py-2 font-mono text-xs text-foreground">{row.chequeNo || "—"}</td>
                       <td className="px-4 py-2 text-foreground text-xs">{row.name || "—"}</td>
+                      <td className="px-4 py-2 text-foreground text-xs">{row.payee || "—"}</td>
                       <td className="px-4 py-2 text-foreground">{row.memo}</td>
                       <td className="text-right px-4 py-2 font-mono tabular-nums">
                         {row.debit > 0 ? formatCurrency(row.debit) : <span className="text-muted-foreground/40">—</span>}
@@ -581,7 +621,7 @@ export default function AccountReport() {
               {rows.length > 0 && (
                 <tfoot>
                   <tr className="border-t-2 border-foreground/20 bg-muted/20">
-                    <td colSpan={6} className="px-4 py-3 font-semibold text-xs text-foreground">{isPeriodBased ? "Period Total" : "Totals / Closing"}</td>
+                    <td colSpan={8} className="px-4 py-3 font-semibold text-xs text-foreground">{isPeriodBased ? "Period Total" : "Totals / Closing"}</td>
                     <td className="text-right px-4 py-3 font-mono font-bold text-foreground tabular-nums">
                       {totalDebit > 0 ? formatCurrency(totalDebit) : "—"}
                     </td>

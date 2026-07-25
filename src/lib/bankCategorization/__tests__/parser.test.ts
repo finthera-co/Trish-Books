@@ -43,6 +43,24 @@ describe("findColumnMap — locate columns by header name, never position", () =
     }
   });
 
+  it("recognizes a Cheque Number header as the reference field", () => {
+    const matrix = [
+      ["Date", "Description", "Account Type", "Debit", "Credit", "Cheque Number"],
+      ["2024-05-01", "x", "salary", "100", "", "CHQ-00123"],
+    ];
+    const map = findColumnMap(matrix);
+    expect("error" in map).toBe(false);
+    if (!("error" in map)) expect(map.voucherNo).toBe(5);
+  });
+
+  it("also accepts 'Cheque No' and 'Voucher No' spellings", () => {
+    for (const h of ["Cheque No", "Voucher No", "Chq No", "Check Number"]) {
+      const map = findColumnMap([["Date", "Description", "Account Type", "Debit", "Credit", h]]);
+      expect("error" in map).toBe(false);
+      if (!("error" in map)) expect(map.voucherNo).toBe(5);
+    }
+  });
+
   it("errors when a required column is missing", () => {
     const matrix = [["Date", "Description", "Debit"]]; // no Credit, no Account Type
     const map = findColumnMap(matrix);

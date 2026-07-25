@@ -440,6 +440,51 @@ export function useSetupBankImportChart() {
   });
 }
 
+export interface BankImportRefs {
+  /** journal_entry_id → statement payee (the Name column). */
+  payee: Map<string, string>;
+  /** journal_entry_id → cheque number (stored in voucher_no). */
+  cheque: Map<string, string>;
+}
+
+/** Per-entry payee and cheque-number lookups for bank imports, so ledgers can
+ * show dedicated Payee and Cheque No columns. Covers both the original posting
+ * entry and any suspense-clearing reclass entry. */
+export function useBankImportRefs() {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["bank_import_refs", appUser?.tenant_id],
+    enabled: !!appUser?.tenant_id,
+    queryFn: async (): Promise<BankImportRefs> => {
+      const { data, error } = await (supabase as any)
+        .from("bank_statement_lines")
+        .select("journal_entry_id, reclass_journal_entry_id, name, voucher_no");
+      if (error) throw error;
+      const payee = new Map<string, string>();
+      const cheque = new Map<string, string>();
+      for (const r of (data ?? []) as {
+        journal_entry_id: string | null; reclass_journal_entry_id: string | null;
+        name: string | null; voucher_no: string | null;
+      }[]) {
+        const nm = (r.name ?? "").trim();
+        const chq = (r.voucher_no ?? "").trim();
+        for (const id of [r.journal_entry_id, r.reclass_journal_entry_id]) {
+          if (!id) continue;
+          if (nm) payee.set(id, nm);
+          if (chq) cheque.set(id, chq);
+        }
+      }
+      return { payee, cheque };
+    },
+  });
+}
+
+/** @deprecated use {@link useBankImportRefs}. Kept for the payee-only callers. */
+export function useBankImportPayees() {
+  const q = useBankImportRefs();
+  return { ...q, data: q.data?.payee } as typeof q & { data: Map<string, string> | undefined };
+}
+
 export interface BatchRow {
   id: string;
   bank_account_id: string;

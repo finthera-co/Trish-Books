@@ -21,7 +21,7 @@ export default function GlobalTopNav() {
 
   const handleSignOut = async () => {
     await signOut();
-    navigate("/login");
+    navigate("/");
   };
 
   return (
