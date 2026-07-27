@@ -61,9 +61,10 @@ describe("full-batch golden simulation (anonymized May 2024)", () => {
     // Tier 2 resolved
     expect(byDesc("Capital injection").resolution).toMatchObject({ kind: "resolved", accountId: ACC.capital, tier: 2 });
 
-    // Tier 4 auto-generated — unmapped but a clean name is derived from the
-    // description; classification follows cash direction.
-    expect(byDesc("Odd expense").resolution).toMatchObject({ kind: "derive", accountName: "Odd Expense", side: "debit" });
+    // Tier 4 auto-generated — unmapped. The name comes from the account_type
+    // LABEL when present ("Mystery Category"), else the description ("Unknown
+    // Inflow"); classification follows cash direction.
+    expect(byDesc("Odd expense").resolution).toMatchObject({ kind: "derive", accountName: "Mystery Category", side: "debit" });
     expect(byDesc("Unknown inflow").resolution).toMatchObject({ kind: "derive", accountName: "Unknown Inflow", side: "credit" });
 
     // Suspense — structurally risky, never auto-generated.

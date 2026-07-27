@@ -683,6 +683,9 @@ export default function Ledger() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b-2 border-border bg-muted/30">
+                        <th className="text-right px-3 py-2.5 w-12">
+                          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">#</span>
+                        </th>
                         <th className="text-left px-3 py-2.5 w-24">
                           <button onClick={() => toggleSort("date")} className="flex items-center text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors">
                             Date <SortIcon field="date" />
@@ -725,6 +728,7 @@ export default function Ledger() {
                       {/* Opening Balance Row — only for cumulative (Balance Sheet) accounts */}
                       {!isPeriodBased && (
                         <tr className="bg-muted/20 border-b border-border">
+                          <td className="px-3 py-2 text-right text-muted-foreground/50 text-xs tabular-nums">—</td>
                           <td className="px-3 py-2 text-muted-foreground text-xs tabular-nums">{effectiveDateFrom || "—"}</td>
                           <td className="px-3 py-2">
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-secondary text-secondary-foreground">
@@ -741,12 +745,13 @@ export default function Ledger() {
                         </tr>
                       )}
                       {/* Transaction Rows */}
-                      {pagedRows.map((row) => (
+                      {pagedRows.map((row, i) => (
                         <tr
                           key={row.id}
                           onClick={() => handleDrillDown(row)}
                           className={`border-b border-border/50 cursor-pointer transition-colors hover:bg-primary/5 ${row.isReversal ? "bg-destructive/5" : ""}`}
                         >
+                          <td className="px-3 py-2 text-right text-muted-foreground text-xs tabular-nums">{page * PAGE_SIZE + i + 1}</td>
                           <td className="px-3 py-2 text-muted-foreground tabular-nums">{row.date}</td>
                           <td className="px-3 py-2">
                             <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap ${txnTypeBadge[row.transactionType] || txnTypeBadge["Journal Entry"]}`}>
@@ -785,7 +790,7 @@ export default function Ledger() {
                     </tbody>
                     <tfoot>
                       <tr className="border-t-2 border-border bg-muted/30">
-                        <td colSpan={7} className="px-3 py-2.5 font-bold text-foreground text-xs">Period Totals</td>
+                        <td colSpan={8} className="px-3 py-2.5 font-bold text-foreground text-xs">Period Totals</td>
                         <td className="text-right px-3 py-2.5 font-mono font-bold tabular-nums text-foreground">
                           {totalDebit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </td>
@@ -795,7 +800,7 @@ export default function Ledger() {
                         <td className="text-right px-3 py-2.5 text-muted-foreground">—</td>
                       </tr>
                       <tr className="border-t border-border/50">
-                        <td colSpan={7} className="px-3 py-2.5 font-bold text-foreground text-xs">Closing Balance</td>
+                        <td colSpan={8} className="px-3 py-2.5 font-bold text-foreground text-xs">Closing Balance</td>
                         <td colSpan={2}></td>
                         <td className={`text-right px-3 py-2.5 font-mono font-bold tabular-nums ${closingBalance < 0 ? "text-destructive" : "text-foreground"}`}>
                           {fmtBal(closingBalance)}

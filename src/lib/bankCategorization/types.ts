@@ -57,7 +57,9 @@ export interface Suggestion {
 }
 
 export type Resolution =
-  | { kind: "resolved"; accountId: string; ruleId: string; tier: 1 | 2 }
+  // ruleId is the matched map/rule row; null for a direct account-name/code
+  // match (Tier 1b), which resolves against a real ledger with no map row.
+  | { kind: "resolved"; accountId: string; ruleId: string | null; tier: 1 | 2 }
   // Auto-generated (Tier 4): no mapping matched, but the description is usable,
   // so a ledger named from it is created and posted to. `side` fixes the
   // classification — debit (money out) → Expense, credit (money in) → Income.
@@ -121,6 +123,10 @@ export interface AccountMeta {
   isActive: boolean;
   isPostable: boolean;
   isControlAccount: boolean;
+  /** For Tier 1b direct matching: the account_type text is matched against
+   * these. Optional so callers that don't need name-matching can omit them. */
+  accountName?: string;
+  accountCode?: string;
 }
 
 export interface ResolutionContext {

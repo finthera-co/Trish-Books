@@ -42,7 +42,12 @@ export interface WorkbookPreview {
   file: File;
   periods: PeriodPreview[];
   total_rows: number;
-  undated_count: number;  // rows with no parseable date (held as corrupt)
+  dated_count: number;        // rows placed into a month (posted on import)
+  excluded_count: number;     // B/F / opening-balance rows (never posted)
+  undated_count: number;      // rows with no usable date (held for review)
+  forward_filled_count: number; // blank-date rows that inherited the day above
+  forward_filled_samples: string[]; // e.g. "May 2024 row 42" — go verify in Excel
+  unparseable_date_samples: string[]; // sample raw date cells no format matched
   sheet_count: number;
   errors: string[];
 }
@@ -60,8 +65,13 @@ export async function previewWorkbook(file: File): Promise<WorkbookPreview> {
   const byPeriod = new Map<string, PeriodPreview>();
   const errors: string[] = [];
   let total = 0;
+  let dated = 0;
+  let excluded = 0;
   let undated = 0;
+  let forwardFilled = 0;
   let sheetCount = 0;
+  const forwardFilledSamples: string[] = [];
+  const unparseableSamples: string[] = [];
 
   for (const name of wb.SheetNames) {
     const sheet = wb.Sheets[name];
@@ -75,11 +85,18 @@ export async function previewWorkbook(file: File): Promise<WorkbookPreview> {
     errors.push(...result.errors);
     for (const line of result.lines as ParsedLine[]) {
       total++;
+      if (line.parseFlags.includes("date_forward_filled")) {
+        forwardFilled++;
+        if (forwardFilledSamples.length < 10) forwardFilledSamples.push(`${line.sheetName} row ${line.rowIndex}`);
+      }
+      if (line.parseFlags.includes("unparseable_date") && unparseableSamples.length < 8 && line.rawDate) {
+        if (!unparseableSamples.includes(line.rawDate)) unparseableSamples.push(line.rawDate);
+      }
       if (!line.txnDate) { undated++; continue; }
       const [y, m] = line.txnDate.split("-").map(Number);
       const key = `${y}-${m}`;
       const p = byPeriod.get(key) ?? { year: y, month: m, row_count: 0, excluded_count: 0, too_big: false };
-      if (line.isExcluded) p.excluded_count++; else p.row_count++;
+      if (line.isExcluded) { p.excluded_count++; excluded++; } else { p.row_count++; dated++; }
       byPeriod.set(key, p);
     }
   }
@@ -88,7 +105,13 @@ export async function previewWorkbook(file: File): Promise<WorkbookPreview> {
     .map((p) => ({ ...p, too_big: p.row_count > MAX_ROWS_PER_MONTH }))
     .sort((a, b) => a.year - b.year || a.month - b.month);
 
-  return { file, periods, total_rows: total, undated_count: undated, sheet_count: sheetCount, errors };
+  return {
+    file, periods, total_rows: total,
+    dated_count: dated, excluded_count: excluded, undated_count: undated,
+    forward_filled_count: forwardFilled, forward_filled_samples: forwardFilledSamples,
+    unparseable_date_samples: unparseableSamples,
+    sheet_count: sheetCount, errors,
+  };
 }
 
 export interface SheetResult {

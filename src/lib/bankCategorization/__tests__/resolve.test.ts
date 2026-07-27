@@ -1,7 +1,74 @@
 import { describe, it, expect } from "vitest";
 import { classifyLine } from "../resolve";
 import { ACC, makeCtx, makeLine, makeAccountMap, makeAccounts, rule } from "./helpers";
-import type { AccountMapEntry } from "../types";
+import type { AccountMapEntry, AccountMeta } from "../types";
+
+describe("classifyLine — Tier 1b direct account-name / code match", () => {
+  const acct = (id: string, accountName: string, accountCode: string, over: Partial<AccountMeta> = {}): [string, AccountMeta] =>
+    [id, { id, isActive: true, isPostable: true, isControlAccount: false, accountName, accountCode, ...over }];
+  const named = new Map<string, AccountMeta>([
+    acct("a-bankchg", "Bank Charges", "8010"),
+    acct("a-wht", "WHT Receivable", "1310"),
+    acct("a-header", "Administration Expenses", "6000", { isPostable: false }),
+  ]);
+  // Empty account map so the curated path can't match — exercises Tier 1b.
+  const ctx = makeCtx({ accountMap: makeAccountMap([]), accounts: named });
+
+  it("matches an exact account name that is not in the variant map", () => {
+    const r = classifyLine(makeLine({ debit: 150, rawAccountType: "Bank Charges", description: "misc" }), ctx);
+    expect(r).toMatchObject({ kind: "resolved", accountId: "a-bankchg", tier: 1, ruleId: null });
+  });
+
+  it("matches across plural/singular (WHT Receivables → WHT Receivable)", () => {
+    const r = classifyLine(makeLine({ debit: 500, rawAccountType: "WHT Receivables" }), ctx);
+    expect(r).toMatchObject({ kind: "resolved", accountId: "a-wht", tier: 1 });
+  });
+
+  it("matches WHT across spelling variants (industrial-grade)", () => {
+    for (const t of ["WHT Receivable", "W.H.T Receivable", "W H T Receivables", "Withholding Tax Receivable", "Withholding Tax Receivables"]) {
+      const r = classifyLine(makeLine({ debit: 500, rawAccountType: t }), ctx);
+      expect(r, `account_type "${t}"`).toMatchObject({ kind: "resolved", accountId: "a-wht", tier: 1 });
+    }
+  });
+
+  it("matches a WHT account even when the account itself is named 'Withholding Tax Receivable'", () => {
+    const acc2 = (id: string, accountName: string, accountCode: string): [string, AccountMeta] =>
+      [id, { id, isActive: true, isPostable: true, isControlAccount: false, accountName, accountCode }];
+    const c2 = makeCtx({ accountMap: makeAccountMap([]), accounts: new Map([acc2("wht", "Withholding Tax Receivable", "1310")]) });
+    const r = classifyLine(makeLine({ debit: 500, rawAccountType: "WHT Receivables" }), c2);
+    expect(r).toMatchObject({ kind: "resolved", accountId: "wht", tier: 1 });
+  });
+
+  it("matches by account code", () => {
+    const r = classifyLine(makeLine({ debit: 500, rawAccountType: "8010" }), ctx);
+    expect(r).toMatchObject({ kind: "resolved", accountId: "a-bankchg", tier: 1 });
+  });
+
+  it("matches via the DESCRIPTION when the category landed there (Bank Charges case)", () => {
+    // account_type column holds the specific nature, "Bank Charges" is in the
+    // description column — all such rows must still post to Bank Charges.
+    for (const t of ["SSCL /NBT", "statement charges", "VAT misc", "bill payment", "Withholding"]) {
+      const r = classifyLine(makeLine({ debit: 3080, rawAccountType: t, description: "Bank Charges" }), ctx);
+      expect(r, `account_type "${t}"`).toMatchObject({ kind: "resolved", accountId: "a-bankchg", tier: 1 });
+    }
+  });
+
+  it("matches via the description when there is no account_type column at all", () => {
+    const r = classifyLine(makeLine({ credit: 500, rawAccountType: "", description: "WHT Receivables" }), ctx);
+    expect(r).toMatchObject({ kind: "resolved", accountId: "a-wht", tier: 1 });
+  });
+
+  it("ignores non-postable (header) accounts — falls through to derive", () => {
+    const r = classifyLine(makeLine({ debit: 500, rawAccountType: "Administration Expenses", description: "sundry" }), ctx);
+    expect(r).toMatchObject({ kind: "derive" });
+  });
+
+  it("a curated canonical mapping still wins over a direct name match", () => {
+    // Default ctx maps 'salary' → ACC.salary via the account map.
+    const r = classifyLine(makeLine({ debit: 5000, rawAccountType: "Salary" }), makeCtx());
+    expect(r).toMatchObject({ kind: "resolved", accountId: ACC.salary, tier: 1, ruleId: "map-salary" });
+  });
+});
 
 describe("classifyLine — Blocked gates (corrupt data posts nowhere)", () => {
   it("blocks both-sides populated", () => {
@@ -47,9 +114,9 @@ describe("classifyLine — Tier 1 (account_type → canonical → mapping)", () 
     expect(r).toMatchObject({ kind: "resolved", accountId: ACC.harvest, tier: 1 });
   });
 
-  it("unknown variant → suspense unknown_category_variant", () => {
+  it("unknown variant → derive a ledger named from the account_type label", () => {
     const r = classifyLine(makeLine({ debit: 5000, rawAccountType: "Mystery Expense" }), makeCtx());
-    expect(r).toMatchObject({ kind: "suspense", reason: "unknown_category_variant" });
+    expect(r).toMatchObject({ kind: "derive", accountName: "Mystery Expense" });
   });
 
   it("source-marked suspense → suspense source_marked_suspense", () => {
@@ -57,10 +124,10 @@ describe("classifyLine — Tier 1 (account_type → canonical → mapping)", () 
     expect(r).toMatchObject({ kind: "suspense", reason: "source_marked_suspense" });
   });
 
-  it("known category but no tenant mapping → suspense unmapped_category", () => {
+  it("known category but no tenant mapping → derive from the label", () => {
     const ctx = makeCtx({ accountMap: new Map() });
     const r = classifyLine(makeLine({ debit: 5000, rawAccountType: "Salary" }), ctx);
-    expect(r).toMatchObject({ kind: "suspense", reason: "unmapped_category" });
+    expect(r).toMatchObject({ kind: "derive", accountName: "Salary" });
   });
 
   it("side mismatch → suspense side_mismatch (salary expected debit, on credit)", () => {

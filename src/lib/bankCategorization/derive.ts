@@ -76,6 +76,28 @@ export function deriveAccountName(
 }
 
 /**
+ * Clean a category LABEL — the `account_type` column — into a ledger name.
+ *
+ * Unlike deriveAccountName (built for free-text descriptions, which strips
+ * reference numbers and generic words like "bank"/"payment"), a label is
+ * already a curated category, so EVERY word is kept: "Bank Charges" stays "Bank
+ * Charges", "Suspense Peoples Saving" stays "Suspense Peoples Saving". Only
+ * whitespace/casing is normalized. Returns "" for an empty or all-numeric label
+ * (a bare code), so the caller falls back to the description.
+ */
+export function deriveNameFromLabel(raw: string | null | undefined): string {
+  const norm = normalizeText(raw ?? "");
+  if (!norm) return "";
+  const tokens = norm.split(/\s+/).filter(Boolean);
+  if (tokens.every((t) => /^\d+$/.test(t))) return ""; // pure code/number, not a name
+  const name = tokens
+    .slice(0, 8)
+    .map((t) => (t === "&" ? "&" : t.charAt(0).toUpperCase() + t.slice(1)))
+    .join(" ");
+  return name.length > 60 ? name.slice(0, 60).trimEnd() : name;
+}
+
+/**
  * Stable dedup key for a derived name. Two descriptions that produce the same
  * name share a key and therefore share one ledger, across rows and across
  * imports. Must match how the posting side keys the account.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { deriveAccountName, deriveAccountKey } from "../derive";
+import { deriveAccountName, deriveNameFromLabel, deriveAccountKey } from "../derive";
 import { classifyLine } from "../resolve";
 import { makeLine, makeCtx, makeAccountMap, ACC } from "./helpers";
 
@@ -48,26 +48,44 @@ describe("deriveAccountName — clean ledger names from descriptions", () => {
   });
 });
 
+describe("deriveNameFromLabel — account_type labels keep every word", () => {
+  it("keeps generic words that the description cleaner would strip", () => {
+    expect(deriveNameFromLabel("Bank Charges")).toBe("Bank Charges");   // 'Bank' kept
+    expect(deriveNameFromLabel("Peoples Saving")).toBe("Peoples Saving");
+    expect(deriveNameFromLabel("Suspense Peoples Saving")).toBe("Suspense Peoples Saving");
+  });
+  it("returns empty for a blank or all-numeric label (bare code)", () => {
+    expect(deriveNameFromLabel("")).toBe("");
+    expect(deriveNameFromLabel("8010")).toBe("");
+    expect(deriveNameFromLabel(null)).toBe("");
+  });
+});
+
 describe("classifyLine — Tier 4 auto-generate (derive)", () => {
-  it("unknown account_type + usable description → derive, classified by direction (out = debit)", () => {
+  it("unmapped account_type → derive named from the LABEL (not the description)", () => {
     const r = classifyLine(makeLine({ debit: 900, rawAccountType: "Mystery Category", description: "Odd Expense" }), makeCtx());
-    expect(r).toMatchObject({ kind: "derive", accountName: "Odd Expense", side: "debit" });
+    expect(r).toMatchObject({ kind: "derive", accountName: "Mystery Category", side: "debit" });
   });
 
-  it("no account_type, no rule, money in → derive on the credit side", () => {
+  it("keeps every word of a multi-word label (Peoples Saving, not just Saving)", () => {
+    const r = classifyLine(makeLine({ credit: 5000, rawAccountType: "Peoples Saving" }), makeCtx());
+    expect(r).toMatchObject({ kind: "derive", accountName: "Peoples Saving", side: "credit" });
+  });
+
+  it("no account_type, no rule, money in → derive from the description", () => {
     const r = classifyLine(makeLine({ credit: 700, description: "Unknown Inflow" }), makeCtx());
     expect(r).toMatchObject({ kind: "derive", accountName: "Unknown Inflow", side: "credit" });
   });
 
-  it("known category with no tenant mapping → derive from description", () => {
+  it("known category with no tenant mapping → derive from the label", () => {
     const ctx = makeCtx({ accountMap: makeAccountMap([]) }); // salary canonical exists, no account mapped
     const r = classifyLine(makeLine({ debit: 5000, rawAccountType: "Salary", description: "June wages crew" }), ctx);
-    expect(r).toMatchObject({ kind: "derive", side: "debit" });
+    expect(r).toMatchObject({ kind: "derive", accountName: "Salary", side: "debit" });
   });
 
-  it("all-numeric description → stays in Suspense, never a junk ledger", () => {
-    const r = classifyLine(makeLine({ debit: 5000, rawAccountType: "Mystery Category", description: "884211" }), makeCtx());
-    expect(r).toMatchObject({ kind: "suspense", reason: "unknown_category_variant" });
+  it("no account_type + all-numeric description → Suspense, never a junk ledger", () => {
+    const r = classifyLine(makeLine({ debit: 5000, rawAccountType: "", description: "884211" }), makeCtx());
+    expect(r).toMatchObject({ kind: "suspense", reason: "no_category_no_rule" });
   });
 
   it("mapped category still wins over deriving (existing mapping is authoritative)", () => {
@@ -79,5 +97,22 @@ describe("classifyLine — Tier 4 auto-generate (derive)", () => {
     const ctx = makeCtx({ maxDate: "2024-05-15" });
     const r = classifyLine(makeLine({ debit: 100, txnDate: "2024-05-20", description: "New Payee", rawAccountType: "" }), ctx);
     expect(r).toMatchObject({ kind: "suspense", reason: "future_date" });
+  });
+});
+
+describe("classifyLine — suspense-marked account types go to Suspense Clearing", () => {
+  it("routes 'Suspense Peoples Saving' to Suspense (not derived, not name-matched)", () => {
+    const r = classifyLine(makeLine({ credit: 5000, rawAccountType: "Suspense Peoples Saving", description: "some deposit" }), makeCtx());
+    expect(r).toMatchObject({ kind: "suspense", reason: "source_marked_suspense" });
+  });
+
+  it("routes a bare 'Suspense' account_type to Suspense", () => {
+    const r = classifyLine(makeLine({ debit: 5000, rawAccountType: "Suspense" }), makeCtx());
+    expect(r).toMatchObject({ kind: "suspense", reason: "source_marked_suspense" });
+  });
+
+  it("does not trip on similar words (Suspension) — that still derives", () => {
+    const r = classifyLine(makeLine({ debit: 5000, rawAccountType: "Suspension Account" }), makeCtx());
+    expect(r).toMatchObject({ kind: "derive", accountName: "Suspension Account" });
   });
 });

@@ -544,6 +544,7 @@ export default function AccountReport() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/30">
+                  <th className="text-right px-4 py-2.5 text-xs font-medium text-muted-foreground w-12">#</th>
                   <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground w-24">Date</th>
                   <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground w-24">Type</th>
                   <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground w-24">Journal No</th>
@@ -561,6 +562,7 @@ export default function AccountReport() {
                 {/* Opening balance row — only for cumulative (Balance Sheet) accounts */}
                 {!isPeriodBased && openingBalance !== 0 && (
                   <tr className="bg-muted/10 border-b">
+                    <td className="px-4 py-2 text-right text-muted-foreground/50 text-xs tabular-nums">—</td>
                     <td className="px-4 py-2 text-muted-foreground">{dateFrom}</td>
                     <td colSpan={7} className="px-4 py-2 italic text-muted-foreground">Opening Balance</td>
                     <td className="text-right px-4 py-2 font-mono text-muted-foreground">—</td>
@@ -573,13 +575,13 @@ export default function AccountReport() {
 
                 {entriesLoading ? (
                   <tr>
-                    <td colSpan={11} className="text-center py-12">
+                    <td colSpan={12} className="text-center py-12">
                       <span className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin inline-block" />
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="text-center py-12 text-muted-foreground">
+                    <td colSpan={12} className="text-center py-12 text-muted-foreground">
                       No transactions found for this period
                     </td>
                   </tr>
@@ -590,6 +592,7 @@ export default function AccountReport() {
                       className="border-b border-border/50 hover:bg-muted/20 cursor-pointer transition-colors"
                       onClick={() => setEditEntry({ journalEntryId: row.journalEntryId, lineId: row.lineId })}
                     >
+                      <td className="px-4 py-2 text-right text-muted-foreground text-xs tabular-nums">{i + 1}</td>
                       <td className="px-4 py-2 text-muted-foreground tabular-nums">{row.date}</td>
                       <td className="px-4 py-2">
                         <span className="text-[10px] bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded capitalize">
@@ -621,7 +624,7 @@ export default function AccountReport() {
               {rows.length > 0 && (
                 <tfoot>
                   <tr className="border-t-2 border-foreground/20 bg-muted/20">
-                    <td colSpan={8} className="px-4 py-3 font-semibold text-xs text-foreground">{isPeriodBased ? "Period Total" : "Totals / Closing"}</td>
+                    <td colSpan={9} className="px-4 py-3 font-semibold text-xs text-foreground">{isPeriodBased ? "Period Total" : "Totals / Closing"}</td>
                     <td className="text-right px-4 py-3 font-mono font-bold text-foreground tabular-nums">
                       {totalDebit > 0 ? formatCurrency(totalDebit) : "—"}
                     </td>

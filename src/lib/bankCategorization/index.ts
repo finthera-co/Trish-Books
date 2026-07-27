@@ -12,7 +12,7 @@ export {
   defaultCanonicalEntries,
 } from "./canonicalize.ts";
 export { classifyLine } from "./resolve.ts";
-export { deriveAccountName, deriveAccountKey } from "./derive.ts";
+export { deriveAccountName, deriveNameFromLabel, deriveAccountKey } from "./derive.ts";
 export {
   checkBalanceContinuity,
   computeControlTotals,

@@ -215,7 +215,7 @@ Deno.serve(async (req) => {
           .select("id, match_field, match_value, account_id, expected_side, priority, is_active")
           .eq("tenant_id", tenantId),
         admin.from("accounts")
-          .select("id, is_active, is_postable, is_control_account")
+          .select("id, is_active, is_postable, is_control_account, account_name, account_code")
           .eq("tenant_id", tenantId),
       ]);
 
@@ -251,6 +251,8 @@ Deno.serve(async (req) => {
           isActive: a.is_active,
           isPostable: a.is_postable,
           isControlAccount: a.is_control_account,
+          accountName: a.account_name,
+          accountCode: a.account_code,
         }])
       ),
       amountCeiling: Number(settings.bank_import_amount_ceiling ?? 100000000),

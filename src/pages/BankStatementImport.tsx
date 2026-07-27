@@ -313,13 +313,30 @@ export default function BankStatementImport() {
 
           {preview && (
             <>
-              <p className="text-xs text-muted-foreground">
-                {preview.total_rows.toLocaleString()} row(s) across {preview.sheet_count} sheet(s) →{" "}
-                {preview.periods.length} month(s).
-                {preview.undated_count > 0 && (
-                  <> {preview.undated_count} undated row(s) will be held for review with the earliest month.</>
+              <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs space-y-1">
+                <p className="font-medium text-foreground">
+                  {preview.total_rows.toLocaleString()} data row(s) read across {preview.sheet_count} sheet(s)
+                  {" "}— every row is accounted for below:
+                </p>
+                <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-muted-foreground">
+                  <span><strong className="text-foreground">{preview.dated_count.toLocaleString()}</strong> dated → {preview.periods.length} month(s)</span>
+                  {preview.excluded_count > 0 && <span><strong className="text-foreground">{preview.excluded_count}</strong> B/F excluded</span>}
+                  {preview.forward_filled_count > 0 && <span><strong className="text-foreground">{preview.forward_filled_count.toLocaleString()}</strong> blank-date rows dated from the row above</span>}
+                  {preview.undated_count > 0 && <span className="text-amber-600"><strong>{preview.undated_count}</strong> undated → held for review</span>}
+                </div>
+                {preview.forward_filled_count > 0 && (
+                  <p className="text-muted-foreground">
+                    Rows given the date above them (verify these have a blank date cell in Excel):{" "}
+                    {preview.forward_filled_samples.join(", ")}
+                    {preview.forward_filled_count > preview.forward_filled_samples.length && ", …"}
+                  </p>
                 )}
-              </p>
+                {preview.unparseable_date_samples.length > 0 && (
+                  <p className="text-amber-700">
+                    Unreadable date formats (held): {preview.unparseable_date_samples.map((s) => `"${s}"`).join(", ")}
+                  </p>
+                )}
+              </div>
               <Table>
                 <TableHeader>
                   <TableRow>

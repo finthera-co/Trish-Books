@@ -245,12 +245,24 @@ export function useJournalEntries() {
   return useQuery({
     queryKey: ["journal_entries"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("journal_entries")
-        .select("*, journal_lines(*, accounts(account_name, account_code))")
-        .order("entry_date", { ascending: false });
-      if (error) throw error;
-      return data;
+      // PostgREST caps every response at 1000 rows. A tenant easily has more
+      // (a single bank-statement import posts thousands of entries), so a plain
+      // select silently returns only the most recent 1000 — dropping older
+      // transactions from every ledger. Page through with .range() so EVERY
+      // entry loads, not just the latest 1000.
+      const PAGE = 1000;
+      const all: any[] = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from("journal_entries")
+          .select("*, journal_lines(*, accounts(account_name, account_code))")
+          .order("entry_date", { ascending: false })
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        all.push(...(data ?? []));
+        if (!data || data.length < PAGE) break;
+      }
+      return all;
     },
   });
 }
