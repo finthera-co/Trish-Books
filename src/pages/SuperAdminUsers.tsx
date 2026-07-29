@@ -2,8 +2,16 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Search, MoreHorizontal, UserX, UserCheck, Trash2 } from "lucide-react";
+import { Search, MoreHorizontal, UserX, UserCheck, Trash2, Pencil, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useUpdateUser } from "@/hooks/useData";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import {
@@ -38,6 +46,11 @@ export default function SuperAdminUsers() {
   const [tenantFilter, setTenantFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [deleteUser, setDeleteUser] = useState<any>(null);
+  const [editUser, setEditUser] = useState<any>(null);
+  const [editEmail, setEditEmail] = useState("");
+  const [editFirstName, setEditFirstName] = useState("");
+  const [editLastName, setEditLastName] = useState("");
+  const updateUser = useUpdateUser();
 
   const { data: tenants } = useQuery({
     queryKey: ["all_tenants_list"],
@@ -88,6 +101,27 @@ export default function SuperAdminUsers() {
     },
     onError: (err: any) => toast.error(err.message),
   });
+
+  const openEdit = (user: any) => {
+    setEditUser(user);
+    setEditFirstName(user.first_name || "");
+    setEditLastName(user.last_name || "");
+    setEditEmail(user.email || "");
+  };
+
+  const handleUpdate = async () => {
+    if (!editUser) return;
+    await updateUser.mutateAsync({
+      user_id: editUser.id,
+      email: editEmail.trim(),
+      first_name: editFirstName.trim(),
+      last_name: editLastName.trim(),
+      previous_email: editUser.email,
+    });
+    setEditUser(null);
+  };
+
+  const emailIsChanging = !!editUser && editEmail.trim().toLowerCase() !== (editUser.email || "").toLowerCase();
 
   if (!isSuperAdmin) {
     return <div className="text-center py-12"><p className="text-muted-foreground">Access denied.</p></div>;
@@ -209,6 +243,10 @@ export default function SuperAdminUsers() {
                             <button className="p-1 rounded hover:bg-accent"><MoreHorizontal className="w-4 h-4 text-muted-foreground" /></button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent>
+                            <DropdownMenuItem onClick={() => openEdit(user)}>
+                              <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Name & Login Email
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
                             {status === "active" ? (
                               <DropdownMenuItem onClick={() => suspendUser.mutate({ id: user.id, status: "suspended" })}>
                                 <UserX className="w-3.5 h-3.5 mr-2" /> Suspend
@@ -233,6 +271,65 @@ export default function SuperAdminUsers() {
           </table>
         )}
       </div>
+
+      {/* Edit Name & Login Email */}
+      <Dialog open={!!editUser} onOpenChange={(v) => !v && setEditUser(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="w-5 h-5 text-primary" />
+              Edit User
+            </DialogTitle>
+            <DialogDescription>
+              {editUser && `Update the name and sign-in email for this ${(editUser.roles as any)?.role_name || "user"}${(editUser.tenants as any)?.company_name ? ` at ${(editUser.tenants as any).company_name}` : ""}.`}
+            </DialogDescription>
+          </DialogHeader>
+          {editUser && (
+            <div className="space-y-4 pt-2">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium text-foreground">First Name <span className="text-destructive">*</span></label>
+                  <input type="text" value={editFirstName} onChange={(e) => setEditFirstName(e.target.value)}
+                    className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground">Last Name <span className="text-destructive">*</span></label>
+                  <input type="text" value={editLastName} onChange={(e) => setEditLastName(e.target.value)}
+                    className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground" />
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground">Login Email <span className="text-destructive">*</span></label>
+                <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)}
+                  className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground" />
+                <p className="text-xs text-muted-foreground mt-1">This is the address the user signs in with.</p>
+              </div>
+              {emailIsChanging && (
+                <div className="flex gap-2 rounded-md border border-[hsl(var(--warning))]/40 bg-[hsl(var(--warning))]/10 p-3">
+                  <AlertTriangle className="w-4 h-4 text-[hsl(var(--warning))] shrink-0 mt-0.5" />
+                  <div className="text-xs text-foreground">
+                    <p className="font-medium">Login email will change</p>
+                    <p className="text-muted-foreground mt-0.5">
+                      {editUser.email} → {editEmail.trim()}. Their password stays the same, but they must use the new
+                      email to sign in. Any open session on the old address stays valid until it expires.
+                    </p>
+                  </div>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setEditUser(null)} className="flex-1">Cancel</Button>
+                <Button
+                  onClick={handleUpdate}
+                  disabled={!editEmail.trim() || !editFirstName.trim() || !editLastName.trim() || updateUser.isPending}
+                  className="flex-1"
+                >
+                  {updateUser.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation */}
       <AlertDialog open={!!deleteUser} onOpenChange={(v) => !v && setDeleteUser(null)}>

@@ -1,7 +1,7 @@
-import { Plus, Search, Shield, ShieldCheck, Eye, Clock, UserCog, ChevronDown, ChevronRight, Settings2, Users2, Building2 } from "lucide-react";
+import { Plus, Search, Shield, ShieldCheck, Eye, Clock, UserCog, ChevronDown, ChevronRight, Settings2, Users2, Building2, Pencil, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
-import { useUsers, useCreateUser, useRoles, useTenants } from "@/hooks/useData";
+import { useUsers, useCreateUser, useUpdateUser, useRoles, useTenants } from "@/hooks/useData";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSubscriptionLimits } from "@/hooks/useSubscriptionLimits";
 import { useUserPermissions, useUpsertPermissions, PERMISSION_MODULES, PERMISSION_LEVELS, getDefaultPermissionsForRole, type PermissionLevel } from "@/hooks/usePermissions";
@@ -96,6 +96,10 @@ export default function UsersPage() {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [permDialogUser, setPermDialogUser] = useState<any>(null);
+  const [editUser, setEditUser] = useState<any>(null);
+  const [editEmail, setEditEmail] = useState("");
+  const [editFirstName, setEditFirstName] = useState("");
+  const [editLastName, setEditLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -111,6 +115,7 @@ export default function UsersPage() {
   const { data: roles } = useRoles();
   const { data: tenants } = useTenants();
   const createUser = useCreateUser();
+  const updateUser = useUpdateUser();
   const { isCompanyAdmin, isSuperAdmin, appUser } = useAuth();
   const { canAddUser, currentUserCount, maxUsers, planName } = useSubscriptionLimits();
 
@@ -175,6 +180,35 @@ export default function UsersPage() {
   };
 
   const getSelectedRoleName = () => roles?.find(r => r.id === roleId)?.role_name || "";
+
+  // Mirrors the role hierarchy enforced by the update-user edge function
+  const canEditUser = (targetRoleName: string) => {
+    if (isSuperAdmin) return true;
+    if (targetRoleName === "Super Admin") return false;
+    if (targetRoleName === "Primary Admin") return appUser?.role_name === "Primary Admin";
+    return true;
+  };
+
+  const openEdit = (user: any) => {
+    setEditUser(user);
+    setEditFirstName(user.first_name || "");
+    setEditLastName(user.last_name || "");
+    setEditEmail(user.email || "");
+  };
+
+  const handleUpdate = async () => {
+    if (!editUser) return;
+    await updateUser.mutateAsync({
+      user_id: editUser.id,
+      email: editEmail.trim(),
+      first_name: editFirstName.trim(),
+      last_name: editLastName.trim(),
+      previous_email: editUser.email,
+    });
+    setEditUser(null);
+  };
+
+  const emailIsChanging = !!editUser && editEmail.trim().toLowerCase() !== (editUser.email || "").toLowerCase();
 
   if (!isCompanyAdmin) {
     return (
@@ -398,17 +432,30 @@ export default function UsersPage() {
                       </Badge>
                     </td>
                     <td className="text-right">
-                      {["Standard User", "Staff", "Accountant", "Reports Only", "Time Tracking"].includes(roleName) && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setPermDialogUser(user)}
-                          className="text-xs gap-1"
-                        >
-                          <Settings2 className="w-3.5 h-3.5" />
-                          Permissions
-                        </Button>
-                      )}
+                      <div className="flex items-center justify-end gap-1">
+                        {canEditUser(roleName) && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openEdit(user)}
+                            className="text-xs gap-1"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                            Edit
+                          </Button>
+                        )}
+                        {["Standard User", "Staff", "Accountant", "Reports Only", "Time Tracking"].includes(roleName) && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setPermDialogUser(user)}
+                            className="text-xs gap-1"
+                          >
+                            <Settings2 className="w-3.5 h-3.5" />
+                            Permissions
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -417,6 +464,65 @@ export default function UsersPage() {
           </table>
         )}
       </div>
+
+      {/* Edit User Dialog */}
+      <Dialog open={!!editUser} onOpenChange={(v) => !v && setEditUser(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="w-5 h-5 text-primary" />
+              Edit User
+            </DialogTitle>
+            <DialogDescription>
+              Update this user's name and the email address they sign in with.
+            </DialogDescription>
+          </DialogHeader>
+          {editUser && (
+            <div className="space-y-4 pt-2">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium text-foreground">First Name <span className="text-destructive">*</span></label>
+                  <input type="text" value={editFirstName} onChange={(e) => setEditFirstName(e.target.value)}
+                    className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground">Last Name <span className="text-destructive">*</span></label>
+                  <input type="text" value={editLastName} onChange={(e) => setEditLastName(e.target.value)}
+                    className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground" />
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground">Login Email <span className="text-destructive">*</span></label>
+                <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)}
+                  className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground" />
+                <p className="text-xs text-muted-foreground mt-1">This is the address the user signs in with.</p>
+              </div>
+              {emailIsChanging && (
+                <div className="flex gap-2 rounded-md border border-chart-4/40 bg-chart-4/10 p-3">
+                  <AlertTriangle className="w-4 h-4 text-chart-4 shrink-0 mt-0.5" />
+                  <div className="text-xs text-foreground">
+                    <p className="font-medium">Login email will change</p>
+                    <p className="text-muted-foreground mt-0.5">
+                      {editUser.email} → {editEmail.trim()}. Their password stays the same, but they must use the new
+                      email to sign in. Any open session on the old address stays valid until it expires.
+                    </p>
+                  </div>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setEditUser(null)} className="flex-1">Cancel</Button>
+                <Button
+                  onClick={handleUpdate}
+                  disabled={!editEmail.trim() || !editFirstName.trim() || !editLastName.trim() || updateUser.isPending}
+                  className="flex-1"
+                >
+                  {updateUser.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Permission Configuration Dialog */}
       <Dialog open={!!permDialogUser} onOpenChange={(v) => !v && setPermDialogUser(null)}>

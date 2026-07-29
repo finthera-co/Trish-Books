@@ -151,6 +151,54 @@ const LOCAL = [
   ["Attendance and OT", "Attendance registers, biometric linking and overtime feed the payroll run that posts the entry."],
 ];
 
+/* Finthera's three tiers, each deliberately set below the going rate for
+   comparable accounting software in Sri Lanka. vsPrice is that going rate,
+   as published in July 2026 — kept in one place so it's easy to refresh. */
+const PLANS = [
+  {
+    name: "Starter",
+    tag: "Sole traders & new companies",
+    price: 2900,
+    vsPrice: 3440,
+    features: [
+      "1 user + your accountant",
+      "Invoices, quotes & receipts",
+      "Bank statement import",
+      "VAT & WHT tracking",
+      "Trial balance & core statements",
+    ],
+  },
+  {
+    name: "Growth",
+    tag: "Growing teams",
+    price: 4400,
+    popular: true,
+    vsPrice: 5158,
+    features: [
+      "Up to 5 users",
+      "Everything in Starter",
+      "Payroll with EPF & ETF",
+      "Bills & payment vouchers",
+      "Multi-currency",
+      "Aged receivables & payables",
+    ],
+  },
+  {
+    name: "Scale",
+    tag: "Established businesses",
+    price: 5900,
+    vsPrice: 7034,
+    features: [
+      "Unlimited users",
+      "Everything in Growth",
+      "Fixed assets & depreciation",
+      "Budgets & variance",
+      "Attendance & biometric linking",
+      "Audit trail & period locks",
+    ],
+  },
+];
+
 const CONTROLS = [
   ["Audit trail", "Every posting, edit and approval is recorded against a user and a timestamp."],
   ["Period locks", "Closed periods reject new entries until an admin reopens them."],
@@ -172,9 +220,29 @@ export default function Landing() {
     if (prefersReducedMotion()) videoRef.current?.pause();
   }, []);
 
+  const scrollToPricing = (e: React.MouseEvent) => {
+    e.preventDefault();
+    document.getElementById("pricing")?.scrollIntoView({
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+      block: "start",
+    });
+  };
+
   return (
     <div className="lp min-h-screen text-[#08281B] antialiased">
       <style>{css}</style>
+
+      {/* ── Announcement bar ────────────────────────────────── */}
+      <a href="#pricing" onClick={scrollToPricing} className="lp-promo">
+        <span className="lp-promo-badge">Launch offer</span>
+        <span className="lp-promo-text">
+          First 3 months at launch pricing — <strong>save up to 16%</strong> on what you pay now.
+        </span>
+        <span className="lp-promo-cta">
+          See packages &amp; pricing
+          <ArrowRight className="w-3.5 h-3.5" />
+        </span>
+      </a>
 
       {/* ── Top bar ─────────────────────────────────────────── */}
       <header className="lp-header">
@@ -186,10 +254,15 @@ export default function Landing() {
             </span>
             <span className="font-serif text-[1.35rem] leading-none tracking-tight">Finthera</span>
           </div>
-          <Link to="/login" className="lp-btn lp-btn-sm">
-            Log in
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
+          <div className="flex items-center gap-2 sm:gap-5">
+            <a href="#pricing" onClick={scrollToPricing} className="lp-navlink">
+              Pricing
+            </a>
+            <Link to="/login" className="lp-btn lp-btn-sm">
+              Log in
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -388,6 +461,62 @@ export default function Landing() {
           </div>
         </section>
 
+        {/* ── Pricing ──────────────────────────────────────────── */}
+        <section id="pricing" className="lp-shell lp-section lp-pricing">
+          <header className="lp-section-head">
+            <p className="lp-eyebrow">Packages &amp; pricing</p>
+            <h2 className="lp-h2">The same books, for less</h2>
+            <p className="lp-body lp-section-lede">
+              Every plan is the full double-entry system — no crippled starter tier. Priced in
+              rupees, and set below what you'd pay elsewhere for the same books.
+            </p>
+          </header>
+
+          <div className="lp-plans">
+            {PLANS.map((plan) => (
+              <article key={plan.name} className={`lp-plan${plan.popular ? " is-popular" : ""}`}>
+                {plan.popular && <span className="lp-plan-flag">Most popular</span>}
+                <h3 className="lp-plan-name">{plan.name}</h3>
+                <p className="lp-plan-tag">{plan.tag}</p>
+
+                <p className="lp-plan-price">
+                  <span className="lp-plan-cur">LKR</span>
+                  <span className="lp-plan-amt">{plan.price.toLocaleString("en-LK")}</span>
+                  <span className="lp-plan-per">/mo</span>
+                </p>
+                <p className="lp-plan-vs">
+                  <span className="lp-plan-was">LKR {plan.vsPrice.toLocaleString("en-LK")}</span>
+                  elsewhere
+                  <span className="lp-plan-save">
+                    save {Math.round((1 - plan.price / plan.vsPrice) * 100)}%
+                  </span>
+                </p>
+
+                <ul className="lp-plan-feats">
+                  {plan.features.map((f) => (
+                    <li key={f}>
+                      <Check className="w-4 h-4" strokeWidth={2.5} />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+
+                <Link
+                  to="/login"
+                  className={`lp-btn lp-btn-lg lp-plan-cta${plan.popular ? "" : " lp-btn-ghost"}`}
+                >
+                  Get started
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              </article>
+            ))}
+          </div>
+
+          <p className="lp-plans-note">
+            Prices in Sri Lanka rupees. Launch pricing applies to your first three months.
+          </p>
+        </section>
+
         {/* ── Controls ─────────────────────────────────────────── */}
         <section className="lp-shell lp-section" ref={controlsRef}>
           <header className="lp-section-head">
@@ -481,6 +610,22 @@ const css = `
 .lp .lp-btn:focus-visible { outline: 2px solid #12704C; outline-offset: 3px; }
 .lp .lp-btn-sm { padding: 0.5rem 1rem; font-size: 0.875rem; }
 .lp .lp-btn-lg { padding: 0.85rem 1.6rem; font-size: 1rem; }
+.lp .lp-btn-ghost { background-image: none; background-color: transparent; color: #12704C; box-shadow: inset 0 0 0 1.5px rgba(18, 112, 76, 0.4); }
+.lp .lp-btn-ghost:hover { filter: none; background-color: rgba(18, 112, 76, 0.06); box-shadow: inset 0 0 0 1.5px rgba(18, 112, 76, 0.6); }
+
+/* Announcement bar */
+.lp .lp-promo { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 0.5rem 0.85rem; padding: 0.6rem 1.25rem; text-align: center; color: #EAFBF1; text-decoration: none; background-image: linear-gradient(90deg, #0F3D2A 0%, #17724E 52%, #23A96F 100%); }
+.lp .lp-promo-badge { font-family: var(--font-mono); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #0C3A28; background: #BFEBD3; border-radius: 999px; padding: 0.2rem 0.55rem; }
+.lp .lp-promo-text { font-size: 0.8125rem; }
+.lp .lp-promo-text strong { color: #FFFFFF; font-weight: 700; }
+.lp .lp-promo-cta { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.8125rem; font-weight: 600; color: #FFFFFF; }
+.lp .lp-promo:hover .lp-promo-cta { text-decoration: underline; text-underline-offset: 3px; }
+.lp .lp-promo:focus-visible { outline: 2px solid #BFEBD3; outline-offset: -2px; }
+
+/* Header nav link */
+.lp .lp-navlink { font-size: 0.875rem; font-weight: 600; color: var(--body); text-decoration: none; padding: 0.35rem 0.15rem; }
+.lp .lp-navlink:hover { color: var(--emerald); }
+.lp .lp-navlink:focus-visible { outline: 2px solid #12704C; outline-offset: 3px; border-radius: 4px; }
 
 /* Hero */
 .lp .lp-hero { display: grid; grid-template-columns: 1fr; gap: 3.5rem; padding-block: clamp(3.5rem, 9vw, 7rem) clamp(3rem, 7vw, 5.5rem); align-items: center; }
@@ -569,6 +714,29 @@ const css = `
 .lp .lp-locale { display: grid; grid-template-columns: 1fr; gap: 2rem 3rem; }
 @media (min-width: 48rem) { .lp .lp-locale { grid-template-columns: repeat(2, 1fr); } }
 .lp .lp-locale-item { padding-left: 1.1rem; border-left: 2px solid rgba(36, 181, 115, 0.45); }
+
+/* Pricing */
+.lp .lp-pricing { scroll-margin-top: 5rem; }
+.lp .lp-plans { display: grid; grid-template-columns: 1fr; gap: 1.25rem; align-items: start; }
+@media (min-width: 60rem) { .lp .lp-plans { grid-template-columns: repeat(3, 1fr); } }
+.lp .lp-plan { position: relative; display: flex; flex-direction: column; padding: 1.75rem 1.5rem; border: 1px solid var(--rule); border-radius: 1.15rem; background-image: linear-gradient(165deg, rgba(255, 255, 255, 0.96), rgba(238, 249, 243, 0.8)); box-shadow: 0 22px 44px -34px rgba(9, 60, 40, 0.4); }
+.lp .lp-plan.is-popular { border-color: transparent; box-shadow: 0 0 0 2px #1E9463, 0 30px 56px -32px rgba(9, 60, 40, 0.55); background-image: linear-gradient(165deg, #FFFFFF, #EAF9F1); }
+@media (min-width: 60rem) { .lp .lp-plan.is-popular { transform: translateY(-0.6rem); } }
+.lp .lp-plan-flag { position: absolute; top: -0.75rem; left: 1.5rem; font-family: var(--font-mono); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #FFFFFF; background-image: linear-gradient(135deg, #1FA671, #12704C); border-radius: 999px; padding: 0.28rem 0.7rem; }
+.lp .lp-plan-name { font-family: var(--font-serif); font-size: 1.5rem; letter-spacing: -0.02em; color: var(--ink); }
+.lp .lp-plan-tag { margin-top: 0.15rem; font-size: 0.8125rem; color: var(--muted); }
+.lp .lp-plan-price { margin-top: 1.25rem; display: flex; align-items: baseline; gap: 0.3rem; color: var(--ink); }
+.lp .lp-plan-cur { font-family: var(--font-mono); font-size: 0.85rem; font-weight: 600; color: var(--emerald); }
+.lp .lp-plan-amt { font-family: var(--font-serif); font-size: 2.5rem; line-height: 1; letter-spacing: -0.03em; }
+.lp .lp-plan-per { font-size: 0.85rem; color: var(--muted); }
+.lp .lp-plan-vs { margin-top: 0.55rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: var(--muted); }
+.lp .lp-plan-was { text-decoration: line-through; text-decoration-color: rgba(74, 115, 96, 0.55); }
+.lp .lp-plan-vs .lp-plan-save { font-family: var(--font-mono); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #12704C; background-image: linear-gradient(135deg, rgba(36, 181, 115, 0.18), rgba(36, 181, 115, 0.07)); border: 1px solid rgba(23, 132, 90, 0.28); border-radius: 999px; padding: 0.12rem 0.5rem; }
+.lp .lp-plan-feats { list-style: none; margin: 1.4rem 0 1.75rem; padding: 1.4rem 0 0; border-top: 1px solid var(--rule); display: grid; gap: 0.7rem; }
+.lp .lp-plan-feats li { display: flex; align-items: flex-start; gap: 0.55rem; font-size: 0.875rem; line-height: 1.45; color: var(--body); }
+.lp .lp-plan-feats svg { flex: none; margin-top: 0.1rem; color: var(--emerald); }
+.lp .lp-plan-cta { margin-top: auto; justify-content: center; }
+.lp .lp-plans-note { margin-top: 1.75rem; font-size: 0.78rem; color: var(--muted); }
 
 /* Controls */
 .lp .lp-controls { display: grid; grid-template-columns: 1fr; gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 1rem; overflow: hidden; box-shadow: 0 24px 48px -36px rgba(9, 60, 40, 0.5); }

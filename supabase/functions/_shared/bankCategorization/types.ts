@@ -43,6 +43,7 @@ export type SuspenseReason =
   | "source_marked_suspense"; // the workbook itself categorized it as suspense
 
 export type BlockReason =
+  | "totals_row" // a footer TOTAL/subtotal: an amount with no identifying fields
   | "both_sides_populated" // debit AND credit both > 0
   | "no_amount" // neither side populated / zero amount
   | "invalid_amount" // negative or non-finite amount
@@ -163,6 +164,29 @@ export interface BalanceDiscontinuity {
   actual: number;
 }
 
+/** A footer TOTAL / subtotal row printed at the bottom of a sheet: it carries an
+ * amount but no date, description, name, voucher or account type. Never posted
+ * — it is the sheet's own control figure, used to reconcile what WAS posted. */
+export interface TotalsRow {
+  sheetName: string;
+  rowIndex: number;
+  debit: number;
+  credit: number;
+}
+
+/** Sum of the real transaction rows vs the sheet's own printed bottom line.
+ * `declared*` is null when the sheet prints no totals row. */
+export interface TotalsReconciliation {
+  computedDebit: number;
+  computedCredit: number;
+  declaredDebit: number | null;
+  declaredCredit: number | null;
+  debitMatches: boolean;
+  creditMatches: boolean;
+  /** True only when a totals row was found AND both sides agree to the cent. */
+  matched: boolean;
+}
+
 export interface BatchValidation {
   totalDebit: number;
   totalCredit: number;
@@ -171,4 +195,6 @@ export interface BatchValidation {
   excludedCount: number;
   duplicates: BatchDuplicate[];
   discontinuities: BalanceDiscontinuity[];
+  totalsRows: TotalsRow[];
+  reconciliation: TotalsReconciliation;
 }

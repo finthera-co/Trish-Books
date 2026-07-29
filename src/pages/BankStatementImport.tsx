@@ -90,6 +90,13 @@ export default function BankStatementImport() {
     const failed = result.sheets.filter((x) => !x.ok);
     const discont = result.sheets.flatMap((x) => x.balance_discontinuities ?? []);
     const dups = result.sheets.flatMap((x) => x.duplicates ?? []);
+    // Months whose posted totals disagree with the figure the sheet printed at
+    // its own bottom — the check that catches a footer row being read as a
+    // transaction, or a workbook whose totals simply don't foot.
+    const unreconciled = result.sheets.filter(
+      (x) => x.ok && x.reconciliation && x.reconciliation.declaredDebit !== null && !x.reconciliation.matched
+    );
+    const heldTotalsRows = result.sheets.flatMap((x) => x.totals_rows ?? []);
     return (
       <div className="space-y-6 max-w-4xl">
         <div>
@@ -127,6 +134,73 @@ export default function BankStatementImport() {
             <p className="text-xs text-muted-foreground">{t.excluded_count} B/F rows excluded</p>
           </CardContent></Card>
         </div>
+
+        {unreconciled.length > 0 && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>
+              {unreconciled.length} month(s) do not match the totals printed in the file
+            </AlertTitle>
+            <AlertDescription className="text-xs space-y-2">
+              <p>
+                The rows that posted do not add up to the sheet's own bottom-line figure. Check those
+                rows in Excel before relying on these ledgers — a footer or subtotal line counted as a
+                transaction is the usual cause.
+              </p>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Month</TableHead>
+                    <TableHead className="text-right">Posted Dr / Cr</TableHead>
+                    <TableHead className="text-right">File says</TableHead>
+                    <TableHead className="text-right">Difference</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {unreconciled.map((x) => {
+                    const r = x.reconciliation!;
+                    return (
+                      <TableRow key={x.sheet_name}>
+                        <TableCell className="font-medium">{x.sheet_name}</TableCell>
+                        <TableCell className="text-right font-mono">
+                          {formatCurrency(r.computedDebit)} / {formatCurrency(r.computedCredit)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {formatCurrency(r.declaredDebit ?? 0)} / {formatCurrency(r.declaredCredit ?? 0)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {!r.debitMatches && <div>Dr {formatCurrency((r.declaredDebit ?? 0) - r.computedDebit)}</div>}
+                          {!r.creditMatches && <div>Cr {formatCurrency((r.declaredCredit ?? 0) - r.computedCredit)}</div>}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {heldTotalsRows.length > 0 && (
+          <Alert>
+            <ShieldCheck className="h-4 w-4" />
+            <AlertTitle>
+              {heldTotalsRows.length} total row(s) held, not posted
+            </AlertTitle>
+            <AlertDescription className="text-xs">
+              These carried an amount but no date, description, name, voucher or account type — the
+              shape of a spreadsheet footer, not a transaction. They were kept out of the ledger and
+              used only to check the figures above:
+              <ul className="mt-2 space-y-1 font-mono">
+                {heldTotalsRows.slice(0, 8).map((t) => (
+                  <li key={`${t.sheetName}-${t.rowIndex}`}>
+                    {t.sheetName} row {t.rowIndex} — Dr {formatCurrency(t.debit)} / Cr {formatCurrency(t.credit)}
+                  </li>
+                ))}
+              </ul>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {failed.length > 0 && (
           <Alert variant="destructive">
@@ -380,17 +454,14 @@ export default function BankStatementImport() {
       {progress && (
         <Card>
           <CardContent className="pt-4 space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">
-                {progress.current
-                  ? <>Posting <strong>{progress.current}</strong>…</>
-                  : "Finishing up…"}
-              </span>
-              <span className="font-mono text-muted-foreground">{progress.done} / {progress.total} months</span>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>{progress.current || "Finishing up…"}</span>
             </div>
-            <Progress value={(progress.done / Math.max(progress.total, 1)) * 100} />
+            <Progress value={(progress.done / Math.max(progress.total, 1)) * 100} className={progress.done >= progress.total ? "" : "animate-pulse"} />
             <p className="text-xs text-muted-foreground">
-              Each month is parsed, categorized and posted on the server as its own transaction.
+              The file is parsed once on the server, then each month ({progress.total}) posts as its own
+              atomic transaction. Large statements can take a little while.
             </p>
           </CardContent>
         </Card>

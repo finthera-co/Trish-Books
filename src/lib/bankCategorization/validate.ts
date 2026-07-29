@@ -6,11 +6,14 @@
  */
 
 import { normalizeText } from "./normalize.ts";
+import { isTotalsRow } from "./resolve.ts";
 import type {
   BalanceDiscontinuity,
   BatchDuplicate,
   BatchValidation,
   ParsedLine,
+  TotalsReconciliation,
+  TotalsRow,
 } from "./types.ts";
 
 const BALANCE_TOLERANCE = 0.02;
@@ -30,6 +33,9 @@ export function computeControlTotals(lines: ParsedLine[]): {
       excludedCount++;
       continue;
     }
+    // A footer TOTAL is a restatement of the rows above it, never a movement.
+    // Counting it here would double the batch's control figures.
+    if (isTotalsRow(l)) continue;
     rowCount++;
     if (Number.isFinite(l.debit) && l.debit > 0) totalDebit += l.debit;
     if (Number.isFinite(l.credit) && l.credit > 0) totalCredit += l.credit;
@@ -107,11 +113,55 @@ export function findDuplicates(lines: ParsedLine[]): BatchDuplicate[] {
   return out;
 }
 
+/** Every footer TOTAL / subtotal row the sheet printed, in sheet order. */
+export function findTotalsRows(lines: ParsedLine[]): TotalsRow[] {
+  return lines
+    .filter((l) => isTotalsRow(l))
+    .map((l) => ({
+      sheetName: l.sheetName,
+      rowIndex: l.rowIndex,
+      debit: Number.isFinite(l.debit) ? round2(l.debit) : 0,
+      credit: Number.isFinite(l.credit) ? round2(l.credit) : 0,
+    }))
+    .sort((a, b) => a.rowIndex - b.rowIndex);
+}
+
+/**
+ * Reconcile what we are about to post against the sheet's OWN printed bottom
+ * line — the check that catches a workbook whose totals disagree with its rows.
+ *
+ * A sheet can print several footer figures (per-section subtotals then a grand
+ * total), so the declared figure is the LARGEST on each side: a grand total is
+ * by definition >= any subtotal beneath it. Compared to the cent, no tolerance —
+ * a bank statement that doesn't foot is exactly what the accountant must see.
+ */
+export function reconcileTotals(lines: ParsedLine[]): TotalsReconciliation {
+  const totals = computeControlTotals(lines);
+  const rows = findTotalsRows(lines);
+  const declaredDebit = rows.length ? Math.max(...rows.map((r) => r.debit)) : null;
+  const declaredCredit = rows.length ? Math.max(...rows.map((r) => r.credit)) : null;
+  // A sheet may print only one side (a payments-only footer); an absent or zero
+  // side is not evidence of a mismatch, so it passes.
+  const debitMatches = !declaredDebit || declaredDebit === totals.totalDebit;
+  const creditMatches = !declaredCredit || declaredCredit === totals.totalCredit;
+  return {
+    computedDebit: totals.totalDebit,
+    computedCredit: totals.totalCredit,
+    declaredDebit,
+    declaredCredit,
+    debitMatches,
+    creditMatches,
+    matched: rows.length > 0 && debitMatches && creditMatches,
+  };
+}
+
 export function validateBatch(lines: ParsedLine[]): BatchValidation {
   const totals = computeControlTotals(lines);
   return {
     ...totals,
     duplicates: findDuplicates(lines),
     discontinuities: checkBalanceContinuity(lines),
+    totalsRows: findTotalsRows(lines),
+    reconciliation: reconcileTotals(lines),
   };
 }

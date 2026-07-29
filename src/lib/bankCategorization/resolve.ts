@@ -192,8 +192,39 @@ function gateAccount(accountId: string, ctx: ResolutionContext): Resolution | nu
   return null;
 }
 
+/**
+ * A footer TOTAL / subtotal row rather than a transaction: it carries money but
+ * NOTHING that identifies a transaction — no printed date (a forward-filled one
+ * doesn't count), no description, no name, no voucher, no account type.
+ *
+ * Real statements never produce that shape; spreadsheet footers always do. A
+ * live import posted a Rs 438,219,700.68 subtotal row as an expense because the
+ * only other footer guard was `both_sides_populated`, and that row had just the
+ * debit filled. Detected here so the row is HELD and visible rather than
+ * silently doubling the ledger — and so its amount can be reconciled against
+ * what actually posted (see `reconcileTotals`).
+ */
+export function isTotalsRow(line: ParsedLine): boolean {
+  const hasAmount =
+    (Number.isFinite(line.debit) && line.debit > 0) ||
+    (Number.isFinite(line.credit) && line.credit > 0);
+  if (!hasAmount) return false;
+  return (
+    line.rawDate.trim() === "" &&
+    line.description.trim() === "" &&
+    line.name.trim() === "" &&
+    line.voucherNo.trim() === "" &&
+    line.rawAccountType.trim() === ""
+  );
+}
+
 export function classifyLine(line: ParsedLine, ctx: ResolutionContext): Resolution {
   // ── Blocked gates: corrupt data posts nowhere ─────────────────────────
+  // Checked before the amount gates so every footer row reports the accurate
+  // reason, not whichever corruption gate happens to fire first.
+  if (isTotalsRow(line)) {
+    return { kind: "blocked", reason: "totals_row" };
+  }
   if (!Number.isFinite(line.debit) || !Number.isFinite(line.credit) || line.debit < 0 || line.credit < 0) {
     return { kind: "blocked", reason: "invalid_amount" };
   }

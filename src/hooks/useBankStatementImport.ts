@@ -114,6 +114,17 @@ export async function previewWorkbook(file: File): Promise<WorkbookPreview> {
   };
 }
 
+/** What posted vs the figure the sheet printed at its own bottom. */
+export interface TotalsReconciliation {
+  computedDebit: number;
+  computedCredit: number;
+  declaredDebit: number | null;
+  declaredCredit: number | null;
+  debitMatches: boolean;
+  creditMatches: boolean;
+  matched: boolean;
+}
+
 export interface SheetResult {
   sheet_name: string;
   ok: boolean;
@@ -123,6 +134,8 @@ export interface SheetResult {
   control_totals?: Record<string, number>;
   duplicates?: { key: string; rowRefs: { sheetName: string; rowIndex: number }[] }[];
   balance_discontinuities?: { sheetName: string; rowIndex: number; expected: number; actual: number }[];
+  totals_rows?: { sheetName: string; rowIndex: number; debit: number; credit: number }[];
+  reconciliation?: TotalsReconciliation;
 }
 
 export interface ImportResult {
@@ -150,14 +163,12 @@ export interface ImportProgress {
 }
 
 /**
- * Imports a workbook one CALENDAR MONTH AT A TIME, chunked by each row's own
- * transaction date (so a bank's single whole-year sheet still posts month by
- * month).
- *
- * Posting cost is superlinear in batch size (1k rows ≈ 0.5s, 33k ≈ 60s), and a
- * whole-workbook pass also holds the entire file in memory server-side. Each
- * month is therefore its own atomic batch: bounded time and memory, and a month
- * that fails leaves the others posted and independently re-runnable.
+ * Imports a whole workbook in ONE server call. The edge function downloads and
+ * parses the file ONCE, groups rows by their own transaction month, and posts
+ * EACH month as its own atomic batch. A month that fails leaves the others
+ * posted and independently re-runnable — parsing once (vs the old call-per-month
+ * design) removes the repeated ~200 MB parse peak and the 12× file download,
+ * which is what makes 50k–60k-row statements safe.
  */
 export function useImportBankStatement(onProgress?: (p: ImportProgress) => void) {
   const { appUser } = useAuth();
@@ -177,10 +188,13 @@ export function useImportBankStatement(onProgress?: (p: ImportProgress) => void)
         );
       }
       if (params.periods.length > MAX_SHEETS) {
-        throw new Error(`${params.periods.length} months selected; the limit is ${MAX_SHEETS}.`);
+        throw new Error(`${params.periods.length} months in the file; the limit is ${MAX_SHEETS}.`);
       }
 
-      // Upload once; every per-month call re-reads it server-side.
+      const periods = [...params.periods].sort((a, b) => a.year - b.year || a.month - b.month);
+      onProgress?.({ done: 0, total: periods.length || 1, current: "Parsing & posting all months…" });
+
+      // Upload once; the edge reads it once and posts every month.
       const safe = params.file.name.replace(/[^a-zA-Z0-9._-]+/g, "_");
       const storage_path = `${tenant_id}/${Date.now()}-${safe}`;
       const { error: upErr } = await supabase.storage
@@ -191,75 +205,61 @@ export function useImportBankStatement(onProgress?: (p: ImportProgress) => void)
         });
       if (upErr) throw upErr;
 
-      const sheets: SheetResult[] = [];
+      // Single invocation. `periods` restricts to the months the preview found
+      // (also lets a later re-run target only the months that failed).
+      const { data, error } = await supabase.functions.invoke("import-bank-statement", {
+        body: {
+          storage_path,
+          bank_account_id: params.bank_account_id,
+          periods,
+          posting_mode: params.posting_mode,
+        },
+      });
+      if (error) throw new Error(error.message);
+      const d = data as any;
+      if (d?.ok === false && !Array.isArray(d?.months)) {
+        // A whole-request failure (config/parse/auth) before any month ran.
+        throw new Error(d?.error || d?.parse_errors?.join("; ") || "Import failed");
+      }
+
+      const sheets: SheetResult[] = ((d?.months ?? []) as any[]).map((mo) => ({
+        sheet_name: mo.sheet_name,
+        ok: !!mo.ok,
+        batch_id: mo.batch_id,
+        error: mo.ok ? undefined : (mo.error || "Import failed"),
+        summary: mo.summary,
+        control_totals: mo.control_totals,
+        duplicates: mo.duplicates,
+        balance_discontinuities: mo.balance_discontinuities,
+        totals_rows: mo.totals_rows,
+        reconciliation: mo.reconciliation,
+      }));
+
       const totals: ImportResult["totals"] = {
         posted_to_ledger_count: 0, posted_to_ledger_value: 0,
         posted_to_generated_count: 0, posted_to_generated_value: 0,
         posted_to_suspense_count: 0, posted_to_suspense_value: 0,
         blocked_count: 0, excluded_count: 0, suspense_reasons: {},
       };
-      let engine_version: string | undefined;
-
-      // Chunk the whole-year file by the ROWS' OWN dates: one atomic batch per
-      // calendar month. Sequential on purpose — each month claims its period and
-      // posts inside a transaction; running them in parallel would just contend
-      // on the same tables for no wall-clock win. Undated/corrupt rows can't be
-      // attributed to a month, so they ride along with the earliest one (i === 0).
-      const periods = [...params.periods].sort((a, b) => a.year - b.year || a.month - b.month);
-      for (let i = 0; i < periods.length; i++) {
-        const p = periods[i];
-        const label = periodLabelOf(p);
-        onProgress?.({ done: i, total: periods.length, current: label });
-
-        let res: SheetResult;
-        try {
-          const { data, error } = await supabase.functions.invoke("import-bank-statement", {
-            body: {
-              storage_path,
-              bank_account_id: params.bank_account_id,
-              period: { year: p.year, month: p.month },
-              include_undated: i === 0,
-              posting_mode: params.posting_mode,
-            },
-          });
-          if (error) throw new Error(error.message);
-          const d = data as any;
-          engine_version = d?.engine_version ?? engine_version;
-          res = {
-            sheet_name: label,
-            ok: !!d?.ok,
-            batch_id: d?.batch_id,
-            error: d?.ok ? undefined : (d?.error || d?.parse_errors?.join("; ") || "Import failed"),
-            summary: d?.summary,
-            control_totals: d?.control_totals,
-            duplicates: d?.duplicates,
-            balance_discontinuities: d?.balance_discontinuities,
-          };
-        } catch (e) {
-          // One month failing must not abandon the rest.
-          res = { sheet_name: label, ok: false, error: String(e instanceof Error ? e.message : e) };
+      for (const res of sheets) {
+        if (!res.ok || !res.summary) continue;
+        const s = res.summary as any;
+        totals.posted_to_ledger_count += Number(s.posted_to_ledger_count ?? 0);
+        totals.posted_to_ledger_value += Number(s.posted_to_ledger_value ?? 0);
+        totals.posted_to_generated_count += Number(s.posted_to_generated_count ?? 0);
+        totals.posted_to_generated_value += Number(s.posted_to_generated_value ?? 0);
+        totals.posted_to_suspense_count += Number(s.posted_to_suspense_count ?? 0);
+        totals.posted_to_suspense_value += Number(s.posted_to_suspense_value ?? 0);
+        totals.blocked_count += Number(s.blocked_count ?? 0);
+        totals.excluded_count += Number(s.excluded_count ?? 0);
+        for (const [k, v] of Object.entries((s.suspense_reasons ?? {}) as Record<string, number>)) {
+          totals.suspense_reasons[k] = (totals.suspense_reasons[k] ?? 0) + Number(v);
         }
-
-        if (res.ok && res.summary) {
-          const s = res.summary as any;
-          totals.posted_to_ledger_count += Number(s.posted_to_ledger_count ?? 0);
-          totals.posted_to_ledger_value += Number(s.posted_to_ledger_value ?? 0);
-          totals.posted_to_generated_count += Number(s.posted_to_generated_count ?? 0);
-          totals.posted_to_generated_value += Number(s.posted_to_generated_value ?? 0);
-          totals.posted_to_suspense_count += Number(s.posted_to_suspense_count ?? 0);
-          totals.posted_to_suspense_value += Number(s.posted_to_suspense_value ?? 0);
-          totals.blocked_count += Number(s.blocked_count ?? 0);
-          totals.excluded_count += Number(s.excluded_count ?? 0);
-          for (const [k, v] of Object.entries((s.suspense_reasons ?? {}) as Record<string, number>)) {
-            totals.suspense_reasons[k] = (totals.suspense_reasons[k] ?? 0) + Number(v);
-          }
-        }
-        sheets.push(res);
       }
-      onProgress?.({ done: periods.length, total: periods.length, current: "" });
+      onProgress?.({ done: periods.length || 1, total: periods.length || 1, current: "" });
 
       return {
-        engine_version,
+        engine_version: d?.engine_version,
         sheets,
         posted_sheets: sheets.filter((s) => s.ok).length,
         failed_sheets: sheets.filter((s) => !s.ok).length,

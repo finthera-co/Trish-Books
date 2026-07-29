@@ -11,12 +11,14 @@ export {
   canonicalize,
   defaultCanonicalEntries,
 } from "./canonicalize.ts";
-export { classifyLine } from "./resolve.ts";
+export { classifyLine, isTotalsRow } from "./resolve.ts";
 export { deriveAccountName, deriveNameFromLabel, deriveAccountKey } from "./derive.ts";
 export {
   checkBalanceContinuity,
   computeControlTotals,
   findDuplicates,
+  findTotalsRows,
+  reconcileTotals,
   round2,
   validateBatch,
 } from "./validate.ts";

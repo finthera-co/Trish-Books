@@ -118,6 +118,41 @@ export function useCreateUser() {
   });
 }
 
+export function useUpdateUser() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (user: { user_id: string; email: string; first_name: string; last_name: string; previous_email: string }) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Not authenticated");
+
+      const res = await supabase.functions.invoke("update-user", {
+        body: {
+          user_id: user.user_id,
+          email: user.email,
+          first_name: user.first_name,
+          last_name: user.last_name,
+        },
+      });
+
+      if (res.error) throw new Error(res.error.message);
+      if (!res.data.success) throw new Error(res.data.error || "Failed to update user");
+
+      writeAuditLog("User Updated", "users", user.user_id, {
+        email: user.email,
+        previous_email: user.previous_email,
+        email_changed: res.data.email_changed,
+      });
+      return res.data as { user: any; email_changed: boolean };
+    },
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["all_users_admin"] });
+      toast.success(res.email_changed ? "User updated — they now log in with the new email" : "User updated successfully");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
 // Accounts
 export function useAccounts() {
   return useQuery({

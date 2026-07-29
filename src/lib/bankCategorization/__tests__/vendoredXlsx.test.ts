@@ -52,12 +52,16 @@ describe("vendored SheetJS", () => {
     expect(cdnImports).toEqual([]);
   });
 
-  it("chunks by transaction date, keeping only the requested month", () => {
-    // The whole-year workbook is parsed once and filtered to the call's period
-    // by each row's own date, so a single 50k transaction never posts.
+  it("parses the workbook once, groups by month, posts each month as its own batch", () => {
+    // The whole-year workbook is downloaded and parsed ONCE, grouped by each
+    // row's own month, and every month posts as its own atomic batch — so a
+    // single 50k transaction never posts and the file is never re-parsed 12×.
     const src = readFileSync(EDGE_FN, "utf8");
-    expect(src).toMatch(/const inThisMonth = /);
-    expect(src).toMatch(/if \(inThisMonth\(line\.txnDate\)\) periodLines\.push\(line\)/);
-    expect(src).toMatch(/periodLines\.length > MAX_ROWS_PER_MONTH/);
+    // exactly one XLSX.read (single parse), inside a GC-scoping block
+    expect(src.match(/XLSX\.read\(/g)?.length).toBe(1);
+    expect(src).toMatch(/const groups = new Map<string, ParsedLine\[\]>\(\)/);
+    expect(src).toMatch(/async function postMonth\(/);
+    expect(src).toMatch(/lines\.length > MAX_ROWS_PER_MONTH/);
+    expect(src).toMatch(/for \(let i = 0; i < monthKeys\.length; i\+\+\)/);
   });
 });
