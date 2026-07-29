@@ -72,7 +72,10 @@ export default function BankStatementImport() {
 
   async function runImport() {
     if (!preview || !bankAccountId) return;
-    const periods = preview.periods.map((p) => ({ year: p.year, month: p.month }));
+    // Pass the full preview periods (not just year/month): their row counts let
+    // the hook pack months into invocations that stay inside the edge runtime's
+    // CPU budget. Dropping them would force one call per month.
+    const periods = preview.periods;
     if (periods.length === 0) {
       toast.error("No dated transactions to import");
       return;
@@ -98,7 +101,7 @@ export default function BankStatementImport() {
     );
     const heldTotalsRows = result.sheets.flatMap((x) => x.totals_rows ?? []);
     return (
-      <div className="space-y-6 max-w-4xl">
+      <div className="space-y-6 max-w-7xl">
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             {result.failed_sheets === 0
@@ -132,6 +135,14 @@ export default function BankStatementImport() {
             <p className="text-sm text-muted-foreground flex items-center gap-1"><Ban className="w-4 h-4 text-destructive" /> Held (corrupt)</p>
             <p className="text-2xl font-bold text-destructive">{t.blocked_count}</p>
             <p className="text-xs text-muted-foreground">{t.excluded_count} B/F rows excluded</p>
+            {t.blocked_count > 0 && (
+              // This summary is in-memory and dies on refresh; Held Rows reads
+              // the same rows back from the database.
+              <Button variant="link" size="sm" className="h-auto p-0 mt-1 text-xs"
+                onClick={() => navigate("/banking/held-rows")}>
+                See which rows and why →
+              </Button>
+            )}
           </CardContent></Card>
         </div>
 
@@ -147,6 +158,7 @@ export default function BankStatementImport() {
                 rows in Excel before relying on these ledgers — a footer or subtotal line counted as a
                 transaction is the usual cause.
               </p>
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -177,6 +189,7 @@ export default function BankStatementImport() {
                   })}
                 </TableBody>
               </Table>
+              </div>
             </AlertDescription>
           </Alert>
         )}
@@ -220,7 +233,9 @@ export default function BankStatementImport() {
 
         <Card>
           <CardHeader><CardTitle className="text-base">Per-month result</CardTitle></CardHeader>
-          <CardContent>
+          {/* Seven columns: let the table scroll inside the card rather than
+              squeezing every column on a narrow screen. */}
+          <CardContent className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -315,7 +330,7 @@ export default function BankStatementImport() {
 
   // ── Upload + confirm ─────────────────────────────────────────────────────
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6 max-w-7xl">
       <div>
         <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
           <FileSpreadsheet className="w-6 h-6 text-primary" /> Bank Statement Import
@@ -411,6 +426,7 @@ export default function BankStatementImport() {
                   </p>
                 )}
               </div>
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -436,6 +452,7 @@ export default function BankStatementImport() {
                   ))}
                 </TableBody>
               </Table>
+              </div>
             </>
           )}
         </CardContent>

@@ -44,6 +44,7 @@ import FiscalPeriods from "./pages/FiscalPeriods";
 import BankReconciliation from "./pages/BankReconciliation";
 import BankStatementImport from "./pages/BankStatementImport";
 import SuspenseClearing from "./pages/SuspenseClearing";
+import HeldRows from "./pages/HeldRows";
 import BankImportRules from "./pages/BankImportRules";
 import PaymentVouchers from "./pages/PaymentVouchers";
 import PettyCash from "./pages/PettyCash";
@@ -222,6 +223,7 @@ const App = () => (
                     <Route path="/banking/reconciliation" element={<BankReconciliation />} />
                     <Route path="/banking/statement-import" element={<BankStatementImport />} />
                     <Route path="/banking/suspense-clearing" element={<SuspenseClearing />} />
+                    <Route path="/banking/held-rows" element={<HeldRows />} />
                     <Route path="/banking/import-rules" element={<BankImportRules />} />
                     <Route path="/banking/payment-vouchers" element={<PaymentVouchers />} />
                     <Route path="/banking/petty-cash" element={<PettyCash />} />

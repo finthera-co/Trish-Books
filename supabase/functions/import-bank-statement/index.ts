@@ -52,6 +52,13 @@ const corsHeaders = {
 // Guard rails. Without these a large or malformed workbook can exhaust the
 // function's memory or wall clock with no useful error.
 const MAX_FILE_BYTES = 25 * 1024 * 1024;   // 25 MB uploaded workbook
+/** Shape of the browser-produced row extract. Bump when the layout changes so
+ *  a stale client is rejected with a clear message instead of mis-parsing. */
+const EXTRACT_VERSION = 1;
+/** Measured: a 32,930-row workbook extracts to ~5 MB and costs ~110ms CPU /
+ *  +22 MB heap to parse — well inside the worker's budget. 40 MB leaves ample
+ *  room while still refusing a file that would get the worker killed. */
+const MAX_EXTRACT_BYTES = 40 * 1024 * 1024;
 const MAX_ROWS_PER_MONTH = 20_000;         // one month rarely exceeds a few thousand
 const INSERT_CHUNK = 1_000;
 
@@ -104,11 +111,13 @@ Deno.serve(async (req) => {
     // ~200 MB parse peak per call.) `periods`, when given, restricts to specific
     // months so a single failed month can be re-run without re-posting the rest.
     const body = await req.json();
-    const { storage_path, bank_account_id, posting_mode, periods, period, include_undated } = body as {
+    const { storage_path, bank_account_id, posting_mode, periods, period, include_undated, extract_path } = body as {
       storage_path: string;
       bank_account_id: string;
       posting_mode?: "auto_post" | "draft";
       periods?: { year: number; month: number }[];
+      // Raw cell matrices extracted browser-side; see the sourcing note below.
+      extract_path?: string;
       // Legacy (pre parse-once) client fields — see the compatibility note below.
       period?: { year: number; month: number };
       include_undated?: boolean;
@@ -127,9 +136,15 @@ Deno.serve(async (req) => {
     // posts exactly the month it asked for.
     const legacySingle = !(periods && periods.length) && !!period;
     const wantPeriods = legacySingle ? [period!] : periods;
-    // Undated/corrupt rows ride with the earliest posted month. The legacy
-    // client decides that itself (it passes include_undated only on month #1).
-    const foldUndated = legacySingle ? include_undated === true : true;
+    // Undated/corrupt rows ride with the EARLIEST posted month — exactly once
+    // for the whole import. The caller owns that decision because only it knows
+    // whether this invocation is the first chunk: a multi-call import that
+    // folded them every time duplicated them once per chunk (observed: 24 dupes
+    // across a 17-month file). They were blank rows there, so harmless, but an
+    // undated row carrying an amount would have posted once per chunk and
+    // double-counted real money. Defaults to true so a single-call import (and
+    // any older client) behaves as before.
+    const foldUndated = legacySingle ? include_undated === true : (include_undated ?? true);
     if (!storage_path.startsWith(`${tenantId}/`)) {
       return json({ ok: false, error: "storage_path outside tenant folder" }, 200);
     }
@@ -165,18 +180,6 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "Bank account must be active and postable" }, 200);
     }
 
-    // ── Download + parse the whole workbook ONCE ──────────────────────────
-    const { data: fileBlob, error: dlErr } = await admin.storage
-      .from("bank-statements")
-      .download(storage_path);
-    if (dlErr || !fileBlob) return json({ ok: false, error: `Could not read uploaded file: ${dlErr?.message}` }, 200);
-    if (fileBlob.size > MAX_FILE_BYTES) {
-      return json({
-        ok: false,
-        error: `Workbook is ${(fileBlob.size / 1048576).toFixed(1)} MB; the limit is ${MAX_FILE_BYTES / 1048576} MB. Split it and import the parts separately.`,
-      }, 200);
-    }
-
     // Only these months will be posted, so only their rows need to survive the
     // parse. Retrying one failed month then costs a few thousand lines of peak
     // memory instead of the whole workbook's.
@@ -186,38 +189,106 @@ Deno.serve(async (req) => {
 
     const allLines: ParsedLine[] = [];
     const parseErrors: string[] = [];
-    {
-      // Scope the workbook/matrix so they can be GC'd after parsing — this is
-      // the memory peak, and exceeding it gets the whole worker killed with a
-      // 546 WORKER_LIMIT (no catchable error, no response body). Three things
-      // hold it down, measured on a 32,930-row single-sheet workbook:
-      //   * `dense` stores each row as an array instead of one object per cell
-      //     address — the single biggest saving on a tall sheet;
-      //   * each sheet is dropped from the workbook the moment its rows are
-      //     extracted, so the workbook never coexists with every row matrix;
-      //   * rows outside the requested months are discarded immediately rather
-      //     than living until the grouping step.
-      // Together: peak +99 MB -> +67 MB on that file (Node measurement).
+
+    // ── Source the sheet matrices ─────────────────────────────────────────
+    // Decoding a large .xlsx here is not survivable: SheetJS blew BOTH edge
+    // limits on a 32,930-row workbook ("Memory limit exceeded" AND "CPU Time
+    // exceeded", HTTP 546), and the cost is re-paid on every invocation, so no
+    // amount of month-chunking helps. When the client supplies a row EXTRACT —
+    // the same raw cell matrix, produced by the browser where there is no
+    // 2s/256MB cap — this function reads that instead. JSON.parse is roughly an
+    // order of magnitude cheaper than an xlsx decode.
+    //
+    // This does NOT move any accounting decision to the client: the extract is
+    // untyped cell values only. Column detection, date parsing, categorisation,
+    // validation, control totals and posting all still happen here, on this
+    // side of the trust boundary. The original workbook is retained alongside
+    // the extract so a reviewer can always re-derive it.
+    const sheetMatrices: { name: string; matrix: unknown[][] }[] = [];
+    if (extract_path) {
+      if (!extract_path.startsWith(`${tenantId}/`)) {
+        return json({ ok: false, error: "extract_path outside tenant folder" }, 200);
+      }
+      const { data: exBlob, error: exErr } = await admin.storage
+        .from("bank-statements").download(extract_path);
+      if (exErr || !exBlob) {
+        return json({ ok: false, error: `Could not read the row extract: ${exErr?.message}` }, 200);
+      }
+      // Fail with a message rather than being killed mid-parse: a worker that
+      // hits the memory ceiling returns no body at all, which is what made the
+      // original failure so hard to diagnose. 32,930 rows extract to ~5 MB.
+      if (exBlob.size > MAX_EXTRACT_BYTES) {
+        return json({
+          ok: false,
+          error: `Row extract is ${(exBlob.size / 1048576).toFixed(1)} MB; the limit is ${MAX_EXTRACT_BYTES / 1048576} MB. Split the statement and import the parts separately.`,
+        }, 200);
+      }
+      let parsed: { v?: number; sheets?: { name: string; rows: unknown[][] }[] };
+      try {
+        parsed = JSON.parse(await exBlob.text());
+      } catch (e) {
+        return json({ ok: false, error: `Row extract is not readable JSON: ${String(e)}` }, 200);
+      }
+      if (parsed?.v !== EXTRACT_VERSION || !Array.isArray(parsed.sheets)) {
+        return json({
+          ok: false,
+          error: `Row extract is version ${parsed?.v ?? "?"}, this function expects ${EXTRACT_VERSION}. Re-upload the statement.`,
+        }, 200);
+      }
+      for (const s of parsed.sheets) {
+        if (s && typeof s.name === "string" && Array.isArray(s.rows)) {
+          sheetMatrices.push({ name: s.name, matrix: s.rows });
+        }
+      }
+      if (sheetMatrices.length === 0) {
+        return json({ ok: false, error: "Row extract contained no sheets" }, 200);
+      }
+    } else {
+      // Legacy / small-file path: decode the workbook here.
+      const { data: fileBlob, error: dlErr } = await admin.storage
+        .from("bank-statements")
+        .download(storage_path);
+      if (dlErr || !fileBlob) return json({ ok: false, error: `Could not read uploaded file: ${dlErr?.message}` }, 200);
+      if (fileBlob.size > MAX_FILE_BYTES) {
+        return json({
+          ok: false,
+          error: `Workbook is ${(fileBlob.size / 1048576).toFixed(1)} MB; the limit is ${MAX_FILE_BYTES / 1048576} MB. Split it and import the parts separately.`,
+        }, 200);
+      }
+      // `dense` keeps rows as arrays instead of one object per cell address,
+      // and each sheet is dropped the moment its rows are out, so the workbook
+      // never coexists with every matrix. `cellText`/`cellHTML` off skips
+      // SheetJS rendering formatted text and an HTML fragment per cell, which
+      // this pipeline never reads (sheet_to_json is raw:true) — 25% off the
+      // read. None of it is enough for a very large workbook; that is what the
+      // extract path above is for.
       const wb = XLSX.read(await fileBlob.arrayBuffer(), {
         type: "array", cellDates: true, dense: true,
+        cellText: false, cellHTML: false,
       });
       for (const name of [...wb.SheetNames]) {
         const ws = wb.Sheets[name];
         if (!ws) continue;
         const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }) as unknown[][];
         delete wb.Sheets[name]; // released before the rows are parsed
-        const nonEmpty = matrix.some((r) => (r ?? []).some((c) => c !== null && c !== undefined && String(c).trim() !== ""));
-        if (!nonEmpty) continue;
-        // A neutral period; each line is re-stamped with its own month below.
-        const result = parseSheetMatrix(matrix, name, { month: 1, year: 2000 });
-        parseErrors.push(...result.errors);
-        for (const line of result.lines) {
-          // Undated rows are kept regardless: they ride with the earliest month.
-          if (wantedKeys && line.txnDate && !wantedKeys.has(line.txnDate.slice(0, 7))) continue;
-          allLines.push(line);
-        }
+        sheetMatrices.push({ name, matrix });
       }
     }
+
+    // ── Parse every sheet matrix, whatever its source ─────────────────────
+    for (const { name, matrix } of sheetMatrices) {
+      const nonEmpty = matrix.some((r) => (r ?? []).some((c) => c !== null && c !== undefined && String(c).trim() !== ""));
+      if (!nonEmpty) continue;
+      // A neutral period; each line is re-stamped with its own month below.
+      const result = parseSheetMatrix(matrix, name, { month: 1, year: 2000 });
+      parseErrors.push(...result.errors);
+      for (const line of result.lines) {
+        // Undated rows are kept regardless: they ride with the earliest month.
+        if (wantedKeys && line.txnDate && !wantedKeys.has(line.txnDate.slice(0, 7))) continue;
+        allLines.push(line);
+      }
+    }
+    sheetMatrices.length = 0; // release before resolving/posting
     if (parseErrors.length > 0) {
       return json({ ok: false, error: parseErrors.join("; "), parse_errors: parseErrors }, 200);
     }

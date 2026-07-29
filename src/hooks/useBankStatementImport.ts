@@ -129,6 +129,118 @@ export interface TotalsReconciliation {
   matched: boolean;
 }
 
+/**
+ * Rows a single edge invocation may post.
+ *
+ * The binding limit is CPU, not memory or wall clock: Supabase kills the worker
+ * with "CPU Time exceeded" (HTTP 546) at roughly 2s of CPU **accumulated across
+ * the whole request**. Reading the workbook is a fixed ~80% of the engine's CPU
+ * and is paid again on every invocation, so the budget left for posting is the
+ * scarce part. A 32,930-row single-sheet file died mid-way through its 7th
+ * month for exactly this reason.
+ *
+ * Keeping the posted rows per call under this bound leaves comfortable headroom
+ * for the re-read. It is deliberately conservative — a chunk too small only
+ * costs one extra file read, while a chunk too large loses the whole call.
+ */
+export const MAX_ROWS_PER_CALL = 5_000;
+/**
+ * Backstop on months per call, independent of row count: each month costs a
+ * batch insert, a period claim and a posting RPC, so the round trips add CPU
+ * of their own. Set to a full year because that is the shape already proven in
+ * production — a 12-month, 2,079-row workbook posts in one invocation well
+ * inside budget — and lowering it would make ordinary imports pay extra
+ * workbook re-reads for no benefit.
+ */
+export const MAX_MONTHS_PER_CALL = 12;
+
+export interface PlannedPeriod {
+  year: number;
+  month: number;
+  /** Present when planning from a preview; absent callers get one month/call. */
+  row_count?: number;
+}
+
+/**
+ * Greedily pack consecutive months into as few invocations as possible while
+ * respecting {@link MAX_ROWS_PER_CALL}. Fewer chunks means fewer workbook
+ * re-reads, so packing (rather than one-month-per-call) is the cheap path for
+ * ordinary files: a 2,000-row year stays a single invocation exactly as before,
+ * while a 33k-row year becomes several bounded ones.
+ *
+ * Exported for tests — the packing is the safety property, so it is asserted
+ * directly rather than inferred from an import run.
+ */
+export function planImportChunks<T extends PlannedPeriod>(periods: T[]): T[][] {
+  const chunks: T[][] = [];
+  let current: T[] = [];
+  let rows = 0;
+  for (const p of periods) {
+    // An unknown row count is treated as a full budget: without the preview's
+    // numbers we cannot prove a bigger chunk is safe, so we don't guess.
+    const n = Number.isFinite(p.row_count) ? Number(p.row_count) : MAX_ROWS_PER_CALL;
+    // A single month over budget still has to go in a call of its own; the
+    // server splits nothing further, and one month is the atomic unit.
+    if (current.length > 0 && (rows + n > MAX_ROWS_PER_CALL || current.length >= MAX_MONTHS_PER_CALL)) {
+      chunks.push(current);
+      current = [];
+      rows = 0;
+    }
+    current.push(p);
+    rows += n;
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
+
+/** Version of the row-extract payload; must match the edge function's. */
+export const EXTRACT_VERSION = 1;
+
+export interface SheetExtract { name: string; rows: unknown[][] }
+export interface WorkbookExtract { v: number; sheets: SheetExtract[] }
+
+/**
+ * A Date cell serialised for transport.
+ *
+ * `JSON.stringify(new Date(...))` emits `toISOString()`, which converts to UTC.
+ * SheetJS builds date cells in LOCAL time, so a statement dated 01/05/2024 in a
+ * UTC+5:30 browser would serialise as `2024-04-30T18:30:00Z` and import into the
+ * WRONG MONTH — silently, and only for users east of UTC. Emitting the local
+ * calendar date keeps the day the spreadsheet actually shows.
+ */
+export function serialiseDateCell(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/**
+ * Extract every sheet as a raw cell matrix, in the browser.
+ *
+ * A large .xlsx cannot be decoded inside an edge function: SheetJS exceeded
+ * BOTH the memory and the CPU limit on a 32,930-row workbook, and the cost is
+ * re-paid on every invocation, so chunking does not help. The browser has no
+ * such caps. Only untyped cell values cross the wire — the server still does
+ * all column detection, date parsing, categorisation, validation and posting.
+ */
+export function extractWorkbook(wb: XLSX.WorkBook): WorkbookExtract {
+  const sheets: SheetExtract[] = [];
+  for (const name of wb.SheetNames) {
+    const ws = wb.Sheets[name];
+    if (!ws) continue;
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }) as unknown[][];
+    const nonEmpty = rows.some((r) => (r ?? []).some((c) => c !== null && c !== undefined && String(c).trim() !== ""));
+    if (!nonEmpty) continue;
+    for (const row of rows) {
+      if (!row) continue;
+      for (let i = 0; i < row.length; i++) {
+        if (row[i] instanceof Date) row[i] = serialiseDateCell(row[i] as Date);
+      }
+    }
+    sheets.push({ name, rows });
+  }
+  return { v: EXTRACT_VERSION, sheets };
+}
+
 export interface SheetResult {
   sheet_name: string;
   ok: boolean;
@@ -181,7 +293,7 @@ export function useImportBankStatement(onProgress?: (p: ImportProgress) => void)
     mutationFn: async (params: {
       file: File;
       bank_account_id: string;
-      periods: { year: number; month: number }[];
+      periods: PeriodPreview[] | { year: number; month: number }[];
       posting_mode?: "auto_post" | "draft";
     }): Promise<ImportResult> => {
       const tenant_id = appUser?.tenant_id;
@@ -196,11 +308,13 @@ export function useImportBankStatement(onProgress?: (p: ImportProgress) => void)
       }
 
       const periods = [...params.periods].sort((a, b) => a.year - b.year || a.month - b.month);
-      onProgress?.({ done: 0, total: periods.length || 1, current: "Parsing & posting all months…" });
+      const chunks = planImportChunks(periods);
 
-      // Upload once; the edge reads it once and posts every month.
+      // Upload the original workbook — it stays the audit record, and a
+      // reviewer can always re-derive the extract from it.
       const safe = params.file.name.replace(/[^a-zA-Z0-9._-]+/g, "_");
-      const storage_path = `${tenant_id}/${Date.now()}-${safe}`;
+      const stamp = Date.now();
+      const storage_path = `${tenant_id}/${stamp}-${safe}`;
       const { error: upErr } = await supabase.storage
         .from(BUCKET)
         .upload(storage_path, params.file, {
@@ -209,35 +323,91 @@ export function useImportBankStatement(onProgress?: (p: ImportProgress) => void)
         });
       if (upErr) throw upErr;
 
-      // Single invocation. `periods` restricts to the months the preview found
-      // (also lets a later re-run target only the months that failed).
-      const { data, error } = await supabase.functions.invoke("import-bank-statement", {
-        body: {
-          storage_path,
-          bank_account_id: params.bank_account_id,
-          periods,
-          posting_mode: params.posting_mode,
-        },
-      });
-      if (error) throw new Error(error.message);
-      const d = data as any;
-      if (d?.ok === false && !Array.isArray(d?.months)) {
-        // A whole-request failure (config/parse/auth) before any month ran.
-        throw new Error(d?.error || d?.parse_errors?.join("; ") || "Import failed");
+      // Decode the workbook HERE, where there is no CPU or memory cap, and
+      // upload the raw cell matrices for the server to parse. Every invocation
+      // then reads cheap JSON instead of re-decoding the .xlsx.
+      onProgress?.({ done: 0, total: periods.length, current: "Preparing rows…" });
+      const extract_path = `${tenant_id}/${stamp}-${safe}.extract.json`;
+      {
+        const wb = XLSX.read(await params.file.arrayBuffer(), {
+          type: "array", cellDates: true, dense: true, cellText: false, cellHTML: false,
+        });
+        const blob = new Blob([JSON.stringify(extractWorkbook(wb))], { type: "application/json" });
+        const { error: exErr } = await supabase.storage
+          .from(BUCKET).upload(extract_path, blob, { contentType: "application/json", upsert: false });
+        if (exErr) throw exErr;
       }
 
-      const sheets: SheetResult[] = ((d?.months ?? []) as any[]).map((mo) => ({
-        sheet_name: mo.sheet_name,
-        ok: !!mo.ok,
-        batch_id: mo.batch_id,
-        error: mo.ok ? undefined : (mo.error || "Import failed"),
-        summary: mo.summary,
-        control_totals: mo.control_totals,
-        duplicates: mo.duplicates,
-        balance_discontinuities: mo.balance_discontinuities,
-        totals_rows: mo.totals_rows,
-        reconciliation: mo.reconciliation,
-      }));
+      // One invocation per chunk. Each is independent and atomic per month, so
+      // a chunk that fails leaves every other month posted and re-runnable —
+      // and no single invocation can exhaust the edge runtime's CPU budget.
+      const sheets: SheetResult[] = [];
+      let engine_version: string | undefined;
+      let posted = 0;
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        onProgress?.({
+          done: posted,
+          total: periods.length,
+          current: chunks.length > 1
+            ? `Posting ${periodLabelOf(chunk[0])}${chunk.length > 1 ? `–${periodLabelOf(chunk[chunk.length - 1])}` : ""} (${i + 1}/${chunks.length})…`
+            : "Parsing & posting all months…",
+        });
+
+        let d: any;
+        try {
+          const { data, error } = await supabase.functions.invoke("import-bank-statement", {
+            body: {
+              storage_path,
+              extract_path,
+              bank_account_id: params.bank_account_id,
+              periods: chunk.map((p) => ({ year: p.year, month: p.month })),
+              // Rows with no usable date belong to the whole import, not to a
+              // chunk, so only the FIRST call adopts them. Sending this on
+              // every chunk re-imports them once per call.
+              include_undated: i === 0,
+              posting_mode: params.posting_mode,
+            },
+          });
+          if (error) throw new Error(error.message);
+          d = data;
+        } catch (e) {
+          // A chunk that dies (worker killed => no response body) must not
+          // abandon the rest; report its months and carry on.
+          const msg = e instanceof Error ? e.message : String(e);
+          for (const p of chunk) {
+            sheets.push({ sheet_name: periodLabelOf(p), ok: false, error: msg });
+          }
+          continue;
+        }
+
+        if (d?.ok === false && !Array.isArray(d?.months)) {
+          // A whole-request failure (config/parse/auth) before any month ran.
+          const msg = d?.error || d?.parse_errors?.join("; ") || "Import failed";
+          // Configuration errors will fail identically for every chunk — stop.
+          if (i === 0) throw new Error(msg);
+          for (const p of chunk) sheets.push({ sheet_name: periodLabelOf(p), ok: false, error: msg });
+          continue;
+        }
+
+        engine_version = d?.engine_version ?? engine_version;
+        for (const mo of (d?.months ?? []) as any[]) {
+          sheets.push({
+            sheet_name: mo.sheet_name,
+            ok: !!mo.ok,
+            batch_id: mo.batch_id,
+            error: mo.ok ? undefined : (mo.error || "Import failed"),
+            summary: mo.summary,
+            control_totals: mo.control_totals,
+            duplicates: mo.duplicates,
+            balance_discontinuities: mo.balance_discontinuities,
+            totals_rows: mo.totals_rows,
+            reconciliation: mo.reconciliation,
+          });
+        }
+        posted += chunk.length;
+      }
+      const d = { engine_version } as any;
 
       const totals: ImportResult["totals"] = {
         posted_to_ledger_count: 0, posted_to_ledger_value: 0,
@@ -349,6 +519,105 @@ export function useClearSuspense() {
       );
     },
     onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ─── Held rows (blocked, never posted) ───────────────────────────────────────
+
+/** Why a row was refused. Kept in sync with the engine's BlockReason. */
+export const BLOCK_REASON_LABELS: Record<string, { title: string; detail: string }> = {
+  totals_row: {
+    title: "Total / subtotal row",
+    detail: "Carried an amount but no date, description, name, voucher or account type — the shape of a spreadsheet footer, not a transaction. Posting it would double-count the rows above it.",
+  },
+  both_sides_populated: {
+    title: "Debit and credit both filled",
+    detail: "A statement line moves money one way. With both columns filled the direction is ambiguous, so it cannot be posted.",
+  },
+  no_amount: {
+    title: "No amount",
+    detail: "Neither the debit nor the credit column held a value, so there is nothing to post. Usually a blank or separator row.",
+  },
+  invalid_amount: {
+    title: "Invalid amount",
+    detail: "The amount was negative or not a number.",
+  },
+  amount_overflow: {
+    title: "Amount too large",
+    detail: "Above the ledger's numeric limit; posting it would silently truncate the figure.",
+  },
+  unparseable_date: {
+    title: "Unreadable date",
+    detail: "The date cell could not be read in any recognised format, so the row cannot be placed in an accounting period.",
+  },
+};
+
+export interface HeldLine {
+  id: string;
+  batch_id: string;
+  sheet_name: string;
+  row_index: number;
+  period_year: number | null;
+  period_month: number | null;
+  txn_date: string | null;
+  raw_date: string | null;
+  description: string;
+  name: string;
+  voucher_no: string | null;
+  raw_account_type: string;
+  debit: number;
+  credit: number;
+  block_reason: string;
+  validation_flags: string[];
+  created_at: string;
+  file_name: string | null;
+  bank_account_id: string | null;
+}
+
+/**
+ * Every row an import refused to post, straight from the database.
+ *
+ * The post-import summary screen is in-memory React state and disappears on
+ * refresh or navigation; these rows are the durable record, so the count still
+ * reconciles (`to ledgers + suspense + held = rows imported`) long after.
+ */
+export function useHeldLines() {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["held_lines", appUser?.tenant_id],
+    enabled: !!appUser?.tenant_id,
+    queryFn: async (): Promise<HeldLine[]> => {
+      // A plain .select() silently stops at 1000 rows; page explicitly so a
+      // large import never appears to have fewer held rows than it has.
+      const PAGE = 1000;
+      const out: HeldLine[] = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await (supabase as any)
+          .from("bank_statement_lines")
+          .select(
+            "id, batch_id, sheet_name, row_index, period_year, period_month, txn_date, raw_date, description, name, voucher_no, raw_account_type, debit, credit, block_reason, validation_flags, created_at, bank_statement_batches(file_name, bank_account_id)"
+          )
+          .not("block_reason", "is", null)
+          .order("created_at", { ascending: false })
+          .order("sheet_name", { ascending: true })
+          .order("row_index", { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        const rows = (data ?? []) as any[];
+        for (const r of rows) {
+          out.push({
+            ...r,
+            debit: Number(r.debit ?? 0),
+            credit: Number(r.credit ?? 0),
+            validation_flags: r.validation_flags ?? [],
+            file_name: r.bank_statement_batches?.file_name ?? null,
+            bank_account_id: r.bank_statement_batches?.bank_account_id ?? null,
+          });
+        }
+        if (rows.length < PAGE) break;
+      }
+      return out;
+    },
   });
 }
 
