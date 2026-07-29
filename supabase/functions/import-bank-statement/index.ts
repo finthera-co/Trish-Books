@@ -177,22 +177,45 @@ Deno.serve(async (req) => {
       }, 200);
     }
 
+    // Only these months will be posted, so only their rows need to survive the
+    // parse. Retrying one failed month then costs a few thousand lines of peak
+    // memory instead of the whole workbook's.
+    const wantedKeys = wantPeriods?.length
+      ? new Set(wantPeriods.map((p) => `${p.year}-${String(p.month).padStart(2, "0")}`))
+      : null;
+
     const allLines: ParsedLine[] = [];
     const parseErrors: string[] = [];
     {
-      // Scope the workbook/matrix so they can be GC'd after parsing — they are
-      // the ~200 MB memory peak; the parsed lines that survive are far lighter.
-      const wb = XLSX.read(await fileBlob.arrayBuffer(), { type: "array", cellDates: true });
-      for (const name of wb.SheetNames) {
+      // Scope the workbook/matrix so they can be GC'd after parsing — this is
+      // the memory peak, and exceeding it gets the whole worker killed with a
+      // 546 WORKER_LIMIT (no catchable error, no response body). Three things
+      // hold it down, measured on a 32,930-row single-sheet workbook:
+      //   * `dense` stores each row as an array instead of one object per cell
+      //     address — the single biggest saving on a tall sheet;
+      //   * each sheet is dropped from the workbook the moment its rows are
+      //     extracted, so the workbook never coexists with every row matrix;
+      //   * rows outside the requested months are discarded immediately rather
+      //     than living until the grouping step.
+      // Together: peak +99 MB -> +67 MB on that file (Node measurement).
+      const wb = XLSX.read(await fileBlob.arrayBuffer(), {
+        type: "array", cellDates: true, dense: true,
+      });
+      for (const name of [...wb.SheetNames]) {
         const ws = wb.Sheets[name];
         if (!ws) continue;
         const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }) as unknown[][];
+        delete wb.Sheets[name]; // released before the rows are parsed
         const nonEmpty = matrix.some((r) => (r ?? []).some((c) => c !== null && c !== undefined && String(c).trim() !== ""));
         if (!nonEmpty) continue;
         // A neutral period; each line is re-stamped with its own month below.
         const result = parseSheetMatrix(matrix, name, { month: 1, year: 2000 });
         parseErrors.push(...result.errors);
-        allLines.push(...result.lines);
+        for (const line of result.lines) {
+          // Undated rows are kept regardless: they ride with the earliest month.
+          if (wantedKeys && line.txnDate && !wantedKeys.has(line.txnDate.slice(0, 7))) continue;
+          allLines.push(line);
+        }
       }
     }
     if (parseErrors.length > 0) {

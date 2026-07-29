@@ -61,7 +61,11 @@ export interface WorkbookPreview {
  */
 export async function previewWorkbook(file: File): Promise<WorkbookPreview> {
   const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: "array", cellDates: true });
+  // `dense` keeps a tall sheet as row arrays rather than one object per cell
+  // address — roughly a third off the parse peak on a 30k-row workbook. The
+  // browser has more headroom than the edge runtime, but the preview parses
+  // the same file, so it pays the same cost.
+  const wb = XLSX.read(buf, { type: "array", cellDates: true, dense: true });
   const byPeriod = new Map<string, PeriodPreview>();
   const errors: string[] = [];
   let total = 0;
