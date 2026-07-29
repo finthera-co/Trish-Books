@@ -10,10 +10,21 @@ import {
   Banknote,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { useInvoices, useExpenses, useJournalEntries, useAccounts } from "@/hooks/useData";
+import {
+  useInvoices, useExpenses, useAccounts,
+  useMonthlyAccountMovements, useRecentJournalEntries, useJournalEntryStats,
+} from "@/hooks/useData";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMemo } from "react";
 import { format, subMonths, startOfMonth } from "date-fns";
+import { isDebitNormal } from "@/lib/accountTypes";
+
+// Income statement sides, by canonical account_type. These must match
+// src/lib/accountTypes.ts — the previous values here were "Revenue" and "COGS",
+// which are not account types this app ever writes, so both sets matched nothing
+// and the dashboard reported zero revenue.
+const INCOME_TYPES = ["Income", "Other Income"];
+const EXPENSE_TYPES = ["Expense", "Cost of Goods Sold", "Other Expense"];
 
 const COLORS = ["hsl(215, 60%, 42%)", "hsl(142, 71%, 35%)", "hsl(38, 92%, 50%)", "hsl(199, 89%, 48%)", "hsl(0, 72%, 51%)", "hsl(270, 60%, 50%)"];
 
@@ -23,43 +34,35 @@ export default function Index() {
   const { appUser } = useAuth();
   const { data: invoices } = useInvoices();
   const { data: expenses } = useExpenses();
-  const { data: journalEntries } = useJournalEntries();
   const { data: accounts } = useAccounts();
-
-  // Only use posted, non-voided journal entries
-  const validEntries = useMemo(() =>
-    journalEntries?.filter(e => e.status === "posted" && !(e as any).voided_at) || [],
-    [journalEntries]
-  );
+  // Pre-aggregated GL totals (one row per month per account) instead of every
+  // journal entry and line. Already restricted to posted, non-voided entries.
+  const { data: movements } = useMonthlyAccountMovements();
+  const { data: recentEntries } = useRecentJournalEntries(8);
+  const { data: entryStats } = useJournalEntryStats();
 
   // Calculate real metrics from journal entries (not hardcoded)
   const metrics = useMemo(() => {
-    const revenueAccounts = new Set(accounts?.filter(a => a.account_type === "Revenue").map(a => a.id) || []);
-    const expenseAccounts = new Set(accounts?.filter(a => ["Expense", "COGS"].includes(a.account_type)).map(a => a.id) || []);
-
     let totalRevenue = 0;
     let totalExpenses = 0;
     let prevMonthRevenue = 0;
     let prevMonthExpenses = 0;
 
     const now = new Date();
-    const thisMonth = format(now, "yyyy-MM");
     const lastMonth = format(subMonths(now, 1), "yyyy-MM");
 
-    validEntries.forEach(entry => {
-      const month = entry.entry_date?.slice(0, 7);
-      ((entry.journal_lines as any[]) || []).forEach(line => {
-        if (revenueAccounts.has(line.account_id)) {
-          const amt = Number(line.credit) - Number(line.debit);
-          totalRevenue += amt;
-          if (month === lastMonth) prevMonthRevenue += amt;
-        }
-        if (expenseAccounts.has(line.account_id)) {
-          const amt = Number(line.debit) - Number(line.credit);
-          totalExpenses += amt;
-          if (month === lastMonth) prevMonthExpenses += amt;
-        }
-      });
+    (movements || []).forEach(m => {
+      const month = m.month?.slice(0, 7);
+      if (INCOME_TYPES.includes(m.account_type)) {
+        const amt = m.credit - m.debit;
+        totalRevenue += amt;
+        if (month === lastMonth) prevMonthRevenue += amt;
+      }
+      if (EXPENSE_TYPES.includes(m.account_type)) {
+        const amt = m.debit - m.credit;
+        totalExpenses += amt;
+        if (month === lastMonth) prevMonthExpenses += amt;
+      }
     });
 
     const netIncome = totalRevenue - totalExpenses;
@@ -72,7 +75,7 @@ export default function Index() {
     const expenseChange = prevMonthExpenses > 0 ? ((totalExpenses - prevMonthExpenses) / prevMonthExpenses * 100) : 0;
 
     return { totalRevenue, totalExpenses, netIncome, pendingInvoices, overdueInvoices, pendingExpenses, revenueChange, expenseChange };
-  }, [validEntries, accounts, invoices, expenses]);
+  }, [movements, invoices, expenses]);
 
   const stats = [
     {
@@ -102,8 +105,6 @@ export default function Index() {
 
   // Monthly revenue vs expenses from journal entries
   const monthlyData = useMemo(() => {
-    const revenueAccounts = new Set(accounts?.filter(a => a.account_type === "Revenue").map(a => a.id) || []);
-    const expenseAccounts = new Set(accounts?.filter(a => ["Expense", "COGS"].includes(a.account_type)).map(a => a.id) || []);
     const months: Record<string, { revenue: number; expenses: number }> = {};
 
     // Initialize last 6 months
@@ -112,17 +113,15 @@ export default function Index() {
       months[m] = { revenue: 0, expenses: 0 };
     }
 
-    validEntries.forEach(entry => {
-      const month = entry.entry_date?.slice(0, 7);
+    (movements || []).forEach(mv => {
+      const month = mv.month?.slice(0, 7);
       if (!month || !months[month]) return;
-      ((entry.journal_lines as any[]) || []).forEach(line => {
-        if (revenueAccounts.has(line.account_id)) {
-          months[month].revenue += Number(line.credit) - Number(line.debit);
-        }
-        if (expenseAccounts.has(line.account_id)) {
-          months[month].expenses += Number(line.debit) - Number(line.credit);
-        }
-      });
+      if (INCOME_TYPES.includes(mv.account_type)) {
+        months[month].revenue += mv.credit - mv.debit;
+      }
+      if (EXPENSE_TYPES.includes(mv.account_type)) {
+        months[month].expenses += mv.debit - mv.credit;
+      }
     });
 
     return Object.entries(months)
@@ -131,24 +130,17 @@ export default function Index() {
         month: format(new Date(month + "-01"), "MMM yy"),
         ...data,
       }));
-  }, [validEntries, accounts]);
+  }, [movements]);
 
   // Account type breakdown
   const accountBreakdown = useMemo(() => {
+    // Roll the monthly rows up per account, signed by the account's normal balance.
     const balanceMap = new Map<string, number>();
-    accounts?.forEach(a => balanceMap.set(a.id, 0));
-    validEntries.forEach(entry => {
-      ((entry.journal_lines as any[]) || []).forEach(line => {
-        const current = balanceMap.get(line.account_id) || 0;
-        const acct = accounts?.find(a => a.id === line.account_id);
-        if (!acct) return;
-        const isDebitNormal = ["Asset", "Expense", "COGS"].includes(acct.account_type);
-        if (isDebitNormal) {
-          balanceMap.set(line.account_id, current + Number(line.debit) - Number(line.credit));
-        } else {
-          balanceMap.set(line.account_id, current + Number(line.credit) - Number(line.debit));
-        }
-      });
+    (movements || []).forEach(mv => {
+      const signed = isDebitNormal(mv.account_type)
+        ? mv.debit - mv.credit
+        : mv.credit - mv.debit;
+      balanceMap.set(mv.account_id, (balanceMap.get(mv.account_id) || 0) + signed);
     });
     const types: Record<string, number> = {};
     accounts?.forEach(a => {
@@ -156,23 +148,23 @@ export default function Index() {
       if (bal > 0) types[a.account_type] = (types[a.account_type] || 0) + bal;
     });
     return Object.entries(types).map(([name, value]) => ({ name, value }));
-  }, [validEntries, accounts]);
+  }, [movements, accounts]);
 
   // Recent transactions
   const recentTransactions = useMemo(() => {
-    return validEntries.slice(0, 8).map(entry => ({
+    return (recentEntries || []).map(entry => ({
       id: entry.id,
       description: entry.description,
       reference: entry.reference || entry.id.slice(0, 8),
       date: entry.entry_date,
-      amount: (entry.journal_lines as any[])?.reduce((s, l) => s + Number(l.debit), 0) || 0,
-      isReversal: !!(entry as any).reversal_of,
+      amount: Number(entry.total_debit) || 0,
+      isReversal: !!entry.reversal_of,
     }));
-  }, [validEntries]);
+  }, [recentEntries]);
 
   // Quick stats row
   const quickStats = [
-    { label: "Journal Entries", value: validEntries.length, icon: BookOpen },
+    { label: "Journal Entries", value: entryStats?.posted ?? 0, icon: BookOpen },
     { label: "Accounts", value: accounts?.length || 0, icon: Receipt },
     { label: "Pending Expenses", value: metrics.pendingExpenses, icon: Banknote },
     { label: "Active Invoices", value: invoices?.filter(i => ["sent", "draft"].includes(i.status)).length || 0, icon: FileText },

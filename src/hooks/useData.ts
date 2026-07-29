@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -276,6 +276,13 @@ export function useUpdateAccount() {
 }
 
 // Journal Entries
+//
+// WARNING: this loads the ENTIRE journal_entries table (with lines) into memory.
+// At ~35k entries that is 35 sequential round trips and tens of MB of JSON, and
+// queryClient's staleTime:0 / refetchOnMount:true means it re-runs on every
+// navigation. Only the aggregate reporting pages (Ledger, Reports, AccountReport,
+// GeneralLedgerReport, dashboard) still use it, and they need date-bounding or a
+// server-side aggregate RPC. For listing entries use useJournalEntriesPage().
 export function useJournalEntries() {
   return useQuery({
     queryKey: ["journal_entries"],
@@ -298,6 +305,231 @@ export function useJournalEntries() {
         if (!data || data.length < PAGE) break;
       }
       return all;
+    },
+  });
+}
+
+export type JournalStatusFilter = "all" | "posted" | "voided";
+export type JournalSourceFilter =
+  | "all" | "manual" | "invoice" | "payment_received"
+  | "credit_note" | "depreciation" | "opening_balance" | "other";
+
+/** Position in the ordered list: the three sort keys of a known row. */
+export interface JournalCursor {
+  entry_date: string;
+  created_at: string;
+  id: string;
+}
+
+export interface JournalPageParams {
+  cursor: JournalCursor | null;
+  /** Walk away from the cursor towards newer rows (Previous / Last). */
+  backward?: boolean;
+  pageSize: number;
+  search?: string;
+  status?: JournalStatusFilter;
+  source?: JournalSourceFilter;
+}
+
+export interface JournalPageRow {
+  id: string;
+  entry_date: string;
+  created_at: string;
+  description: string;
+  reference: string | null;
+  status: string;
+  source_type: string | null;
+  entry_type: string | null;
+  is_system_generated: boolean | null;
+  reversal_of: string | null;
+  void_reason: string | null;
+  voided_at: string | null;
+  total_debit: number;
+  total_credit: number;
+  journal_lines: Array<{
+    id: string;
+    account_id: string;
+    debit: number;
+    credit: number;
+    accounts: { account_code: string | null; account_name: string | null } | null;
+  }>;
+}
+
+export const journalCursorOf = (row: JournalPageRow | undefined): JournalCursor | null =>
+  row ? { entry_date: row.entry_date, created_at: row.created_at, id: row.id } : null;
+
+/**
+ * One page of journal entries via keyset (cursor) pagination.
+ *
+ * Not OFFSET. OFFSET is O(depth) no matter how the table is indexed — the server
+ * still walks and discards every row before the window — so deep pages of a 35k-row
+ * ledger cost 250ms+ and get worse with every import. The cursor is a row-value
+ * comparison the planner turns into an index condition, so every page costs the
+ * same ~10ms. See supabase/migrations/20260729000005_journal_dynamic_predicates.sql
+ * for the measurements.
+ *
+ * Filtering happens inside the RPC, where the search term is interpolated through
+ * format(%L) — so no escaping is needed (or wanted) on this side.
+ */
+export function useJournalEntriesPage(params: JournalPageParams) {
+  const { cursor, backward = false, pageSize, search = "", status = "all", source = "all" } = params;
+  return useQuery({
+    // Keyed under "journal_entries" so the invalidateQueries(["journal_entries"])
+    // calls scattered across the app refresh this by prefix match too.
+    queryKey: ["journal_entries", "page", { cursor, backward, pageSize, search, status, source }],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("list_journal_entries", {
+        p_limit: pageSize,
+        p_search: search || null,
+        p_status: status === "all" ? null : status,
+        p_source: source === "all" ? null : source,
+        p_cursor_date: cursor?.entry_date ?? null,
+        p_cursor_created: cursor?.created_at ?? null,
+        p_cursor_id: cursor?.id ?? null,
+        p_backward: backward,
+      });
+      if (error) throw error;
+      return (data ?? []) as unknown as JournalPageRow[];
+    },
+    placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * Total matching the current filters. Deliberately a separate query from the page:
+ * counting is the expensive half, and it only changes when the filters do — so
+ * turning pages must not re-run it.
+ */
+export function useJournalEntriesCount(
+  search = "", status: JournalStatusFilter = "all", source: JournalSourceFilter = "all",
+) {
+  return useQuery({
+    queryKey: ["journal_entries", "count", { search, status, source }],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("count_journal_entries", {
+        p_search: search || null,
+        p_status: status === "all" ? null : status,
+        p_source: source === "all" ? null : source,
+      });
+      if (error) throw error;
+      return Number(data ?? 0);
+    },
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Entry counts for the stat cards — three tallies in one round trip. */
+export function useJournalEntryStats() {
+  return useQuery({
+    queryKey: ["journal_entries", "stats"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("journal_entry_stats");
+      if (error) throw error;
+      const row = (data as any)?.[0];
+      return {
+        total: Number(row?.total ?? 0),
+        posted: Number(row?.posted ?? 0),
+        voided: Number(row?.voided ?? 0),
+      };
+    },
+    // Whole-table tallies; not worth re-counting on every navigation.
+    staleTime: 60_000,
+  });
+}
+
+export interface MonthlyMovement {
+  month: string;          // first day of the month, ISO
+  account_id: string;
+  account_type: string;
+  account_code: string | null;
+  account_name: string | null;
+  debit: number;
+  credit: number;
+}
+
+/**
+ * Per-month, per-account GL totals for posted, non-voided entries.
+ *
+ * This is the aggregate the dashboard and reporting pages actually need. They used
+ * to compute it in the browser from every journal entry and line — ~35k entries and
+ * ~70k lines, which is what hung the landing page after a bank import. Aggregated
+ * server-side the same information is ~557 rows.
+ */
+export function useMonthlyAccountMovements(from?: string, to?: string) {
+  return useQuery({
+    queryKey: ["journal_entries", "monthly_movements", from ?? null, to ?? null],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("gl_monthly_account_movements", {
+        p_from: from ?? null,
+        p_to: to ?? null,
+      });
+      if (error) throw error;
+      return ((data ?? []) as any[]).map((r) => ({
+        ...r,
+        debit: Number(r.debit),
+        credit: Number(r.credit),
+      })) as MonthlyMovement[];
+    },
+    staleTime: 60_000,
+  });
+}
+
+/** Per-account debit/credit totals over a period (period movements, or cumulative). */
+export function useAccountBalances(from?: string, to?: string) {
+  return useQuery({
+    queryKey: ["journal_entries", "account_balances", from ?? null, to ?? null],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("gl_account_balances", {
+        p_from: from ?? null,
+        p_to: to ?? null,
+      });
+      if (error) throw error;
+      return ((data ?? []) as any[]).map((r) => ({
+        ...r,
+        debit: Number(r.debit),
+        credit: Number(r.credit),
+      }));
+    },
+    staleTime: 60_000,
+  });
+}
+
+/** The N most recent posted entries — for "recent activity" style panels. */
+export function useRecentJournalEntries(limit = 8) {
+  return useQuery({
+    queryKey: ["journal_entries", "recent", limit],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("list_journal_entries", {
+        p_limit: limit,
+        p_status: "posted",
+      });
+      if (error) throw error;
+      return (data ?? []) as unknown as JournalPageRow[];
+    },
+    staleTime: 30_000,
+  });
+}
+
+/** Next JV-nnn reference, derived from existing JV refs only (not the whole table). */
+export function useNextJvReference() {
+  return useQuery({
+    queryKey: ["journal_entries", "next_jv_ref"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("journal_entries")
+        .select("reference")
+        .ilike("reference", "JV-%")
+        .order("reference", { ascending: false })
+        .limit(1000);
+      if (error) throw error;
+      // Lexical order puts JV-9 above JV-10, so take the numeric max rather than
+      // trusting the sort — the limit above only bounds how many we consider.
+      let max = 0;
+      (data ?? []).forEach((e: any) => {
+        const m = /^JV-(\d+)$/i.exec((e.reference || "").trim());
+        if (m) max = Math.max(max, parseInt(m[1], 10));
+      });
+      return `JV-${String(max + 1).padStart(3, "0")}`;
     },
   });
 }

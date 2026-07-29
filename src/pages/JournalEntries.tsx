@@ -3,7 +3,10 @@ import BudgetWarningBanner from "@/components/budgets/BudgetWarningBanner";
 import AccountSelector from "@/components/shared/AccountSelector";
 import { Button } from "@/components/ui/button";
 import { useState, Fragment, useMemo, useCallback, useEffect, useRef } from "react";
-import { useJournalEntries, useAccounts } from "@/hooks/useData";
+import {
+  useJournalEntriesPage, useJournalEntriesCount, useJournalEntryStats,
+  useNextJvReference, useAccounts, journalCursorOf, type JournalCursor,
+} from "@/hooks/useData";
 import { useSearchParams } from "react-router-dom";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
@@ -30,6 +33,8 @@ const fmt = (n: number) =>
 type StatusFilter = "all" | "posted" | "voided";
 type SourceFilter = "all" | "manual" | "invoice" | "payment_received" | "credit_note" | "depreciation" | "opening_balance" | "other";
 
+const PAGE_SIZE = 50;
+
 export default function JournalEntries() {
   const { appUser } = useAuth();
   const { canEdit: canEditJournals, canDelete: canDeleteJournals } = useMyPermissions();
@@ -37,8 +42,15 @@ export default function JournalEntries() {
   const [searchParams, setSearchParams] = useSearchParams();
   const highlightId = searchParams.get("highlight");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  // Keyset navigation: where we are is a cursor plus a direction, not an offset.
+  // pageIndex is display-only (the "Page N of M" label).
+  const [nav, setNav] = useState<{ cursor: JournalCursor | null; backward: boolean }>({
+    cursor: null, backward: false,
+  });
+  const [pageIndex, setPageIndex] = useState(0);
   const [open, setOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(highlightId);
   const highlightRef = useRef<HTMLTableRowElement>(null);
@@ -59,28 +71,80 @@ export default function JournalEntries() {
     { account_id: "", debit: 0, credit: 0 },
   ]);
 
-  const { data: entries, isLoading } = useJournalEntries();
+  // Keystrokes shouldn't each fire a query against a 35k-row table.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // A filter change invalidates the cursor — it points into the old result set.
+  useEffect(() => {
+    setNav({ cursor: null, backward: false });
+    setPageIndex(0);
+  }, [debouncedSearch, statusFilter, sourceFilter]);
+
+  const { data: rows, isLoading, isFetching } = useJournalEntriesPage({
+    cursor: nav.cursor,
+    backward: nav.backward,
+    pageSize: PAGE_SIZE,
+    search: debouncedSearch,
+    status: statusFilter,
+    source: sourceFilter,
+  });
+  const { data: total = 0 } = useJournalEntriesCount(debouncedSearch, statusFilter, sourceFilter);
+  const { data: stats } = useJournalEntryStats();
   const { data: accounts } = useAccounts();
 
-  // Compute next JV reference (JV-001, JV-002, …) from existing entries
-  const nextJvReference = useMemo(() => {
-    let max = 0;
-    (entries || []).forEach((e: any) => {
-      const m = /^JV-(\d+)$/i.exec((e.reference || "").trim());
-      if (m) {
-        const n = parseInt(m[1], 10);
-        if (n > max) max = n;
-      }
-    });
-    return `JV-${String(max + 1).padStart(3, "0")}`;
-  }, [entries]);
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageRows = rows ?? [];
+
+  // Each move re-anchors on a row of the page currently on screen: forward from the
+  // last row, backward from the first. No offsets, so cost is independent of depth.
+  const goFirst = () => { setNav({ cursor: null, backward: false }); setPageIndex(0); };
+  const goLast  = () => { setNav({ cursor: null, backward: true }); setPageIndex(pageCount - 1); };
+  const goNext  = () => {
+    const c = journalCursorOf(pageRows[pageRows.length - 1]);
+    if (!c) return;
+    setNav({ cursor: c, backward: false });
+    setPageIndex(i => Math.min(pageCount - 1, i + 1));
+  };
+  const goPrev  = () => {
+    const c = journalCursorOf(pageRows[0]);
+    if (!c) return;
+    setNav({ cursor: c, backward: true });
+    setPageIndex(i => Math.max(0, i - 1));
+  };
+
+  // Next JV reference (JV-001, JV-002, …), computed server-side over JV refs only
+  const { data: nextJvReference } = useNextJvReference();
 
   // Auto-fill reference when opening the New Entry dialog
   useEffect(() => {
-    if (open && !reference) {
+    if (open && !reference && nextJvReference) {
       setReference(nextJvReference);
     }
   }, [open, nextJvReference]);
+
+  // An entry linked from elsewhere (?highlight=…) is usually not on page 1 and may
+  // not match the active filters, so fetch it directly and pin it above the page.
+  const { data: highlightedEntry } = useQuery({
+    queryKey: ["journal_entries", "highlighted", highlightId],
+    enabled: !!highlightId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("journal_entries")
+        .select("*, journal_lines(*, accounts(account_name, account_code))")
+        .eq("id", highlightId!)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const entries = useMemo(() => {
+    if (!highlightedEntry) return pageRows as any[];
+    return [highlightedEntry, ...pageRows.filter((e: any) => e.id !== (highlightedEntry as any).id)] as any[];
+  }, [pageRows, highlightedEntry]);
 
   // Auto-scroll to highlighted entry from source navigation
   useEffect(() => {
@@ -163,23 +227,13 @@ export default function JournalEntries() {
   const totalCredit = lines.reduce((sum, l) => sum + Number(l.credit || 0), 0);
   const isBalanced = Math.abs(totalDebit - totalCredit) < EPSILON && totalDebit > 0;
 
-  // Filter entries
-  const filtered = entries?.filter((e) => {
-    const matchesSearch =
-      e.description.toLowerCase().includes(search.toLowerCase()) ||
-      (e.reference || "").toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = statusFilter === "all" || e.status === statusFilter;
-    const entrySource = (e as any).source_type || (e as any).entry_type || "manual";
-    const matchesSource = sourceFilter === "all" 
-      || (sourceFilter === "other" 
-          ? !["manual","invoice","payment_received","credit_note","depreciation","opening_balance"].includes(entrySource)
-          : entrySource === sourceFilter);
-    return matchesSearch && matchesStatus && matchesSource;
-  }) || [];
+  // Search, status and source filtering all happen server-side now — `entries` is
+  // already the filtered page.
+  const filtered = entries;
 
-  // Stats
-  const totalPosted = entries?.filter(e => e.status === "posted").length || 0;
-  const totalVoided = entries?.filter(e => e.status === "voided").length || 0;
+  // Stats (counted server-side, so they cover the whole table — not just this page)
+  const totalPosted = stats?.posted ?? 0;
+  const totalVoided = stats?.voided ?? 0;
 
   const addLine = () => setLines([...lines, { account_id: "", debit: 0, credit: 0 }]);
   const removeLine = (index: number) => {
@@ -633,7 +687,7 @@ export default function JournalEntries() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="stat-card">
           <p className="text-xs font-medium text-muted-foreground">Total Entries</p>
-          <p className="text-2xl font-bold text-foreground tabular-nums">{entries?.length || 0}</p>
+          <p className="text-2xl font-bold text-foreground tabular-nums">{stats?.total ?? 0}</p>
         </div>
         <div className="stat-card">
           <p className="text-xs font-medium text-muted-foreground">Posted</p>
@@ -879,6 +933,29 @@ export default function JournalEntries() {
               })}
             </tbody>
           </table>
+        )}
+
+        {/* Pagination */}
+        {!isLoading && total > 0 && (
+          <div className="flex items-center justify-between gap-3 mt-4 pt-3 border-t border-border flex-wrap">
+            <p className="text-xs text-muted-foreground tabular-nums">
+              Showing {(pageIndex * PAGE_SIZE + 1).toLocaleString()}–
+              {Math.min(pageIndex * PAGE_SIZE + pageRows.length, total).toLocaleString()} of {total.toLocaleString()}
+              {isFetching && <span className="ml-2 text-muted-foreground/70">updating…</span>}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={goFirst} disabled={pageIndex === 0}>First</Button>
+              <Button variant="outline" size="sm" onClick={goPrev} disabled={pageIndex === 0}>Previous</Button>
+              <span className="text-xs text-muted-foreground tabular-nums px-1">
+                Page {(pageIndex + 1).toLocaleString()} of {pageCount.toLocaleString()}
+              </span>
+              <Button variant="outline" size="sm" onClick={goNext}
+                disabled={pageIndex >= pageCount - 1 || pageRows.length < PAGE_SIZE}>
+                Next
+              </Button>
+              <Button variant="outline" size="sm" onClick={goLast} disabled={pageIndex >= pageCount - 1}>Last</Button>
+            </div>
+          </div>
         )}
       </div>
     </div>
