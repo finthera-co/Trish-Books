@@ -485,6 +485,316 @@ const CONTROLS = [
   ["Two-factor sign-in", "TOTP step-up on every session, enforced before the app loads."],
 ];
 
+/* ── Document specimens ──────────────────────────────────────────────────────
+   Mockups of the two documents the system actually issues, laid out with the same
+   field set the real generators use — the statutory tax invoice from
+   src/lib/taxInvoiceData.ts (Gazette 2481/2022: supplier and purchaser TIN, date of
+   supply, place of supply, nature of each line, amount in words) and the payment
+   receipt from src/lib/receiptPdf.ts.
+
+   The figures follow the compound rule in src/lib/taxEngine.ts — SSCL applies to the
+   value of supply, then VAT applies to the SSCL-inclusive total:
+
+     100,000.00  value of supply
+     + 2,500.00  SSCL @ 2.5%
+     ----------
+       102,500.00  total value of supply
+     + 18,450.00  VAT @ 18%  (102,500 × 0.18)
+     ----------
+       120,950.00  total including VAT
+
+   Everything here is a specimen: the TINs and registration numbers are
+   format-correct placeholders, not anyone's real numbers, and each sheet is
+   labelled as a sample so it can't be mistaken for an issued document.        */
+const SPEC_TOTALS = {
+  valueOfSupply: 100_000,
+  ssclRate: 2.5,
+  sscl: 2_500,
+  totalValueOfSupply: 102_500,
+  vatRate: 18,
+  vat: 18_450,
+  total: 120_950,
+  inWords: "One Lakh Twenty Thousand Nine Hundred Fifty Rupees and Zero Cents",
+};
+
+const SPEC_LINES = [
+  {
+    reference: "SVC-1042",
+    description: "Management accounting retainer — March 2026",
+    nature: "Service",
+    qty: 1,
+    unitPrice: 80_000,
+    amount: 80_000,
+  },
+  {
+    reference: "SVC-1043",
+    description: "Statutory reporting & VAT return preparation",
+    nature: "Service",
+    qty: 2,
+    unitPrice: 10_000,
+    amount: 20_000,
+  },
+];
+
+/* Footer link groups, numbered like account ranges to match the chart-of-accounts
+   section. Every destination is real — an anchor on this page or one of the four
+   public routes. Nothing here points at a page that doesn't exist yet. */
+const FOOT_GROUPS: { code: string; title: string; links: [string, string][] }[] = [
+  {
+    code: "1000",
+    title: "The ledger",
+    links: [
+      ["Chart of accounts", "#ledger"],
+      ["Month-end close", "#close"],
+      ["Reports & statements", "#reports"],
+    ],
+  },
+  {
+    code: "2000",
+    title: "Compliance",
+    links: [
+      ["Sri Lankan tax", "#sri-lanka"],
+      ["Invoice & receipt", "#documents"],
+      ["Audit controls", "#controls"],
+    ],
+  },
+  {
+    code: "3000",
+    title: "Pricing",
+    links: [
+      ["Packages & plans", "#pricing"],
+      ["Getting started", "#getting-started"],
+    ],
+  },
+  {
+    code: "4000",
+    title: "Account",
+    links: [
+      ["Start free", "/signup"],
+      ["Log in", "/login"],
+      ["Reset password", "/reset-password"],
+    ],
+  },
+];
+
+function TaxInvoiceSpecimen() {
+  return (
+    <article className="lp-doc" aria-label="Sample tax invoice">
+      <span className="lp-doc-stamp">Specimen</span>
+
+      <header className="lp-doc-top">
+        <div>
+          <p className="lp-doc-co">Finthera Advisory (Pvt) Ltd</p>
+          <p className="lp-doc-sm">No. 42, Janadhipathi Mawatha, Colombo 01</p>
+          <p className="lp-doc-sm">TIN 104567890-7000 · BR No. PV 128394</p>
+        </div>
+        <div className="lp-doc-title-wrap">
+          <p className="lp-doc-title">TAX INVOICE</p>
+          <p className="lp-doc-sm">No. INV-2026-0418</p>
+        </div>
+      </header>
+
+      {/* The gazette requires both parties' TIN, and the date of supply stated
+          separately from the invoice date. */}
+      <div className="lp-doc-grid">
+        <div>
+          <p className="lp-doc-lbl">Purchaser</p>
+          <p className="lp-doc-strong">Ceylon Robotics (Pvt) Ltd</p>
+          <p className="lp-doc-sm">No. 7, Duplication Road, Colombo 04</p>
+          <p className="lp-doc-sm">TIN 117654321-7000</p>
+        </div>
+        <div className="lp-doc-meta">
+          <p><span>Date of invoice</span><b>03/31/2026</b></p>
+          <p><span>Date of supply</span><b>03/31/2026</b></p>
+          <p><span>Place of supply</span><b>Colombo, Sri Lanka</b></p>
+          <p><span>Mode of payment</span><b>Bank transfer</b></p>
+        </div>
+      </div>
+
+      <table className="lp-doc-table">
+        <thead>
+          <tr>
+            <th>Ref</th>
+            <th>Description of Services</th>
+            <th>Nature</th>
+            <th className="lp-doc-r">Qty</th>
+            <th className="lp-doc-r">Unit price</th>
+            <th className="lp-doc-r">Amount (excl. VAT)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {SPEC_LINES.map((l) => (
+            <tr key={l.reference}>
+              <td className="lp-doc-mono">{l.reference}</td>
+              <td>{l.description}</td>
+              <td>{l.nature}</td>
+              <td className="lp-doc-r lp-doc-mono">{l.qty}</td>
+              <td className="lp-doc-r lp-doc-mono">{money(l.unitPrice)}</td>
+              <td className="lp-doc-r lp-doc-mono">{money(l.amount)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div className="lp-doc-sum">
+        <p><span>Value of supply</span><b>{money(SPEC_TOTALS.valueOfSupply)}</b></p>
+        <p><span>SSCL @ {SPEC_TOTALS.ssclRate}%</span><b>{money(SPEC_TOTALS.sscl)}</b></p>
+        <p className="lp-doc-sum-rule">
+          <span>Total value of supply</span><b>{money(SPEC_TOTALS.totalValueOfSupply)}</b>
+        </p>
+        <p><span>VAT @ {SPEC_TOTALS.vatRate}%</span><b>{money(SPEC_TOTALS.vat)}</b></p>
+        <p className="lp-doc-sum-total">
+          <span>Total including VAT (LKR)</span><b>{money(SPEC_TOTALS.total)}</b>
+        </p>
+      </div>
+
+      <p className="lp-doc-words">
+        <span className="lp-doc-lbl">Amount in words</span>
+        {SPEC_TOTALS.inWords}
+      </p>
+
+      <p className="lp-doc-foot">
+        Issued under the Value Added Tax Act. Tax invoice format per Gazette
+        Extraordinary No. 2481/22.
+      </p>
+    </article>
+  );
+}
+
+function ReceiptSpecimen() {
+  return (
+    <article className="lp-doc" aria-label="Sample payment receipt">
+      <span className="lp-doc-stamp">Specimen</span>
+
+      <header className="lp-doc-top">
+        <div>
+          <p className="lp-doc-co">Finthera Advisory (Pvt) Ltd</p>
+          <p className="lp-doc-sm">No. 42, Janadhipathi Mawatha, Colombo 01</p>
+          <p className="lp-doc-sm">TIN 104567890-7000</p>
+        </div>
+        <div className="lp-doc-title-wrap">
+          <p className="lp-doc-title">PAYMENT RECEIPT</p>
+          <p className="lp-doc-sm">No. RCP-2026-0117</p>
+        </div>
+      </header>
+
+      <div className="lp-doc-grid">
+        <div>
+          <p className="lp-doc-lbl">Received from</p>
+          <p className="lp-doc-strong">Ceylon Robotics (Pvt) Ltd</p>
+          <p className="lp-doc-sm">No. 7, Duplication Road, Colombo 04</p>
+        </div>
+        <div className="lp-doc-amt">
+          <p className="lp-doc-lbl">Amount received</p>
+          <p className="lp-doc-amt-val">LKR {money(SPEC_TOTALS.total)}</p>
+          <p className="lp-doc-sm">Received on 04/02/2026</p>
+        </div>
+      </div>
+
+      <table className="lp-doc-table">
+        <thead>
+          <tr>
+            <th>Invoice #</th>
+            <th>Payment method</th>
+            <th>Reference</th>
+            <th className="lp-doc-r">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td className="lp-doc-mono">INV-2026-0418</td>
+            <td>Bank transfer</td>
+            <td className="lp-doc-mono">SAMP/0402/9931</td>
+            <td className="lp-doc-r lp-doc-mono">{money(SPEC_TOTALS.total)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div className="lp-doc-sum">
+        <p><span>Amount received</span><b>{money(SPEC_TOTALS.total)}</b></p>
+        <p className="lp-doc-sum-total"><span>Balance due (LKR)</span><b>0.00</b></p>
+      </div>
+
+      <p className="lp-doc-words">
+        <span className="lp-doc-lbl">Amount in words</span>
+        {SPEC_TOTALS.inWords}
+      </p>
+
+      <div className="lp-doc-sign">
+        <span />
+        <p className="lp-doc-sm">Authorised signature</p>
+      </div>
+    </article>
+  );
+}
+
+const DOC_CYCLE_MS = 6000;
+
+/* Alternates the two sheets: each pops in, holds, then fades out as the next
+   arrives. Gated on visibility so the cycle isn't already part-way through by the
+   time the section is reached. */
+function DocumentShowcase() {
+  const [idx, setIdx] = useState(0);
+  const [armed, setArmed] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const docs = ["Tax invoice", "Payment receipt"];
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || prefersReducedMotion()) return;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setArmed(true);
+          io.disconnect();
+        }
+      },
+      { threshold: 0.25 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!armed) return;
+    const id = window.setInterval(() => setIdx((i) => (i + 1) % 2), DOC_CYCLE_MS);
+    return () => window.clearInterval(id);
+  }, [armed]);
+
+  return (
+    <div className="lp-docs" ref={ref}>
+      {/* Both sheets stay mounted and stacked; only the active one is shown, so the
+          block never changes height as they swap. */}
+      <div className="lp-docs-stack">
+        <div className={`lp-docs-slot${idx === 0 ? " is-live" : ""}`} aria-hidden={idx !== 0}>
+          <TaxInvoiceSpecimen />
+        </div>
+        <div className={`lp-docs-slot${idx === 1 ? " is-live" : ""}`} aria-hidden={idx !== 1}>
+          <ReceiptSpecimen />
+        </div>
+      </div>
+
+      <div className="lp-docs-tabs" role="tablist" aria-label="Document samples">
+        {docs.map((d, i) => (
+          <button
+            key={d}
+            type="button"
+            role="tab"
+            aria-selected={idx === i}
+            className={`lp-docs-tab${idx === i ? " is-on" : ""}`}
+            onClick={() => {
+              setArmed(false); // stop the carousel once a choice is made
+              setIdx(i);
+            }}
+          >
+            {d}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ── Kinetic headlines ───────────────────────────────────────────────────────
    Splits a headline into words and rises each one into place on a stagger. Every
    word sits in its own overflow-hidden box, so the word is genuinely masked as it
@@ -979,6 +1289,7 @@ export default function Landing() {
   const s3dClose = useSection3d<HTMLElement>();
   const s3dReports = useSection3d<HTMLElement>();
   const s3dLocal = useSection3d<HTMLElement>();
+  const s3dDocs = useSection3d<HTMLElement>();
   const s3dStart = useSection3d<HTMLElement>();
   const s3dPricing = useSection3d<HTMLElement>();
   const s3dClosing = useSection3d<HTMLElement>();
@@ -997,6 +1308,12 @@ export default function Landing() {
         .sort((a, b) => a.monthly - b.monthly),
     [],
   );
+
+  // Headline discount, so the closing CTA and the marquee always quote the same
+  // number — and it disappears cleanly if the offer is switched off.
+  const bestDiscount = discountedPlans.length
+    ? Math.max(...discountedPlans.map((p) => p.percent))
+    : 0;
 
   const scrollToPricing = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -1168,7 +1485,7 @@ export default function Landing() {
         {/* ── Capabilities, organised by the account range they post to.
                Set on navy and run full-bleed, matching the Industry-bundles panel
                further down; the inner shell keeps the content on the page grid. ── */}
-        <section className="lp-band is-navy" ref={mapRef}>
+        <section id="ledger" className="lp-band is-navy" ref={mapRef}>
           <div className="lp-shell lp-section" ref={s3dCoa}>
             <header className="lp-section-head">
               <p className="lp-eyebrow">Chart of accounts</p>
@@ -1205,7 +1522,7 @@ export default function Landing() {
         <div className="lp-shell" aria-hidden="true"><div className="lp-stripe" /></div>
 
         {/* ── The close cycle. Numbered because it genuinely is an order. ── */}
-        <section className="lp-shell lp-section" ref={s3dClose}>
+        <section id="close" className="lp-shell lp-section" ref={s3dClose}>
           <header className="lp-section-head">
             <p className="lp-eyebrow">The month, end to end</p>
             <SplitHeading text="Close the month in six steps, not six weeks" accent="six steps" />
@@ -1229,7 +1546,7 @@ export default function Landing() {
         </section>
 
         {/* ── What the ledger produces ─────────────────────────── */}
-        <section className="lp-shell lp-section" ref={s3dReports}>
+        <section id="reports" className="lp-shell lp-section" ref={s3dReports}>
           <header className="lp-section-head">
             <p className="lp-eyebrow">Reports</p>
             <SplitHeading text="The statement your accountant asks for, ready now" accent="ready now" />
@@ -1251,7 +1568,7 @@ export default function Landing() {
         </section>
 
         {/* ── Local specifics ──────────────────────────────────── */}
-        <section className="lp-shell lp-section" ref={s3dLocal}>
+        <section id="sri-lanka" className="lp-shell lp-section" ref={s3dLocal}>
           <header className="lp-section-head">
             <p className="lp-eyebrow">Sri Lanka</p>
             <SplitHeading text="Built for Sri Lankan compliance, not adapted to it" accent="not adapted to it" />
@@ -1271,6 +1588,28 @@ export default function Landing() {
           </div>
         </section>
 
+        {/* ── Document specimens ───────────────────────────────────
+               The compliance claim made concrete: the actual tax invoice and receipt
+               the system issues, on a dark ground so the white sheets read as paper.
+               Kept immediately after the Sri Lanka section it evidences. ── */}
+        <section id="documents" className="lp-band is-navy is-docs" ref={s3dDocs}>
+          <div className="lp-shell lp-section">
+            <header className="lp-section-head">
+              <p className="lp-eyebrow">Documents</p>
+              <SplitHeading
+                text="The invoice your customer gets, and the receipt that clears it"
+                accent="clears it"
+              />
+              <p className="lp-body lp-section-lede">
+                Both are generated as PDFs straight from the posted entry — the tax
+                invoice in the statutory format of Gazette Extraordinary No. 2481/22,
+                with SSCL and VAT compounded the way the IRD requires.
+              </p>
+            </header>
+            <DocumentShowcase />
+          </div>
+        </section>
+
         {/* ── Getting started ──────────────────────────────────────
                The path from signup to live reports, immediately before pricing so
                the offer lands on someone who has just seen how short it is.
@@ -1278,7 +1617,7 @@ export default function Landing() {
                Set on violet and run full-bleed: this is the section the page is
                built to deliver a reader to, so it gets the one dark band on an
                otherwise pale page. Contents invert for the dark ground. ── */}
-        <section className="lp-band" ref={s3dStart}>
+        <section id="getting-started" className="lp-band" ref={s3dStart}>
           <div className="lp-shell lp-section">
             <header className="lp-section-head">
               <p className="lp-eyebrow">Getting started</p>
@@ -1530,90 +1869,230 @@ export default function Landing() {
             </div>
           </div>
 
-          {/* Micro add-ons + services, side by side */}
-          <div className="lp-sub lp-sub-split">
-            <div>
-              <h3 className="lp-h3 lp-sub-title">Micro add-ons</h3>
-              <ul className="lp-pricelist lp-pricelist-boxed">
-                {MICRO_ADDONS.map(([label, price]) => (
-                  <li key={label}>
-                    <span className="lp-pl-label">{label}</span>
-                    <span className="lp-pl-price lp-pl-price-text">{price}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <h3 className="lp-h3 lp-sub-title">Services — one-off</h3>
-              <ul className="lp-pricelist lp-pricelist-boxed">
-                {SERVICES.map(([label, price]) => (
-                  <li key={label}>
-                    <span className="lp-pl-label">{label}</span>
-                    <span className="lp-pl-price lp-pl-price-text">{price}</span>
-                  </li>
-                ))}
-              </ul>
+          {/* Micro add-ons + services — on rich black, running full width. The
+              closing fine print belongs inside the panel, since it qualifies these
+              prices as much as the plan prices above. */}
+          <div className="lp-sub is-violet is-flush">
+            <div className="lp-shell">
+              <div className="lp-sub-split">
+                <div>
+                  <h3 className="lp-h3 lp-sub-title">Micro add-ons</h3>
+                  <ul className="lp-pricelist lp-pricelist-boxed">
+                    {MICRO_ADDONS.map(([label, price]) => (
+                      <li key={label}>
+                        <span className="lp-pl-label">{label}</span>
+                        <span className="lp-pl-price lp-pl-price-text">{price}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h3 className="lp-h3 lp-sub-title">Services — one-off</h3>
+                  <ul className="lp-pricelist lp-pricelist-boxed">
+                    {SERVICES.map(([label, price]) => (
+                      <li key={label}>
+                        <span className="lp-pl-label">{label}</span>
+                        <span className="lp-pl-price lp-pl-price-text">{price}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              <p className="lp-plans-note">
+                All prices in Sri Lanka rupees, per month unless noted. Launch pricing applies to your
+                first three months. Extra companies bill at 50% of the base plan.
+              </p>
             </div>
           </div>
-
-          <p className="lp-plans-note">
-            All prices in Sri Lanka rupees, per month unless noted. Launch pricing applies to your
-            first three months. Extra companies bill at 50% of the base plan.
-          </p>
         </section>
 
         {/* ── Controls ─────────────────────────────────────────── */}
-        <section className="lp-shell lp-section" ref={controlsRef}>
-          <header className="lp-section-head">
-            <p className="lp-eyebrow">Controls</p>
-            <SplitHeading text="Built to survive an audit" accent="audit" />
-            <p className="lp-body lp-section-lede">
-              Approvals, period locks and a full audit trail come as standard — so the
-              question is never “who changed this?”, and your auditor gets an answer
-              without a single email.
-            </p>
-          </header>
+        <section id="controls" className="lp-band is-joined" ref={controlsRef}>
+          <div className="lp-shell lp-section">
+            <header className="lp-section-head">
+              <p className="lp-eyebrow">Controls</p>
+              <SplitHeading text="Built to survive an audit" accent="audit" />
+              <p className="lp-body lp-section-lede">
+                Approvals, period locks and a full audit trail come as standard — so the
+                question is never “who changed this?”, and your auditor gets an answer
+                without a single email.
+              </p>
+            </header>
 
-          <dl className="lp-controls">
-            {CONTROLS.map(([term, desc], i) => (
-              <div key={term} className="lp-control" style={{ transitionDelay: `${i * 70}ms` }}>
-                <dt>{term}</dt>
-                <dd>{desc}</dd>
-              </div>
-            ))}
-          </dl>
+            <dl className="lp-controls">
+              {CONTROLS.map(([term, desc], i) => (
+                <div key={term} className="lp-control" style={{ transitionDelay: `${i * 70}ms` }}>
+                  <dt>{term}</dt>
+                  <dd>{desc}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
         </section>
 
-        {/* ── Close ────────────────────────────────────────────── */}
+        {/* ── Close ──────────────────────────────────────────────
+               The last thing a visitor reads, so it has to do three jobs at once:
+               make the next step concrete and small, remove the risk of taking it,
+               and give a reason to take it now. The offer figure is read from PROMO,
+               so this section can never quote a discount the rest of the page has
+               stopped running. ── */}
         <section className="lp-shell lp-closing" ref={s3dClosing}>
-          <h2 className="lp-h2 lp-closing-h">Post your first entry today.</h2>
-          <p className="lp-closing-lede">
-            Create your company, import a bank statement, and watch the trial balance
-            tie — before you spend a rupee.
-          </p>
-          <Link to="/signup" className="lp-btn lp-btn-lg">
-            Start free — no card
-            <ArrowRight className="w-4 h-4" />
-          </Link>
-          <p className="lp-closing-note">
-            Free tier, no card required · 30-day money-back on paid plans ·{" "}
-            <Link to="/login" className="lp-note-link">Log in</Link>
-          </p>
+          <div className="lp-closing-main">
+            <p className="lp-closing-eyebrow">
+              <Tag className="w-3 h-3" strokeWidth={2.5} />
+              {PROMO.active && bestDiscount
+                ? `${PROMO.label} — up to ${bestDiscount}% off`
+                : "Free tier, no card required"}
+            </p>
+
+            <h2 className="lp-h2 lp-closing-h">
+              Your books can be balancing
+              <br />
+              <em className="lp-grad">ten minutes from now</em>
+            </h2>
+
+            <p className="lp-closing-lede">
+              Not after a migration. Not after a demo call. Create your company, drop in
+              a bank statement, and watch the trial balance tie — on the free tier,
+              without handing over a card.
+            </p>
+
+            {/* Three concrete things that happen next, so "start free" stops being an
+                abstraction and becomes a short, known sequence. */}
+            <ol className="lp-closing-steps">
+              {[
+                ["01", "Create your company", "Fiscal year, currency, chart of accounts — seeded, not blank."],
+                ["02", "Import a statement", "Excel in. The rules engine categorises and posts it."],
+                ["03", "Run the trial balance", "Debits equal credits, or it tells you exactly where they don’t."],
+              ].map(([no, title, body]) => (
+                <li key={no}>
+                  <span className="lp-mono lp-closing-no">{no}</span>
+                  <span>
+                    <b>{title}</b>
+                    {body}
+                  </span>
+                </li>
+              ))}
+            </ol>
+
+            <div className="lp-closing-cta">
+              <Link to="/signup" className="lp-btn lp-btn-lg">
+                Start free — no card
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+              <a href="#pricing" onClick={scrollToPricing} className="lp-closing-second">
+                or see the packages
+              </a>
+            </div>
+
+            <ul className="lp-closing-risk">
+              {[
+                "No card required to start",
+                "30-day money-back on paid plans",
+                "Cancel anytime — your data exports with you",
+              ].map((t) => (
+                <li key={t}>
+                  <Check className="w-3.5 h-3.5" strokeWidth={3} />
+                  {t}
+                </li>
+              ))}
+            </ul>
+
+            <p className="lp-closing-note">
+              Already have an account?{" "}
+              <Link to="/login" className="lp-note-link">Log in</Link>
+            </p>
+          </div>
+
+          {/* The proof, restated as the thing they'll see: a balanced entry. */}
+          <aside className="lp-closing-proof" aria-hidden="true">
+            <p className="lp-mono lp-closing-proof-ref">JV-0001 · your first entry</p>
+            <div className="lp-closing-proof-rows lp-mono">
+              <p><span>Debits</span><b>{money(ENTRY_TOTAL)}</b></p>
+              <p><span>Credits</span><b>{money(ENTRY_TOTAL)}</b></p>
+            </div>
+            <p className="lp-closing-proof-ok lp-mono">
+              <Check className="w-3.5 h-3.5" strokeWidth={3} />
+              Balanced · 0.00
+            </p>
+          </aside>
         </section>
       </main>
 
+      {/* ── Footer: the closing entry ─────────────────────────────
+             Laid out as the last journal entry of the period. The link groups are
+             account ranges, mirroring the chart-of-accounts section above, and the
+             foot carries the same balance check as the hero card — same specimen
+             figure (ENTRY_TOTAL), so the page opens and closes on a ledger that
+             ties. It stays a plain <nav> of real links underneath the styling. ── */}
       <footer className="lp-footer">
-        <div className="lp-shell flex flex-wrap items-center justify-between gap-4 py-8">
-          <div className="flex items-center gap-2.5">
-            <span className="lp-mark lp-mark-sm" aria-hidden="true">
-              <span />
-              <span />
+        <div className="lp-shell">
+          <div className="lp-foot-head">
+            <span className="lp-mono lp-foot-jv">JV-2026-CLOSE</span>
+            <span className="lp-foot-posted">
+              <Check className="w-3 h-3" strokeWidth={3} />
+              Posted
             </span>
-            <span className="font-serif text-base">Finthera</span>
+            <span className="lp-foot-rule" aria-hidden="true" />
+            <span className="lp-mono lp-foot-period">Period 03/2026 · locked</span>
           </div>
-          <p className="lp-mono text-xs text-[#4A6C8E]">
-            © {new Date().getFullYear()} Finthera · Accounting software
-          </p>
+
+          <div className="lp-foot-ledger">
+            {FOOT_GROUPS.map((group) => (
+              <nav key={group.code} className="lp-foot-col" aria-label={group.title}>
+                <p className="lp-foot-key">
+                  <span className="lp-mono lp-foot-code">{group.code}</span>
+                  <span className="lp-mono lp-foot-class">{group.title}</span>
+                </p>
+                <ul className="lp-foot-links">
+                  {group.links.map(([label, href]) =>
+                    href.startsWith("#") ? (
+                      <li key={label}>
+                        <a href={href}>{label}</a>
+                      </li>
+                    ) : (
+                      <li key={label}>
+                        <Link to={href}>{label}</Link>
+                      </li>
+                    ),
+                  )}
+                </ul>
+              </nav>
+            ))}
+          </div>
+
+          {/* The closing check, echoing the hero's entry. */}
+          <div className="lp-foot-totals lp-mono" aria-hidden="true">
+            <span className="lp-foot-tot-lbl">Σ Debits</span>
+            <span className="lp-foot-tot-val">{money(ENTRY_TOTAL)}</span>
+            <span className="lp-foot-tot-lbl">Σ Credits</span>
+            <span className="lp-foot-tot-val">{money(ENTRY_TOTAL)}</span>
+            <span className="lp-foot-tot-diff">
+              <Check className="w-3.5 h-3.5" strokeWidth={3} />
+              Difference 0.00
+            </span>
+          </div>
+
+          <div className="lp-foot-base">
+            <div className="lp-foot-brand">
+              <span className="lp-mark lp-mark-sm" aria-hidden="true">
+                <span />
+                <span />
+              </span>
+              <span className="font-serif text-base">Finthera</span>
+              <span className="lp-foot-tag">Double-entry accounting, built in Sri Lanka</span>
+            </div>
+            <div className="lp-foot-meta">
+              <Link to="/signup" className="lp-foot-cta">
+                Start free
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+              <p className="lp-mono lp-foot-copy">
+                © {new Date().getFullYear()} Finthera
+              </p>
+            </div>
+          </div>
         </div>
       </footer>
     </div>
@@ -1869,6 +2348,122 @@ const css = `
 .lp .lp-band.is-navy .lp-group-code { background-image: linear-gradient(135deg, var(--mint) 0%, var(--amber) 100%); }
 .lp .lp-band.is-navy .lp-group-class { color: rgba(228, 238, 247, 0.58); }
 .lp .lp-band.is-navy .lp-chips li { color: #DCEBF6; background-image: linear-gradient(140deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.05)); border-color: rgba(255, 255, 255, 0.2); }
+
+/* ── Continuous violet run: add-ons panel + Controls ─────────────────────────
+   These two sit directly on top of each other and share one violet field, with no
+   pale gap between them. Three things have to give way for that:
+     · the pricing section's bottom padding (the panel is its last child),
+     · the Controls band's top margin,
+     · the hairline that would otherwise draw across the junction.
+   The result reads as a single tall panel rather than two stacked ones. */
+/* Two classes on purpose. The .lp .lp-section rule further down sets padding-block,
+   which covers both edges, so a single-class rule here would lose to it on source
+   order. This wins on specificity instead. */
+.lp .lp-section.lp-pricing { padding-bottom: 0; }
+.lp .lp-sub.is-violet.is-flush { margin-bottom: 0; }
+.lp .lp-sub.is-violet.is-flush::after { content: none; }
+
+/* Industry bundles (navy) runs straight into the add-ons panel (violet) — no pale
+   strip between them. The hairline at the junction stays, as the seam between the
+   two colours; it's a 3px rule, not a gap. */
+.lp .lp-sub.is-navy + .lp-sub.is-violet.is-flush { margin-top: 0; }
+
+/* Controls: the violet base from .lp-band, butted against the panel above. */
+.lp .lp-band.is-joined { margin-top: 0; }
+.lp .lp-band.is-joined::before { content: none; }
+
+/* Type and rules on the violet ground (shared by both blocks). */
+.lp .is-violet .lp-h3, .lp .is-violet .lp-sub-title,
+.lp .lp-band.is-joined .lp-h3 { color: #FFFFFF; }
+.lp .is-violet .lp-plans-note,
+.lp .lp-band.is-joined .lp-plans-note { color: rgba(243, 239, 254, 0.58); }
+
+/* Price lists: translucent so the violet reads through instead of a white slab. */
+.lp .is-violet .lp-pricelist-boxed { border-color: rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.07); }
+.lp .is-violet .lp-pricelist li { border-bottom-color: rgba(255, 255, 255, 0.13); }
+.lp .is-violet .lp-pl-label { color: rgba(243, 239, 254, 0.88); }
+.lp .is-violet .lp-pl-price-text { color: var(--amber); }
+
+/* Controls grid draws its dividers as background showing through the 1px gaps —
+   left dark, the four cards weld into one block with no visible cross rules. */
+.lp .lp-band.is-joined .lp-controls { background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.18); box-shadow: none; }
+.lp .lp-band.is-joined .lp-control { background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.04) 100%); }
+.lp .lp-band.is-joined .lp-control dt { color: #FFFFFF; }
+.lp .lp-band.is-joined .lp-control dd { color: rgba(243, 239, 254, 0.76); }
+
+/* ── Document specimens ──────────────────────────────────────────────────────
+   White sheets on the dark band, so they read as paper/PDF rather than as UI. Both
+   sheets are stacked in the same grid cell and cross-fade, which keeps the block a
+   fixed height while they swap — no layout jump mid-cycle. */
+.lp .lp-docs { margin-top: 2.5rem; }
+.lp .lp-docs-stack { display: grid; }
+.lp .lp-docs-slot { grid-area: 1 / 1; display: flex; justify-content: center;
+  opacity: 0; transform: scale(0.965) translateY(14px); pointer-events: none;
+  transition: opacity 620ms ease, transform 720ms cubic-bezier(0.19, 1, 0.22, 1); }
+.lp .lp-docs-slot.is-live { opacity: 1; transform: none; pointer-events: auto; }
+
+/* The sheet itself. A4-ish proportion via max-width; type is deliberately small so
+   it reads as a document rather than as page content. */
+.lp .lp-doc { position: relative; width: 100%; max-width: 46rem; padding: 1.9rem 1.9rem 1.6rem;
+  background: #FFFFFF; color: #10243A; border-radius: 0.4rem;
+  box-shadow: 0 40px 80px -30px rgba(0, 12, 30, 0.75), 0 2px 0 rgba(255, 255, 255, 0.5) inset;
+  font-size: 0.78rem; line-height: 1.5; text-align: left; }
+@media (min-width: 48rem) { .lp .lp-doc { padding: 2.4rem 2.4rem 2rem; font-size: 0.82rem; } }
+
+/* Marked as a sample — these are format-correct specimens, not issued documents. */
+.lp .lp-doc-stamp { position: absolute; top: 1.1rem; right: 1.1rem; font-family: var(--font-mono);
+  font-size: 0.55rem; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase;
+  color: #B4462A; border: 1px solid rgba(180, 70, 42, 0.4); border-radius: 0.2rem; padding: 0.16rem 0.4rem;
+  transform: rotate(-4deg); }
+
+.lp .lp-doc-top { display: flex; justify-content: space-between; gap: 1.5rem; flex-wrap: wrap;
+  padding-bottom: 1rem; border-bottom: 2px solid #10243A; }
+.lp .lp-doc-co { margin: 0; font-family: var(--font-serif); font-size: 1.05rem; font-weight: 600; }
+.lp .lp-doc-sm { margin: 0.1rem 0 0; font-size: 0.7rem; color: #5B7189; }
+.lp .lp-doc-title-wrap { text-align: right; }
+.lp .lp-doc-title { margin: 0; font-family: var(--font-mono); font-size: 0.92rem; font-weight: 700; letter-spacing: 0.1em; }
+
+.lp .lp-doc-grid { display: grid; grid-template-columns: 1fr; gap: 1.1rem; padding: 1rem 0; }
+@media (min-width: 40rem) { .lp .lp-doc-grid { grid-template-columns: 1fr auto; } }
+.lp .lp-doc-lbl { display: block; margin: 0 0 0.2rem; font-family: var(--font-mono); font-size: 0.58rem;
+  font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #7C8FA5; }
+.lp .lp-doc-strong { margin: 0; font-weight: 700; }
+.lp .lp-doc-meta { display: grid; gap: 0.2rem; font-size: 0.72rem; }
+.lp .lp-doc-meta p { display: grid; grid-template-columns: auto auto; gap: 0.9rem; justify-content: end; margin: 0; }
+.lp .lp-doc-meta span { color: #7C8FA5; }
+.lp .lp-doc-meta b { font-family: var(--font-mono); font-weight: 600; text-align: right; }
+
+.lp .lp-doc-table { width: 100%; border-collapse: collapse; margin: 0.4rem 0 1rem; font-size: 0.73rem; }
+.lp .lp-doc-table th { text-align: left; padding: 0.45rem 0.5rem; font-family: var(--font-mono); font-size: 0.58rem;
+  font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #5B7189;
+  background: #F1F5F9; border-bottom: 1px solid #D8E2EC; }
+.lp .lp-doc-table td { padding: 0.5rem 0.5rem; border-bottom: 1px solid #E8EEF4; vertical-align: top; }
+.lp .lp-doc-r { text-align: right; }
+.lp .lp-doc-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.lp .lp-doc-sum { margin-left: auto; width: min(20rem, 100%); display: grid; gap: 0.25rem; font-size: 0.75rem; }
+.lp .lp-doc-sum p { display: flex; justify-content: space-between; gap: 1rem; margin: 0; }
+.lp .lp-doc-sum span { color: #5B7189; }
+.lp .lp-doc-sum b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; }
+.lp .lp-doc-sum-rule { padding-top: 0.3rem; border-top: 1px solid #D8E2EC; }
+.lp .lp-doc-sum-total { margin-top: 0.3rem; padding-top: 0.4rem; border-top: 2px solid #10243A; font-weight: 700; }
+.lp .lp-doc-sum-total span { color: #10243A; font-weight: 700; }
+.lp .lp-doc-sum-total b { font-size: 0.9rem; }
+
+/* Amount in words is a statutory requirement on the tax invoice, not decoration. */
+.lp .lp-doc-words { margin: 1.2rem 0 0; padding-top: 0.8rem; border-top: 1px solid #E8EEF4; font-size: 0.72rem; font-style: italic; color: #35506D; }
+.lp .lp-doc-foot { margin: 0.9rem 0 0; font-size: 0.64rem; color: #7C8FA5; }
+.lp .lp-doc-sign { margin-top: 1.6rem; display: grid; justify-items: center; gap: 0.35rem; }
+.lp .lp-doc-sign span { display: block; width: 12rem; border-bottom: 1px solid #A9BACB; }
+
+/* Tabs double as a manual override: clicking one stops the carousel. */
+.lp .lp-docs-tabs { display: flex; justify-content: center; gap: 0.5rem; margin-top: 1.5rem; }
+.lp .lp-docs-tab { border: 1px solid rgba(255, 255, 255, 0.22); background: rgba(255, 255, 255, 0.07);
+  color: rgba(228, 238, 247, 0.8); border-radius: 999px; padding: 0.35rem 0.85rem; font-size: 0.75rem; font-weight: 600;
+  cursor: pointer; transition: background 200ms ease, color 200ms ease, border-color 200ms ease; }
+.lp .lp-docs-tab:hover { background: rgba(255, 255, 255, 0.14); color: #FFFFFF; }
+.lp .lp-docs-tab.is-on { background: var(--amber); border-color: var(--amber); color: #3D2A00; }
+.lp .lp-docs-tab:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
 /* ── Getting-started sequence ────────────────────────────────────────────────
    Three visual states per step, driven purely by the class on the <li>:
@@ -2236,17 +2831,128 @@ const css = `
 .lp .lp-control dd { margin: 0.45rem 0 0; font-size: 0.875rem; line-height: 1.6; color: var(--body); }
 
 /* Close — the page's green deepens into one last panel */
-.lp .lp-closing { margin-block: clamp(2rem, 5vw, 3rem) clamp(3rem, 7vw, 4.5rem); padding: clamp(2.5rem, 6vw, 4rem); border-radius: 1.5rem; background-image: linear-gradient(135deg, #001D39 0%, #0A4174 55%, #4E8EA2 100%); display: flex; flex-direction: column; align-items: flex-start; gap: 1.75rem; box-shadow: 0 40px 70px -42px rgba(0, 29, 57, 0.6); }
-.lp .lp-closing-h { max-width: none; color: #FFFFFF; }
-.lp .lp-closing-lede { max-width: 40rem; margin: 1rem auto 1.75rem; font-size: 1rem; line-height: 1.6; color: rgba(255, 255, 255, 0.82); }
-.lp .lp-closing-note { margin-top: 1.15rem; font-size: 0.8125rem; color: rgba(255, 255, 255, 0.7); }
+/* ── Closing call to action ──────────────────────────────────────────────────
+   Two columns on wide screens: the argument on the left, the payoff restated as a
+   balanced entry on the right. Amber is used only on the offer chip and the primary
+   button, so the eye lands on those two things and nothing competes with them. */
+.lp .lp-closing { position: relative; overflow: hidden;
+  margin-block: clamp(2rem, 5vw, 3rem) clamp(3rem, 7vw, 4.5rem);
+  padding: clamp(2.25rem, 5.5vw, 3.75rem); border-radius: 1.5rem;
+  display: grid; grid-template-columns: 1fr; gap: 2.5rem; align-items: center;
+  background-image:
+    radial-gradient(40rem 22rem at 88% -20%, rgba(98, 65, 220, 0.45), transparent 62%),
+    radial-gradient(34rem 20rem at 4% 116%, rgba(255, 192, 30, 0.16), transparent 64%),
+    linear-gradient(135deg, #001D39 0%, #0A4174 58%, #12507F 100%);
+  box-shadow: 0 40px 70px -42px rgba(0, 29, 57, 0.6); }
+@media (min-width: 62rem) { .lp .lp-closing { grid-template-columns: 1.35fr 0.65fr; gap: 3.5rem; } }
+.lp .lp-closing::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px;
+  background: linear-gradient(90deg, transparent, var(--amber) 24%, var(--violet-lo) 76%, transparent); }
+
+.lp .lp-closing-main { min-width: 0; }
+.lp .lp-closing-eyebrow { display: inline-flex; align-items: center; gap: 0.35rem; margin: 0 0 1.1rem;
+  font-family: var(--font-mono); font-size: 0.6rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: #3D2A00; background: var(--amber); border-radius: 999px; padding: 0.25rem 0.6rem; }
+.lp .lp-closing-h { max-width: none; margin: 0; color: #FFFFFF; }
+.lp .lp-closing-lede { max-width: 38rem; margin: 1.1rem 0 0; font-size: 1.0625rem; line-height: 1.6; color: rgba(255, 255, 255, 0.84); }
+
+/* The next three steps, so "start free" resolves into a known sequence. */
+.lp .lp-closing-steps { list-style: none; margin: 1.75rem 0 0; padding: 0; display: grid; gap: 0.9rem; }
+@media (min-width: 44rem) { .lp .lp-closing-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.25rem; } }
+.lp .lp-closing-steps li { display: grid; grid-template-columns: auto 1fr; gap: 0.6rem; align-items: start;
+  padding-top: 0.85rem; border-top: 1px solid rgba(255, 255, 255, 0.2); font-size: 0.8rem; line-height: 1.5;
+  color: rgba(255, 255, 255, 0.72); }
+.lp .lp-closing-no { font-size: 0.68rem; font-weight: 700; color: var(--amber); }
+.lp .lp-closing-steps b { display: block; margin-bottom: 0.15rem; color: #FFFFFF; font-size: 0.85rem; }
+
+.lp .lp-closing-cta { display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; margin-top: 2rem; }
+.lp .lp-closing-second { font-size: 0.875rem; font-weight: 600; color: rgba(255, 255, 255, 0.78);
+  text-decoration: underline; text-underline-offset: 4px; }
+.lp .lp-closing-second:hover { color: #FFFFFF; }
+
+.lp .lp-closing-risk { list-style: none; margin: 1.5rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem 1.35rem; }
+.lp .lp-closing-risk li { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: rgba(255, 255, 255, 0.75); }
+.lp .lp-closing-risk svg { color: #7FD6A2; flex: none; }
+.lp .lp-closing-note { margin-top: 1.35rem; font-size: 0.8125rem; color: rgba(255, 255, 255, 0.62); }
+
+/* Proof panel: the outcome, not another feature claim. */
+.lp .lp-closing-proof { padding: 1.4rem 1.5rem; border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.08); backdrop-filter: blur(3px); }
+.lp .lp-closing-proof-ref { margin: 0 0 1rem; font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255, 255, 255, 0.55); }
+.lp .lp-closing-proof-rows { display: grid; gap: 0.5rem; font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+.lp .lp-closing-proof-rows p { display: flex; justify-content: space-between; gap: 1rem; margin: 0; }
+.lp .lp-closing-proof-rows span { color: rgba(255, 255, 255, 0.6); }
+.lp .lp-closing-proof-rows b { color: #FFFFFF; font-weight: 700; }
+.lp .lp-closing-proof-ok { display: flex; align-items: center; gap: 0.35rem; margin: 0.9rem 0 0; padding-top: 0.7rem;
+  border-top: 3px double rgba(255, 255, 255, 0.3); font-size: 0.75rem; font-weight: 700; color: #7FD6A2; }
 /* Inline "log in" escape hatch — present for returning users without competing
    with the primary signup action. */
 .lp .lp-note-link { color: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .lp .lp-note-link:hover { opacity: 0.8; }
-.lp .lp-closing .lp-btn { background-image: linear-gradient(135deg, #FFFFFF 0%, #D6E9F6 100%); color: #062A4D; box-shadow: 0 12px 26px -14px rgba(0, 0, 0, 0.5); }
+/* Amber, not white — the primary action here should match the one in the marquee,
+   the popup and the footer rather than reading as a third button style. */
+.lp .lp-closing .lp-btn { background-image: linear-gradient(135deg, var(--amber-lo) 0%, var(--amber) 100%); color: #3D2A00; box-shadow: 0 14px 30px -12px rgba(0, 0, 0, 0.55); }
 .lp .lp-closing .lp-btn:focus-visible { outline-color: #FFFFFF; }
-.lp .lp-footer { border-top: 1px solid var(--rule); background: rgba(255, 255, 255, 0.55); }
+/* ── Footer: the closing entry ───────────────────────────────────────────────
+   Dark, so the page ends on the same ground as the ledger and document bands.
+   Ruled like a journal page: a header line for the reference, account-range
+   columns, then a double rule and the balance check — the accounting convention
+   for a total, doing real work as the footer's bottom rule. */
+.lp .lp-footer { position: relative; color: #DCEAF6; padding-top: 3.5rem; padding-bottom: 2rem;
+  background-image:
+    radial-gradient(52rem 26rem at 12% -18%, rgba(78, 142, 162, 0.32), transparent 62%),
+    radial-gradient(44rem 24rem at 92% 118%, rgba(98, 65, 220, 0.26), transparent 64%),
+    linear-gradient(168deg, #052A4E 0%, var(--ink) 46%, #001120 100%); }
+/* Amber hairline seals the top edge, matching the bands and the marquee. */
+.lp .lp-footer::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px;
+  background: linear-gradient(90deg, transparent, var(--amber) 22%, var(--violet-lo) 78%, transparent); }
+
+/* Header line: reference, status, then a rule that fills the remaining width. */
+.lp .lp-foot-head { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 2.25rem; }
+.lp .lp-foot-jv { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; color: var(--mint); }
+.lp .lp-foot-posted { display: inline-flex; align-items: center; gap: 0.25rem; font-family: var(--font-mono);
+  font-size: 0.58rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: #0C2F17; background: #7FD6A2; border-radius: 999px; padding: 0.16rem 0.5rem; }
+.lp .lp-foot-rule { flex: 1 1 3rem; height: 1px; min-width: 2rem; background: rgba(255, 255, 255, 0.16); }
+.lp .lp-foot-period { font-size: 0.65rem; color: rgba(220, 234, 246, 0.55); }
+
+/* Account-range columns. */
+.lp .lp-foot-ledger { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem 1.5rem; }
+@media (min-width: 52rem) { .lp .lp-foot-ledger { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2.5rem; } }
+.lp .lp-foot-key { display: flex; align-items: baseline; gap: 0.5rem; margin: 0 0 0.9rem;
+  padding-bottom: 0.6rem; border-bottom: 1px solid rgba(255, 255, 255, 0.14); }
+.lp .lp-foot-code { font-size: 1.05rem; font-weight: 700; letter-spacing: -0.02em;
+  background-image: linear-gradient(135deg, var(--mint), var(--amber));
+  -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
+.lp .lp-foot-class { font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(220, 234, 246, 0.55); }
+.lp .lp-foot-links { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
+.lp .lp-foot-links a { font-size: 0.83rem; color: rgba(220, 234, 246, 0.82); text-decoration: none;
+  transition: color 180ms ease, padding-left 180ms ease; }
+/* A ledger tick appears on hover, so the row reads as being selected. */
+.lp .lp-foot-links a::before { content: "› "; opacity: 0; color: var(--amber); }
+.lp .lp-foot-links a:hover { color: #FFFFFF; }
+.lp .lp-foot-links a:hover::before { opacity: 1; }
+.lp .lp-foot-links a:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; border-radius: 2px; }
+
+/* The closing total: double rule above, as a ledger total is drawn. */
+.lp .lp-foot-totals { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 0.4rem 1rem;
+  margin-top: 2.5rem; padding-top: 0.7rem; font-size: 0.72rem; font-variant-numeric: tabular-nums;
+  border-top: 3px double rgba(255, 255, 255, 0.28); }
+.lp .lp-foot-tot-lbl { color: rgba(220, 234, 246, 0.55); }
+.lp .lp-foot-tot-val { font-weight: 700; color: #FFFFFF; }
+.lp .lp-foot-tot-diff { display: inline-flex; align-items: center; gap: 0.3rem; font-weight: 700; color: #7FD6A2; }
+
+.lp .lp-foot-base { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1.25rem;
+  margin-top: 2.25rem; padding-top: 1.5rem; border-top: 1px solid rgba(255, 255, 255, 0.12); }
+.lp .lp-foot-brand { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
+.lp .lp-foot-tag { font-size: 0.75rem; color: rgba(220, 234, 246, 0.55); }
+.lp .lp-foot-meta { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; }
+.lp .lp-foot-cta { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; font-weight: 700;
+  color: #3D2A00; background-image: linear-gradient(90deg, var(--amber-lo), var(--amber));
+  border-radius: 999px; padding: 0.45rem 0.9rem; text-decoration: none; }
+.lp .lp-foot-cta:hover { filter: brightness(1.06); }
+.lp .lp-foot-copy { font-size: 0.7rem; color: rgba(220, 234, 246, 0.5); }
+/* The mark is drawn for the light page; invert it here. */
+.lp .lp-footer .lp-mark span { background: var(--mint); }
 
 /* Motion
    Hero entrance runs as two animations on different clocks: the element pops
@@ -2373,6 +3079,10 @@ const css = `
   .lp .lp-start-dot, .lp .lp-start-spin, .lp .lp-start-step.is-live { animation: none; transform: none; }
   .lp .lp-start-spin { opacity: 0; }
   .lp .lp-start-rail-fill, .lp .lp-start-dot, .lp .lp-start-dot > * { transition: none; }
+  /* DocumentShowcase never starts its cycle here, so the first sheet must still be
+     shown rather than sitting at opacity 0 behind a stopped carousel. */
+  .lp .lp-docs-slot { transition: none; transform: none; }
+  .lp .lp-docs-slot:first-child { opacity: 1; pointer-events: auto; }
   /* Marquee holds still and wraps to the visible offers instead of scrolling. */
   .lp .lp-ticker-track { animation: none; width: 100%; }
   .lp .lp-ticker-run:nth-child(2) { display: none; }
