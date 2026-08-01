@@ -2,8 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAccounts, useJournalEntries } from "@/hooks/useData";
-import { useBankImportRefs } from "@/hooks/useBankStatementImport";
+import { useAccounts, useAccountLedgerLines, useAccountOpeningBalance, useAccountEarliestEntryDate } from "@/hooks/useData";
 import { useFiscalPeriods, usePeriodOpeningBalances } from "@/hooks/useFiscalPeriodBalances";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -54,8 +53,6 @@ export default function AccountReport() {
   const queryClient = useQueryClient();
 
   const { data: accounts } = useAccounts();
-  const { data: journalEntries, isLoading: entriesLoading } = useJournalEntries();
-  const { data: bankRefs } = useBankImportRefs();
   const { data: periods } = useFiscalPeriods();
 
   const [dateFrom, setDateFrom] = useState(() => {
@@ -66,14 +63,28 @@ export default function AccountReport() {
   });
   const [dateTo, setDateTo] = useState(() => new Date().toISOString().slice(0, 10));
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [editEntry, setEditEntry] = useState<{ journalEntryId: string; lineId: string } | null>(null);
+
+  // Keystrokes shouldn't immediately re-run the search/type filter.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const account = useMemo(
     () => (accounts || []).find((a: any) => a.id === accountId) as any,
     [accounts, accountId]
   );
   const isOBEAccount = useMemo(() => isOpeningBalanceEquityAccount(account), [account]);
+
+  // Account-scoped ledger data (idx_jl_account_entry-backed RPCs) — replaces
+  // the old tenant-wide useJournalEntries() fetch with just this account's
+  // history, bounded to the active date range.
+  const { data: ledgerLines, isLoading: entriesLoading } = useAccountLedgerLines(accountId, dateFrom, dateTo);
+  const { data: openingBalanceData } = useAccountOpeningBalance(accountId, dateFrom);
+  const { data: earliestEntryDate } = useAccountEarliestEntryDate(accountId);
 
   // Open the ledger showing this account's FULL history. The default window is
   // the last six months, but a ledger reached from the Chart of Accounts must
@@ -83,22 +94,14 @@ export default function AccountReport() {
   // posted entry whenever the account or the underlying data changes; the user
   // can still narrow the range afterwards.
   useEffect(() => {
-    if (!journalEntries || !account) return;
-    let earliest: string | null = null;
-    for (const e of journalEntries as any[]) {
-      if (e.status !== "posted" || (e as any).voided_at) continue;
-      const touchesAccount = ((e.journal_lines as any[]) || []).some(
-        (l: any) => l.account_id === account.id
-      );
-      if (touchesAccount && (!earliest || e.entry_date < earliest)) earliest = e.entry_date;
-    }
-    if (earliest && earliest < dateFrom) {
-      setDateFrom(earliest.slice(0, 8) + "01"); // first day of that month
+    if (!earliestEntryDate || !account) return;
+    if (earliestEntryDate < dateFrom) {
+      setDateFrom(earliestEntryDate.slice(0, 8) + "01"); // first day of that month
     }
     // Intentionally keyed on account + data only: re-widens when either changes,
     // but does not fight a manual date narrowing (deps unchanged between edits).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountId, journalEntries, account]);
+  }, [accountId, earliestEntryDate, account]);
 
   // Find matching fiscal period for opening balance
   const matchingPeriod = useMemo(() => {
@@ -130,14 +133,11 @@ export default function AccountReport() {
   //   - P&L accounts (Income/Expense/COGS) → period-only view; opening balance
   //     is suppressed and the running balance starts at 0 within the window.
   //   The underlying journal_lines are NEVER modified — this is presentation only.
-  const { rows, openingBalance, totalDebit, totalCredit, closingBalance, isPeriodBased } = useMemo(() => {
-    if (!account || !journalEntries) return { rows: [], openingBalance: 0, totalDebit: 0, totalCredit: 0, closingBalance: 0, isPeriodBased: false };
+  const { allRows, openingBalance, totalDebit, totalCredit, closingBalance, isPeriodBased } = useMemo(() => {
+    if (!account || !ledgerLines) return { allRows: [] as TransactionRow[], openingBalance: 0, totalDebit: 0, totalCredit: 0, closingBalance: 0, isPeriodBased: false };
 
     const debitNormal = isDebitNormal(account.account_type);
     const periodBased = isPeriodBasedAccount(account.account_type);
-    const postedEntries = (journalEntries as any[]).filter(
-      (entry: any) => entry.status === "posted" && !entry.voided_at
-    );
 
     // Express a {debit, credit} pair as a signed balance in the account's normal
     // direction (positive = normal side) using the shared calculator. AccountReport
@@ -153,54 +153,41 @@ export default function AccountReport() {
       return calc.type === (debitNormal ? "debit" : "credit") ? calc.balance : -calc.balance;
     };
 
-    // For Balance Sheet accounts only: sum of all journal lines BEFORE dateFrom.
-    // For P&L accounts: opening balance is conceptually zero (period-based).
+    // For Balance Sheet accounts only: sum of all journal lines BEFORE dateFrom,
+    // computed server-side by account_opening_balance. For P&L accounts: opening
+    // balance is conceptually zero (period-based).
     const openingSides = periodBased
       ? { debit: 0, credit: 0 }
-      : postedEntries
-          .filter((entry: any) => entry.entry_date < dateFrom)
-          .flatMap((entry: any) => ((entry.journal_lines as any[]) || []).filter((line: any) => line.account_id === account.id))
-          .reduce(
-            (acc: { debit: number; credit: number }, line: any) => ({
-              debit: acc.debit + (Number(line.debit) || 0),
-              credit: acc.credit + (Number(line.credit) || 0),
-            }),
-            { debit: 0, credit: 0 }
-          );
+      : { debit: openingBalanceData?.debit ?? 0, credit: openingBalanceData?.credit ?? 0 };
 
     const opening = toSigned(openingSides);
 
-    const txRows: TransactionRow[] = postedEntries
-      .filter((entry: any) => {
-        if (entry.entry_date < dateFrom || entry.entry_date > dateTo) return false;
-        return true;
-      })
-      .flatMap((entry: any) => {
-        const lines = (entry.journal_lines as any[]) || [];
-        return lines
-          .filter((line) => line.account_id === account.id)
-          .map((line) => {
-            const contraLines = lines.filter((l: any) => l.account_id !== account.id);
-            const contraAccount = contraLines.length === 1 && accounts
-              ? (accounts as any[]).find((a) => a.id === contraLines[0].account_id)
-              : null;
+    // ledgerLines is already this account's posted, non-voided lines within
+    // [dateFrom, dateTo] — account_ledger_lines did the entry/line filtering.
+    const txRows: TransactionRow[] = ledgerLines
+      .map((line) => {
+        const contraLines = line.contra_lines || [];
+        const contraAccount = contraLines.length === 1 ? contraLines[0] : null;
+        const cheque = (line.cheque || "").trim();
+        // Bank imports store the cheque in reference too; show it only in the
+        // dedicated Cheque column, not duplicated in Reference.
+        const reference = line.reference && line.reference.trim() !== cheque ? line.reference : "";
 
-            return {
-              date: entry.entry_date,
-              entryType: entry.entry_type || "manual",
-              journalNo: entry.id.slice(0, 8).toUpperCase(),
-              journalEntryId: entry.id,
-              reference: entry.reference || "",
-              chequeNo: bankRefs?.cheque.get(entry.id) || "",
-              name: contraAccount ? contraAccount.account_name : (contraLines.length > 1 ? "— Split —" : ""),
-              payee: bankRefs?.payee.get(entry.id) || "",
-              memo: entry.description || "",
-              debit: Number(line.debit) || 0,
-              credit: Number(line.credit) || 0,
-              balance: 0,
-              lineId: line.id,
-            };
-          });
+        return {
+          date: line.entry_date,
+          entryType: line.entry_type || "manual",
+          journalNo: line.entry_id.slice(0, 8).toUpperCase(),
+          journalEntryId: line.entry_id,
+          reference,
+          chequeNo: cheque,
+          name: contraAccount ? (contraAccount.account_name || "") : (contraLines.length > 1 ? "— Split —" : ""),
+          payee: (line.payee || "").trim(),
+          memo: line.description || "",
+          debit: Number(line.debit) || 0,
+          credit: Number(line.credit) || 0,
+          balance: 0,
+          lineId: line.line_id,
+        };
       })
       .sort((a, b) => a.date.localeCompare(b.date) || a.journalNo.localeCompare(b.journalNo));
 
@@ -210,21 +197,6 @@ export default function AccountReport() {
       bal += debitNormal ? row.debit - row.credit : row.credit - row.debit;
       row.balance = bal;
     });
-
-    let filtered = txRows;
-    if (search) {
-      const s = search.toLowerCase();
-      filtered = filtered.filter(
-        (r) =>
-          r.memo.toLowerCase().includes(s) ||
-          r.reference.toLowerCase().includes(s) ||
-          r.name.toLowerCase().includes(s) ||
-          r.journalNo.toLowerCase().includes(s)
-      );
-    }
-    if (typeFilter !== "all") {
-      filtered = filtered.filter((r) => r.entryType === typeFilter);
-    }
 
     const tDebit = txRows.reduce((s, r) => s + r.debit, 0);
     const tCredit = txRows.reduce((s, r) => s + r.credit, 0);
@@ -238,23 +210,54 @@ export default function AccountReport() {
     });
 
     return {
-      rows: filtered,
+      allRows: txRows,
       openingBalance: opening,
       totalDebit: tDebit,
       totalCredit: tCredit,
       closingBalance,
       isPeriodBased: periodBased,
     };
-  }, [account, journalEntries, dateFrom, dateTo, search, typeFilter, matchingPeriod, openingBalances, accounts, isOBEAccount, bankRefs]);
+  }, [account, ledgerLines, openingBalanceData]);
+
+  // Search + type filter, split out of the row-building memo above so a
+  // keystroke only re-filters the already-built rows instead of rebuilding,
+  // sorting and re-balancing the whole account window.
+  const rows = useMemo(() => {
+    let filtered = allRows;
+    if (debouncedSearch) {
+      const s = debouncedSearch.toLowerCase();
+      // Amount search: strip commas/currency so "3,080" / "3080" / "3080.00"
+      // all match a debit or credit of 3080.
+      const amt = s.replace(/[,\s₨$]|lkr|rs\.?/g, "");
+      filtered = filtered.filter((r) => {
+        const inAmount = /\d/.test(amt) && (
+          r.debit.toFixed(2).includes(amt) || String(r.debit).includes(amt) ||
+          r.credit.toFixed(2).includes(amt) || String(r.credit).includes(amt)
+        );
+        return (
+          r.memo.toLowerCase().includes(s) ||
+          r.reference.toLowerCase().includes(s) ||
+          r.name.toLowerCase().includes(s) ||
+          r.journalNo.toLowerCase().includes(s) ||
+          (r.chequeNo || "").toLowerCase().includes(s) ||
+          inAmount
+        );
+      });
+    }
+    if (typeFilter !== "all") {
+      filtered = filtered.filter((r) => r.entryType === typeFilter);
+    }
+    return filtered;
+  }, [allRows, debouncedSearch, typeFilter]);
 
   const entryTypes = useMemo(() => {
-    if (!journalEntries) return [];
+    if (!ledgerLines) return [];
     const types = new Set<string>();
-    (journalEntries as any[]).forEach((e) => {
-      if (e.entry_type) types.add(e.entry_type);
+    ledgerLines.forEach((line) => {
+      if (line.entry_type) types.add(line.entry_type);
     });
     return Array.from(types);
-  }, [journalEntries]);
+  }, [ledgerLines]);
 
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
@@ -528,7 +531,7 @@ export default function AccountReport() {
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search memo, reference, name..."
+                  placeholder="Search memo, reference, name, cheque, amount..."
                   className="pl-9 h-9 text-sm"
                 />
               </div>

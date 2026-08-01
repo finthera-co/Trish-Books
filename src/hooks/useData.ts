@@ -309,6 +309,90 @@ export function useJournalEntries() {
   });
 }
 
+// Account-scoped ledger reads for Ledger.tsx and AccountReport.tsx.
+//
+// Both pages render exactly one account's register. Loading the whole
+// journal_entries table via useJournalEntries() and filtering to one account
+// in JS meant re-downloading the entire tenant ledger to show a fraction of
+// it. These hooks use account_ledger_lines/account_opening_balance/
+// account_earliest_entry_date (supabase/migrations/20260730000003_account_ledger_rpc.sql),
+// which read only the lines that touch the requested account via
+// idx_jl_account_entry.
+export interface AccountLedgerContraLine {
+  account_id: string;
+  account_code: string | null;
+  account_name: string | null;
+  debit: number;
+  credit: number;
+}
+
+export interface AccountLedgerLine {
+  entry_id: string;
+  entry_date: string;
+  created_at: string;
+  description: string | null;
+  reference: string | null;
+  status: string;
+  entry_type: string | null;
+  source_type: string | null;
+  is_system_generated: boolean | null;
+  reversal_of: string | null;
+  voided_at: string | null;
+  void_reason: string | null;
+  line_id: string;
+  debit: number;
+  credit: number;
+  cheque: string | null;
+  payee: string | null;
+  contra_lines: AccountLedgerContraLine[];
+}
+
+export function useAccountLedgerLines(accountId?: string, dateFrom?: string, dateTo?: string) {
+  return useQuery({
+    queryKey: ["journal_entries", "account_ledger", accountId, dateFrom || null, dateTo || null],
+    enabled: !!accountId,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("account_ledger_lines", {
+        p_account_id: accountId!,
+        p_date_from: dateFrom || null,
+        p_date_to: dateTo || null,
+      });
+      if (error) throw error;
+      return (data ?? []) as unknown as AccountLedgerLine[];
+    },
+  });
+}
+
+export function useAccountOpeningBalance(accountId: string | undefined, dateFrom: string) {
+  return useQuery({
+    queryKey: ["journal_entries", "account_opening_balance", accountId, dateFrom],
+    enabled: !!accountId && !!dateFrom,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("account_opening_balance", {
+        p_account_id: accountId!,
+        p_date_from: dateFrom,
+      });
+      if (error) throw error;
+      const row = (data as any)?.[0];
+      return { debit: Number(row?.debit ?? 0), credit: Number(row?.credit ?? 0) };
+    },
+  });
+}
+
+export function useAccountEarliestEntryDate(accountId?: string) {
+  return useQuery({
+    queryKey: ["journal_entries", "account_earliest_date", accountId],
+    enabled: !!accountId,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("account_earliest_entry_date", {
+        p_account_id: accountId!,
+      });
+      if (error) throw error;
+      return data as string | null;
+    },
+  });
+}
+
 export type JournalStatusFilter = "all" | "posted" | "voided";
 export type JournalSourceFilter =
   | "all" | "manual" | "invoice" | "payment_received"

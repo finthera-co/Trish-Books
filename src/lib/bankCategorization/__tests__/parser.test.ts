@@ -43,22 +43,54 @@ describe("findColumnMap — locate columns by header name, never position", () =
     }
   });
 
-  it("recognizes a Cheque Number header as the reference field", () => {
+  it("recognizes a Cheque Number header as its own cheque field", () => {
     const matrix = [
       ["Date", "Description", "Account Type", "Debit", "Credit", "Cheque Number"],
       ["2024-05-01", "x", "salary", "100", "", "CHQ-00123"],
     ];
     const map = findColumnMap(matrix);
     expect("error" in map).toBe(false);
-    if (!("error" in map)) expect(map.voucherNo).toBe(5);
+    if (!("error" in map)) { expect(map.cheque).toBe(5); expect(map.voucherNo).toBeNull(); }
   });
 
-  it("also accepts 'Cheque No' and 'Voucher No' spellings", () => {
-    for (const h of ["Cheque No", "Voucher No", "Chq No", "Check Number"]) {
+  it("classifies cheque vs voucher spellings into the right fields", () => {
+    for (const h of ["Cheque No", "Chq No", "Check Number", "CHQ NO."]) {
       const map = findColumnMap([["Date", "Description", "Account Type", "Debit", "Credit", h]]);
-      expect("error" in map).toBe(false);
-      if (!("error" in map)) expect(map.voucherNo).toBe(5);
+      if (!("error" in map)) expect(map.cheque, h).toBe(5);
     }
+    for (const h of ["Voucher No", "Ref No", "Instrument No"]) {
+      const map = findColumnMap([["Date", "Description", "Account Type", "Debit", "Credit", h]]);
+      if (!("error" in map)) expect(map.voucherNo, h).toBe(5);
+    }
+  });
+
+  it("prefers CHQ NO. over Voucher No when a sheet has both (real Sampath layout)", () => {
+    const matrix = [
+      ["Date", "Voucher No", "Name ", "CHQ NO.", "Description", "Account Type", "Debit", "Credit"],
+      ["2024-05-01", "Jul024", "Payee A", "600123", "salary pmt", "Salary", "100", ""],
+      ["2024-05-02", "Aug024", "Payee B", "", "cash withdrawal", "Cash", "50", ""],
+    ];
+    const map = findColumnMap(matrix);
+    expect("error" in map).toBe(false);
+    if (!("error" in map)) { expect(map.cheque).toBe(3); expect(map.voucherNo).toBe(1); }
+    const { lines } = parseSheetMatrix(matrix, "FINAL", { month: 5, year: 2024 });
+    expect(lines[0].voucherNo).toBe("600123"); // the cheque, not "Jul024"
+    expect(lines[1].voucherNo).toBe("");        // blank cheque stays blank (not "Aug024")
+  });
+
+  it("uses CHQ NO. as the cheque when the Voucher No column is removed", () => {
+    // The sheet the user re-imports: only a cheque column, no voucher column.
+    const matrix = [
+      ["Date", "Name ", "CHQ NO.", "Description", "Account Type", "Debit", "Credit"],
+      ["2024-05-01", "Payee A", "600123", "salary pmt", "Salary", "100", ""],
+      ["2024-05-02", "Payee B", "", "cash", "Cash", "50", ""],
+    ];
+    const map = findColumnMap(matrix);
+    expect("error" in map).toBe(false);
+    if (!("error" in map)) { expect(map.cheque).toBe(2); expect(map.voucherNo).toBeNull(); }
+    const { lines } = parseSheetMatrix(matrix, "FINAL", { month: 5, year: 2024 });
+    expect(lines[0].voucherNo).toBe("600123");
+    expect(lines[1].voucherNo).toBe("");
   });
 
   it("accepts a debit-only money column (Account Type is optional)", () => {

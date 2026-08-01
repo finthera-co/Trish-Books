@@ -25,7 +25,8 @@ export interface ColumnMap {
   amount: number | null;         // single signed amount column (fallback)
   drCrIndicator: number | null;  // a "Dr"/"Cr" flag paired with `amount`
   name: number | null;
-  voucherNo: number | null;
+  cheque: number | null;         // "CHQ NO." — preferred over voucherNo when both exist
+  voucherNo: number | null;      // "Voucher No" / reference number
   bankFee: number | null;
   balance: number | null;
 }
@@ -114,12 +115,14 @@ const HEADER_ALIASES: Record<string, ColKey> = {
   "amount (lkr)": "amount", "amount lkr": "amount", "value": "amount",
   "dr/cr": "drCrIndicator", "drcr": "drCrIndicator", "cr/dr": "drCrIndicator",
   "d/c": "drCrIndicator", "type dr/cr": "drCrIndicator", "debit/credit": "drCrIndicator",
-  // reference / cheque — on a bank statement this is the cheque number
+  // Cheque number — its OWN field, preferred over "voucher no" when a sheet has
+  // both columns (the real Sampath sheet has "Voucher No" AND "CHQ NO.").
+  "cheque no": "cheque", "cheque no.": "cheque", "cheque number": "cheque",
+  "cheque": "cheque", "chq no": "cheque", "chq no.": "cheque", "chq": "cheque",
+  "check no": "cheque", "check number": "cheque", "check": "cheque",
+  // Voucher / other reference number.
   "voucher no": "voucherNo", "voucher no.": "voucherNo", "voucher number": "voucherNo",
-  "cheque no": "voucherNo", "cheque no.": "voucherNo", "cheque number": "voucherNo",
-  "cheque": "voucherNo", "chq no": "voucherNo", "chq no.": "voucherNo",
-  "check no": "voucherNo", "check number": "voucherNo", "instrument no": "voucherNo",
-  "ref no": "voucherNo", "reference no": "voucherNo",
+  "instrument no": "voucherNo", "ref no": "voucherNo", "reference no": "voucherNo",
   // payee name
   "name": "name", "payee": "name", "payee name": "name", "beneficiary": "name",
   "counterparty": "name", "party": "name", "party name": "name",
@@ -142,7 +145,8 @@ function classifyHeader(h: string): ColKey | null {
   if (/balance/.test(h)) return "balance";
   if (/date/.test(h)) return "date";
   if (/(particular|narration|description|details|remark|memo|narrative)/.test(h)) return "description";
-  if (/(cheque|chq|voucher|instrument|\bcheck\b|ref(erence)? no)/.test(h)) return "voucherNo";
+  if (/(cheque|chq|\bcheck\b)/.test(h)) return "cheque";
+  if (/(voucher|instrument|ref(erence)? no)/.test(h)) return "voucherNo";
   if (/(payee|beneficiary|counterparty|party name)/.test(h)) return "name";
   if (/(account type|a\/c type|category|account head)/.test(h)) return "accountType";
   if (/amount|value/.test(h)) return "amount";
@@ -193,6 +197,7 @@ export function findColumnMap(matrix: unknown[][]): ColumnMap | { error: string 
     amount: m.amount ?? null,
     drCrIndicator: m.drCrIndicator ?? null,
     name: m.name ?? null,
+    cheque: m.cheque ?? null,
     voucherNo: m.voucherNo ?? null,
     bankFee: m.bankFee ?? null,
     balance: m.balance ?? null,
@@ -430,7 +435,12 @@ export function parseSheetMatrix(
       rawDate: rawDateText,
       description,
       name,
-      voucherNo: colMap.voucherNo !== null ? cellText(row[colMap.voucherNo]) : "",
+      // Cheque number is what the ledgers display; prefer the dedicated "CHQ NO."
+      // column over a generic "Voucher No" when the sheet has both.
+      voucherNo: (() => {
+        const col = colMap.cheque ?? colMap.voucherNo;
+        return col !== null ? cellText(row[col]) : "";
+      })(),
       rawAccountType,
       debit,
       credit,

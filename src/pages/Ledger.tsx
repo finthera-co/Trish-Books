@@ -1,8 +1,7 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAccounts, useJournalEntries } from "@/hooks/useData";
-import { useBankImportRefs } from "@/hooks/useBankStatementImport";
+import { useAccounts, useAccountLedgerLines, useAccountOpeningBalance } from "@/hooks/useData";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -96,8 +95,6 @@ const txnTypeBadge: Record<string, string> = {
 export default function Ledger() {
   const navigate = useNavigate();
   const { data: accounts, isLoading: accountsLoading } = useAccounts();
-  const { data: bankRefs } = useBankImportRefs();
-  const { data: journalEntries, isLoading: entriesLoading } = useJournalEntries();
 
   // Reverse-lookup: journal_entry_id → source transaction
   const { data: voucherLookup } = useQuery({
@@ -134,6 +131,7 @@ export default function Ledger() {
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState<string>("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState<string>("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
   const [activeTab, setActiveTab] = useState("register");
@@ -141,6 +139,13 @@ export default function Ledger() {
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [page, setPage] = useState(0);
   const [drillDownEntry, setDrillDownEntry] = useState<RegisterRow | null>(null);
+
+  // Keystrokes shouldn't immediately re-run filter→sort→balance over the
+  // account's register.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearchTerm(searchTerm), 300);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
 
   // Fetch fiscal periods (still needed for period filter UI)
   const { data: fiscalPeriods } = useQuery({
@@ -159,6 +164,17 @@ export default function Ledger() {
   const effectiveDateFrom = selectedPeriod ? selectedPeriod.period_start : dateFrom;
   const effectiveDateTo = selectedPeriod ? selectedPeriod.period_end : dateTo;
 
+  // Account-scoped ledger data (idx_jl_account_entry-backed RPCs) — replaces
+  // the old tenant-wide useJournalEntries() fetch with just this account's
+  // history, bounded to the active date range.
+  const { data: ledgerLines, isLoading: ledgerLoading } = useAccountLedgerLines(
+    selectedAccount?.id, effectiveDateFrom || undefined, effectiveDateTo || undefined
+  );
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const { data: openingBalanceData, isLoading: openingBalanceLoading } = useAccountOpeningBalance(
+    selectedAccount?.id, effectiveDateFrom || todayISO
+  );
+
   // Reporting Layer rule:
   //   - Balance Sheet accounts: opening balance = sum of journal lines BEFORE
   //     the date range (cumulative carry-forward).
@@ -167,21 +183,10 @@ export default function Ledger() {
   //     The ledger posting is unchanged — this is a presentation-only rule.
   const isPeriodBased = selectedAccount ? isPeriodBasedAccount(selectedAccount.account_type) : false;
   const openingBalance = useMemo(() => {
-    if (!selectedAccount || !journalEntries) return 0;
-    if (isPeriodBased) return 0;
-
-    const targetDate = effectiveDateFrom || new Date().toISOString().slice(0, 10);
-    const debitNormal = checkDebitNormal(selectedAccount.account_type);
-
-    return (journalEntries as any[])
-      .filter((entry: any) => entry.status === "posted" && !(entry as any).voided_at && entry.entry_date < targetDate)
-      .flatMap((entry: any) => ((entry.journal_lines as any[]) || []).filter((line: any) => line.account_id === selectedAccount.id))
-      .reduce((sum: number, line: any) => {
-        const debit = Number(line.debit) || 0;
-        const credit = Number(line.credit) || 0;
-        return sum + (debitNormal ? debit - credit : credit - debit);
-      }, 0);
-  }, [selectedAccount, journalEntries, effectiveDateFrom, isPeriodBased]);
+    if (!selectedAccount || isPeriodBased || !openingBalanceData) return 0;
+    const { debit, credit } = openingBalanceData;
+    return isDebitNormal ? debit - credit : credit - debit;
+  }, [selectedAccount, isPeriodBased, openingBalanceData, isDebitNormal]);
 
   // Group accounts by type for selector
   const accountsByType = useMemo(() => {
@@ -208,70 +213,61 @@ export default function Ledger() {
     return { transaction_id: entryId, transaction_type: "journal_entry" };
   }, [voucherLookup, payrollLookup]);
 
-  // Build register rows from journal entries
+  // Build register rows from account-scoped ledger lines. Date/status/account
+  // filtering already happened server-side in account_ledger_lines — this
+  // just reshapes each line into a RegisterRow.
   const allRows = useMemo<RegisterRow[]>(() => {
-    if (!journalEntries || !selectedAccount || !accounts) return [];
+    if (!ledgerLines || !selectedAccount) return [];
 
-    return journalEntries
-      .filter(entry => {
-        if (entry.status === "voided" || (entry as any).voided_at) return false;
-        if (entry.status !== "posted") return false;
-        if (effectiveDateFrom && entry.entry_date < effectiveDateFrom) return false;
-        if (effectiveDateTo && entry.entry_date > effectiveDateTo) return false;
-        return true;
-      })
-      .flatMap(entry => {
-        const lines = (entry.journal_lines as any[]) || [];
-        const myLines = lines.filter(line => line.account_id === selectedAccount.id);
-        if (myLines.length === 0) return [];
+    return ledgerLines.map(line => {
+      const contraNames = (line.contra_lines || [])
+        .map(cl => cl.account_name || "Unknown")
+        .filter((v, i, a) => a.indexOf(v) === i);
+      const contraAccount = contraNames.length > 0
+        ? (contraNames.length <= 2 ? contraNames.join(", ") : `${contraNames[0]} +${contraNames.length - 1} more`)
+        : "—";
 
-        // Find contra accounts (other side)
-        const contraLines = lines.filter(line => line.account_id !== selectedAccount.id);
-        const contraNames = contraLines
-          .map(cl => {
-            const acc = accounts.find(a => a.id === cl.account_id);
-            return acc ? acc.account_name : "Unknown";
-          })
-          .filter((v, i, a) => a.indexOf(v) === i);
-        const contraAccount = contraNames.length > 0
-          ? (contraNames.length <= 2 ? contraNames.join(", ") : `${contraNames[0]} +${contraNames.length - 1} more`)
-          : "—";
+      // Extract entity name from description patterns
+      let entityName = "";
+      const desc = line.description || "";
+      const namePatterns = [
+        /(?:for|from|to|by)\s+(.+?)(?:\s*[-–—]|\s*$)/i,
+        /^(?:Invoice|Payment|Expense|Bill)\s*[-–—:]\s*(.+?)(?:\s*[-–—]|\s*$)/i,
+      ];
+      for (const pat of namePatterns) {
+        const match = desc.match(pat);
+        if (match) { entityName = match[1].trim(); break; }
+      }
 
-        // Extract entity name from description patterns
-        let entityName = "";
-        const desc = entry.description || "";
-        const namePatterns = [
-          /(?:for|from|to|by)\s+(.+?)(?:\s*[-–—]|\s*$)/i,
-          /^(?:Invoice|Payment|Expense|Bill)\s*[-–—:]\s*(.+?)(?:\s*[-–—]|\s*$)/i,
-        ];
-        for (const pat of namePatterns) {
-          const match = desc.match(pat);
-          if (match) { entityName = match[1].trim(); break; }
-        }
+      const txnType = detectTransactionType(line.reference || "", desc);
+      const { transaction_id, transaction_type } = resolveSourceTransaction(line.entry_id, txnType);
 
-        const txnType = detectTransactionType(entry.reference || "", desc);
-        const { transaction_id, transaction_type } = resolveSourceTransaction(entry.id, txnType);
+      const cheque = (line.cheque || "").trim();
+      // Bank imports store the cheque in reference too; show it only in the
+      // dedicated Cheque column, not duplicated in Ref No.
+      const refNumber = line.reference && line.reference.trim() !== cheque ? line.reference : "";
+      const payee = (line.payee || "").trim();
 
-        return myLines.map((line, idx) => ({
-          id: `${entry.id}-${idx}`,
-          date: entry.entry_date,
-          transactionType: txnType,
-          refNumber: entry.reference || "",
-          chequeNo: bankRefs?.cheque.get(entry.id) || "",
-          entityName,
-          contraAccount,
-          memo: desc,
-          debit: Number(line.debit) || 0,
-          credit: Number(line.credit) || 0,
-          balance: 0,
-          entryId: entry.id,
-          isReversal: !!(entry as any).reversal_of,
-          isOpeningBalance: false,
-          transaction_id,
-          transaction_type,
-        }));
-      });
-  }, [journalEntries, selectedAccount, accounts, effectiveDateFrom, effectiveDateTo, resolveSourceTransaction, bankRefs]);
+      return {
+        id: line.line_id,
+        date: line.entry_date,
+        transactionType: txnType,
+        refNumber,
+        chequeNo: cheque,
+        entityName: payee || entityName,
+        contraAccount,
+        memo: desc,
+        debit: Number(line.debit) || 0,
+        credit: Number(line.credit) || 0,
+        balance: 0,
+        entryId: line.entry_id,
+        isReversal: !!line.reversal_of,
+        isOpeningBalance: false,
+        transaction_id,
+        transaction_type,
+      };
+    });
+  }, [ledgerLines, selectedAccount, resolveSourceTransaction]);
 
   // Collect transaction types for filter dropdown
   const availableTypes = useMemo(() => {
@@ -283,18 +279,27 @@ export default function Ledger() {
   const filteredRows = useMemo(() => {
     return allRows.filter(row => {
       if (typeFilter !== "all" && row.transactionType !== typeFilter) return false;
-      if (searchTerm) {
-        const s = searchTerm.toLowerCase();
+      if (debouncedSearchTerm) {
+        const s = debouncedSearchTerm.toLowerCase();
+        // Amount search: strip commas/currency so "3,080" / "3080" / "3080.00"
+        // all match a debit or credit of 3080.
+        const amt = s.replace(/[,\s₨$]|lkr|rs\.?/g, "");
+        const inAmount = /\d/.test(amt) && (
+          row.debit.toFixed(2).includes(amt) || String(row.debit).includes(amt) ||
+          row.credit.toFixed(2).includes(amt) || String(row.credit).includes(amt)
+        );
         return (
           row.memo.toLowerCase().includes(s) ||
           row.refNumber.toLowerCase().includes(s) ||
           row.entityName.toLowerCase().includes(s) ||
-          row.contraAccount.toLowerCase().includes(s)
+          row.contraAccount.toLowerCase().includes(s) ||
+          (row.chequeNo || "").toLowerCase().includes(s) ||
+          inAmount
         );
       }
       return true;
     });
-  }, [allRows, typeFilter, searchTerm]);
+  }, [allRows, typeFilter, debouncedSearchTerm]);
 
   // Sort
   const sortedRows = useMemo(() => {
@@ -337,7 +342,7 @@ export default function Ledger() {
   const closingBalance = rowsWithBalance.length > 0
     ? rowsWithBalance[rowsWithBalance.length - 1].balance
     : openingBalance;
-  const isLoading = accountsLoading || entriesLoading;
+  const isLoading = accountsLoading || ledgerLoading || openingBalanceLoading;
 
   // Sort toggle
   const toggleSort = (field: SortField) => {
@@ -577,7 +582,7 @@ export default function Ledger() {
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       <input type="text" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setPage(0); }}
-                        placeholder="Search memo, reference, name..."
+                        placeholder="Search memo, reference, name, cheque, amount..."
                         className="w-full text-sm border border-input rounded-lg pl-9 pr-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 placeholder:text-muted-foreground" />
                     </div>
                   </div>
