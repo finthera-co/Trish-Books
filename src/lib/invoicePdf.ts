@@ -2,6 +2,13 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCurrency } from "@/lib/currency";
+import type { Database } from "@/integrations/supabase/types";
+
+type CompanyProfileRow = Database["public"]["Tables"]["company_profiles"]["Row"];
+type TenantRow = Pick<
+  Database["public"]["Tables"]["tenants"]["Row"],
+  "company_name" | "country" | "registration_number" | "logo_url" | "address" | "phone" | "tax_id"
+>;
 
 /**
  * Self-contained vector invoice PDF. Unlike the invoice-designer download
@@ -50,7 +57,8 @@ interface InvoicePdfData {
   invoice: any;
   customer: any;
   items: any[];
-  tenant: any;
+  tenant: TenantRow;
+  profile: CompanyProfileRow | null;
 }
 
 export interface LoadedLogo {
@@ -90,33 +98,41 @@ export async function loadLogo(url?: string | null): Promise<LoadedLogo | null> 
 
 /** Fetch everything the PDF needs for one invoice. */
 export async function loadInvoicePdfData(invoiceId: string, tenantId: string): Promise<InvoicePdfData> {
-  const { data: invoice, error } = await supabase
-    .from("invoices")
-    .select("*, customers(*), invoice_items(*, products(name), account:accounts(account_name)), payments_received(amount), ar_credit_notes(amount, status)")
-    .eq("id", invoiceId)
-    .single();
+  const [invoiceRes, tenantRes, profileRes] = await Promise.all([
+    supabase
+      .from("invoices")
+      .select("*, customers(*), invoice_items(*, products(name), account:accounts(account_name)), payments_received(amount), ar_credit_notes(amount, status)")
+      .eq("id", invoiceId)
+      .single(),
+    supabase
+      .from("tenants")
+      .select("company_name, country, registration_number, logo_url, address, phone, tax_id")
+      .eq("id", tenantId)
+      .maybeSingle(),
+    supabase
+      .from("company_profiles")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .maybeSingle(),
+  ]);
+  const { data: invoice, error } = invoiceRes;
   if (error || !invoice) throw new Error(error?.message || "Invoice not found");
 
-  const { data: tenant } = await supabase
-    .from("tenants")
-    .select("company_name, country, registration_number, logo_url, address, phone, tax_id")
-    .eq("id", tenantId)
-    .maybeSingle();
-
   // Settle figures: payments + non-voided discount credit notes reduce the balance.
-  const amountPaid = ((invoice as any).payments_received || []).reduce(
-    (s: number, p: any) => s + Number(p.amount || 0), 0);
-  const discountTotal = ((invoice as any).ar_credit_notes || [])
-    .filter((c: any) => c.status !== "voided")
-    .reduce((s: number, c: any) => s + Number(c.amount || 0), 0);
-  const total = Number((invoice as any).total_amount || 0);
+  const amountPaid = (invoice.payments_received || []).reduce(
+    (s: number, p) => s + Number(p.amount || 0), 0);
+  const discountTotal = (invoice.ar_credit_notes || [])
+    .filter((c) => c.status !== "voided")
+    .reduce((s: number, c) => s + Number(c.amount || 0), 0);
+  const total = Number(invoice.total_amount || 0);
   const balanceDue = Math.max(0, total - amountPaid - discountTotal);
 
   return {
     invoice: { ...invoice, amount_paid: amountPaid, discount_total: discountTotal, balance_due: balanceDue },
-    customer: (invoice as any).customers || {},
-    items: (invoice as any).invoice_items || [],
-    tenant: tenant || {},
+    customer: invoice.customers || {},
+    items: invoice.invoice_items || [],
+    tenant: tenantRes.data || ({} as TenantRow),
+    profile: profileRes.data,
   };
 }
 
@@ -134,7 +150,7 @@ function invoiceStatus(invoice: any): { label: string; color: RGB } {
 }
 
 /** Render an invoice to a jsPDF document (no save). */
-export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdfData, logo?: LoadedLogo | null): jsPDF {
+export function buildInvoicePdf({ invoice, customer, items, tenant, profile }: InvoicePdfData, logo?: LoadedLogo | null): jsPDF {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
@@ -150,6 +166,7 @@ export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdf
   const disc = Number(invoice.discount_total) || 0;
   const balance = Number(invoice.balance_due ?? Number(invoice.total_amount) - paid - disc);
   const t: any = tenant || {};
+  const p = profile;
   const SLATE: RGB = [45, 55, 72]; // dark table header, Zoho-style
   const SHADE: RGB = [243, 244, 246]; // light row highlight
   const invTitle = Number(invoice.tax_amount) > 0 ? "TAX INVOICE" : "INVOICE";
@@ -170,19 +187,36 @@ export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdf
     logoBottom = hy + lh;
   }
   let cy = hy + 5;
-  if (t.company_name) {
+  // Trading name in the logo lockup; legal name underneath when it differs —
+  // a tax invoice must still show the registered legal entity name.
+  const tradingName = p?.trading_name || t.company_name;
+  if (tradingName) {
     doc.setFont("helvetica", "bold").setFontSize(13);
     setText(doc, INK);
-    doc.text(String(t.company_name), cx, cy);
+    doc.text(String(tradingName), cx, cy);
     cy += 5.5;
+  }
+  if (p?.trading_name && t.company_name && p.trading_name !== t.company_name) {
+    doc.setFont("helvetica", "normal").setFontSize(8.5);
+    setText(doc, MUTED);
+    doc.text(String(t.company_name), cx, cy);
+    cy += 4.2;
   }
   doc.setFont("helvetica", "normal").setFontSize(8.5);
   setText(doc, MUTED);
   const contact: string[] = [];
-  if (t.address) for (const l of doc.splitTextToSize(String(t.address), 90)) contact.push(l);
+  const addressParts = [
+    t.address,
+    p?.address_line2,
+    [p?.city, p?.postal_code].filter(Boolean).join(" ") || null,
+    t.country,
+  ].filter(Boolean) as string[];
+  if (addressParts.length) for (const l of doc.splitTextToSize(addressParts.join(", "), 90)) contact.push(l);
   if (t.phone) contact.push(String(t.phone));
-  if (t.tax_id) contact.push(`TIN: ${t.tax_id}`);
-  else if (t.registration_number) contact.push(`BR No: ${t.registration_number}`);
+  if (p?.email) contact.push(String(p.email));
+  if (t.registration_number) contact.push(`Reg. No. ${t.registration_number}`);
+  if (p?.is_vat_registered && p?.vat_registration_no) contact.push(`VAT Reg. No.: ${p.vat_registration_no}`);
+  else if (t.tax_id) contact.push(`TIN: ${t.tax_id}`);
   contact.forEach((l) => { doc.text(l, cx, cy); cy += 4.2; });
 
   // Right: big INVOICE / TAX INVOICE title
@@ -235,10 +269,12 @@ export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdf
   setText(doc, SLATE);
   doc.text("BILL TO", M, y);
   const partyAddr = customer?.address ? doc.splitTextToSize(String(customer.address), billW) : [];
+  const customerTaxId = customer?.tin || customer?.vat_number;
   const billLines: { t: string; bold?: boolean }[] = [
     { t: customer?.legal_name || customer?.name || "—", bold: true },
     ...partyAddr.map((tt: string) => ({ t: tt })),
     ...[customer?.email, customer?.phone || customer?.mobile].filter(Boolean).map((tt: any) => ({ t: String(tt) })),
+    ...(customerTaxId ? [{ t: `TIN: ${customerTaxId}` }] : []),
   ];
   let by = y + 6.5;
   billLines.forEach((ln) => {
@@ -340,12 +376,25 @@ export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdf
   doc.text(fmt(balance), valX - 1, ty + 5.9, { align: "right" });
   ty += bH + 4;
 
-  // ── Notes / terms (left column) ──────────────────────────────────────
+  // ── Notes / terms / payment details (left column) ────────────────────
+  // Fills the space left blank under the totals block and gives the customer
+  // what they need to actually pay: bank name, branch, account, SWIFT.
+  const bankLines = [
+    p?.bank_name,
+    p?.bank_branch ? `Branch: ${p.bank_branch}` : null,
+    p?.bank_account_name ? `Account Name: ${p.bank_account_name}` : null,
+    p?.bank_account_no ? `Account No.: ${p.bank_account_no}` : null,
+    p?.bank_swift ? `SWIFT: ${p.bank_swift}` : null,
+  ].filter(Boolean);
+  const bankDetails = bankLines.length ? bankLines.join("\n") : null;
+  const termsText = invoice.terms || p?.invoice_terms || null;
+
   let ny = (doc as any).lastAutoTable.finalY + 9;
   const notesW = contentW - totalsW - 12;
   for (const [heading, text] of [
     ["Notes", invoice.notes],
-    ["Terms & Conditions", invoice.terms],
+    ["Terms & Conditions", termsText],
+    ["Payment Details", bankDetails],
   ] as [string, string | null][]) {
     if (!text) continue;
     doc.setFont("helvetica", "bold").setFontSize(8);
@@ -394,7 +443,7 @@ export function buildInvoicePdf({ invoice, customer, items, tenant }: InvoicePdf
     doc.setFont("helvetica", "italic");
     doc.setFontSize(9);
     setText(doc, MUTED);
-    doc.text("Thank you for your business", pageW / 2, fy, { align: "center" });
+    doc.text(p?.invoice_footer_note || "Thank you for your business", pageW / 2, fy, { align: "center" });
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
     doc.text(`Page ${p} of ${pageCount}`, right, fy, { align: "right" });
