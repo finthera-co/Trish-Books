@@ -3674,6 +3674,83 @@ export type Database = {
           },
         ]
       }
+      company_profiles: {
+        Row: {
+          address_line2: string | null
+          bank_account_name: string | null
+          bank_account_no: string | null
+          bank_branch: string | null
+          bank_name: string | null
+          bank_swift: string | null
+          city: string | null
+          created_at: string
+          email: string | null
+          id: string
+          invoice_footer_note: string
+          invoice_terms: string | null
+          is_vat_registered: boolean
+          postal_code: string | null
+          svat_registration_no: string | null
+          tenant_id: string
+          trading_name: string | null
+          updated_at: string
+          vat_registration_no: string | null
+          website: string | null
+        }
+        Insert: {
+          address_line2?: string | null
+          bank_account_name?: string | null
+          bank_account_no?: string | null
+          bank_branch?: string | null
+          bank_name?: string | null
+          bank_swift?: string | null
+          city?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          invoice_footer_note?: string
+          invoice_terms?: string | null
+          is_vat_registered?: boolean
+          postal_code?: string | null
+          svat_registration_no?: string | null
+          tenant_id: string
+          trading_name?: string | null
+          updated_at?: string
+          vat_registration_no?: string | null
+          website?: string | null
+        }
+        Update: {
+          address_line2?: string | null
+          bank_account_name?: string | null
+          bank_account_no?: string | null
+          bank_branch?: string | null
+          bank_name?: string | null
+          bank_swift?: string | null
+          city?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          invoice_footer_note?: string
+          invoice_terms?: string | null
+          is_vat_registered?: boolean
+          postal_code?: string | null
+          svat_registration_no?: string | null
+          tenant_id?: string
+          trading_name?: string | null
+          updated_at?: string
+          vat_registration_no?: string | null
+          website?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_profiles_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cost_centers: {
         Row: {
           created_at: string
@@ -6909,6 +6986,7 @@ export type Database = {
           id: string
           item_id: string | null
           journal_entry_id: string
+          tenant_id: string
           vendor_id: string | null
         }
         Insert: {
@@ -6921,6 +6999,7 @@ export type Database = {
           id?: string
           item_id?: string | null
           journal_entry_id: string
+          tenant_id?: string
           vendor_id?: string | null
         }
         Update: {
@@ -6933,6 +7012,7 @@ export type Database = {
           id?: string
           item_id?: string | null
           journal_entry_id?: string
+          tenant_id?: string
           vendor_id?: string | null
         }
         Relationships: [
@@ -11143,6 +11223,78 @@ export type Database = {
           },
         ]
       }
+      signup_requests: {
+        Row: {
+          company_name: string
+          country: string | null
+          created_at: string
+          email: string
+          first_name: string
+          id: string
+          industry: string | null
+          last_name: string
+          message: string | null
+          phone: string | null
+          review_note: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          team_size: string | null
+          tenant_id: string | null
+        }
+        Insert: {
+          company_name: string
+          country?: string | null
+          created_at?: string
+          email: string
+          first_name: string
+          id?: string
+          industry?: string | null
+          last_name: string
+          message?: string | null
+          phone?: string | null
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          team_size?: string | null
+          tenant_id?: string | null
+        }
+        Update: {
+          company_name?: string
+          country?: string | null
+          created_at?: string
+          email?: string
+          first_name?: string
+          id?: string
+          industry?: string | null
+          last_name?: string
+          message?: string | null
+          phone?: string | null
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          team_size?: string | null
+          tenant_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "signup_requests_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "signup_requests_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stock_adjustment_lines: {
         Row: {
           adjustment_id: string
@@ -13599,6 +13751,40 @@ export type Database = {
       }
     }
     Functions: {
+      account_earliest_entry_date: {
+        Args: { p_account_id: string }
+        Returns: string
+      }
+      account_ledger_lines: {
+        Args: { p_account_id: string; p_date_from?: string; p_date_to?: string }
+        Returns: {
+          cheque: string
+          contra_lines: Json
+          created_at: string
+          credit: number
+          debit: number
+          description: string
+          entry_date: string
+          entry_id: string
+          entry_type: string
+          is_system_generated: boolean
+          line_id: string
+          payee: string
+          reference: string
+          reversal_of: string
+          source_type: string
+          status: string
+          void_reason: string
+          voided_at: string
+        }[]
+      }
+      account_opening_balance: {
+        Args: { p_account_id: string; p_date_from: string }
+        Returns: {
+          credit: number
+          debit: number
+        }[]
+      }
       aggregate_attendance_batch: {
         Args: { p_batch_id: string }
         Returns: {
@@ -14088,6 +14274,7 @@ export type Database = {
           voucher_number: string
         }[]
       }
+      pending_signup_request_count: { Args: never; Returns: number }
       post_assembly_order: { Args: { p_ao_id: string }; Returns: Json }
       post_delivery_note: { Args: { p_id: string }; Returns: Json }
       post_grn: { Args: { p_grn_id: string }; Returns: Json }
