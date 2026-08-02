@@ -1,6 +1,7 @@
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { formatCurrency } from "@/lib/currency";
+import { formatInvoiceDate } from "@/lib/format";
 import type { DesignerComponent, TableSettings, PageSettings, InvoiceData } from "./types";
 
 /**
@@ -67,7 +68,7 @@ export function formatTemplateDate(iso: string, fmt?: PageSettings["dateFormat"]
     case "YYYY-MM-DD": return `${yyyy}-${mm}-${dd}`;
     case "DD MMM YYYY":
     default:
-      return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+      return formatInvoiceDate(d);
   }
 }
 
@@ -136,9 +137,11 @@ export function tableCellContent(
       return { text };
     }
     case "discount": {
+      // A discount is a reduction in the customer's favour, not an error —
+      // red is reserved for Balance Due, so this stays the neutral body colour.
       const v = Number(item.discount || 0);
       return v > 0
-        ? { text: `-${formatCurrency(v, currency)}`, color: "#dc2626" }
+        ? { text: `-${formatCurrency(v, currency)}` }
         : { text: "—", muted: true };
     }
     case "amount":

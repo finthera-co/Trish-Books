@@ -141,8 +141,8 @@ export function getStandardTemplate(): DesignerComponent[] {
     // ── Totals (right): Sub Total / Discount / Taxable amount / Total ────
     { id: uid(), type: 'text', category: 'custom', label: 'Sub Total Label', defaultValue: 'Sub Total', x: 7, y: 17, w: 3, h: 1, style: { fontSize: 9, color: MUTED, textAlign: 'left' } },
     { id: uid(), type: 'text', category: 'totals', label: 'Sub Total', binding: 'subtotal', defaultValue: '0.00', x: 10, y: 17, w: 2, h: 1, style: { fontSize: 9, color: INK, textAlign: 'right' } },
-    { id: uid(), type: 'text', category: 'custom', label: 'Discount Label', defaultValue: 'Discount', x: 7, y: 18, w: 3, h: 1, style: { fontSize: 9, color: DUE_RED, textAlign: 'left' } },
-    { id: uid(), type: 'text', category: 'totals', label: 'Discount', binding: 'discount', defaultValue: '0.00', x: 10, y: 18, w: 2, h: 1, style: { fontSize: 9, color: DUE_RED, textAlign: 'right' } },
+    { id: uid(), type: 'text', category: 'custom', label: 'Discount Label', defaultValue: 'Discount', x: 7, y: 18, w: 3, h: 1, style: { fontSize: 9, color: MUTED, textAlign: 'left' } },
+    { id: uid(), type: 'text', category: 'totals', label: 'Discount', binding: 'discount', defaultValue: '0.00', x: 10, y: 18, w: 2, h: 1, style: { fontSize: 9, color: INK, textAlign: 'right' } },
     { id: uid(), type: 'text', category: 'custom', label: 'Taxable Label', defaultValue: 'Taxable amount', x: 7, y: 19, w: 3, h: 1, style: { fontSize: 9, color: MUTED, textAlign: 'left' } },
     { id: uid(), type: 'text', category: 'totals', label: 'Taxable Amount', binding: 'taxable_amount', defaultValue: '0.00', x: 10, y: 19, w: 2, h: 1, style: { fontSize: 9, color: INK, textAlign: 'right' } },
     { id: uid(), type: 'text', category: 'custom', label: 'Total Label', defaultValue: 'Total', x: 7, y: 20, w: 3, h: 1, style: { fontSize: 10, fontWeight: 'bold', color: INK, textAlign: 'left' } },

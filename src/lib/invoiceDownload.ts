@@ -19,7 +19,7 @@ export async function loadInvoiceForDownload(invoiceId: string, tenantId: string
   const { data: invoice, error: invErr } = await supabase
     .from("invoices")
     .select(
-      "*, customers(*), invoice_items(*, products(name), account:accounts(account_name)), payments_received(amount), ar_credit_notes(amount, status)"
+      "*, customers(*), invoice_items(*, products(name)), payments_received(amount), ar_credit_notes(amount, status)"
     )
     .eq("id", invoiceId)
     .single();
@@ -81,8 +81,11 @@ export async function loadInvoiceForDownload(invoiceId: string, tenantId: string
   const total = Number(inv.total_amount || 0);
   const balanceDue = Math.max(0, total - paid - creditNotes);
 
+  // it.account (the GL revenue account for manually-mapped lines with no
+  // product) is deliberately excluded — a chart-of-accounts name must never
+  // appear on a customer-facing document.
   const items = (inv.invoice_items || []).map((it) => ({
-    item: it.products?.name || it.account?.account_name || it.description || "",
+    item: it.products?.name || it.description || "",
     description: it.description || "",
     qty: Number(it.quantity || 0),
     unit: "",
