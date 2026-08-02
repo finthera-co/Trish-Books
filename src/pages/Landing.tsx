@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import LandingChat from "@/components/landing/LandingChat";
 import {
   ArrowRight, Check, Tag, X,
   Building2, ListTree, FileSpreadsheet, BookOpen, BarChart3,
@@ -124,6 +125,190 @@ function useSection3d<T extends HTMLElement>() {
   }, []);
 
   return ref;
+}
+
+/* Writes 0→1 into --lp-p as the element travels through the viewport: 0 when its
+   top edge reaches the bottom of the screen, 1 when its bottom edge reaches the
+   top. Same shape as useScrollZoom — one rAF-throttled custom-property write, and
+   everything that moves is expressed in CSS off that number.
+
+   Used to pan the product gallery sideways as the page scrolls past it, which is a
+   scroll-linked animation rather than a scroll hijack: the page never stops
+   scrolling normally. */
+function useScrollProgress<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || prefersReducedMotion()) return;
+
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const rect = el.getBoundingClientRect();
+      const span = window.innerHeight + rect.height || 1;
+      const travelled = window.innerHeight - rect.top;
+      el.style.setProperty("--lp-p", Math.min(Math.max(travelled / span, 0), 1).toFixed(4));
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll, { passive: true });
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, []);
+
+  return ref;
+}
+
+/* The product itself, in three screens. Files live in public/media, named 1, 2, 3
+   in the order they appear here.
+
+   Each entry lists candidate extensions rather than one filename: a screenshot may
+   be saved as .png or .jpg depending on where it came from, and the component walks
+   the list on error. If none load, the frame collapses to a placeholder rather than
+   showing a broken-image icon on a production page. */
+const SHOT_EXTS = [".png", ".jpg", ".jpeg", ".webp"];
+
+const SHOTS = [
+  {
+    base: "/media/1",
+    alt: "Cash flow dashboard showing monthly inflows, outflows and the net trend",
+    title: "Cash flow, month by month",
+    body: "Money in against money out, with the net trend overlaid and the best month called out.",
+  },
+  {
+    base: "/media/2",
+    alt: "Monthly profit trend with net margin, income versus expenses, and a live transaction feed",
+    title: "Profit and margin together",
+    body: "Net profit per month with net-margin % on its own axis, beside a live feed of what just posted.",
+  },
+  {
+    base: "/media/3",
+    alt: "Journal entries list with search, status and source filters",
+    title: "Every entry, searchable",
+    body: "Ten thousand entries or ten — filter by status and source, and open any one to its lines.",
+  },
+];
+
+/**
+ * Pinned horizontal gallery.
+ *
+ * The stage is a tall spacer; the panel inside it sticks to the top of the viewport
+ * while that spacer passes. Scroll during that window drives the track sideways, and
+ * once the last screen is reached the stage ends and the page carries on downwards.
+ *
+ * The stage's height is set from the track's own overflow rather than hard-coded, so
+ * the sideways distance matches the vertical distance one-to-one — the row moves at
+ * the speed the wheel is turned, and the section is never taller than it needs to be
+ * for the number of screens in SHOTS.
+ */
+function ProductGallery() {
+  const stageRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  // Which extension each shot is currently trying. Advanced by onError until the
+  // candidates run out, at which point the frame shows a placeholder.
+  const [extIdx, setExtIdx] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    const track = trackRef.current;
+    if (!stage || !track) return;
+    if (prefersReducedMotion()) return; // plain horizontal scroll instead; see CSS
+
+    let frame = 0;
+    let overflow = 0;
+
+    const measure = () => {
+      overflow = Math.max(0, track.scrollWidth - window.innerWidth);
+      // Vertical room needed = one screen to read it in, plus the sideways distance.
+      stage.style.height = `${window.innerHeight + overflow}px`;
+    };
+
+    const update = () => {
+      frame = 0;
+      const rect = stage.getBoundingClientRect();
+      const span = rect.height - window.innerHeight;
+      const p = span > 0 ? Math.min(Math.max(-rect.top / span, 0), 1) : 0;
+      stage.style.setProperty("--lp-x", `${-(overflow * p)}px`);
+    };
+
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    const onResize = () => {
+      measure();
+      onScroll();
+    };
+
+    measure();
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onResize, { passive: true });
+
+    // Images arrive after first paint and change the track width, so re-measure
+    // when the layout settles rather than trusting the initial reading.
+    const ro = new ResizeObserver(onResize);
+    ro.observe(track);
+
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onResize);
+      ro.disconnect();
+    };
+  }, []);
+
+  return (
+    <div className="lp-shots-stage" ref={stageRef}>
+      <div className="lp-shots-pin">
+        <div className="lp-shots-track" ref={trackRef}>
+        {SHOTS.map((shot) => {
+          const i = extIdx[shot.base] ?? 0;
+          const exhausted = i >= SHOT_EXTS.length;
+          return (
+          <figure className="lp-shot" key={shot.base}>
+            <div className="lp-shot-frame">
+              {/* Chrome bar, so the screenshot reads as an application window. */}
+              <span className="lp-shot-bar" aria-hidden="true">
+                <i /><i /><i />
+              </span>
+              {/* Fixed-ratio canvas so every frame is the same size regardless of
+                  how the screenshot was cropped. */}
+              <div className="lp-shot-canvas">
+                {exhausted ? (
+                  <div className="lp-shot-missing" aria-hidden="true" />
+                ) : (
+                  <img
+                    // key forces a fresh element per candidate, so the browser
+                    // actually retries instead of reusing the failed one.
+                    key={SHOT_EXTS[i]}
+                    src={`${shot.base}${SHOT_EXTS[i]}`}
+                    alt={shot.alt}
+                    loading="lazy"
+                    decoding="async"
+                    onError={() => setExtIdx((m) => ({ ...m, [shot.base]: (m[shot.base] ?? 0) + 1 }))}
+                  />
+                )}
+              </div>
+            </div>
+            <figcaption>
+              <p className="lp-shot-title">{shot.title}</p>
+              <p className="lp-shot-body">{shot.body}</p>
+            </figcaption>
+          </figure>
+          );
+        })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function useReveal<T extends HTMLElement>() {
@@ -1290,9 +1475,12 @@ export default function Landing() {
   const s3dReports = useSection3d<HTMLElement>();
   const s3dLocal = useSection3d<HTMLElement>();
   const s3dDocs = useSection3d<HTMLElement>();
+  const s3dShots = useSection3d<HTMLElement>();
   const s3dStart = useSection3d<HTMLElement>();
   const s3dPricing = useSection3d<HTMLElement>();
   const s3dClosing = useSection3d<HTMLElement>();
+  const s3dControls = useSection3d<HTMLDivElement>();
+  const s3dFooter = useSection3d<HTMLDivElement>();
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Hold the poster frame instead of playing when motion is unwelcome.
@@ -1334,6 +1522,8 @@ export default function Landing() {
              from PROMO, the same source the pricing cards read. ── */}
       <PromoTicker plans={discountedPlans} onPricing={scrollToPricing} />
       <PromoPopup plans={discountedPlans} onPricing={scrollToPricing} />
+      {/* Public site only — deliberately not mounted anywhere inside the app. */}
+      <LandingChat />
 
       {/* ── Top bar ─────────────────────────────────────────── */}
       <header className="lp-header">
@@ -1565,6 +1755,24 @@ export default function Landing() {
               </li>
             ))}
           </ul>
+        </section>
+
+        {/* ── The product itself ───────────────────────────────────
+               Placed straight after Reports: the claim is made above, the screens
+               that back it are here. Dark ground so the light UI reads as a screen
+               rather than as more page. ── */}
+        <section id="screens" className="lp-band is-navy" ref={s3dShots}>
+          <div className="lp-shell lp-section">
+            <header className="lp-section-head">
+              <p className="lp-eyebrow">Inside Finthera</p>
+              <SplitHeading text="This is what you get on day one" accent="day one" />
+              <p className="lp-body lp-section-lede">
+                Not a mock-up. These are the dashboards and the ledger as they ship —
+                the same screens your first bank import lands in.
+              </p>
+            </header>
+          </div>
+          <ProductGallery />
         </section>
 
         {/* ── Local specifics ──────────────────────────────────── */}
@@ -1909,7 +2117,7 @@ export default function Landing() {
 
         {/* ── Controls ─────────────────────────────────────────── */}
         <section id="controls" className="lp-band is-joined" ref={controlsRef}>
-          <div className="lp-shell lp-section">
+          <div className="lp-shell lp-section" ref={s3dControls}>
             <header className="lp-section-head">
               <p className="lp-eyebrow">Controls</p>
               <SplitHeading text="Built to survive an audit" accent="audit" />
@@ -2027,7 +2235,7 @@ export default function Landing() {
              figure (ENTRY_TOTAL), so the page opens and closes on a ledger that
              ties. It stays a plain <nav> of real links underneath the styling. ── */}
       <footer className="lp-footer">
-        <div className="lp-shell">
+        <div className="lp-shell" ref={s3dFooter}>
           <div className="lp-foot-head">
             <span className="lp-mono lp-foot-jv">JV-2026-CLOSE</span>
             <span className="lp-foot-posted">
@@ -2116,6 +2324,15 @@ const css = `
   --amber-lo: #FFD24A;
   --violet: #6241DC;
   --violet-lo: #8A72E8;
+  /* ── 3D motion system ──────────────────────────────────────────────────
+     One depth for the whole page, so every hinge, turn and lift is seen from
+     the same camera. The vocabulary is paper: this is a ledger, so sheets
+     hinge up off a desk, turn like pages, and lift toward the reader — they
+     never spin or tumble. Big surfaces rotate least; small ones most.        */
+  --lp-persp: 1200px;      /* shared camera distance */
+  --lp-hinge: 7deg;        /* a sheet settling onto the desk */
+  --lp-turn: 9deg;         /* a page turning on its spine */
+  --lp-lift: 26px;         /* how far a card comes toward the reader */
   font-family: var(--font-sans);
   /* The page itself is the gradient: near-white at the top, deepening
      through mint into a soft green by the footer. */
@@ -2177,7 +2394,8 @@ const css = `
 
 /* Buttons */
 .lp .lp-btn { display: inline-flex; align-items: center; gap: 0.5rem; border-radius: 999px; background-image: linear-gradient(135deg, #49769F 0%, #0A4174 100%); color: #FFFFFF; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; box-shadow: 0 10px 22px -12px rgba(10, 65, 116, 0.75); transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease; }
-.lp .lp-btn:hover { filter: brightness(1.09); transform: translateY(-1px); box-shadow: 0 16px 30px -14px rgba(10, 65, 116, 0.85); }
+.lp .lp-btn { transform-style: preserve-3d; }
+.lp .lp-btn:hover { filter: brightness(1.09); transform: perspective(600px) translate3d(0, -1px, 8px); box-shadow: 0 16px 30px -14px rgba(10, 65, 116, 0.85); }
 .lp .lp-btn:focus-visible { outline: 2px solid #0A4174; outline-offset: 3px; }
 .lp .lp-btn-sm { padding: 0.5rem 1rem; font-size: 0.875rem; }
 .lp .lp-btn-lg { padding: 0.85rem 1.6rem; font-size: 1rem; }
@@ -2211,6 +2429,81 @@ const css = `
 
 @keyframes lp-ticker-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 
+/* ── Getting-started assistant ───────────────────────────────────────────────
+   Bottom-right launcher and panel. Sits below the promo popup in the stack (55 vs
+   60), so when both are open the popup still owns the screen. Amber launcher,
+   because on this page amber means "act". */
+.lp .lp-chat-fab { position: fixed; right: 1.5rem; bottom: 1.5rem; z-index: 55;
+  display: grid; place-items: center; width: 4rem; height: 4rem; border-radius: 999px;
+  border: 1px solid rgba(61, 42, 0, 0.2); color: #3D2A00; cursor: pointer;
+  background-image: linear-gradient(135deg, var(--amber-lo), var(--amber));
+  box-shadow: 0 18px 36px -14px rgba(0, 21, 39, 0.55);
+  transition: transform 320ms cubic-bezier(0.22, 1.12, 0.36, 1), box-shadow 320ms ease; }
+.lp .lp-chat-fab:hover { transform: perspective(600px) translate3d(0, -3px, 14px); box-shadow: 0 26px 46px -16px rgba(0, 21, 39, 0.6); }
+.lp .lp-chat-fab:focus-visible { outline: 2px solid #001D39; outline-offset: 3px; }
+/* A single unread pip, only before the first exchange. */
+.lp .lp-chat-dot { position: absolute; top: 0.45rem; right: 0.45rem; width: 0.7rem; height: 0.7rem;
+  border-radius: 999px; background: var(--violet); border: 2px solid #FFD24A; }
+
+.lp .lp-chat { position: fixed; right: 1.5rem; bottom: 6.25rem; z-index: 55;
+  width: min(27.5rem, calc(100vw - 3rem)); max-height: min(41rem, calc(100dvh - 9rem));
+  display: flex; flex-direction: column; overflow: hidden;
+  border-radius: 1.1rem; border: 1px solid rgba(255, 255, 255, 0.14); color: #E6EEF7;
+  background-image:
+    radial-gradient(22rem 14rem at 8% -18%, rgba(78, 142, 162, 0.3), transparent 64%),
+    linear-gradient(165deg, #0A3560 0%, var(--ink) 55%, #001527 100%);
+  box-shadow: 0 34px 70px -26px rgba(0, 12, 30, 0.75);
+  opacity: 0; pointer-events: none;
+  transform: perspective(var(--lp-persp)) rotateX(calc(var(--lp-hinge) * -0.7)) translate3d(0, 1rem, -80px);
+  transform-origin: 50% 100%;
+  transition: opacity 260ms ease, transform 420ms cubic-bezier(0.22, 1.12, 0.36, 1); }
+.lp .lp-chat.is-open { opacity: 1; pointer-events: auto; transform: none; }
+
+.lp .lp-chat-head { position: relative; padding: 1rem 3rem 0.85rem 1.15rem; border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
+.lp .lp-chat-title { display: block; font-family: var(--font-serif); font-size: 1.15rem; color: #FFFFFF; }
+.lp .lp-chat-sub { display: block; margin-top: 0.15rem; font-family: var(--font-mono); font-size: 0.58rem;
+  letter-spacing: 0.1em; text-transform: uppercase; color: rgba(230, 238, 247, 0.5); }
+.lp .lp-chat-x { position: absolute; top: 0.85rem; right: 0.85rem; display: grid; place-items: center;
+  width: 1.75rem; height: 1.75rem; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.08); color: inherit; }
+.lp .lp-chat-x:hover { background: rgba(255, 255, 255, 0.18); }
+
+.lp .lp-chat-log { flex: 1 1 auto; overflow-y: auto; padding: 1.15rem 1.3rem; display: grid; gap: 1rem; align-content: start; }
+.lp .lp-chat-bubble { border-radius: 0.85rem; border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.07); padding: 0.9rem 1rem; font-size: 0.875rem; line-height: 1.6; }
+.lp .lp-chat-bubble p { margin: 0 0 0.5rem; }
+.lp .lp-chat-bubble p:last-child { margin-bottom: 0; }
+.lp .lp-chat-bubble ol { margin: 0.35rem 0 0.5rem; padding-left: 1.1rem; display: grid; gap: 0.3rem; }
+.lp .lp-chat-user { justify-self: end; max-width: 85%; margin: 0; padding: 0.6rem 0.9rem;
+  border-radius: 0.85rem 0.85rem 0.25rem 0.85rem; font-size: 0.875rem;
+  background: var(--amber); color: #3D2A00; font-weight: 600; }
+
+.lp .lp-chat-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.55rem; }
+.lp .lp-chat-chip { font-size: 0.78rem; padding: 0.4rem 0.75rem; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.22); background: rgba(255, 255, 255, 0.06); color: rgba(230, 238, 247, 0.9);
+  transition: background 180ms ease, border-color 180ms ease; text-align: left; }
+.lp .lp-chat-chip:hover { background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.4); color: #FFFFFF; }
+.lp .lp-chat-chip:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+.lp .lp-chat-form { display: flex; gap: 0.5rem; padding: 0.75rem 1.15rem; border-top: 1px solid rgba(255, 255, 255, 0.12); }
+.lp .lp-chat-form input { flex: 1 1 auto; min-width: 0; font-size: 0.875rem; color: #FFFFFF;
+  border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px; padding: 0.6rem 1rem; }
+.lp .lp-chat-form input::placeholder { color: rgba(230, 238, 247, 0.45); }
+.lp .lp-chat-form input:focus { outline: 2px solid var(--amber); outline-offset: 1px; }
+.lp .lp-chat-form button { flex: none; display: grid; place-items: center; width: 2.6rem; height: 2.6rem;
+  border-radius: 999px; cursor: pointer; border: 0; color: #3D2A00;
+  background-image: linear-gradient(135deg, var(--amber-lo), var(--amber)); }
+.lp .lp-chat-form button:focus-visible { outline: 2px solid #FFFFFF; outline-offset: 2px; }
+
+.lp .lp-chat-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  padding: 0.7rem 1.15rem 0.9rem; border-top: 1px solid rgba(255, 255, 255, 0.12); }
+.lp .lp-chat-cta { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.84rem; font-weight: 700;
+  color: var(--amber); text-decoration: none; }
+.lp .lp-chat-cta:hover { text-decoration: underline; text-underline-offset: 3px; }
+.lp .lp-chat-alt { font-size: 0.75rem; color: rgba(230, 238, 247, 0.6); text-decoration: none; }
+.lp .lp-chat-alt:hover { color: #FFFFFF; }
+
 /* ── Promo popup ─────────────────────────────────────────────────────────────
    Violet into navy, so it belongs to both tinted bands on the page. Fixed to the
    bottom-left corner and kept narrow: it should read as an aside, not a barrier.
@@ -2218,7 +2511,7 @@ const css = `
    on the page beneath it. */
 /* Scrim: centres the card and dims the page behind it. pointer-events go off while
    closed so the invisible layer can never swallow a click on the page. */
-.lp .lp-pop-wrap { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 1.25rem;
+.lp .lp-pop-wrap { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 1.25rem; perspective: var(--lp-persp);
   background: rgba(0, 21, 39, 0.55); backdrop-filter: blur(3px);
   opacity: 0; pointer-events: none; transition: opacity 320ms ease; }
 .lp .lp-pop-wrap.is-open { opacity: 1; pointer-events: auto; }
@@ -2233,8 +2526,8 @@ const css = `
     radial-gradient(26rem 16rem at 8% -20%, rgba(138, 114, 232, 0.6), transparent 64%),
     linear-gradient(155deg, #5B37D6 0%, var(--violet) 42%, #0A2E58 100%);
   box-shadow: 0 34px 80px -26px rgba(0, 12, 30, 0.8);
-  transform: translate3d(0, 1.25rem, 0) scale(0.95);
-  transition: transform 520ms cubic-bezier(0.22, 1.12, 0.36, 1); }
+  transform: rotateX(calc(var(--lp-hinge) * -1)) translate3d(0, 1.25rem, -120px);
+  transition: transform 560ms cubic-bezier(0.22, 1.12, 0.36, 1); }
 .lp .lp-pop-wrap.is-open .lp-pop { transform: none; }
 /* Amber top hairline, the same signal the marquee and bands use. */
 .lp .lp-pop::before { content: ""; position: absolute; left: 1.1rem; right: 1.1rem; top: 0; height: 3px; border-radius: 0 0 3px 3px;
@@ -2313,6 +2606,13 @@ const css = `
 .lp .lp-band::before { top: 0; }
 .lp .lp-band::after { bottom: 0; }
 
+/* Closing dark run — butt the navy Documents band and the violet Getting-started
+   band flush against what's above them, so no page-coloured gaps stack up before
+   the CTA. Drop the doubled hairline where the two dark bands meet. */
+.lp .lp-band.is-docs { margin-top: 0; }
+.lp .lp-band#getting-started { margin-top: 0; }
+.lp .lp-band#getting-started::before { content: none; }
+
 .lp .lp-band .lp-h2 { color: #FFFFFF; }
 .lp .lp-band .lp-eyebrow { color: var(--amber-lo); }
 .lp .lp-band .lp-section-head .lp-eyebrow::before { background: linear-gradient(90deg, var(--amber), #FFFFFF); }
@@ -2384,22 +2684,94 @@ const css = `
 .lp .is-violet .lp-pl-label { color: rgba(243, 239, 254, 0.88); }
 .lp .is-violet .lp-pl-price-text { color: var(--amber); }
 
-/* Controls grid draws its dividers as background showing through the 1px gaps —
-   left dark, the four cards weld into one block with no visible cross rules. */
-.lp .lp-band.is-joined .lp-controls { background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.18); box-shadow: none; }
-.lp .lp-band.is-joined .lp-control { background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.04) 100%); }
+/* Controls on violet. The cards are discrete now (see the .lp-controls block), so
+   only the cards themselves need restating — the container carries nothing. */
+.lp .lp-band.is-joined .lp-control {
+  border-color: rgba(255, 255, 255, 0.18);
+  background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.11) 0%, rgba(255, 255, 255, 0.045) 100%);
+  box-shadow: 0 18px 36px -30px rgba(0, 0, 0, 0.6); }
+/* On violet the lift reads through brightness and a white edge rather than a
+   coloured border, which would disappear into the background. */
+.lp .lp-band.is-joined .lp-armed.is-visible .lp-control:hover,
+.lp .lp-band.is-joined .lp-controls .lp-control:hover {
+  border-color: rgba(255, 255, 255, 0.45);
+  background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.09) 100%);
+  box-shadow: 0 34px 60px -26px rgba(0, 0, 0, 0.65); }
+/* On violet the margin rule runs amber into white; the coloured half of the light
+   ramp would otherwise sink into the background. */
+.lp .lp-band.is-joined .lp-control::before { background: linear-gradient(180deg, var(--amber), #FFFFFF); }
+.lp .lp-band.is-joined .lp-control::after { color: var(--amber-lo); }
 .lp .lp-band.is-joined .lp-control dt { color: #FFFFFF; }
 .lp .lp-band.is-joined .lp-control dd { color: rgba(243, 239, 254, 0.76); }
+
+/* ── Product screens ─────────────────────────────────────────────────────────
+   A horizontal track that drifts sideways as the section passes the viewport.
+   --lp-p is written 0→1 by useScrollProgress; the pan is expressed off it here, so
+   the only per-frame JS is one custom-property write.
+
+   The track deliberately overflows the shell and is clipped by .lp (overflow-x:
+   clip) — the shots run off both edges, which is what makes the drift readable.
+   Nothing about this blocks or hijacks the page scroll. */
+/* The stage is a tall spacer; its height is set from JS to one viewport plus the
+   track's overflow. The panel inside sticks while that spacer passes, so the wheel
+   drives the row sideways and then the page resumes downwards on its own. */
+.lp .lp-shots-stage { position: relative; --lp-x: 0px; }
+.lp .lp-shots-pin { position: sticky; top: 0; height: 100vh; height: 100dvh;
+  display: flex; align-items: center; overflow: hidden; perspective: var(--lp-persp); }
+.lp .lp-shots-track { display: flex; align-items: center; gap: 1.75rem; width: max-content;
+  padding-inline: max(1.5rem, calc((100vw - 74rem) / 2));
+  transform: translate3d(var(--lp-x), 0, 0);
+  will-change: transform; }
+
+.lp .lp-shot { flex: none; width: min(52rem, 84vw); margin: 0; }
+.lp .lp-shot-frame { position: relative; border-radius: 0.85rem; overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18); background: #0B1D30;
+  box-shadow: 0 40px 80px -34px rgba(0, 12, 30, 0.8);
+  /* Each shot sits very slightly turned, so the row reads with depth rather than
+     as a flat filmstrip. */
+  transform: rotateY(calc(var(--lp-turn) * 0.22)); transform-origin: 50% 50%; }
+.lp .lp-shot-bar { display: flex; align-items: center; gap: 0.35rem; padding: 0.55rem 0.75rem;
+  background: rgba(255, 255, 255, 0.06); border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+.lp .lp-shot-bar i { width: 0.5rem; height: 0.5rem; border-radius: 999px; background: rgba(255, 255, 255, 0.22); }
+/* Every frame is the same size, whatever shape the screenshot happens to be. The
+   captures aren't uniform — the cash-flow one is ~2.14:1 while the other two are
+   16:9 — so without this the row would step up and down as it pans.
+
+   contain, not cover: these are UI screenshots, and cropping ~8% off each side of a
+   chart to force it into the box loses axis labels. The canvas is filled with the
+   app's own chrome grey instead, so the band on a wider capture reads as padding
+   around the screen rather than as letterboxing. */
+.lp .lp-shot-canvas { aspect-ratio: 16 / 9; background: #EEF2F7; display: grid; place-items: center; }
+.lp .lp-shot-frame img { display: block; width: 100%; height: 100%; object-fit: contain; object-position: center; }
+/* If a file is missing, hold the space quietly instead of a broken-image icon. */
+.lp .lp-shot-missing { width: 100%; height: 100%; background:
+  repeating-linear-gradient(135deg, rgba(11,29,48,0.06) 0 12px, rgba(11,29,48,0.02) 12px 24px); }
+
+.lp .lp-shot figcaption { margin-top: 1rem; }
+.lp .lp-shot-title { margin: 0; font-family: var(--font-serif); font-size: 1.1rem; color: #FFFFFF; }
+.lp .lp-shot-body { margin: 0.3rem 0 0; font-size: 0.875rem; line-height: 1.55; color: rgba(228, 238, 247, 0.72); max-width: 42ch; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* No pinning and no turn — the row becomes an ordinary horizontal scroller, and
+     the JS that would set the stage height bails out before running. */
+  .lp .lp-shots-stage { height: auto !important; }
+  .lp .lp-shots-pin { position: static; height: auto; overflow-x: auto; padding-block: 1rem; }
+  .lp .lp-shots-track { transform: none; }
+  .lp .lp-shot-frame { transform: none; }
+}
 
 /* ── Document specimens ──────────────────────────────────────────────────────
    White sheets on the dark band, so they read as paper/PDF rather than as UI. Both
    sheets are stacked in the same grid cell and cross-fade, which keeps the block a
    fixed height while they swap — no layout jump mid-cycle. */
 .lp .lp-docs { margin-top: 2.5rem; }
-.lp .lp-docs-stack { display: grid; }
+.lp .lp-docs-stack { display: grid; perspective: var(--lp-persp); }
 .lp .lp-docs-slot { grid-area: 1 / 1; display: flex; justify-content: center;
-  opacity: 0; transform: scale(0.965) translateY(14px); pointer-events: none;
-  transition: opacity 620ms ease, transform 720ms cubic-bezier(0.19, 1, 0.22, 1); }
+  /* The outgoing sheet turns away on its spine while the next turns in — a page
+     being flipped, rather than two cards cross-fading. */
+  opacity: 0; transform-origin: 0% 50%;
+  transform: rotateY(calc(var(--lp-turn) * -1)) translate3d(-18px, 8px, -70px); pointer-events: none;
+  transition: opacity 620ms ease, transform 780ms cubic-bezier(0.19, 1, 0.22, 1); }
 .lp .lp-docs-slot.is-live { opacity: 1; transform: none; pointer-events: auto; }
 
 /* The sheet itself. A4-ish proportion via max-width; type is deliberately small so
@@ -2538,7 +2910,7 @@ const css = `
 /* Mid-page variant: full-bleed, so it cuts the whole width of the page. Ruled top
    and bottom rather than boxed, which is what lets it read as a band rather than
    as a second announcement bar. */
-.lp .lp-ticker-inset { margin: 4.5rem 0 0; }
+.lp .lp-ticker-inset { margin: 0; }
 .lp .lp-ticker.is-band { border-top: 1px solid rgba(61, 42, 0, 0.22); border-bottom: 1px solid rgba(61, 42, 0, 0.22); padding: 0.8rem 1.25rem; box-shadow: 0 14px 34px -26px rgba(61, 42, 0, 0.6); }
 .lp .lp-ticker.is-band .lp-ticker-item { font-size: 0.875rem; }
 /* The band sits mid-page where it would catch the eye repeatedly; let it scroll
@@ -2615,7 +2987,12 @@ const css = `
 /* Account groups — ruled like a ledger sheet */
 .lp .lp-group { display: grid; grid-template-columns: 1fr; gap: 0.85rem; padding-block: 1.75rem; border-top: 1px solid var(--rule); }
 .lp .lp-group:last-child { border-bottom: 1px solid var(--rule); }
-.lp .lp-armed .lp-group { opacity: 0; transform: translateY(14px); transition: opacity 600ms ease, transform 600ms ease; }
+/* Ledger rows hinge up off the desk rather than sliding. Bottom-anchored, so the
+   near edge stays put and the far edge rises — the way a sheet is laid down. */
+.lp .lp-map { perspective: var(--lp-persp); }
+.lp .lp-armed .lp-group { opacity: 0; transform-origin: 50% 100%;
+  transform: rotateX(calc(var(--lp-hinge) * -1)) translate3d(0, 14px, -50px);
+  transition: opacity 600ms ease, transform 700ms cubic-bezier(0.19, 1, 0.22, 1); }
 .lp .lp-armed.is-visible .lp-group { opacity: 1; transform: none; }
 @media (min-width: 48rem) { .lp .lp-group { grid-template-columns: 10rem 1fr; gap: 2.5rem; } }
 .lp .lp-group-key { display: flex; align-items: baseline; gap: 0.75rem; }
@@ -2630,7 +3007,10 @@ const css = `
 @media (min-width: 44rem) { .lp .lp-steps { grid-template-columns: repeat(2, 1fr); } }
 @media (min-width: 68rem) { .lp .lp-steps { grid-template-columns: repeat(3, 1fr); } }
 .lp .lp-step { display: flex; gap: 1rem; padding: 1.6rem 1.4rem; background-image: linear-gradient(165deg, rgba(255, 255, 255, 0.92), rgba(238, 244, 251, 0.72)); }
-.lp .lp-armed .lp-step { opacity: 0; transform: translateY(14px); transition: opacity 600ms ease, transform 600ms ease; }
+.lp .lp-steps { perspective: var(--lp-persp); }
+.lp .lp-armed .lp-step { opacity: 0; transform-origin: 50% 100%;
+  transform: rotateX(calc(var(--lp-hinge) * -1)) translate3d(0, 14px, -50px);
+  transition: opacity 600ms ease, transform 700ms cubic-bezier(0.19, 1, 0.22, 1); }
 .lp .lp-armed.is-visible .lp-step { opacity: 1; transform: none; }
 .lp .lp-step-no { font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.06em; color: var(--emerald); padding-top: 0.15rem; }
 .lp .lp-step-term { font-family: var(--font-serif); font-size: 1.15rem; letter-spacing: -0.015em; color: var(--ink); }
@@ -2641,7 +3021,10 @@ const css = `
 @media (min-width: 44rem) { .lp .lp-reports { grid-template-columns: repeat(2, 1fr); } }
 @media (min-width: 68rem) { .lp .lp-reports { grid-template-columns: repeat(4, 1fr); } }
 .lp .lp-report { padding: 1.15rem 1.15rem 1.25rem; border: 1px solid var(--rule); border-radius: 0.85rem; background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.95), rgba(230, 241, 250, 0.75)); border-top: 2px solid rgba(78, 142, 162, 0.55); }
-.lp .lp-armed .lp-report { opacity: 0; transform: translateY(12px); transition: opacity 520ms ease, transform 520ms ease; }
+.lp .lp-reports { perspective: var(--lp-persp); }
+.lp .lp-armed .lp-report { opacity: 0; transform-origin: 50% 100%;
+  transform: rotateX(calc(var(--lp-hinge) * -1)) translate3d(0, 12px, -44px);
+  transition: opacity 520ms ease, transform 640ms cubic-bezier(0.19, 1, 0.22, 1); }
 .lp .lp-armed.is-visible .lp-report { opacity: 1; transform: none; }
 .lp .lp-report h3 { font-size: 0.9375rem; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
 .lp .lp-report p { margin-top: 0.35rem; font-size: 0.8125rem; line-height: 1.55; color: var(--body); }
@@ -2673,7 +3056,8 @@ const css = `
 @media (min-width: 44rem) { .lp .lp-bases { grid-template-columns: repeat(2, 1fr); } }
 @media (min-width: 68rem) { .lp .lp-bases { grid-template-columns: repeat(3, 1fr); } }
 .lp .lp-tier { position: relative; display: flex; flex-direction: column; padding: 2.25rem 2rem; border: 1px solid var(--rule); border-radius: 1.5rem; background-image: linear-gradient(168deg, rgba(255, 255, 255, 0.98), rgba(233, 242, 250, 0.85)); box-shadow: 0 24px 48px -34px rgba(0, 29, 57, 0.4); transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 260ms ease, border-color 260ms ease; }
-.lp .lp-tier:hover { transform: translateY(-10px); border-color: rgba(73, 118, 159, 0.65); box-shadow: 0 40px 70px -30px rgba(0, 29, 57, 0.55); z-index: 2; }
+.lp .lp-bases { perspective: var(--lp-persp); }
+.lp .lp-tier:hover { transform: translate3d(0, -10px, var(--lp-lift)) rotateX(2.5deg); border-color: rgba(73, 118, 159, 0.65); box-shadow: 0 40px 70px -30px rgba(0, 29, 57, 0.55); z-index: 2; }
 /* Accent edge on every tier: a hairline of amber running into violet across the
    top of the card, tucked inside the rounded corner. */
 .lp .lp-tier::before { content: ""; position: absolute; left: 1.75rem; right: 1.75rem; top: -1px; height: 3px; border-radius: 0 0 3px 3px;
@@ -2681,7 +3065,7 @@ const css = `
 .lp .lp-tier:hover { border-color: rgba(98, 65, 220, 0.42); }
 .lp .lp-tier.is-popular { border-color: transparent; box-shadow: 0 0 0 2px var(--violet), 0 34px 60px -30px rgba(98, 65, 220, 0.45); background-image: linear-gradient(168deg, #FFFFFF, #F1EDFD); }
 .lp .lp-tier.is-popular::before { left: 1.25rem; right: 1.25rem; height: 4px; opacity: 1; }
-@media (min-width: 68rem) { .lp .lp-tier.is-popular { transform: scale(1.04); } .lp .lp-tier.is-popular:hover { transform: scale(1.04) translateY(-10px); } }
+@media (min-width: 68rem) { .lp .lp-tier.is-popular { transform: translateZ(18px); } .lp .lp-tier.is-popular:hover { transform: translate3d(0, -10px, calc(var(--lp-lift) + 18px)) rotateX(2.5deg); } }
 .lp .lp-tier.is-popular:hover { box-shadow: 0 0 0 2px var(--violet), 0 40px 70px -30px rgba(98, 65, 220, 0.5); }
 
 .lp .lp-tier-top { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; min-height: 1.6rem; margin-bottom: 0.9rem; }
@@ -2716,7 +3100,7 @@ const css = `
 @media (prefers-reduced-motion: reduce) {
   .lp .lp-tier { transition: none; }
   .lp .lp-tier:hover { transform: none; }
-  .lp .lp-tier.is-popular:hover { transform: scale(1.04); }
+  .lp .lp-tier.is-popular:hover { transform: translateZ(18px); }
 }
 
 /* Sub-sections within pricing */
@@ -2822,12 +3206,65 @@ const css = `
 .lp .lp-sub-split > div > .lp-sub-title { margin-top: 0; }
 
 /* Controls */
-.lp .lp-controls { display: grid; grid-template-columns: 1fr; gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 1rem; overflow: hidden; box-shadow: 0 24px 48px -36px rgba(0, 29, 57, 0.5); }
-@media (min-width: 48rem) { .lp .lp-controls { grid-template-columns: repeat(2, 1fr); } }
-.lp .lp-control { background-image: linear-gradient(160deg, #FFFFFF 0%, #F2F8FD 100%); padding: 1.6rem 1.5rem; }
-.lp .lp-armed .lp-control { opacity: 0; transform: translateY(14px); transition: opacity 600ms ease, transform 600ms ease; }
-.lp .lp-armed.is-visible .lp-control { opacity: 1; transform: none; }
-.lp .lp-control dt { font-size: 0.95rem; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
+/* Controls were one welded block: a 1px grid gap letting the container background
+   show through as hairlines, with overflow:hidden clipping the rounded corners.
+   That shape cannot pop — a card that lifts or scales gets its edges cut off at
+   the container boundary. So they're now discrete cards with a real gap, which is
+   what lets each one rise clear of its neighbours. */
+.lp .lp-controls { display: grid; grid-template-columns: 1fr; gap: 0.85rem; }
+@media (min-width: 48rem) { .lp .lp-controls { grid-template-columns: repeat(2, 1fr); gap: 1rem; } }
+.lp .lp-control { position: relative; padding: 1.6rem 1.5rem; border-radius: 0.9rem;
+  border: 1px solid var(--rule);
+  background-image: linear-gradient(160deg, #FFFFFF 0%, #F2F8FD 100%);
+  box-shadow: 0 16px 32px -28px rgba(0, 29, 57, 0.5);
+  transition: transform 340ms cubic-bezier(0.19, 1, 0.22, 1), box-shadow 340ms ease, border-color 340ms ease; }
+
+/* Hovering a control should read as the control ENGAGING, not as a card floating.
+   Two borrowings from audit working papers, where these four things actually live:
+     · the margin rule struck down the side of a control that is in place,
+     · the tick that marks it as tested.
+   A gradient wipe across the top would have been the generic SaaS card hover; it
+   says nothing about what these cards are. */
+
+/* The margin rule: snaps down the left edge, top-anchored, like a pen stroke. */
+.lp .lp-control::before { content: ""; position: absolute; left: -1px; top: 0.9rem; bottom: 0.9rem; width: 3px;
+  border-radius: 3px; background: linear-gradient(180deg, var(--amber), var(--violet));
+  transform: scaleY(0); transform-origin: 50% 0;
+  transition: transform 260ms cubic-bezier(0.22, 1.1, 0.36, 1); }
+
+/* The tick: the mark an auditor leaves once a control has been tested. Decorative
+   reinforcement — the section lede already states these come as standard. */
+.lp .lp-control::after { content: "✓ Enforced"; position: absolute; top: 0.95rem; right: 1.1rem;
+  font-family: var(--font-mono); font-size: 0.55rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--amber); opacity: 0; transform: translateX(-0.35rem);
+  transition: opacity 220ms ease, transform 320ms cubic-bezier(0.22, 1.1, 0.36, 1); }
+
+/* The lift. Deliberately no scale: a control engaging is a snap, not a zoom, and
+   scaling a card blurs the type inside it. The overshoot in the easing is what
+   makes it pop.
+
+   Both selectors are needed — the first outranks the reveal rule below (which pins
+   transform:none once the section is visible), the second covers the never-armed
+   case. z-index lifts the card so its shadow isn't drawn under its neighbours. */
+.lp .lp-armed.is-visible .lp-control:hover,
+.lp .lp-controls .lp-control:hover {
+  /* Comes toward the reader and tips its top edge back — a sheet being picked up,
+     not a box sliding north. */
+  transform: translate3d(0, -6px, var(--lp-lift)) rotateX(2.5deg); z-index: 2;
+  border-color: rgba(98, 65, 220, 0.45);
+  box-shadow: 0 30px 56px -24px rgba(0, 29, 57, 0.55); }
+.lp .lp-control:hover::before, .lp .lp-control:focus-within::before { transform: scaleY(1); }
+.lp .lp-control:hover::after, .lp .lp-control:focus-within::after { opacity: 1; transform: none; }
+/* Keyboard parity — same state on focus, since a card can hold links. */
+.lp .lp-control:focus-within { border-color: rgba(98, 65, 220, 0.45); }
+
+.lp .lp-controls { perspective: var(--lp-persp); }
+.lp .lp-armed .lp-control { opacity: 0; transform-origin: 50% 100%;
+  transform: rotateX(calc(var(--lp-hinge) * -1)) translate3d(0, 14px, -50px);
+  transition: opacity 600ms ease, transform 700ms cubic-bezier(0.19, 1, 0.22, 1); }
+.lp .lp-armed.is-visible .lp-control { opacity: 1; transform: none;
+  transition: opacity 600ms ease, transform 340ms cubic-bezier(0.19, 1, 0.22, 1), box-shadow 340ms ease, border-color 340ms ease; }
+.lp .lp-control dt { padding-right: 5.5rem; font-size: 0.95rem; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
 .lp .lp-control dd { margin: 0.45rem 0 0; font-size: 0.875rem; line-height: 1.6; color: var(--body); }
 
 /* Close — the page's green deepens into one last panel */
@@ -2975,7 +3412,11 @@ const css = `
 /* Opacity runs on its own, much longer ramp than the movement — things arrive in
    space well before they arrive in colour, which is what makes it feel slow. */
 @keyframes lp-fade-slow { from { opacity: 0; } to { opacity: 1; } }
-@keyframes lp-row-in { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
+/* Rows swing in on their left edge, like lines being written onto the sheet. */
+@keyframes lp-row-in {
+  from { opacity: 0; transform: rotateY(calc(var(--lp-turn) * 1.6)) translate3d(-10px, 0, -30px); }
+  to   { opacity: 1; transform: none; }
+}
 
 .lp .lp-fade { opacity: 0; transform-origin: 100% 50%; backface-visibility: hidden;
   animation:
@@ -2986,7 +3427,11 @@ const css = `
 /* Hero ledger — pops in out of depth, then drifts forever like paper on a desk.
    lp-float is declared last so it owns the transform once its delay elapses; until
    then lp-pop-3d holds the entrance, which is why that one uses "both". */
-@keyframes lp-float { 0%, 100% { transform: translateY(0) rotate(-0.15deg); } 50% { transform: translateY(-12px) rotate(0.15deg); } }
+/* Paper on a desk: it lifts and tilts, so the drift has to read in depth too. */
+@keyframes lp-float {
+  0%, 100% { transform: perspective(var(--lp-persp)) translate3d(0, 0, 0) rotateX(0.8deg) rotateY(-1.2deg); }
+  50%      { transform: perspective(var(--lp-persp)) translate3d(0, -12px, 22px) rotateX(-0.8deg) rotateY(1.2deg); }
+}
 .lp .lp-ledger-anim { opacity: 0; transform-origin: 0% 50%; backface-visibility: hidden;
   animation:
     lp-in-right 1250ms cubic-bezier(0.22, 1.12, 0.36, 1) 260ms both,
@@ -3012,7 +3457,9 @@ const css = `
   to   { transform: translateY(0) rotateX(0deg); opacity: 1; }
 }
 .lp .lp-kinetic { perspective: 800px; }
-.lp .lp-line { display: block; overflow: hidden; padding-bottom: 0.09em; margin-bottom: -0.09em; }
+.lp .lp-line { display: block; overflow: hidden;
+  padding-bottom: 0.09em; margin-bottom: -0.09em;
+  padding-inline: 0.09em; margin-inline: -0.09em; }
 .lp .lp-line-i { display: block; transform-origin: 50% 0; will-change: transform, opacity;
   animation: lp-line-rise 1150ms cubic-bezier(0.19, 1, 0.22, 1) both; }
 
@@ -3021,15 +3468,27 @@ const css = `
    keystone distortion across a whole section. transform-origin sits at the top edge
    so the section hinges down from where the reader already is, rather than pivoting
    about a centre that may be off-screen. */
+/* Sections hinge from their top edge — the same gesture as the cards inside them,
+   at a damped angle. A section is often 1000px+ tall, and the full --lp-hinge
+   across that height becomes heavy keystone distortion at the far edge, so this
+   takes roughly half of it. Same camera, same easing; only the magnitude differs. */
 .lp .lp-s3d { opacity: 0; transform-origin: 50% 0;
-  transform: perspective(1800px) rotateX(4.5deg) translate3d(0, 34px, -70px);
+  transform: perspective(calc(var(--lp-persp) * 1.5))
+             rotateX(calc(var(--lp-hinge) * 0.55)) translate3d(0, 34px, -70px);
   transition: transform 1150ms cubic-bezier(0.19, 1, 0.22, 1), opacity 850ms ease;
   will-change: transform, opacity; }
 .lp .lp-s3d.is-in { opacity: 1; transform: none; }
 
 /* Section headings: word by word, released when the heading scrolls into view. */
 .lp .lp-split { perspective: 800px; }
-.lp .lp-split-w { display: inline-block; overflow: hidden; vertical-align: bottom; padding-bottom: 0.1em; margin-bottom: -0.1em; }
+/* The mask is only meant to clip vertically — the reveal travels up. But
+   overflow:hidden clips both axes, and an italic glyph overhangs its box to the
+   right, so the last letter of an accent word was being cut. Padding the sides and
+   pulling it back with a negative margin gives the overhang room without moving
+   the word. Same trick as the bottom padding, which keeps descenders. */
+.lp .lp-split-w { display: inline-block; overflow: hidden; vertical-align: bottom;
+  padding-bottom: 0.1em; margin-bottom: -0.1em;
+  padding-inline: 0.09em; margin-inline: -0.09em; }
 .lp .lp-split-i { display: inline-block; transform: translateY(112%) rotateX(-42deg); opacity: 0; transform-origin: 50% 0;
   transition: transform 820ms cubic-bezier(0.19, 1, 0.22, 1), opacity 620ms ease; }
 .lp .lp-split.is-shown .lp-split-i { transform: translateY(0) rotateX(0deg); opacity: 1; }
@@ -3043,6 +3502,12 @@ const css = `
    transparent — hence both the standard and -webkit- properties. */
 .lp .lp-h1 em, .lp .lp-grad {
   font-style: italic;
+  /* background-clip:text paints the gradient only inside this element's background
+     box. An italic glyph leans past that box, so the last letter of an accent word
+     came out unpainted — reading as clipped. Widening the box on the right gives
+     the overhang something to paint into; the negative margin keeps the word in
+     the same place. */
+  padding-right: 0.14em; margin-right: -0.14em;
   background-image: linear-gradient(100deg, #49769F 0%, var(--violet) 32%, #6EA2B3 58%, var(--amber) 78%, #0A4174 100%);
   background-size: 280% 100%;
   -webkit-background-clip: text; background-clip: text;
@@ -3090,6 +3555,10 @@ const css = `
   .lp .lp-h1 em { background-position: 0% 50%; }
   .lp .lp-armed .lp-group, .lp .lp-armed .lp-control,
   .lp .lp-armed .lp-step, .lp .lp-armed .lp-report { opacity: 1; transform: none; transition: none; }
+  /* Controls still respond to hover, but through colour rather than movement. */
+  .lp .lp-armed.is-visible .lp-control:hover,
+  .lp .lp-controls .lp-control:hover { transform: none; }
+  .lp .lp-control, .lp .lp-control::before, .lp .lp-control::after { transition: none; }
   .lp .lp-btn:hover { transform: none; }
 }
 `;

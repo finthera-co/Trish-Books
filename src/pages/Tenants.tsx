@@ -1,4 +1,4 @@
-import { Building2, Plus, MoreHorizontal, Search, UserPlus, Copy, Check, Eye, EyeOff, Pencil, Trash2, RotateCcw } from "lucide-react";
+import { Building2, Plus, MoreHorizontal, Search, UserPlus, Copy, Check, Eye, EyeOff, Pencil, Trash2, RotateCcw, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useTenants, useUpdateTenant, useSubscriptionPlans } from "@/hooks/useData";
@@ -52,8 +52,13 @@ export default function Tenants() {
   const [editPlanId, setEditPlanId] = useState("");
   const [editLoading, setEditLoading] = useState(false);
 
-  // Delete dialog
+  // Archive dialog
   const [deleteTenant, setDeleteTenant] = useState<any>(null);
+
+  // Permanent delete dialog
+  const [purgeTenant, setPurgeTenant] = useState<any>(null);
+  const [purgeConfirm, setPurgeConfirm] = useState("");
+  const [purgeLoading, setPurgeLoading] = useState(false);
 
   // Success state
   const [result, setResult] = useState<ProvisionResult | null>(null);
@@ -165,6 +170,40 @@ export default function Tenants() {
     } catch (err: any) {
       toast.error(err.message);
     }
+  };
+
+  const closePurgeDialog = () => {
+    setPurgeTenant(null);
+    setPurgeConfirm("");
+  };
+
+  const handlePermanentDelete = async () => {
+    if (!purgeTenant || purgeConfirm !== purgeTenant.company_name) return;
+    setPurgeLoading(true);
+    try {
+      const res = await supabase.functions.invoke("delete-tenant", {
+        body: { tenant_id: purgeTenant.id, confirmation: purgeConfirm },
+      });
+      if (res.error || !res.data?.success) {
+        throw new Error(res.data?.error || res.error?.message || "Permanent deletion failed");
+      }
+
+      const rows = res.data.purge?.total_rows_deleted ?? 0;
+      const cleanup = res.data.cleanup;
+      toast.success(
+        `"${purgeTenant.company_name}" permanently deleted — ${rows.toLocaleString()} records, ` +
+        `${cleanup?.auth_users_deleted ?? 0} login(s), ${cleanup?.storage_objects_deleted ?? 0} file(s) erased`
+      );
+      // Data is gone either way; surface anything the external cleanup couldn't finish.
+      if (cleanup?.errors?.length) {
+        toast.warning(`Cleanup issues: ${cleanup.errors.join("; ")}`);
+      }
+      closePurgeDialog();
+      refetch();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+    setPurgeLoading(false);
   };
 
   const handleRestore = async (tenant: any) => {
@@ -392,9 +431,19 @@ export default function Tenants() {
                   <td className="text-xs text-muted-foreground">{format(new Date(tenant.created_at), "MMM d, yyyy")}</td>
                   <td>
                     {showDeleted ? (
-                      <Button variant="outline" size="sm" onClick={() => handleRestore(tenant)}>
-                        <RotateCcw className="w-3.5 h-3.5 mr-1" /> Restore
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" size="sm" onClick={() => handleRestore(tenant)}>
+                          <RotateCcw className="w-3.5 h-3.5 mr-1" /> Restore
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => { setPurgeTenant(tenant); setPurgeConfirm(""); }}
+                        >
+                          <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete Forever
+                        </Button>
+                      </div>
                     ) : (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -479,6 +528,64 @@ export default function Tenants() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Permanent Delete Confirmation */}
+      <Dialog open={!!purgeTenant} onOpenChange={(v) => { if (!v && !purgeLoading) closePurgeDialog(); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="w-5 h-5" /> Delete Company Permanently
+            </DialogTitle>
+            <DialogDescription>
+              This cannot be undone. There is no backup and no restore.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 space-y-2">
+              <p className="text-sm font-medium text-foreground">
+                Everything belonging to "{purgeTenant?.company_name}" will be erased:
+              </p>
+              <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
+                <li>All accounting data — chart of accounts, journals, ledgers, invoices, bills, payments</li>
+                <li>Customers, suppliers, inventory, fixed assets, budgets and reconciliations</li>
+                <li>Employees, payroll history, attendance and leave records</li>
+                <li>Every user login for this company, including its admins</li>
+                <li>Uploaded files — invoice attachments, logos and employee photos</li>
+              </ul>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground">
+                Type <span className="font-mono text-destructive">{purgeTenant?.company_name}</span> to confirm
+              </label>
+              <input
+                type="text"
+                value={purgeConfirm}
+                onChange={(e) => setPurgeConfirm(e.target.value)}
+                autoComplete="off"
+                placeholder={purgeTenant?.company_name}
+                className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-destructive/20 focus:border-destructive transition-colors"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={closePurgeDialog} disabled={purgeLoading}>
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                disabled={purgeLoading || purgeConfirm !== purgeTenant?.company_name}
+                onClick={handlePermanentDelete}
+              >
+                {purgeLoading ? "Erasing…" : "Delete Forever"}
+              </Button>
+            </div>
+            {purgeLoading && (
+              <p className="text-xs text-muted-foreground text-center">
+                Erasing all records — this can take a minute for a company with a lot of history. Don't close this tab.
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

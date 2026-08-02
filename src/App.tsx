@@ -31,6 +31,7 @@ import Notifications from "./pages/Notifications";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
+import SignupRequests from "./pages/SignupRequests";
 import Onboarding from "./pages/Onboarding";
 import ChartOfAccounts from "./pages/ChartOfAccounts";
 import JournalEntries from "./pages/JournalEntries";
@@ -176,6 +177,7 @@ const App = () => (
                   <Route element={<ModuleLayout config={MODULE_CONFIGS.superadmin} />}>
                     <Route path="/admin" element={<ModuleDashboard config={MODULE_CONFIGS.superadmin} />} />
                     <Route path="/admin/tenants" element={<Tenants />} />
+                    <Route path="/admin/signup-requests" element={<SignupRequests />} />
                     <Route path="/admin/company-admins" element={<UsersPage />} />
                     <Route path="/admin/users" element={<SuperAdminUsers />} />
                     <Route path="/admin/analytics" element={<SystemAnalytics />} />

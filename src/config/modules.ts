@@ -1,6 +1,7 @@
 import {
   BookOpen,
   Bell,
+  Inbox,
   FileText,
   Receipt,
   Calendar,
@@ -56,6 +57,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
     color: "bg-muted-foreground",
     basePath: "/admin",
     sidebarItems: [
+      { label: "Signup Requests", path: "/admin/signup-requests", icon: Inbox },
       { label: "Companies", path: "/admin/tenants", icon: Building2 },
       { label: "Company Admins", path: "/admin/company-admins", icon: UserCheck },
       { label: "Users (Read-only)", path: "/admin/users", icon: Users },
@@ -235,6 +237,7 @@ export const HOME_MODULES: ModuleCard[] = [
 
 /** Module cards shown on the Super Admin home page */
 export const SUPER_ADMIN_MODULES: ModuleCard[] = [
+  { id: "signup-requests", label: "Signup Requests", description: "Review and approve new company account applications", icon: Inbox, color: "bg-[hsl(var(--warning))]", path: "/admin/signup-requests" },
   { id: "tenants", label: "Companies", description: "Manage SaaS tenants and company provisioning", icon: Building2, color: "bg-primary", path: "/admin/tenants" },
   { id: "admins", label: "Company Admins", description: "Manage company administrator accounts", icon: UserCheck, color: "bg-secondary", path: "/admin/company-admins" },
   { id: "users", label: "Users", description: "Read-only overview of all system users", icon: Users, color: "bg-[hsl(var(--info))]", path: "/admin/users" },
