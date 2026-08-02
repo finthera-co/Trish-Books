@@ -10,6 +10,8 @@ import type { jsPDF } from "jspdf";
  * Latin/Cyrillic/Greek; Sinhala and Tamil are separate font families and are
  * lazy-loaded only when the document actually contains those code points, so
  * a plain-English invoice doesn't pay for ~300KB of scripts it never uses.
+ * JetBrains Mono is loaded unconditionally for tabular figures (dates,
+ * amounts, invoice numbers) in the Steel Statement invoice design.
  */
 
 const SINHALA_RANGE = /[඀-෿]/;
@@ -18,6 +20,7 @@ const TAMIL_RANGE = /[஀-௿]/;
 export const NOTO_SANS = "NotoSans";
 export const NOTO_SANS_SINHALA = "NotoSansSinhala";
 export const NOTO_SANS_TAMIL = "NotoSansTamil";
+export const JETBRAINS_MONO = "JetBrainsMono";
 
 // Base64 caches — one fetch per font per browser session, regardless of how
 // many invoices get downloaded.
@@ -25,6 +28,8 @@ let regularB64: string | null = null;
 let boldB64: string | null = null;
 let sinhalaB64: string | null = null;
 let tamilB64: string | null = null;
+let monoRegularB64: string | null = null;
+let monoBoldB64: string | null = null;
 
 async function fetchBase64(url: string): Promise<string> {
   const res = await fetch(url);
@@ -85,6 +90,15 @@ export async function registerPdfFonts(doc: jsPDF, documentText: string): Promis
     doc.addFileToVFS("NotoSansTamil-Regular.ttf", tamilB64);
     doc.addFont("NotoSansTamil-Regular.ttf", NOTO_SANS_TAMIL, "normal");
   }
+
+  // Tabular figures (dates, amounts, invoice numbers) — always plain ASCII,
+  // so no script-lazy-loading needed here.
+  if (!monoRegularB64) monoRegularB64 = await fetchBase64("/fonts/JetBrainsMono-Regular.ttf");
+  if (!monoBoldB64) monoBoldB64 = await fetchBase64("/fonts/JetBrainsMono-Bold.ttf");
+  doc.addFileToVFS("JetBrainsMono-Regular.ttf", monoRegularB64);
+  doc.addFont("JetBrainsMono-Regular.ttf", JETBRAINS_MONO, "normal");
+  doc.addFileToVFS("JetBrainsMono-Bold.ttf", monoBoldB64);
+  doc.addFont("JetBrainsMono-Bold.ttf", JETBRAINS_MONO, "bold");
 
   doc.setFont(NOTO_SANS, "normal");
 }

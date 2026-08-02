@@ -3,7 +3,7 @@ import autoTable from "jspdf-autotable";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCurrency } from "@/lib/currency";
 import { formatInvoiceDate } from "@/lib/format";
-import { registerPdfFonts, fontFamilyFor, NOTO_SANS } from "@/lib/pdfFonts";
+import { registerPdfFonts, fontFamilyFor, NOTO_SANS, JETBRAINS_MONO } from "@/lib/pdfFonts";
 import type { Database } from "@/integrations/supabase/types";
 
 type CompanyProfileRow = Database["public"]["Tables"]["company_profiles"]["Row"];
@@ -22,20 +22,20 @@ type TenantRow = Pick<
  * Vector text only (no html2canvas) — crisp, theme-independent output.
  */
 
-// Fixed RGB palette so output is independent of the app theme.
-const INK = [17, 24, 39] as const; // gray-900
-const MUTED = [107, 114, 128] as const; // gray-500
-const RULE = [229, 231, 235] as const; // gray-200
-const GREEN = [22, 163, 74] as const; // primary accent
-const RED = [220, 38, 38] as const; // balance due
-const AMBER = [217, 119, 6] as const; // amber-600 — partial
-const BLUE = [37, 99, 235] as const; // blue-600 — due
+// Fixed RGB palette so output is independent of the app theme. "Steel
+// Statement": bank-statement precision — a single deep navy accent, tabular
+// monospace figures, minimal colour everywhere else.
+const NAVY = [11, 59, 96] as const; // the one accent — top bar, table header, balance chip
+const INK = [11, 27, 51] as const; // near-navy body text
+const MUTED = [91, 107, 130] as const; // secondary text
+const MUTED2 = [139, 152, 171] as const; // eyebrow labels — lightest text on the page
+const RULE = [220, 227, 236] as const; // hairlines
+const ALT_ROW = [247, 249, 251] as const; // table zebra striping
 const WHITE = [255, 255, 255] as const;
-// Modern light theme accents
-const HEADING = [23, 37, 84] as const; // blue-950 — titles & section labels
-const CARD = [237, 240, 251] as const; // soft lavender — summary card / accents
-const ACCENT = [47, 102, 235] as const; // blue — the single pop colour (amount due)
-const TBL_HEAD_BG = [245, 247, 251] as const; // table header fill
+const GREEN = [21, 128, 61] as const; // paid / credited amounts
+const RED = [185, 28, 28] as const; // reserved — see invoiceStatus()
+const AMBER = [180, 130, 20] as const; // reserved — see invoiceStatus()
+const BLUE = NAVY; // reserved — see invoiceStatus()
 
 type RGB = readonly [number, number, number];
 const setText = (d: jsPDF, c: RGB) => d.setTextColor(c[0], c[1], c[2]);
@@ -206,6 +206,10 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
     const family = fontFamilyFor(text);
     doc.setFont(family, family === NOTO_SANS ? weight : "normal");
   };
+  // Tabular figures (dates, amounts, the invoice number) always render in
+  // JetBrains Mono — the "bank statement" identity of this design. They're
+  // always plain ASCII, so no script fallback is needed here.
+  const useMono = (weight: "normal" | "bold" = "normal") => doc.setFont(JETBRAINS_MONO, weight);
 
   doc.setProperties({
     title: invoice.invoice_number ? `Invoice ${invoice.invoice_number}` : "Invoice",
@@ -213,12 +217,14 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
     author: legalName,
     creator: legalName || "Finthera",
   });
-  const SLATE: RGB = [45, 55, 72]; // dark table header, Zoho-style
-  const SHADE: RGB = [243, 244, 246]; // light row highlight
   const invTitle = Number(invoice.tax_amount) > 0 ? "TAX INVOICE" : "INVOICE";
 
-  // ── Header: logo + company (left) · title (right) ────────────────────
-  const hy = 16;
+  // ── Top accent bar — the one full-bleed use of the accent colour ─────
+  setFill(doc, NAVY);
+  doc.rect(0, 0, pageW, 3, "F");
+
+  // ── Header: logo + company (left) · doc type + number (right) ────────
+  const hy = 18;
   let cx = M;
   let logoBottom = hy;
   if (logo) {
@@ -237,10 +243,10 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
   // a tax invoice must still show the registered legal entity name.
   if (tradingName) {
     useFont(String(tradingName), "bold");
-    doc.setFontSize(13);
+    doc.setFontSize(14);
     setText(doc, INK);
     doc.text(String(tradingName), cx, cy);
-    cy += 5.5;
+    cy += 5.8;
   }
   if (p?.trading_name && t.company_name && p.trading_name !== t.company_name) {
     useFont(String(t.company_name), "normal");
@@ -269,25 +275,27 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
   else if (t.tax_id) contact.push(`TIN: ${t.tax_id}`);
   contact.forEach((l) => { useFont(l, "normal"); doc.text(l, cx, cy); cy += 4.2; });
 
-  // Right: big INVOICE / TAX INVOICE title
+  // Right: small tracked eyebrow + the invoice number in bold mono —
+  // the number is the one thing a reader scans for first on a statement.
   useFont(invTitle, "bold");
-  doc.setFontSize(22);
-  setText(doc, [90, 96, 104]);
-  doc.text(invTitle, right, hy + 6, { align: "right" });
+  doc.setFontSize(10);
+  setText(doc, NAVY);
+  doc.text(invTitle, right, hy + 2, { align: "right", charSpace: 0.5 });
+  useMono("bold");
+  doc.setFontSize(15);
+  setText(doc, INK);
+  doc.text(String(invoice.invoice_number || "—"), right, hy + 9, { align: "right" });
 
-  const headerBottom = Math.max(cy - 2, logoBottom);
+  const headerBottom = Math.max(cy - 2, logoBottom, hy + 9);
   setDraw(doc, RULE); doc.setLineWidth(0.3);
-  doc.line(M, headerBottom + 3, right, headerBottom + 3);
+  doc.line(M, headerBottom + 4, right, headerBottom + 4);
 
-  // ── Details block (right) + Bill To (left) ───────────────────────────
-  let y = headerBottom + 12;
+  // ── Billed To (left) + invoice meta grid (right) ──────────────────────
+  let y = headerBottom + 15;
 
-  // Right: invoice meta as label (left) / value (right) rows.
-  const dLabelX = right - 74;
-  const meta: [string, string][] = [
-    ["Invoice#", String(invoice.invoice_number || "—")],
-    ["Invoice Date", prettyDate(invoice.issue_date)],
-  ];
+  // Right: label (muted sans) / value (bold mono) rows, right-aligned.
+  const dLabelX = right - 70;
+  const meta: [string, string][] = [["Invoice Date", prettyDate(invoice.issue_date)]];
   const termsLabel = prettyTerms(invoice.payment_terms);
   if (termsLabel) meta.push(["Terms", termsLabel]);
   meta.push(["Due Date", prettyDate(invoice.due_date)]);
@@ -298,30 +306,19 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
     doc.setFontSize(9);
     setText(doc, MUTED);
     doc.text(label, dLabelX, my);
-    useFont(value, "bold");
+    useMono("bold");
     setText(doc, INK);
     doc.text(value, right, my, { align: "right" });
-    my += 5.6;
+    my += 6;
   });
-  // Balance-due highlight box (Zoho puts this prominently near the top).
-  my += 1.5;
-  const bdH = 9;
-  setFill(doc, SHADE);
-  doc.roundedRect(dLabelX - 3, my - 1, right - (dLabelX - 3), bdH, 1.5, 1.5, "F");
-  useFont(`Balance Due (${currency})`, "bold");
-  doc.setFontSize(9.5);
-  setText(doc, INK);
-  doc.text(`Balance Due (${currency})`, dLabelX, my + 5);
-  setText(doc, balance > 0.005 ? RED : GREEN);
-  doc.text(num(balance), right - 3, my + 5, { align: "right" });
-  const metaBottom = my + bdH;
+  const metaBottom = my;
 
-  // Left: Bill To
+  // Left: Billed To
   const billW = contentW * 0.5 - 8;
-  useFont("BILL TO", "bold");
-  doc.setFontSize(8);
-  setText(doc, SLATE);
-  doc.text("BILL TO", M, y);
+  useFont("BILLED TO", "bold");
+  doc.setFontSize(8.5);
+  setText(doc, MUTED2);
+  doc.text("BILLED TO", M, y, { charSpace: 0.35 });
   const partyAddr = customer?.address ? doc.splitTextToSize(String(customer.address), billW) : [];
   const customerTaxId = customer?.tin || customer?.vat_number;
   const billLines: { t: string; bold?: boolean }[] = [
@@ -330,28 +327,27 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
     ...[customer?.email, customer?.phone || customer?.mobile].filter(Boolean).map((tt: any) => ({ t: String(tt) })),
     ...(customerTaxId ? [{ t: `TIN: ${customerTaxId}` }] : []),
   ];
-  let by = y + 6.5;
+  let by = y + 7;
   billLines.forEach((ln) => {
     useFont(ln.t, ln.bold ? "bold" : "normal");
-    doc.setFontSize(ln.bold ? 11 : 9);
+    doc.setFontSize(ln.bold ? 12 : 9);
     setText(doc, ln.bold ? INK : MUTED);
     doc.text(ln.t, M, by);
-    by += ln.bold ? 5.8 : 4.6;
+    by += ln.bold ? 6 : 4.8;
   });
 
   y = Math.max(by, metaBottom) + 8;
 
-  // ── Line items table — dark header, Zoho-style ───────────────────────
+  // ── Line items table — navy header, tabular-mono figures ─────────────
   // Show a per-line Discount column only when at least one line is discounted.
   // Currency lives in the column headers, not repeated in every cell — the
   // old per-cell "LKR 40,000.00" / "-LKR 5,000.00" wrapped onto two lines.
   const hasLineDiscount = items.some((it) => Number(it.discount_amount) > 0);
   const head = hasLineDiscount
-    ? ["#", "Item & Description", "Qty", `Rate (${currency})`, `Discount (${currency})`, `Amount (${currency})`]
-    : ["#", "Item & Description", "Qty", `Rate (${currency})`, `Amount (${currency})`];
-  const body = items.map((it, i) => {
+    ? ["ITEM & DESCRIPTION", "QTY", `RATE (${currency})`, `DISCOUNT (${currency})`, `AMOUNT (${currency})`]
+    : ["ITEM & DESCRIPTION", "QTY", `RATE (${currency})`, `AMOUNT (${currency})`];
+  const body = items.map((it) => {
     const row = [
-      String(i + 1),
       buildItemCell(it),
       Number(it.quantity) ? String(Number(it.quantity)) : "—",
       num(it.unit_price),
@@ -360,17 +356,16 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
     row.push(num(it.total));
     return row;
   });
-  const amtCol = hasLineDiscount ? 5 : 4;
+  const amtCol = hasLineDiscount ? 4 : 3;
   const colStyles: any = {
-    0: { halign: "center", cellWidth: 10, textColor: [MUTED[0], MUTED[1], MUTED[2]] },
-    1: { cellWidth: "auto" },
-    2: { halign: "center", cellWidth: 16 },
-    3: { halign: "right", cellWidth: 26 },
-    [amtCol]: { halign: "right", cellWidth: 30, fontStyle: "bold" },
+    0: { cellWidth: "auto" },
+    1: { halign: "center", cellWidth: 16, font: JETBRAINS_MONO },
+    2: { halign: "right", cellWidth: 28, font: JETBRAINS_MONO },
+    [amtCol]: { halign: "right", cellWidth: 32, font: JETBRAINS_MONO, fontStyle: "bold" },
   };
   // Discount is a reduction in the customer's favour, not an error — keep it
-  // in the neutral body colour. Red is reserved for Balance Due.
-  if (hasLineDiscount) colStyles[4] = { halign: "right", cellWidth: 26 };
+  // in the neutral body colour, not red. Red is reserved for Balance Due.
+  if (hasLineDiscount) colStyles[3] = { halign: "right", cellWidth: 33, font: JETBRAINS_MONO };
 
   autoTable(doc, {
     startY: y,
@@ -378,21 +373,22 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
     head: [head],
     body,
     styles: {
-      font: NOTO_SANS, fontSize: 9, cellPadding: { top: 3.5, bottom: 3.5, left: 3.5, right: 3.5 },
+      font: NOTO_SANS, fontSize: 9, cellPadding: { top: 4, bottom: 4, left: 3.5, right: 3.5 },
       textColor: [INK[0], INK[1], INK[2]], lineColor: [RULE[0], RULE[1], RULE[2]], lineWidth: 0, valign: "middle",
     },
     headStyles: {
-      fillColor: [SLATE[0], SLATE[1], SLATE[2]], textColor: [WHITE[0], WHITE[1], WHITE[2]],
-      fontStyle: "bold", fontSize: 8.5, halign: "left", cellPadding: { top: 4, bottom: 4, left: 3.5, right: 3.5 },
+      fillColor: [NAVY[0], NAVY[1], NAVY[2]], textColor: [WHITE[0], WHITE[1], WHITE[2]],
+      fontStyle: "bold", fontSize: 8, halign: "left", cellPadding: { top: 4.5, bottom: 4.5, left: 3.5, right: 3.5 },
     },
-    alternateRowStyles: { fillColor: [250, 250, 251] },
+    alternateRowStyles: { fillColor: [ALT_ROW[0], ALT_ROW[1], ALT_ROW[2]] },
     columnStyles: colStyles,
     theme: "plain",
     // Item & Description is the one column that can hold Sinhala/Tamil
     // (product name / description) — switch that cell's font family; Sinhala
-    // and Tamil only ship Regular, so bold cells (the Amount column) fall
-    // back to Regular rather than drawing nothing.
+    // and Tamil only ship Regular, so a bold cell falls back to Regular
+    // rather than drawing nothing.
     didParseCell: (data: any) => {
+      if (data.column.index !== 0) return; // other columns are always plain ASCII figures
       const raw = Array.isArray(data.cell.raw) ? data.cell.raw.join(" ") : String(data.cell.raw ?? "");
       const family = fontFamilyFor(raw);
       if (family !== NOTO_SANS) {
@@ -402,25 +398,23 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
     },
   });
 
-  // ── Totals block (right), Zoho-style shaded Balance Due ──────────────
+  // ── Totals block (right), navy rule + a filled Balance Due chip ──────
   let ty = (doc as any).lastAutoTable.finalY + 8;
-  const totalsW = 78;
+  const totalsW = 74;
   const labelX = right - totalsW;
   const valX = right;
+  const totalsTop = ty;
 
   const totalRow = (label: string, value: string, opts: { color?: RGB; bold?: boolean } = {}) => {
     useFont(label, opts.bold ? "bold" : "normal");
     doc.setFontSize(9.5);
     setText(doc, opts.color ?? MUTED);
     doc.text(label, labelX, ty);
+    useMono(opts.bold ? "bold" : "normal");
     setText(doc, opts.color ?? INK);
     doc.text(value, valX, ty, { align: "right" });
-    ty += 6;
+    ty += 6.2;
   };
-
-  // separator above totals
-  setDraw(doc, RULE); doc.setLineWidth(0.2);
-  doc.line(labelX, ty - 4, right, ty - 4);
 
   // invoice.subtotal is stored NET of line discounts. Present the breakdown so
   // Total = (gross subtotal) − discount + tax always reconciles on the page.
@@ -432,21 +426,29 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
     totalRow("Taxable amount", fmt(invoice.subtotal));
   }
   if (Number(invoice.tax_amount) > 0) totalRow("Tax", fmt(invoice.tax_amount));
+  ty += 2;
+  setDraw(doc, RULE); doc.setLineWidth(0.3);
+  doc.line(labelX, ty - 4.5, right, ty - 4.5);
   totalRow("Total", `${fmt(invoice.total_amount)}`, { bold: true, color: INK });
   if (paid > 0) totalRow("Amount Paid", `-${fmt(paid)}`, { color: GREEN });
   if (disc > 0) totalRow("Credit Notes / Discounts", `-${fmt(disc)}`, { color: GREEN });
 
-  // Balance Due — shaded highlight bar
-  ty += 0.5;
-  const bH = 10;
-  setFill(doc, SHADE);
-  doc.rect(labelX - 4, ty - 1, totalsW + 4, bH, "F");
+  // Vertical accent rule along the totals column — echoes the top bar.
+  setDraw(doc, NAVY); doc.setLineWidth(0.7);
+  doc.line(labelX - 5, totalsTop - 4, labelX - 5, ty + 1);
+
+  // Balance Due — filled chip (navy; a muted green once settled in full)
+  ty += 1;
+  const bH = 11;
+  setFill(doc, balance > 0.005 ? NAVY : GREEN);
+  doc.roundedRect(labelX - 1, ty, totalsW + 1, bH, 1.5, 1.5, "F");
   useFont("Balance Due", "bold");
-  doc.setFontSize(10.5);
-  setText(doc, INK);
-  doc.text("Balance Due", labelX, ty + 5.8);
-  setText(doc, balance > 0.005 ? RED : GREEN);
-  doc.text(fmt(balance), valX - 1, ty + 5.9, { align: "right" });
+  doc.setFontSize(9.5);
+  setText(doc, WHITE);
+  doc.text("Balance Due", labelX + 4, ty + 7);
+  useMono("bold");
+  doc.setFontSize(11);
+  doc.text(fmt(balance), valX - 4, ty + 7.2, { align: "right" });
   ty += bH + 4;
 
   // ── Notes / terms / payment details (left column) ────────────────────
@@ -461,10 +463,10 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
   ] as [string, string | null][]) {
     if (!text) continue;
     useFont(heading, "bold");
-    doc.setFontSize(8);
-    setText(doc, SLATE);
-    doc.text(heading, M, ny);
-    ny += 4.8;
+    doc.setFontSize(8.5);
+    setText(doc, MUTED2);
+    doc.text(heading.toUpperCase(), M, ny, { charSpace: 0.25 });
+    ny += 5;
     useFont(String(text), "normal");
     doc.setFontSize(8.5);
     setText(doc, MUTED);
@@ -493,25 +495,26 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
       fx += lw + 3;
     }
     useFont(tenant?.company_name || "", "bold");
-    doc.setFontSize(9);
-    setText(doc, HEADING);
+    doc.setFontSize(8.5);
+    setText(doc, MUTED);
     doc.text(tenant?.company_name || "", fx, fy - 1);
     const sub = [tenant?.country, tenant?.registration_number ? `BR No: ${tenant.registration_number}` : null]
       .filter(Boolean).join("  ·  ");
     if (sub) {
       useFont(sub, "normal");
       doc.setFontSize(7.5);
-      setText(doc, MUTED);
+      setText(doc, MUTED2);
       doc.text(sub, fx, fy + 3);
     }
 
     const footerNote = p?.invoice_footer_note || "Thank you for your business";
-    useFont(footerNote, "italic");
-    doc.setFontSize(9);
-    setText(doc, MUTED);
+    useFont(footerNote, "normal");
+    doc.setFontSize(8.5);
+    setText(doc, MUTED2);
     doc.text(footerNote, pageW / 2, fy, { align: "center" });
-    useFont(`Page ${pageNum} of ${pageCount}`, "normal");
+    useMono("normal");
     doc.setFontSize(7.5);
+    setText(doc, MUTED2);
     doc.text(`Page ${pageNum} of ${pageCount}`, right, fy, { align: "right" });
   }
 
