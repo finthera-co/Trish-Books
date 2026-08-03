@@ -1,341 +1,666 @@
-import { useState, useMemo, Fragment } from "react";
-import { useAccounts, useJournalEntries } from "@/hooks/useData";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { format as formatDate, parseISO } from "date-fns";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Download, Printer, BookOpen, Filter } from "lucide-react";
-import { format } from "date-fns";
-import { isDebitNormal as checkDebitNormal, isPeriodBasedAccount, ACCOUNT_TYPES, getTypeLabel } from "@/lib/accountTypes";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Download, FileText, Printer, BookOpen, ChevronRight, ChevronDown,
+  AlertTriangle, XCircle, Loader2, Rows3, Lock,
+} from "lucide-react";
+import { ACCOUNT_TYPES } from "@/lib/accountTypes";
+import { useAuth } from "@/contexts/AuthContext";
+import { useMyPermissions } from "@/hooks/usePermissions";
+import { useFiscalPeriods } from "@/hooks/useFiscalPeriodBalances";
+import {
+  useGLAccountTree, useGLIntegrity, useGLOpeningReconciliation, fetchGLTransactions,
+  type GLTransactionRow,
+} from "@/hooks/useGeneralLedger";
+import {
+  buildGeneralLedgerRows, getVisibleLeafAccountIds, fmtAmt, fmtBal, GL_DATE_FORMAT, GL_REPORT_CURRENCY,
+  type GLReportRow,
+} from "@/lib/glReportModel";
+import {
+  exportGeneralLedgerCsv, exportGeneralLedgerPdf, computeGlFingerprint, formatGlFingerprintLine, logGlExport,
+} from "@/lib/glReportExport";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 
-const fmtAmount = (n: number): string => {
-  if (n === 0) return "—";
-  return `LKR ${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-};
+const ROW_HEIGHT = 36;
+const RENDER_ALL_WARN_THRESHOLD = 20_000;
 
-const fmtBalance = (n: number): string => {
-  const abs = Math.abs(n);
-  const formatted = `LKR ${abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  return n < 0 ? `(${formatted})` : formatted;
-};
-
-interface AccountLedger {
-  account: { id: string; code: string; name: string; type: string };
-  openingBalance: number;
-  rows: { date: string; description: string; reference: string; debit: number; credit: number; balance: number }[];
-  totalDebit: number;
-  totalCredit: number;
-  closingBalance: number;
-  isPeriodBased: boolean;
+function glDate(iso: string): string {
+  try {
+    return formatDate(parseISO(iso), GL_DATE_FORMAT);
+  } catch {
+    return iso;
+  }
 }
 
+function defaultDateFrom(): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 3);
+  d.setDate(1);
+  return d.toISOString().slice(0, 10);
+}
+
+interface RowCells {
+  label: string;
+  type: string;
+  date: string;
+  num: string;
+  adj: string;
+  name: string;
+  memo: string;
+  split: string;
+  debit: string;
+  credit: string;
+  balance: string;
+  loading: boolean;
+}
+
+function cellsFor(row: GLReportRow): RowCells {
+  if (row.kind === "txn") {
+    if (row.isLoadingTxns || !row.txn) {
+      return { label: "", type: "", date: "", num: "", adj: "", name: "", memo: "", split: "", debit: "", credit: "", balance: "", loading: true };
+    }
+    const t: GLTransactionRow = row.txn;
+    return {
+      label: "", type: t.txn_type, date: glDate(t.entry_date), num: t.num,
+      adj: t.is_adjusting ? "√" : "", name: t.entity_name, memo: t.memo, split: t.split_text,
+      debit: fmtAmt(t.debit), credit: fmtAmt(t.credit), balance: fmtBal(t.running_balance), loading: false,
+    };
+  }
+  return {
+    label: row.label ?? "", type: "", date: "", num: "", adj: "", name: "", memo: "", split: "",
+    debit: fmtAmt(row.debit), credit: fmtAmt(row.credit), balance: fmtBal(row.balance), loading: false,
+  };
+}
+
+function rowClassName(kind: GLReportRow["kind"]): string {
+  switch (kind) {
+    case "account-header":
+      return "font-semibold";
+    case "account-total":
+      return "font-semibold border-t border-border";
+    case "grand-total":
+      return "font-bold border-t-2 border-border";
+    default:
+      return "border-b border-border/40 hover:bg-muted/20";
+  }
+}
+
+const COL_HEADERS = ["", "Type", "Date", "Num", "Adj", "Name", "Memo", "Split", "Debit", "Credit", "Balance"];
+const DEFAULT_COL_WIDTHS = [280, 130, 110, 110, 60, 160, 200, 160, 140, 140, 150];
+const MIN_COL_WIDTH = 48;
+const COL_GAP = 4;
+
 export default function GeneralLedgerReport() {
-  const { data: accounts, isLoading: accountsLoading } = useAccounts();
-  const { data: journalEntries, isLoading: entriesLoading } = useJournalEntries();
-  const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date(); d.setMonth(d.getMonth() - 3); d.setDate(1);
-    return d.toISOString().slice(0, 10);
-  });
+  const { appUser } = useAuth();
+  const { canView } = useMyPermissions();
+  const { data: fiscalPeriods } = useFiscalPeriods();
+
+  const [dateFrom, setDateFrom] = useState(defaultDateFrom);
   const [dateTo, setDateTo] = useState(() => new Date().toISOString().slice(0, 10));
-  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [periodPreset, setPeriodPreset] = useState<string>("custom");
+  const [accountType, setAccountType] = useState<string>("all");
+  const [includeZeroActivity, setIncludeZeroActivity] = useState(true);
+  const [includeOtherRows, setIncludeOtherRows] = useState(true);
+  const [includeInactive, setIncludeInactive] = useState(true);
+  const [showAccountCodes, setShowAccountCodes] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [forceRenderAll, setForceRenderAll] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [isExporting, setIsExporting] = useState<"csv" | "pdf" | null>(null);
+  const [dismissedBanners, setDismissedBanners] = useState<Set<string>>(new Set());
+  const [colWidths, setColWidths] = useState<number[]>(DEFAULT_COL_WIDTHS);
 
-
-
-
-  const accountLedgers: AccountLedger[] = useMemo(() => {
-    if (!accounts || !journalEntries) return [];
-
-    const filteredAccounts = typeFilter === "all"
-      ? accounts
-      : accounts.filter(a => a.account_type === typeFilter);
-
-    const sorted = [...filteredAccounts].sort((a, b) => a.account_code.localeCompare(b.account_code));
-
-    const postedEntries = (journalEntries as any[]).filter(
-      (entry: any) => entry.status === "posted" && !(entry as any).voided_at
-    );
-
-    return sorted.map(account => {
-      const isDebitNormal = checkDebitNormal(account.account_type);
-      const periodBased = isPeriodBasedAccount(account.account_type);
-
-      // Reporting Layer rule:
-      //   - Balance Sheet accounts: opening balance carries forward (cumulative).
-      //   - P&L accounts: opening balance is conceptually 0 (period-based — they
-      //     reset each fiscal year via closing entries). Underlying ledger is
-      //     unchanged; this is a presentation-only rule.
-      const openingBalance = periodBased
-        ? 0
-        : postedEntries
-            .filter((entry: any) => entry.entry_date < dateFrom)
-            .flatMap((entry: any) => ((entry.journal_lines as any[]) || []).filter((line: any) => line.account_id === account.id))
-            .reduce((sum: number, line: any) => {
-              const debit = Number(line.debit) || 0;
-              const credit = Number(line.credit) || 0;
-              return sum + (isDebitNormal ? debit - credit : credit - debit);
-            }, 0);
-
-      const rows = postedEntries
-        .filter(entry => {
-          if (entry.status !== "posted" || (entry as any).voided_at) return false;
-          if (entry.entry_date < dateFrom || entry.entry_date > dateTo) return false;
-          return true;
-        })
-        .flatMap(entry => {
-          const lines = (entry.journal_lines as any[]) || [];
-          return lines
-            .filter(line => line.account_id === account.id)
-            .map(line => ({
-              date: entry.entry_date,
-              description: entry.description,
-              reference: entry.reference || "",
-              debit: Number(line.debit) || 0,
-              credit: Number(line.credit) || 0,
-              balance: 0,
-            }));
-        })
-        .sort((a, b) => a.date.localeCompare(b.date));
-
-      // Running balance starts from opening (0 for period-based accounts).
-      let bal = openingBalance;
-      rows.forEach(row => {
-        bal += isDebitNormal ? (row.debit - row.credit) : (row.credit - row.debit);
-        row.balance = bal;
+  const resizingRef = useRef<{ index: number; startX: number; startWidth: number } | null>(null);
+  const handleResizeMouseDown = useCallback((index: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizingRef.current = { index, startX: e.clientX, startWidth: colWidths[index] };
+    const onMove = (ev: MouseEvent) => {
+      const drag = resizingRef.current;
+      if (!drag) return;
+      const next = Math.max(MIN_COL_WIDTH, drag.startWidth + (ev.clientX - drag.startX));
+      setColWidths((prev) => {
+        if (prev[drag.index] === next) return prev;
+        const copy = [...prev];
+        copy[drag.index] = next;
+        return copy;
       });
+    };
+    const onUp = () => {
+      resizingRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [colWidths]);
 
-      const totalDebit = rows.reduce((s, r) => s + r.debit, 0);
-      const totalCredit = rows.reduce((s, r) => s + r.credit, 0);
+  const gridTemplateColumns = useMemo(() => colWidths.map((w) => `${w}px`).join(" "), [colWidths]);
+  const totalColWidth = useMemo(
+    () => colWidths.reduce((sum, w) => sum + w, 0) + COL_GAP * (colWidths.length - 1),
+    [colWidths]
+  );
 
-      return {
-        account: { id: account.id, code: account.account_code, name: account.account_name, type: account.account_type },
-        openingBalance,
-        rows,
-        totalDebit,
-        totalCredit,
-        closingBalance: bal,
-        isPeriodBased: periodBased,
-      };
-    }).filter(al => al.rows.length > 0 || al.openingBalance !== 0);
-  }, [accounts, journalEntries, dateFrom, dateTo, typeFilter]);
+  useEffect(() => {
+    const before = () => setIsPrinting(true);
+    const after = () => setIsPrinting(false);
+    window.addEventListener("beforeprint", before);
+    window.addEventListener("afterprint", after);
+    return () => {
+      window.removeEventListener("beforeprint", before);
+      window.removeEventListener("afterprint", after);
+    };
+  }, []);
 
-  const toggleCollapse = (id: string) => {
-    setCollapsed(prev => {
+  const canViewReport = canView("reports");
+
+  const treeQuery = useGLAccountTree(dateFrom, dateTo, accountType === "all" ? undefined : accountType, includeInactive);
+  const integrityQuery = useGLIntegrity(dateFrom, dateTo);
+  const reconciliation = useGLOpeningReconciliation(dateFrom);
+
+  const buildOptions = useMemo(
+    () => ({ includeZeroActivity, includeOtherRows, showAccountCodes, collapsed }),
+    [includeZeroActivity, includeOtherRows, showAccountCodes, collapsed]
+  );
+
+  const visibleAccountIds = useMemo(() => {
+    if (!treeQuery.data) return [];
+    return getVisibleLeafAccountIds(treeQuery.data, buildOptions);
+  }, [treeQuery.data, buildOptions]);
+
+  const sortedVisibleIds = useMemo(() => [...visibleAccountIds].sort(), [visibleAccountIds]);
+
+  const txnsQuery = useQuery({
+    queryKey: ["gl_txns_screen", appUser?.tenant_id, dateFrom, dateTo, sortedVisibleIds.join(",")],
+    enabled: Boolean(dateFrom && dateTo) && sortedVisibleIds.length > 0,
+    queryFn: () => fetchGLTransactions(dateFrom, dateTo, sortedVisibleIds),
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
+    retry: 1,
+  });
+
+  const txnsByAccount = useMemo(() => {
+    const map = new Map<string, GLTransactionRow[]>();
+    if (sortedVisibleIds.length === 0) return map;
+    if (txnsQuery.data === undefined) return map; // still loading -> every visible leaf shows a spinner
+    for (const id of sortedVisibleIds) map.set(id, []);
+    for (const row of txnsQuery.data) {
+      const arr = map.get(row.account_id) ?? [];
+      arr.push(row);
+      map.set(row.account_id, arr);
+    }
+    return map;
+  }, [sortedVisibleIds, txnsQuery.data]);
+
+  const { rows, grandDebit, grandCredit, imbalance } = useMemo(() => {
+    if (!treeQuery.data) return { rows: [] as GLReportRow[], grandDebit: 0, grandCredit: 0, imbalance: 0 };
+    return buildGeneralLedgerRows(treeQuery.data, txnsByAccount, buildOptions);
+  }, [treeQuery.data, txnsByAccount, buildOptions]);
+
+  const fingerprint = useMemo(() => {
+    if (!appUser?.tenant_id) return null;
+    const params = {
+      tenantId: appUser.tenant_id,
+      dateFrom,
+      dateTo,
+      accountType: accountType === "all" ? null : accountType,
+      includeZeroActivity,
+      includeOtherRows,
+      includeInactive,
+      grandDebit,
+      grandCredit,
+      rowCount: rows.length,
+    };
+    const hash = computeGlFingerprint(params);
+    return { hash, line: formatGlFingerprintLine(params, hash) };
+  }, [appUser?.tenant_id, dateFrom, dateTo, accountType, includeZeroActivity, includeOtherRows, includeInactive, grandDebit, grandCredit, rows.length]);
+
+  const toggleCollapse = useCallback((nodeKey: string) => {
+    setCollapsed((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(nodeKey)) next.delete(nodeKey);
+      else next.add(nodeKey);
       return next;
     });
+  }, []);
+
+  const collapseAll = useCallback(() => {
+    if (!treeQuery.data) return;
+    setCollapsed(new Set(treeQuery.data.filter((n) => n.has_children).map((n) => n.node_key)));
+  }, [treeQuery.data]);
+
+  const expandAll = useCallback(() => setCollapsed(new Set()), []);
+
+  const onPeriodPresetChange = (val: string) => {
+    setPeriodPreset(val);
+    if (val === "custom") return;
+    const period = fiscalPeriods?.find((p: any) => p.id === val);
+    if (period) {
+      setDateFrom(period.period_start);
+      setDateTo(period.period_end);
+    }
   };
 
-  const collapseAll = () => setCollapsed(new Set(accountLedgers.map(al => al.account.id)));
-  const expandAll = () => setCollapsed(new Set());
+  // Print bypasses virtualisation entirely — a windowed printout is a truncated
+  // financial statement. The escape hatch below serves the same full render for
+  // Ctrl+F search and screen readers.
+  const renderFull = isPrinting || forceRenderAll;
 
-  const grandTotalDebit = accountLedgers.reduce((s, al) => s + al.totalDebit, 0);
-  const grandTotalCredit = accountLedgers.reduce((s, al) => s + al.totalCredit, 0);
+  const parentRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: renderFull ? 0 : rows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 12,
+  });
 
-  const handleExportCSV = () => {
-    const header = ["Account Code", "Account Name", "Date", "Description", "Reference", "Debit", "Credit", "Balance"];
-    const rows: string[][] = [];
-    accountLedgers.forEach(al => {
-      if (al.openingBalance !== 0) {
-        rows.push([al.account.code, al.account.name, "", "Opening Balance", "", "", "", al.openingBalance.toFixed(2)]);
+  const warningLines = useMemo(() => {
+    const lines: string[] = [];
+    for (const issue of integrityQuery.data ?? []) {
+      lines.push(`[${issue.severity.toUpperCase()}] ${issue.code}: ${issue.detail}${issue.amount != null ? ` (${issue.amount.toFixed(2)})` : ""}`);
+    }
+    if (Math.abs(imbalance) > 0.005) lines.push(`[ERROR] IMBALANCE: Dr/Cr differ by ${imbalance.toFixed(2)}`);
+    if (reconciliation.status === "variance") {
+      lines.push(`[WARNING] OPENING_VARIANCE: ledger vs opening_balances differ by ${reconciliation.totalVariance.toFixed(2)} across ${reconciliation.accounts.length} account(s)`);
+    }
+    return lines;
+  }, [integrityQuery.data, imbalance, reconciliation]);
+
+  const runExport = useCallback(
+    async (kind: "csv" | "pdf") => {
+      if (!treeQuery.data || !appUser?.tenant_id) return;
+      setIsExporting(kind);
+      try {
+        // Exports cover every in-scope account regardless of on-screen collapse —
+        // collapse is a navigation aid, not a data filter.
+        const fullIds = getVisibleLeafAccountIds(treeQuery.data, { includeZeroActivity, includeOtherRows });
+        const sortedFullIds = [...fullIds].sort();
+        const allTxns = await fetchGLTransactions(dateFrom, dateTo, sortedFullIds);
+        const fullTxnsByAccount = new Map<string, GLTransactionRow[]>();
+        for (const id of sortedFullIds) fullTxnsByAccount.set(id, []);
+        for (const t of allTxns) {
+          const arr = fullTxnsByAccount.get(t.account_id) ?? [];
+          arr.push(t);
+          fullTxnsByAccount.set(t.account_id, arr);
+        }
+        const full = buildGeneralLedgerRows(treeQuery.data, fullTxnsByAccount, {
+          includeZeroActivity,
+          includeOtherRows,
+          showAccountCodes,
+          collapsed: new Set(),
+        });
+
+        const params = {
+          tenantId: appUser.tenant_id,
+          dateFrom,
+          dateTo,
+          accountType: accountType === "all" ? null : accountType,
+          includeZeroActivity,
+          includeOtherRows,
+          includeInactive,
+          grandDebit: full.grandDebit,
+          grandCredit: full.grandCredit,
+          rowCount: full.rows.length,
+        };
+        const hash = computeGlFingerprint(params);
+        const line = formatGlFingerprintLine(params, hash);
+
+        if (kind === "csv") {
+          exportGeneralLedgerCsv(full.rows, { dateFrom, dateTo, fingerprintLine: line, warnings: warningLines });
+        } else {
+          await exportGeneralLedgerPdf(full.rows, { dateFrom, dateTo, fingerprintLine: line, currency: GL_REPORT_CURRENCY });
+        }
+
+        await logGlExport({
+          tenantId: appUser.tenant_id,
+          userId: appUser.id,
+          format: kind,
+          dateFrom,
+          dateTo,
+          fingerprint: hash,
+          rowCount: full.rows.length,
+          grandDebit: full.grandDebit,
+          grandCredit: full.grandCredit,
+        });
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Export failed");
+      } finally {
+        setIsExporting(null);
       }
-      al.rows.forEach(r => {
-        rows.push([al.account.code, al.account.name, r.date, r.description.replace(/"/g, '""'), r.reference, r.debit > 0 ? r.debit.toFixed(2) : "", r.credit > 0 ? r.credit.toFixed(2) : "", r.balance.toFixed(2)]);
-      });
-      rows.push([al.account.code, al.account.name, "", "Closing Balance", "", al.totalDebit.toFixed(2), al.totalCredit.toFixed(2), al.closingBalance.toFixed(2)]);
-      rows.push([]);
-    });
-    const csv = [header, ...rows].map(r => r.map(c => `"${c}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `general-ledger-${dateFrom}-to-${dateTo}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+    },
+    [treeQuery.data, appUser, dateFrom, dateTo, accountType, includeZeroActivity, includeOtherRows, includeInactive, showAccountCodes, warningLines]
+  );
 
-  const isLoading = accountsLoading || entriesLoading;
+  if (!canViewReport) {
+    return (
+      <div className="stat-card text-center py-16">
+        <Lock className="w-10 h-10 text-muted-foreground/40 mx-auto mb-3" />
+        <p className="text-muted-foreground font-medium">You don't have permission to view the General Ledger.</p>
+      </div>
+    );
+  }
 
-  // Group by account type for display
-  const groupedByType = useMemo(() => {
-    const typeOrder = [...ACCOUNT_TYPES] as string[];
-    const groups = new Map<string, AccountLedger[]>();
-    accountLedgers.forEach(al => {
-      if (!groups.has(al.account.type)) groups.set(al.account.type, []);
-      groups.get(al.account.type)!.push(al);
-    });
-    return typeOrder.filter(t => groups.has(t)).map(t => ({ type: t, ledgers: groups.get(t)! }));
-  }, [accountLedgers]);
+  const closedPeriodNotice =
+    reconciliation.period && reconciliation.period.status === "closed"
+      ? `Range includes closed period "${reconciliation.period.name}" (closed ${reconciliation.period.closed_at ? glDate(reconciliation.period.closed_at) : "—"})`
+      : null;
+
+  const isLoading = treeQuery.isLoading;
+  const showRenderAllWarning = !renderFull && rows.length > RENDER_ALL_WARN_THRESHOLD;
 
   return (
-    <div className="space-y-6">
-      {/* Controls */}
-      <div className="stat-card print:shadow-none">
+    <div className="space-y-4">
+      {/* ── Controls (hidden when printing) ── */}
+      <div className="stat-card print:hidden">
         <div className="flex flex-wrap items-end gap-4">
           <div>
             <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">From</label>
-            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-              className="text-sm border border-input rounded-lg px-3 py-2.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20" />
+            <input
+              type="date" value={dateFrom}
+              onChange={(e) => { setDateFrom(e.target.value); setPeriodPreset("custom"); }}
+              className="text-sm border border-input rounded-lg px-3 py-2.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20"
+            />
           </div>
           <div>
             <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">To</label>
-            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-              className="text-sm border border-input rounded-lg px-3 py-2.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20" />
+            <input
+              type="date" value={dateTo}
+              onChange={(e) => { setDateTo(e.target.value); setPeriodPreset("custom"); }}
+              className="text-sm border border-input rounded-lg px-3 py-2.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20"
+            />
+          </div>
+          <div className="min-w-[160px]">
+            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">Period</label>
+            <Select value={periodPreset} onValueChange={onPeriodPresetChange}>
+              <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="custom">Custom range</SelectItem>
+                {fiscalPeriods?.map((p: any) => (
+                  <SelectItem key={p.id} value={p.id}>{p.name}{p.status === "closed" ? " (closed)" : ""}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="min-w-[180px]">
             <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">Account Type</label>
-            <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
-              className="w-full text-sm border border-input rounded-lg px-3 py-2.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20">
-              <option value="all">All Types</option>
-              {ACCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
+            <Select value={accountType} onValueChange={setAccountType}>
+              <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                {ACCOUNT_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex gap-2 ml-auto">
             <Button variant="outline" size="sm" onClick={collapseAll}>Collapse All</Button>
             <Button variant="outline" size="sm" onClick={expandAll}>Expand All</Button>
-            <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={accountLedgers.length === 0}>
-              <Download className="w-4 h-4 mr-1" /> Export
+            <Button variant="outline" size="sm" onClick={() => runExport("csv")} disabled={isLoading || isExporting !== null}>
+              {isExporting === "csv" ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Download className="w-4 h-4 mr-1" />} CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => runExport("pdf")} disabled={isLoading || isExporting !== null}>
+              {isExporting === "pdf" ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <FileText className="w-4 h-4 mr-1" />} PDF
             </Button>
             <Button variant="outline" size="sm" onClick={() => window.print()}>
               <Printer className="w-4 h-4 mr-1" /> Print
             </Button>
           </div>
         </div>
+
+        <div className="mt-4 pt-3 border-t border-border flex flex-wrap items-center gap-4 text-xs">
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={includeZeroActivity} onChange={(e) => setIncludeZeroActivity(e.target.checked)} />
+            Show zero-activity accounts
+          </label>
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={includeOtherRows} onChange={(e) => setIncludeOtherRows(e.target.checked)} />
+            Show "- Other" rows
+          </label>
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} />
+            Include inactive accounts
+          </label>
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={showAccountCodes} onChange={(e) => setShowAccountCodes(e.target.checked)} />
+            Show account codes
+          </label>
+        </div>
       </div>
 
-      {/* Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="stat-card">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Accounts with Activity</p>
-          <p className="text-xl font-bold text-foreground mt-1">{accountLedgers.length}</p>
-        </div>
-        <div className="stat-card">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Transactions</p>
-          <p className="text-xl font-bold text-foreground mt-1">{accountLedgers.reduce((s, al) => s + al.rows.length, 0)}</p>
-        </div>
-        <div className="stat-card">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Debits</p>
-          <p className="text-xl font-bold text-foreground mt-1">{fmtAmount(grandTotalDebit)}</p>
-        </div>
-        <div className="stat-card">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Credits</p>
-          <p className="text-xl font-bold text-foreground mt-1">{fmtAmount(grandTotalCredit)}</p>
-        </div>
-      </div>
+      {/* ── Banner stack ── */}
+      {!dismissedBanners.has("integrity") && (integrityQuery.data?.some((i) => i.severity === "error")) && (
+        <Banner tone="error" icon={XCircle} onDismiss={() => setDismissedBanners((s) => new Set(s).add("integrity"))}>
+          <strong>Ledger integrity errors detected.</strong> {integrityQuery.data!.filter((i) => i.severity === "error").length} error(s) in this range —
+          the figures below may not be trustworthy until resolved.
+          <ul className="mt-1 list-disc pl-5 space-y-0.5">
+            {integrityQuery.data!.filter((i) => i.severity === "error").slice(0, 5).map((i, idx) => <li key={idx}>{i.detail}</li>)}
+          </ul>
+        </Banner>
+      )}
+      {!dismissedBanners.has("imbalance") && Math.abs(imbalance) > 0.005 && (
+        <Banner tone="error" icon={XCircle} onDismiss={() => setDismissedBanners((s) => new Set(s).add("imbalance"))}>
+          <strong>Report does not balance.</strong> Debits and credits differ by {GL_REPORT_CURRENCY} {Math.abs(imbalance).toFixed(2)}.
+        </Banner>
+      )}
+      {!dismissedBanners.has("reconciliation") && reconciliation.status === "variance" && (
+        <Banner tone="warning" icon={AlertTriangle} onDismiss={() => setDismissedBanners((s) => new Set(s).add("reconciliation"))}>
+          <strong>Opening balances disagree with the ledger.</strong> The stored opening balance for this fiscal period differs from the
+          journal by {GL_REPORT_CURRENCY} {reconciliation.totalVariance.toFixed(2)} across {reconciliation.accounts.length} account(s). The
+          General Ledger reflects the journal.
+        </Banner>
+      )}
+      {!dismissedBanners.has("closed-period") && closedPeriodNotice && (
+        <Banner tone="warning" icon={AlertTriangle} onDismiss={() => setDismissedBanners((s) => new Set(s).add("closed-period"))}>
+          {closedPeriodNotice}
+        </Banner>
+      )}
 
-      {/* Report Body */}
+      {/* ── Report header ── */}
       <div className="stat-card print:shadow-none">
-        <div className="text-center mb-6 print:mb-4">
-          <h2 className="text-lg font-bold text-foreground">General Ledger Report</h2>
-          <p className="text-sm text-muted-foreground">
-            {format(new Date(dateFrom), "MMM d, yyyy")} — {format(new Date(dateTo), "MMM d, yyyy")}
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">Generated: {format(new Date(), "PPpp")}</p>
+        <div className="text-center mb-4 print:mb-3">
+          <h2 className="text-lg font-bold text-foreground">General Ledger</h2>
+          <p className="text-sm text-muted-foreground">{dateFrom} — {dateTo}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">All amounts in {GL_REPORT_CURRENCY}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Generated: {formatDate(new Date(), "PPpp")}</p>
+          {fingerprint && <p className="text-[10px] font-mono text-muted-foreground/70 mt-1">{fingerprint.line}</p>}
         </div>
+
+        {showRenderAllWarning && (
+          <div className="print:hidden mb-3 flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs">
+            <span className="text-muted-foreground">
+              {rows.length.toLocaleString()} rows — virtualised for performance. Rendering every row lets Ctrl+F and screen readers see everything, but may be slow.
+            </span>
+            <Button variant="outline" size="sm" onClick={() => setForceRenderAll((v) => !v)}>
+              <Rows3 className="w-3.5 h-3.5 mr-1" /> {forceRenderAll ? "Virtualise again" : "Render all rows"}
+            </Button>
+          </div>
+        )}
 
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
             <span className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
           </div>
-        ) : accountLedgers.length === 0 ? (
+        ) : treeQuery.error ? (
+          <div className="text-center py-16 text-destructive">
+            <XCircle className="w-10 h-10 mx-auto mb-3" />
+            <p className="font-medium">Failed to load the General Ledger.</p>
+            <p className="text-sm mt-1">{(treeQuery.error as Error).message}</p>
+          </div>
+        ) : rows.length <= 1 ? (
           <div className="text-center py-16">
             <BookOpen className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
-            <p className="text-muted-foreground font-medium">No transactions found for this period</p>
+            <p className="text-muted-foreground font-medium">No accounts match the current filters</p>
           </div>
+        ) : renderFull ? (
+          <FullTable rows={rows} collapsed={collapsed} onToggle={toggleCollapse} colWidths={colWidths} />
         ) : (
-          <div className="space-y-1">
-            {groupedByType.map(group => (
-              <Fragment key={group.type}>
-                <div className="bg-muted/60 px-4 py-2 rounded-md">
-                  <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{group.type}</span>
-                </div>
-                {group.ledgers.map(al => {
-                  const isCollapsed = collapsed.has(al.account.id);
+          <div
+            ref={parentRef}
+            className="overflow-auto border border-border rounded-lg"
+            style={{ height: "70vh" }}
+            role="table"
+            aria-label="General Ledger transactions"
+          >
+            <div style={{ width: totalColWidth, minWidth: "100%" }}>
+              <div
+                role="row"
+                className="grid sticky top-0 z-10 bg-muted/60 border-b border-border text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                style={{ gridTemplateColumns, columnGap: COL_GAP }}
+              >
+                {COL_HEADERS.map((h, i) => (
+                  <div key={i} role="columnheader" className={`relative px-3.5 py-2.5 ${i >= 8 ? "text-right" : "text-left"}`}>
+                    <span className="truncate block">{h}</span>
+                    <div
+                      onMouseDown={(e) => handleResizeMouseDown(i, e)}
+                      role="separator"
+                      aria-orientation="vertical"
+                      aria-label={`Resize ${h || "label"} column`}
+                      className="absolute top-0 right-0 h-full w-2 cursor-col-resize select-none hover:bg-primary/40 active:bg-primary/60"
+                    />
+                  </div>
+                ))}
+              </div>
+              <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
+                {rowVirtualizer.getVirtualItems().map((vi) => {
+                  const row = rows[vi.index];
                   return (
-                    <div key={al.account.id} className="border border-border rounded-lg overflow-hidden mb-3">
-                      {/* Account header */}
-                      <button
-                        onClick={() => toggleCollapse(al.account.id)}
-                        className="w-full flex items-center justify-between px-4 py-3 bg-muted/30 hover:bg-muted/50 transition-colors text-left"
-                      >
-                        <div className="flex items-center gap-3">
-                          <BookOpen className="w-4 h-4 text-primary" />
-                          <span className="font-mono text-xs text-muted-foreground">{al.account.code}</span>
-                          <span className="font-semibold text-foreground text-sm">{al.account.name}</span>
-                          <span className="px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground text-[10px] font-medium">
-                            {getTypeLabel(al.account.type)}
-                          </span>
-                          <span className="text-xs text-muted-foreground">{al.rows.length} txn{al.rows.length !== 1 ? "s" : ""}</span>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <span className="text-sm font-mono font-semibold text-foreground">{fmtBalance(al.closingBalance)}</span>
-                          <span className={`text-xs transition-transform ${isCollapsed ? "" : "rotate-180"}`}>▼</span>
-                        </div>
-                      </button>
-
-                      {/* Transaction table */}
-                      {!isCollapsed && (
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-t border-border bg-muted/20">
-                              <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground w-28">Date</th>
-                              <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground">Description</th>
-                              <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground w-28">Reference</th>
-                              <th className="text-right px-4 py-2 text-xs font-medium text-muted-foreground w-32">Debit</th>
-                              <th className="text-right px-4 py-2 text-xs font-medium text-muted-foreground w-32">Credit</th>
-                              <th className="text-right px-4 py-2 text-xs font-medium text-muted-foreground w-36">Balance</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {al.openingBalance !== 0 && (
-                              <tr className="bg-muted/10 border-b border-border">
-                                <td className="px-4 py-1.5 text-muted-foreground text-xs">{dateFrom}</td>
-                                <td colSpan={2} className="px-4 py-1.5 italic text-muted-foreground">Opening Balance</td>
-                                <td className="text-right px-4 py-1.5 font-mono text-muted-foreground">—</td>
-                                <td className="text-right px-4 py-1.5 font-mono text-muted-foreground">—</td>
-                                <td className="text-right px-4 py-1.5 font-mono font-semibold text-foreground">{fmtBalance(al.openingBalance)}</td>
-                              </tr>
-                            )}
-                            {al.rows.map((row, i) => (
-                              <tr key={i} className="border-b border-border/50 hover:bg-muted/10">
-                                <td className="px-4 py-1.5 text-muted-foreground tabular-nums">{row.date}</td>
-                                <td className="px-4 py-1.5 text-foreground">{row.description}</td>
-                                <td className="px-4 py-1.5 font-mono text-xs text-muted-foreground">{row.reference || "—"}</td>
-                                <td className="text-right px-4 py-1.5 font-mono tabular-nums">
-                                  {row.debit > 0 ? row.debit.toLocaleString(undefined, { minimumFractionDigits: 2 }) : <span className="text-muted-foreground/40">—</span>}
-                                </td>
-                                <td className="text-right px-4 py-1.5 font-mono tabular-nums">
-                                  {row.credit > 0 ? row.credit.toLocaleString(undefined, { minimumFractionDigits: 2 }) : <span className="text-muted-foreground/40">—</span>}
-                                </td>
-                                <td className={`text-right px-4 py-1.5 font-mono tabular-nums font-semibold ${row.balance < 0 ? "text-destructive" : "text-foreground"}`}>
-                                  {fmtBalance(row.balance)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                          <tfoot>
-                            <tr className="border-t-2 border-border bg-muted/20">
-                              <td colSpan={3} className="px-4 py-2 font-semibold text-foreground text-xs">Totals / Closing</td>
-                              <td className="text-right px-4 py-2 font-mono font-bold text-foreground tabular-nums">
-                                {al.totalDebit > 0 ? al.totalDebit.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}
-                              </td>
-                              <td className="text-right px-4 py-2 font-mono font-bold text-foreground tabular-nums">
-                                {al.totalCredit > 0 ? al.totalCredit.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}
-                              </td>
-                              <td className={`text-right px-4 py-2 font-mono font-bold tabular-nums ${al.closingBalance < 0 ? "text-destructive" : "text-foreground"}`}>
-                                {fmtBalance(al.closingBalance)}
-                              </td>
-                            </tr>
-                          </tfoot>
-                        </table>
-                      )}
-                    </div>
+                    <GridRow
+                      key={row.key}
+                      row={row}
+                      collapsed={collapsed}
+                      onToggle={toggleCollapse}
+                      gridTemplateColumns={gridTemplateColumns}
+                      style={{ position: "absolute", top: 0, left: 0, width: totalColWidth, height: `${vi.size}px`, transform: `translateY(${vi.start}px)` }}
+                    />
                   );
                 })}
-              </Fragment>
-            ))}
+              </div>
+            </div>
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function Banner({ tone, icon: Icon, children, onDismiss }: { tone: "error" | "warning"; icon: any; children: React.ReactNode; onDismiss: () => void }) {
+  const classes =
+    tone === "error"
+      ? "bg-red-50 border-red-200 dark:bg-red-950/20 dark:border-red-800 text-red-900 dark:text-red-200"
+      : "bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800 text-amber-900 dark:text-amber-200";
+  return (
+    <div className={`print:hidden rounded-lg border px-4 py-3 flex items-start gap-3 text-sm ${classes}`}>
+      <Icon className="w-4.5 h-4.5 flex-shrink-0 mt-0.5" />
+      <div className="flex-1">{children}</div>
+      <button onClick={onDismiss} aria-label="Dismiss" className="text-current/60 hover:text-current">
+        <XCircle className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
+
+function GridRow({
+  row, collapsed, onToggle, style, gridTemplateColumns,
+}: {
+  row: GLReportRow; collapsed: Set<string>; onToggle: (k: string) => void;
+  style: React.CSSProperties; gridTemplateColumns: string;
+}) {
+  const c = cellsFor(row);
+  const isHeader = row.kind === "account-header";
+  const isCollapsible = isHeader && !!row.nodeKey;
+  const isCollapsed = row.nodeKey ? collapsed.has(row.nodeKey) : false;
+
+  return (
+    <div
+      role="row"
+      aria-level={row.kind !== "txn" ? row.depth || undefined : undefined}
+      aria-expanded={isCollapsible ? !isCollapsed : undefined}
+      className={`grid text-sm ${rowClassName(row.kind)}`}
+      style={{ ...style, gridTemplateColumns, columnGap: COL_GAP }}
+    >
+      <div role="cell" className="px-3.5 py-2 flex items-center gap-1.5 truncate" style={{ paddingLeft: row.kind !== "txn" ? row.depth * 16 + 14 : 14 }}>
+        {isCollapsible && (
+          <button
+            onClick={() => onToggle(row.nodeKey!)}
+            aria-expanded={!isCollapsed}
+            aria-label={isCollapsed ? "Expand" : "Collapse"}
+            className="p-0.5 -ml-1 rounded hover:bg-muted/60 flex-shrink-0"
+          >
+            {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+        )}
+        <span className="truncate">{c.label}</span>
+      </div>
+      <div role="cell" className="px-3.5 py-2 truncate">{c.type}</div>
+      <div role="cell" className="px-3.5 py-2 truncate tabular-nums">{c.date}</div>
+      <div role="cell" className="px-3.5 py-2 truncate font-mono text-xs">{c.num}</div>
+      <div role="cell" className="px-3.5 py-2 text-center" aria-label={c.adj ? "Adjusting entry" : undefined}>{c.adj}</div>
+      <div role="cell" className="px-3.5 py-2 truncate">{c.name}</div>
+      <div role="cell" className="px-3.5 py-2 truncate">{c.memo}</div>
+      <div role="cell" className="px-3.5 py-2 truncate" title={c.split}>{c.split}</div>
+      <div role="cell" className="px-3.5 py-2 text-right font-mono tabular-nums">{c.debit}</div>
+      <div role="cell" className="px-3.5 py-2 text-right font-mono tabular-nums">{c.credit}</div>
+      <div role="cell" className="px-3.5 py-2 text-right font-mono tabular-nums">
+        {c.loading ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" /> : c.balance}
+      </div>
+    </div>
+  );
+}
+
+/** Full, non-virtualised semantic <table> — used for print and the render-all escape hatch. */
+function FullTable({
+  rows, collapsed, onToggle, colWidths,
+}: { rows: GLReportRow[]; collapsed: Set<string>; onToggle: (k: string) => void; colWidths: number[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="text-sm border-separate" style={{ borderSpacing: `${COL_GAP}px 0` }} aria-label="General Ledger transactions">
+        <colgroup>
+          {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
+        </colgroup>
+        <thead>
+          <tr className="border-b-2 border-border bg-muted/30">
+            {COL_HEADERS.map((h, i) => (
+              <th key={i} scope="col" className={`px-3.5 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap ${i >= 8 ? "text-right" : "text-left"}`}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const c = cellsFor(row);
+            const isHeader = row.kind === "account-header";
+            const isCollapsible = isHeader && !!row.nodeKey;
+            const isCollapsed = row.nodeKey ? collapsed.has(row.nodeKey) : false;
+            return (
+              <tr key={row.key} className={rowClassName(row.kind)} aria-level={row.kind !== "txn" ? row.depth || undefined : undefined}>
+                <td className="px-3.5 py-2 truncate" style={{ paddingLeft: (row.kind !== "txn" ? row.depth * 16 : 0) + 14 }}>
+                  <span className="inline-flex items-center gap-1.5">
+                    {isCollapsible && (
+                      <button onClick={() => onToggle(row.nodeKey!)} aria-expanded={!isCollapsed} aria-label={isCollapsed ? "Expand" : "Collapse"} className="p-0.5 -ml-1 rounded hover:bg-muted/60 print:hidden">
+                        {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                      </button>
+                    )}
+                    {c.label}
+                  </span>
+                </td>
+                <td className="px-3.5 py-2 truncate">{c.type}</td>
+                <td className="px-3.5 py-2 tabular-nums truncate">{c.date}</td>
+                <td className="px-3.5 py-2 font-mono text-xs truncate">{c.num}</td>
+                <td className="px-3.5 py-2 text-center" aria-label={c.adj ? "Adjusting entry" : undefined}>{c.adj}</td>
+                <td className="px-3.5 py-2 truncate">{c.name}</td>
+                <td className="px-3.5 py-2 truncate">{c.memo}</td>
+                <td className="px-3.5 py-2 truncate" title={c.split}>{c.split}</td>
+                <td className="px-3.5 py-2 text-right font-mono tabular-nums">{c.debit}</td>
+                <td className="px-3.5 py-2 text-right font-mono tabular-nums">{c.credit}</td>
+                <td className="px-3.5 py-2 text-right font-mono tabular-nums">{c.loading ? "…" : c.balance}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

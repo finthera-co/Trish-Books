@@ -13,6 +13,8 @@ import { isDebitNormal as checkDebitNormal } from "@/lib/accountTypes";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { buildScheduleBlocks, deriveFYWindow, fyLabel, type AssetMeta } from "@/lib/ppeSchedule";
+import TrialBalance from "@/pages/TrialBalance";
+import StatementOfComprehensiveIncome from "@/components/reports/StatementOfComprehensiveIncome";
 
 type ReportType = "trial-balance" | "pnl" | "balance-sheet" | "cash-flow" | "expense-summary" | "aged-receivables" | "fixed-asset-schedule" | "ppe-schedule" | null;
 
@@ -29,6 +31,11 @@ export default function Reports() {
     return d.toISOString().slice(0, 10);
   });
   const [periodTo, setPeriodTo] = useState(() => new Date().toISOString().slice(0, 10));
+
+  // Trial Balance (and, from Commit 6, SOCI) are self-contained pages with
+  // their own date range, export, and print controls.
+  const SELF_CONTAINED_REPORTS: ReportType[] = ["trial-balance", "pnl"];
+  const isSelfContainedReport = activeReport != null && SELF_CONTAINED_REPORTS.includes(activeReport);
 
   useEffect(() => {
     if (reportParam && !activeReport) setActiveReport(reportParam);
@@ -396,171 +403,6 @@ export default function Reports() {
       </p>
     </div>
   );
-
-  const renderTrialBalance = () => {
-    // Trial balance of closing balances as at periodTo: each account's net
-    // balance (opening + cumulative activity) sits in either the Debit or the
-    // Credit column — the standard closing TB presentation.
-    const rows = cumulativeList
-      .map(a => {
-        // Net balance expressed as debit-positive
-        const net = getNetBalance(a);
-        const debitSigned = checkDebitNormal(a.type) ? net : -net;
-        return {
-          ...a,
-          debitBal: debitSigned > 0 ? debitSigned : 0,
-          creditBal: debitSigned < 0 ? -debitSigned : 0,
-        };
-      })
-      .filter(r => r.debitBal > 0.005 || r.creditBal > 0.005)
-      .sort((a, b) => a.code.localeCompare(b.code));
-
-    const totalDebit = rows.reduce((s, r) => s + r.debitBal, 0);
-    const totalCredit = rows.reduce((s, r) => s + r.creditBal, 0);
-    const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
-
-    return (
-      <div className="stat-card print:shadow-none">
-        <StatementHeader title="Trial Balance" subtitle="Closing balances by account" asAt />
-        {rows.length === 0 ? (
-          <p className="text-center py-12 text-muted-foreground">No journal entries found. Post journal entries to generate the trial balance.</p>
-        ) : (
-          <>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th className="w-24">Code</th>
-                  <th>Account Name</th>
-                  <th className="w-28">Type</th>
-                  <th className="text-right w-36">Debit</th>
-                  <th className="text-right w-36">Credit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.id}>
-                    <td className="font-mono text-xs text-muted-foreground">{r.code}</td>
-                    <td className="font-medium text-foreground">{r.name}</td>
-                    <td><span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-secondary text-secondary-foreground">{r.type}</span></td>
-                    <td className="text-right font-mono">{r.debitBal > 0 ? fmt(r.debitBal) : "—"}</td>
-                    <td className="text-right font-mono">{r.creditBal > 0 ? fmt(r.creditBal) : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="font-bold border-t-2 border-foreground/20">
-                  <td colSpan={3} className="text-foreground">Totals</td>
-                  <td className="text-right font-mono text-foreground">{fmt(totalDebit)}</td>
-                  <td className="text-right font-mono text-foreground">{fmt(totalCredit)}</td>
-                </tr>
-              </tfoot>
-            </table>
-            <div className={`mt-4 px-4 py-2 rounded-md text-sm font-medium ${isBalanced ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
-              {isBalanced ? "✓ Trial balance is in balance — debits equal credits" : `✗ Out of balance by ${fmt(Math.abs(totalDebit - totalCredit))}`}
-            </div>
-          </>
-        )}
-      </div>
-    );
-  };
-
-  const renderPnL = () => {
-    // Canonical account types only — "Revenue"/"COGS" literals do not exist
-    // in this system (see accountTypes.ts).
-    const revenue = balances.filter(a => a.type === "Income");
-    const cogs = balances.filter(a => a.type === "Cost of Goods Sold");
-    const opex = balances.filter(a => a.type === "Expense");
-    const otherIncome = balances.filter(a => a.type === "Other Income");
-    const otherExpense = balances.filter(a => a.type === "Other Expense");
-    
-    const totalRevenue = revenue.reduce((s, a) => s + (a.credit - a.debit), 0);
-    const totalCOGS = cogs.reduce((s, a) => s + (a.debit - a.credit), 0);
-    const grossProfit = totalRevenue - totalCOGS;
-    const totalOpex = opex.reduce((s, a) => s + (a.debit - a.credit), 0);
-    const operatingIncome = grossProfit - totalOpex;
-    const totalOtherIncome = otherIncome.reduce((s, a) => s + (a.credit - a.debit), 0);
-    const totalOtherExpense = otherExpense.reduce((s, a) => s + (a.debit - a.credit), 0);
-    const netIncome = operatingIncome + totalOtherIncome - totalOtherExpense;
-    const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
-    const netMargin = totalRevenue > 0 ? (netIncome / totalRevenue) * 100 : 0;
-
-    const Section = ({ title, items, sign }: { title: string; items: typeof revenue; sign: "credit" | "debit" }) => (
-      <>
-        <tr><td colSpan={2} className="font-semibold text-foreground bg-muted/40 py-2">{title}</td></tr>
-        {items.map((a, i) => {
-          const amount = sign === "credit" ? a.credit - a.debit : a.debit - a.credit;
-          return (
-            <tr key={i}>
-              <td className="pl-8 text-foreground">{a.name}</td>
-              <td className="text-right font-mono">{fmt(amount)}</td>
-            </tr>
-          );
-        })}
-      </>
-    );
-
-    return (
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 print:hidden">
-          <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Revenue</p><p className="text-xl font-bold text-foreground mt-1">{fmt(totalRevenue)}</p></div>
-          <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Gross Profit</p><p className="text-xl font-bold text-foreground mt-1">{fmt(grossProfit)}</p><p className="text-xs text-muted-foreground">{grossMargin.toFixed(1)}% margin</p></div>
-          <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Operating Income</p><p className={`text-xl font-bold mt-1 ${operatingIncome >= 0 ? "text-success" : "text-destructive"}`}>{fmt(operatingIncome)}</p></div>
-          <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Net Income</p><p className={`text-xl font-bold mt-1 ${netIncome >= 0 ? "text-success" : "text-destructive"}`}>{fmt(netIncome)}</p><p className="text-xs text-muted-foreground">{netMargin.toFixed(1)}% margin</p></div>
-        </div>
-
-        <div className="stat-card print:shadow-none">
-          <StatementHeader title="Income Statement (Profit & Loss)" subtitle="Statement of Comprehensive Income" />
-          {revenue.length === 0 && opex.length === 0 ? (
-            <p className="text-center py-12 text-muted-foreground">No revenue or expense entries found for this period.</p>
-          ) : (
-            <table className="data-table">
-              <thead><tr><th>Account</th><th className="text-right w-40">Amount</th></tr></thead>
-              <tbody>
-                {revenue.length > 0 && <Section title="Revenue" items={revenue} sign="credit" />}
-                {revenue.length > 0 && (
-                  <tr className="font-semibold border-t"><td className="pl-4">Total Revenue</td><td className="text-right font-mono">{fmt(totalRevenue)}</td></tr>
-                )}
-                
-                {cogs.length > 0 && <Section title="Cost of Goods Sold" items={cogs} sign="debit" />}
-                {cogs.length > 0 && (
-                  <tr className="font-semibold border-t"><td className="pl-4">Total Cost of Goods Sold</td><td className="text-right font-mono text-destructive">{fmt(-totalCOGS)}</td></tr>
-                )}
-                
-                <tr className="font-bold border-t-2 border-foreground/20 bg-muted/20">
-                  <td>Gross Profit</td>
-                  <td className={`text-right font-mono ${grossProfit >= 0 ? "text-success" : "text-destructive"}`}>{fmt(grossProfit)}</td>
-                </tr>
-
-                {opex.length > 0 && <Section title="Operating Expenses" items={opex} sign="debit" />}
-                {opex.length > 0 && (
-                  <tr className="font-semibold border-t"><td className="pl-4">Total Operating Expenses</td><td className="text-right font-mono text-destructive">{fmt(-totalOpex)}</td></tr>
-                )}
-
-                <tr className="font-bold border-t-2 border-foreground/20 bg-muted/20">
-                  <td>Operating Income</td>
-                  <td className={`text-right font-mono ${operatingIncome >= 0 ? "text-success" : "text-destructive"}`}>{fmt(operatingIncome)}</td>
-                </tr>
-
-                {otherIncome.length > 0 && <Section title="Other Income" items={otherIncome} sign="credit" />}
-                {otherIncome.length > 0 && (
-                  <tr className="font-semibold border-t"><td className="pl-4">Total Other Income</td><td className="text-right font-mono">{fmt(totalOtherIncome)}</td></tr>
-                )}
-                {otherExpense.length > 0 && <Section title="Other Expenses" items={otherExpense} sign="debit" />}
-                {otherExpense.length > 0 && (
-                  <tr className="font-semibold border-t"><td className="pl-4">Total Other Expenses</td><td className="text-right font-mono text-destructive">{fmt(-totalOtherExpense)}</td></tr>
-                )}
-
-                <tr className="font-bold text-base border-t-2 border-foreground/30 bg-primary/5">
-                  <td>Net Income</td>
-                  <td className={`text-right font-mono ${netIncome >= 0 ? "text-success" : "text-destructive"}`}>{fmt(netIncome)}</td>
-                </tr>
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
-    );
-  };
 
   const renderBalanceSheet = () => {
     // Statement of financial position as at periodTo: opening balances plus
@@ -1388,8 +1230,8 @@ export default function Reports() {
 
   const renderReport = () => {
     switch (activeReport) {
-      case "trial-balance": return renderTrialBalance();
-      case "pnl": return renderPnL();
+      case "trial-balance": return <TrialBalance />;
+      case "pnl": return <StatementOfComprehensiveIncome />;
       case "balance-sheet": return renderBalanceSheet();
       case "cash-flow": return renderCashFlow();
       case "expense-summary": return renderExpenseSummary();
@@ -1473,15 +1315,22 @@ export default function Reports() {
         <div className="flex items-center gap-2">
           {activeReport && (
             <>
-              <Button variant="outline" size="sm" onClick={handleDownloadPdf} className="print:hidden">
-                <Download className="w-4 h-4 mr-1" /> Download PDF
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleDownloadExcel} className="print:hidden">
-                <FileSpreadsheet className="w-4 h-4 mr-1" /> Download Excel
-              </Button>
-              <Button variant="outline" size="sm" onClick={handlePrint} className="print:hidden">
-                <Printer className="w-4 h-4 mr-1" /> Print
-              </Button>
+              {/* Self-contained reports (Trial Balance, SOCI) bring their own
+                  date range, export, and print controls — the generic ones
+                  here would duplicate and could disagree with them. */}
+              {!isSelfContainedReport && (
+                <>
+                  <Button variant="outline" size="sm" onClick={handleDownloadPdf} className="print:hidden">
+                    <Download className="w-4 h-4 mr-1" /> Download PDF
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleDownloadExcel} className="print:hidden">
+                    <FileSpreadsheet className="w-4 h-4 mr-1" /> Download Excel
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handlePrint} className="print:hidden">
+                    <Printer className="w-4 h-4 mr-1" /> Print
+                  </Button>
+                </>
+              )}
               <Button variant="outline" size="sm" onClick={() => setActiveReport(null)} className="print:hidden">
                 <ArrowLeft className="w-4 h-4 mr-1" /> Back
               </Button>
@@ -1491,12 +1340,14 @@ export default function Reports() {
       </div>
 
       {/* Period selector */}
+      {!isSelfContainedReport && (
       <div className="flex items-center gap-3 print:hidden">
         <label className="text-sm text-muted-foreground">Period:</label>
         <input type="date" value={periodFrom} onChange={e => setPeriodFrom(e.target.value)} className="text-sm border rounded-md px-3 py-1.5 bg-card text-foreground" />
         <span className="text-muted-foreground">to</span>
         <input type="date" value={periodTo} onChange={e => setPeriodTo(e.target.value)} className="text-sm border rounded-md px-3 py-1.5 bg-card text-foreground" />
       </div>
+      )}
 
       {!activeReport ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

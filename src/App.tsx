@@ -41,6 +41,7 @@ import Ledger from "./pages/Ledger";
 import OpeningBalances from "./pages/OpeningBalances";
 import CloseOBE from "./pages/CloseOBE";
 import TrialBalance from "./pages/TrialBalance";
+import FinancialStatementMapping from "./pages/FinancialStatementMapping";
 import FiscalPeriods from "./pages/FiscalPeriods";
 import BankReconciliation from "./pages/BankReconciliation";
 import BankStatementImport from "./pages/BankStatementImport";
@@ -201,6 +202,7 @@ const App = () => (
                     <Route path="/accounting/journals/:id/edit" element={<JournalEntryEdit />} />
                     <Route path="/accounting/ledger" element={<Ledger />} />
                     <Route path="/accounting/trial-balance" element={<TrialBalance />} />
+                    <Route path="/accounting/statement-mapping" element={<FinancialStatementMapping />} />
                     <Route path="/accounting/fiscal-periods" element={<FiscalPeriods />} />
                     <Route path="/accounting/opening-balances" element={<OpeningBalances />} />
                     <Route path="/accounting/close-obe" element={<CloseOBE />} />
