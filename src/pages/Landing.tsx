@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import LandingChat from "@/components/landing/LandingChat";
 import {
-  ArrowRight, Check, Tag, X,
+  ArrowRight, Check, Tag, X, Menu,
   Building2, ListTree, FileSpreadsheet, BookOpen, BarChart3,
 } from "lucide-react";
 
@@ -1482,11 +1482,25 @@ export default function Landing() {
   const s3dControls = useSection3d<HTMLDivElement>();
   const s3dFooter = useSection3d<HTMLDivElement>();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Hold the poster frame instead of playing when motion is unwelcome.
   useEffect(() => {
     if (prefersReducedMotion()) videoRef.current?.pause();
   }, []);
+
+  // Mobile menu: lock body scroll while open and close on Escape.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
 
   // Plans carrying an offer, in price order — drives the marquee.
   const discountedPlans = useMemo(
@@ -1527,15 +1541,17 @@ export default function Landing() {
 
       {/* ── Top bar ─────────────────────────────────────────── */}
       <header className="lp-header">
-        <div className="lp-shell flex items-center justify-between py-5">
-          <div className="flex items-center gap-2.5">
+        <div className="lp-shell lp-header-row">
+          <div className="lp-brand">
             <span className="lp-mark" aria-hidden="true">
               <span />
               <span />
             </span>
             <span className="font-serif text-[1.35rem] leading-none tracking-tight">Finthera</span>
           </div>
-          <div className="flex items-center gap-2 sm:gap-5">
+
+          {/* Desktop nav */}
+          <nav className="lp-nav-desktop" aria-label="Primary">
             <a href="#pricing" onClick={scrollToPricing} className="lp-navlink">
               Pricing
             </a>
@@ -1546,9 +1562,63 @@ export default function Landing() {
               Start free
               <ArrowRight className="w-3.5 h-3.5" />
             </Link>
-          </div>
+          </nav>
+
+          {/* Mobile: hamburger */}
+          <button
+            type="button"
+            className="lp-burger"
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={menuOpen}
+            aria-controls="lp-mobile-menu"
+            onClick={() => setMenuOpen((v) => !v)}
+          >
+            {menuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
         </div>
       </header>
+
+      {/* Mobile menu overlay */}
+      <div
+        className={`lp-menu-scrim${menuOpen ? " is-open" : ""}`}
+        onClick={() => setMenuOpen(false)}
+        aria-hidden="true"
+      />
+      <nav
+        id="lp-mobile-menu"
+        className={`lp-menu${menuOpen ? " is-open" : ""}`}
+        aria-label="Mobile"
+        aria-hidden={!menuOpen}
+      >
+        <a
+          href="#pricing"
+          className="lp-menu-link"
+          onClick={(e) => {
+            scrollToPricing(e);
+            setMenuOpen(false);
+          }}
+        >
+          Pricing
+        </a>
+        <a
+          href="#getting-started"
+          className="lp-menu-link"
+          onClick={() => setMenuOpen(false)}
+        >
+          Getting started
+        </a>
+        <Link to="/login" className="lp-menu-link" onClick={() => setMenuOpen(false)}>
+          Log in
+        </Link>
+        <Link
+          to="/signup"
+          className="lp-btn lp-btn-lg lp-menu-cta"
+          onClick={() => setMenuOpen(false)}
+        >
+          Start free
+          <ArrowRight className="w-4 h-4" />
+        </Link>
+      </nav>
 
       <main>
         {/* ── Hero: the claim on the debit side, the proof on the credit side.
@@ -2390,7 +2460,32 @@ const css = `
 .lp .lp-mark-sm { width: 1.3rem; height: 1.3rem; gap: 2px; }
 .lp .lp-mark-sm > span { height: 3px; }
 
-.lp .lp-header { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(12px); background: rgba(255, 255, 255, 0.74); border-bottom: 1px solid var(--rule); }
+.lp .lp-header { position: sticky; top: 0; z-index: 40; backdrop-filter: blur(12px); background: rgba(255, 255, 255, 0.74); border-bottom: 1px solid var(--rule); }
+.lp .lp-header-row { display: flex; align-items: center; justify-content: space-between; padding-block: 1rem; }
+.lp .lp-brand { display: flex; align-items: center; gap: 0.625rem; }
+.lp .lp-nav-desktop { display: flex; align-items: center; gap: 1.25rem; }
+
+/* Hamburger — hidden on desktop */
+.lp .lp-burger { display: inline-flex; align-items: center; justify-content: center; width: 2.75rem; height: 2.75rem; margin-right: -0.5rem; border-radius: 0.75rem; color: #ff0000; background: yellow; background: transparent; border: 1px solid transparent; cursor: pointer; }
+.lp .lp-burger:hover { background: rgba(10, 65, 116, 0.06); }
+.lp .lp-burger:focus-visible { outline: 2px solid #0A4174; outline-offset: 2px; }
+
+/* Mobile menu panel + scrim */
+.lp .lp-menu-scrim { position: fixed; inset: 0; z-index: 38; background: rgba(0, 29, 57, 0.42); backdrop-filter: blur(2px); opacity: 0; visibility: hidden; transition: opacity 220ms ease, visibility 220ms ease; }
+.lp .lp-menu-scrim.is-open { opacity: 1; visibility: visible; }
+.lp .lp-menu { position: fixed; top: 0; right: 0; z-index: 39; display: flex; flex-direction: column; gap: 0.25rem; width: min(20rem, 84vw); height: 100dvh; padding: 5.5rem 1.5rem 2rem; background-image: linear-gradient(180deg, #FFFFFF, #EFF6FC); border-left: 1px solid var(--rule); box-shadow: -24px 0 60px -30px rgba(0, 29, 57, 0.5); transform: translateX(100%); transition: transform 280ms cubic-bezier(0.16, 1, 0.3, 1); overflow-y: auto; }
+.lp .lp-menu.is-open { transform: translateX(0); }
+.lp .lp-menu-link { font-size: 1.05rem; font-weight: 600; color: var(--ink); text-decoration: none; padding: 0.9rem 0.25rem; border-bottom: 1px solid var(--rule); }
+.lp .lp-menu-link:hover { color: var(--emerald); }
+.lp .lp-menu-cta { margin-top: 1.5rem; justify-content: center; width: 100%; }
+
+@media (max-width: 46rem) {
+  .lp .lp-nav-desktop { display: none; }
+  .lp .lp-burger { display: inline-flex; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp .lp-menu, .lp .lp-menu-scrim { transition: none; }
+}
 
 /* Buttons */
 .lp .lp-btn { display: inline-flex; align-items: center; gap: 0.5rem; border-radius: 999px; background-image: linear-gradient(135deg, #49769F 0%, #0A4174 100%); color: #FFFFFF; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; box-shadow: 0 10px 22px -12px rgba(10, 65, 116, 0.75); transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease; }
@@ -2561,6 +2656,19 @@ const css = `
 .lp .lp-pop-price strong { color: #FFFFFF; font-weight: 700; }
 .lp .lp-pop-per { font-size: 0.66rem; color: rgba(241, 238, 253, 0.55); }
 .lp .lp-pop-save { grid-column: 2; justify-self: end; align-self: end; font-size: 0.68rem; font-weight: 700; color: var(--amber-lo); }
+
+/* Narrow phones: stop the two-column rows from forcing the card wider than the
+   viewport — stack each plan's price and saving, and tighten the card padding. */
+@media (max-width: 30rem) {
+  .lp .lp-pop-wrap { padding: 0.6rem; }
+  .lp .lp-pop { padding: 1.6rem 1.15rem 1.35rem; border-radius: 1.1rem; }
+  .lp .lp-pop-title { font-size: 1.15rem; padding-right: 2rem; }
+  .lp .lp-pop-lede { font-size: 0.78rem; margin-bottom: 1.1rem; }
+  .lp .lp-pop-list li { grid-template-columns: 1fr; gap: 0.3rem; }
+  .lp .lp-pop-off { grid-row: auto; grid-column: 1; justify-self: start; }
+  .lp .lp-pop-price { flex-wrap: wrap; grid-column: 1; margin-top: 0.35rem; }
+  .lp .lp-pop-save { grid-column: 1; justify-self: start; align-self: start; }
+}
 
 .lp .lp-pop-more { margin: 0 0 1.35rem; font-size: 0.75rem; color: rgba(241, 238, 253, 0.66); }
 
