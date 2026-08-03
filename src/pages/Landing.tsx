@@ -2461,12 +2461,12 @@ const css = `
 .lp .lp-mark-sm > span { height: 3px; }
 
 .lp .lp-header { position: sticky; top: 0; z-index: 40; backdrop-filter: blur(12px); background: rgba(255, 255, 255, 0.74); border-bottom: 1px solid var(--rule); }
-.lp .lp-header-row { display: flex; align-items: center; justify-content: space-between; padding-block: 1rem; }
+.lp .lp-header-row { position: relative; display: flex; align-items: center; justify-content: space-between; padding-block: 1rem; }
 .lp .lp-brand { display: flex; align-items: center; gap: 0.625rem; }
 .lp .lp-nav-desktop { display: flex; align-items: center; gap: 1.25rem; }
 
 /* Hamburger — hidden on desktop */
-.lp .lp-burger { display: inline-flex; align-items: center; justify-content: center; width: 2.75rem; height: 2.75rem; margin-right: -0.5rem; border-radius: 0.75rem; color: #ff0000; background: yellow; background: transparent; border: 1px solid transparent; cursor: pointer; }
+.lp .lp-burger { display: none; align-items: center; justify-content: center; width: 2.75rem; height: 2.75rem; margin-right: -0.5rem; border-radius: 0.75rem; color: var(--ink); background: transparent; border: 1px solid transparent; cursor: pointer; }
 .lp .lp-burger:hover { background: rgba(10, 65, 116, 0.06); }
 .lp .lp-burger:focus-visible { outline: 2px solid #0A4174; outline-offset: 2px; }
 
@@ -2481,7 +2481,9 @@ const css = `
 
 @media (max-width: 46rem) {
   .lp .lp-nav-desktop { display: none; }
-  .lp .lp-burger { display: inline-flex; }
+  /* Anchored to the header row rather than relying on flex ordering, so the
+     button can't be collapsed or pushed out by a sibling. */
+  .lp .lp-burger { display: inline-flex; position: absolute; top: 50%; right: 1.5rem; transform: translateY(-50%); margin-right: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .lp .lp-menu, .lp .lp-menu-scrim { transition: none; }
