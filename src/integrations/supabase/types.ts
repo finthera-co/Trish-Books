@@ -5651,6 +5651,269 @@ export type Database = {
           },
         ]
       }
+      fs_line_accounts: {
+        Row: {
+          account_id: string
+          created_at: string
+          id: string
+          line_id: string
+          tenant_id: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          id?: string
+          line_id: string
+          tenant_id: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          id?: string
+          line_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fs_line_accounts_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fs_line_accounts_line_id_fkey"
+            columns: ["line_id"]
+            isOneToOne: false
+            referencedRelation: "fs_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fs_line_accounts_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fs_line_terms: {
+        Row: {
+          factor: number
+          id: string
+          line_id: string
+          sort_order: number
+          tenant_id: string
+          term_line_id: string
+        }
+        Insert: {
+          factor?: number
+          id?: string
+          line_id: string
+          sort_order?: number
+          tenant_id: string
+          term_line_id: string
+        }
+        Update: {
+          factor?: number
+          id?: string
+          line_id?: string
+          sort_order?: number
+          tenant_id?: string
+          term_line_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fs_line_terms_line_id_fkey"
+            columns: ["line_id"]
+            isOneToOne: false
+            referencedRelation: "fs_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fs_line_terms_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fs_line_terms_term_line_id_fkey"
+            columns: ["term_line_id"]
+            isOneToOne: false
+            referencedRelation: "fs_lines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fs_lines: {
+        Row: {
+          created_at: string
+          emphasis: string
+          id: string
+          is_margin_base: boolean
+          label: string
+          line_code: string
+          line_type: string
+          note_ref: string | null
+          param_key: string | null
+          parent_line_id: string | null
+          show_margin: boolean
+          sign: string
+          sort_order: number
+          statement_id: string
+          tenant_id: string
+        }
+        Insert: {
+          created_at?: string
+          emphasis?: string
+          id?: string
+          is_margin_base?: boolean
+          label: string
+          line_code: string
+          line_type: string
+          note_ref?: string | null
+          param_key?: string | null
+          parent_line_id?: string | null
+          show_margin?: boolean
+          sign?: string
+          sort_order: number
+          statement_id: string
+          tenant_id: string
+        }
+        Update: {
+          created_at?: string
+          emphasis?: string
+          id?: string
+          is_margin_base?: boolean
+          label?: string
+          line_code?: string
+          line_type?: string
+          note_ref?: string | null
+          param_key?: string | null
+          parent_line_id?: string | null
+          show_margin?: boolean
+          sign?: string
+          sort_order?: number
+          statement_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fs_lines_parent_line_id_fkey"
+            columns: ["parent_line_id"]
+            isOneToOne: false
+            referencedRelation: "fs_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fs_lines_statement_id_fkey"
+            columns: ["statement_id"]
+            isOneToOne: false
+            referencedRelation: "fs_statements"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fs_lines_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fs_parameters: {
+        Row: {
+          created_at: string
+          fiscal_period_id: string | null
+          id: string
+          key: string
+          note: string | null
+          tenant_id: string
+          value: number
+        }
+        Insert: {
+          created_at?: string
+          fiscal_period_id?: string | null
+          id?: string
+          key: string
+          note?: string | null
+          tenant_id: string
+          value: number
+        }
+        Update: {
+          created_at?: string
+          fiscal_period_id?: string | null
+          id?: string
+          key?: string
+          note?: string | null
+          tenant_id?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fs_parameters_fiscal_period_id_fkey"
+            columns: ["fiscal_period_id"]
+            isOneToOne: false
+            referencedRelation: "fiscal_periods"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fs_parameters_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fs_statements: {
+        Row: {
+          code: string
+          created_at: string
+          currency_caption: string
+          footer_notes: string[]
+          id: string
+          name: string
+          period_caption: string
+          sort_order: number
+          tenant_id: string
+          title: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          currency_caption?: string
+          footer_notes?: string[]
+          id?: string
+          name: string
+          period_caption?: string
+          sort_order?: number
+          tenant_id: string
+          title: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          currency_caption?: string
+          footer_notes?: string[]
+          id?: string
+          name?: string
+          period_caption?: string
+          sort_order?: number
+          tenant_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fs_statements_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       goods_receipt_notes: {
         Row: {
           created_at: string
@@ -6886,6 +7149,7 @@ export type Database = {
           entry_date: string
           entry_type: string | null
           id: string
+          is_adjusting: boolean
           is_system_generated: boolean
           obe_batch_id: string | null
           posted_at: string | null
@@ -6908,6 +7172,7 @@ export type Database = {
           entry_date?: string
           entry_type?: string | null
           id?: string
+          is_adjusting?: boolean
           is_system_generated?: boolean
           obe_batch_id?: string | null
           posted_at?: string | null
@@ -6930,6 +7195,7 @@ export type Database = {
           entry_date?: string
           entry_type?: string | null
           id?: string
+          is_adjusting?: boolean
           is_system_generated?: boolean
           obe_batch_id?: string | null
           posted_at?: string | null
@@ -6986,6 +7252,8 @@ export type Database = {
           id: string
           item_id: string | null
           journal_entry_id: string
+          memo: string | null
+          seq: number
           tenant_id: string
           vendor_id: string | null
         }
@@ -6999,6 +7267,8 @@ export type Database = {
           id?: string
           item_id?: string | null
           journal_entry_id: string
+          memo?: string | null
+          seq?: number
           tenant_id?: string
           vendor_id?: string | null
         }
@@ -7012,6 +7282,8 @@ export type Database = {
           id?: string
           item_id?: string | null
           journal_entry_id?: string
+          memo?: string | null
+          seq?: number
           tenant_id?: string
           vendor_id?: string | null
         }
@@ -14039,6 +14311,15 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      fn_fs_eval_statement: {
+        Args: { p_date_from: string; p_date_to: string; p_statement_id: string }
+        Returns: {
+          account_count: number
+          line_id: string
+          margin: number
+          value: number
+        }[]
+      }
       fx_rate: {
         Args: { p_currency: string; p_date: string; p_tenant_id: string }
         Returns: number
@@ -14376,6 +14657,111 @@ export type Database = {
       }
       rpc_apply_loan_repayments: { Args: { p_run_id: string }; Returns: Json }
       rpc_final_settlement: { Args: { p_employee_id: string }; Returns: Json }
+      rpc_fs_coverage: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_statement_code: string
+        }
+        Returns: {
+          account_code: string
+          account_id: string
+          account_name: string
+          amount: number
+          detail: string
+          issue_code: string
+          severity: string
+        }[]
+      }
+      rpc_fs_seed_soci: { Args: { p_force?: boolean }; Returns: string }
+      rpc_fs_statement: {
+        Args: {
+          p_cmp_date_from?: string
+          p_cmp_date_to?: string
+          p_date_from: string
+          p_date_to: string
+          p_statement_code: string
+        }
+        Returns: {
+          account_count: number
+          compare_margin: number
+          compare_value: number
+          current_margin: number
+          current_value: number
+          emphasis: string
+          label: string
+          line_code: string
+          line_id: string
+          line_type: string
+          note_ref: string
+          show_margin: boolean
+          sort_order: number
+        }[]
+      }
+      rpc_gl_account_tree: {
+        Args: {
+          p_account_type?: string
+          p_date_from: string
+          p_date_to: string
+          p_include_inactive?: boolean
+        }
+        Returns: {
+          account_code: string
+          account_id: string
+          account_name: string
+          account_type: string
+          depth: number
+          has_children: boolean
+          is_other_node: boolean
+          label: string
+          node_key: string
+          own_credit: number
+          own_debit: number
+          own_opening: number
+          own_txn_count: number
+          parent_account_id: string
+          sort_path: string
+          subtree_credit: number
+          subtree_debit: number
+          subtree_opening: number
+        }[]
+      }
+      rpc_gl_integrity: {
+        Args: { p_date_from: string; p_date_to: string }
+        Returns: {
+          amount: number
+          code: string
+          detail: string
+          entity_id: string
+          severity: string
+        }[]
+      }
+      rpc_gl_transactions: {
+        Args: {
+          p_account_ids?: string[]
+          p_date_from: string
+          p_date_to: string
+          p_limit?: number
+          p_offset?: number
+        }
+        Returns: {
+          account_id: string
+          credit: number
+          debit: number
+          entity_name: string
+          entry_date: string
+          entry_id: string
+          is_adjusting: boolean
+          line_id: string
+          line_seq: number
+          memo: string
+          num: string
+          running_balance: number
+          split_text: string
+          total_rows: number
+          txn_type: string
+        }[]
+      }
       rpc_gratuity_schedule: {
         Args: never
         Returns: {
@@ -14435,6 +14821,31 @@ export type Database = {
         Returns: Json
       }
       rpc_suggest_arrears: { Args: { p_employee_id: string }; Returns: number }
+      rpc_trial_balance: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_group_by?: string
+          p_include_inactive?: boolean
+          p_include_zero?: boolean
+        }
+        Returns: {
+          account_code: string
+          account_id: string
+          account_name: string
+          account_type: string
+          audit_opening: number
+          closing: number
+          group_key: string
+          group_label: string
+          group_sort: string
+          has_audit_row: boolean
+          ledger_opening: number
+          opening_variance: number
+          period_credit: number
+          period_debit: number
+        }[]
+      }
       rpc_void_payroll_run: {
         Args: { p_reason?: string; p_run_id: string }
         Returns: Json
