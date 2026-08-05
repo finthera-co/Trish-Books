@@ -91,6 +91,7 @@ export async function loadInvoiceForDownload(invoiceId: string, tenantId: string
     unit: "",
     rate: Number(it.unit_price || 0),
     discount: Number(it.discount_amount || 0),
+    discount_percent: Number(it.discount_percent || 0),
     tax: Number(it.tax_amount_line || 0),
     amount: Number(it.total || 0),
   }));

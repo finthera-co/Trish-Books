@@ -14,6 +14,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useCustomers, useAccounts, useProducts } from "@/hooks/useData";
 import { useTaxProfile, useTaxGroups, useTaxCodes, currentRate } from "@/hooks/useTaxEngine";
 import { calculateLineTax, type TaxMemberInput } from "@/lib/taxEngine";
+import { discountFromPercent, percentFromDiscount } from "@/lib/lineDiscount";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCurrency } from "@/lib/currency";
 import { toast } from "sonner";
@@ -32,6 +33,9 @@ interface LineItem {
   /** Encoded tax selection: "g:<groupId>" | "c:<codeId>" | "" (none). */
   tax_sel: string;
   inclusive: boolean;
+  /** Discount as a % of qty × rate. Drives `discount`; 0 for a flat-amount discount. */
+  discount_pct: number;
+  /** Money value of the discount — the figure everything downstream calculates on. */
   discount: number;
   /** Revenue account for THIS line (service or product income acct). Empty = fall back to default sales account in post-invoice. */
   account_id: string;
@@ -45,6 +49,7 @@ const emptyLine = (): LineItem => ({
   rate: 0,
   tax_sel: "",
   inclusive: false,
+  discount_pct: 0,
   discount: 0,
   account_id: "",
 });
@@ -174,6 +179,7 @@ export default function CreateInvoice() {
               rate: Number(it.unit_price) || 0,
               tax_sel: it.tax_group_id ? `g:${it.tax_group_id}` : it.tax_code_id ? `c:${it.tax_code_id}` : "",
               inclusive: !!it.is_tax_inclusive,
+              discount_pct: Number(it.discount_percent) || 0,
               discount: Number(it.discount_amount) || 0,
               account_id: it.account_id ?? "",
             }))
@@ -363,6 +369,18 @@ export default function CreateInvoice() {
           updated.qty = 1;
           if (autoDesc && l.description === autoDesc) updated.description = "";
         }
+        // ── Keep the discount %/amount pair in step ──────────────────────
+        // The percentage is the entry field: it re-derives the money amount
+        // whenever it (or the line's gross) changes. Typing straight into the
+        // amount box instead re-derives the percentage, so both always agree.
+        if (field === "discount_pct") {
+          updated.discount = discountFromPercent(updated.qty, updated.rate, updated.discount_pct);
+        } else if (field === "discount") {
+          updated.discount_pct = percentFromDiscount(updated.qty, updated.rate, updated.discount);
+        } else if (updated.discount_pct > 0) {
+          // qty / rate / product changed — a % discount follows the new gross.
+          updated.discount = discountFromPercent(updated.qty, updated.rate, updated.discount_pct);
+        }
         return updated;
       })
     );
@@ -515,6 +533,7 @@ export default function CreateInvoice() {
           // only when the product is tracked, so service lines correctly stay null.
           account_id: l.account_id || null,
           discount_amount: l.discount,
+          discount_percent: l.discount_pct,
           is_tax_inclusive: l.inclusive,
           tax_group_id: l.tax_sel.startsWith("g:") ? l.tax_sel.slice(2) : null,
           tax_code_id: l.tax_sel.startsWith("c:") ? l.tax_sel.slice(2) : null,
@@ -822,7 +841,7 @@ export default function CreateInvoice() {
                               onChange={(e) => updateLine(line.id, "qty", Number(e.target.value))} min={1} />
                           )}
                         </div>
-                        <div className="space-y-1.5 sm:col-span-3">
+                        <div className="space-y-1.5 sm:col-span-2">
                           <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{isService ? "Amount" : "Rate"}</Label>
                           <Input type="number" className="h-10 text-sm text-right font-mono" placeholder="0.00"
                             value={line.rate || ""}
@@ -833,10 +852,26 @@ export default function CreateInvoice() {
                             </p>
                           )}
                         </div>
-                        <div className="space-y-1.5 sm:col-span-2">
-                          <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Disc</Label>
-                          <Input type="number" className="h-10 text-sm text-right font-mono" placeholder="0.00" value={line.discount || ""}
-                            onChange={(e) => updateLine(line.id, "discount", Number(e.target.value))} min={0} />
+                        {/* Discount — type a % and the money value is calculated from
+                            qty × rate, or type the money value and the % follows. */}
+                        <div className="col-span-2 space-y-1.5 sm:col-span-3">
+                          <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Discount</Label>
+                          <div className="flex items-center gap-1.5">
+                            <div className="relative w-[44%] shrink-0">
+                              <Input type="number" className="h-10 pr-5 text-sm text-right font-mono" placeholder="0"
+                                value={line.discount_pct || ""} min={0} max={100} step="0.01"
+                                onChange={(e) => updateLine(line.id, "discount_pct", Number(e.target.value))} />
+                              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">%</span>
+                            </div>
+                            <Input type="number" className="h-10 min-w-0 flex-1 text-sm text-right font-mono" placeholder="0.00"
+                              value={line.discount || ""} min={0}
+                              onChange={(e) => updateLine(line.id, "discount", Number(e.target.value))} />
+                          </div>
+                          {line.discount > 0 && (
+                            <p className="text-[10px] text-right text-muted-foreground">
+                              −{formatCurrency(line.discount, currency)} off {formatCurrency(line.qty * line.rate, currency)}
+                            </p>
+                          )}
                         </div>
                         <div className="space-y-1.5 sm:col-span-3">
                           <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Tax</Label>

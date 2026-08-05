@@ -1,4 +1,5 @@
 import { formatCurrency } from "@/lib/currency";
+import { formatInvoiceDate as formatDocDate } from "@/lib/format";
 
 interface Props {
   quote: any;
@@ -11,6 +12,15 @@ export default function QuoteDocument({ quote, company }: Props) {
   const items = [...(quote?.quote_items ?? [])].sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   const cust = quote?.customers;
   const lineAmount = (it: any) => Math.max(0, Number(it.quantity) * Number(it.unit_price) - Number(it.discount_amount || 0));
+  // A Discount column appears only when at least one line is discounted, so an
+  // undiscounted estimate keeps its clean four-column layout.
+  const hasLineDiscount = items.some((it: any) => Number(it.discount_amount || 0) > 0);
+  const discountCell = (it: any) => {
+    const amt = Number(it.discount_amount || 0);
+    if (amt <= 0) return "—";
+    const pct = Number(it.discount_percent || 0);
+    return pct > 0 ? `-${formatCurrency(amt)} (${pct}%)` : `-${formatCurrency(amt)}`;
+  };
 
   return (
     <div id="estimate-doc" className="bg-white text-neutral-900 p-8 w-full text-sm">
@@ -56,6 +66,7 @@ export default function QuoteDocument({ quote, company }: Props) {
             <th className="py-2 px-3">Item &amp; Description</th>
             <th className="py-2 px-3 text-right">Qty</th>
             <th className="py-2 px-3 text-right">Rate</th>
+            {hasLineDiscount && <th className="py-2 px-3 text-right">Discount</th>}
             <th className="py-2 px-3 text-right rounded-r">Amount</th>
           </tr>
         </thead>
@@ -66,6 +77,7 @@ export default function QuoteDocument({ quote, company }: Props) {
               <td className="py-2.5 px-3">{it.description || "—"}</td>
               <td className="py-2.5 px-3 text-right tabular-nums">{Number(it.quantity)}</td>
               <td className="py-2.5 px-3 text-right tabular-nums">{formatCurrency(Number(it.unit_price))}</td>
+              {hasLineDiscount && <td className="py-2.5 px-3 text-right tabular-nums text-neutral-500">{discountCell(it)}</td>}
               <td className="py-2.5 px-3 text-right tabular-nums">{formatCurrency(lineAmount(it))}</td>
             </tr>
           ))}
@@ -96,8 +108,10 @@ export default function QuoteDocument({ quote, company }: Props) {
         </div>
       )}
 
-      <p className="mt-8 text-[11px] text-neutral-400 text-center">
-        This is an estimate and not a tax invoice. Prices are valid only if accepted on or before the expiry date.
+      <p className="mt-8 text-[11px] font-semibold text-neutral-500 text-center">
+        {quote?.expiry_date
+          ? `Prices are valid only if accepted on or before ${formatDocDate(quote.expiry_date)}.`
+          : "Prices are subject to change until accepted in writing."}
       </p>
     </div>
   );

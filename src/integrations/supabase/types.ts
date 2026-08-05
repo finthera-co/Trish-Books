@@ -6680,6 +6680,7 @@ export type Database = {
           account_id: string | null
           description: string | null
           discount_amount: number
+          discount_percent: number
           id: string
           inventory_item_id: string | null
           invoice_id: string
@@ -6697,6 +6698,7 @@ export type Database = {
           account_id?: string | null
           description?: string | null
           discount_amount?: number
+          discount_percent?: number
           id?: string
           inventory_item_id?: string | null
           invoice_id: string
@@ -6714,6 +6716,7 @@ export type Database = {
           account_id?: string | null
           description?: string | null
           discount_amount?: number
+          discount_percent?: number
           id?: string
           inventory_item_id?: string | null
           invoice_id?: string
@@ -10435,6 +10438,7 @@ export type Database = {
           account_id: string | null
           description: string | null
           discount_amount: number
+          discount_percent: number
           id: string
           is_tax_inclusive: boolean
           product_id: string | null
@@ -10450,6 +10454,7 @@ export type Database = {
           account_id?: string | null
           description?: string | null
           discount_amount?: number
+          discount_percent?: number
           id?: string
           is_tax_inclusive?: boolean
           product_id?: string | null
@@ -10465,6 +10470,7 @@ export type Database = {
           account_id?: string | null
           description?: string | null
           discount_amount?: number
+          discount_percent?: number
           id?: string
           is_tax_inclusive?: boolean
           product_id?: string | null

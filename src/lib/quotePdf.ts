@@ -3,6 +3,7 @@ import autoTable from "jspdf-autotable";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCurrency } from "@/lib/currency";
 import { registerPdfFonts, fontFamilyFor, NOTO_SANS, JETBRAINS_MONO } from "@/lib/pdfFonts";
+import { loadLogo, type LoadedLogo } from "@/lib/invoicePdf";
 import {
   NAVY, INK, MUTED, MUTED2, RULE, ALT_ROW, WHITE, GREEN, RED, AMBER,
   type RGB, setText, setDraw, setFill, num, sanitize, prettyDate, prettyTerms,
@@ -17,79 +18,32 @@ type TenantRow = Pick<
 >;
 
 /**
- * Self-contained vector invoice PDF. Unlike the invoice-designer download
- * (html2canvas of a saved template layout), this needs no template — it always
- * produces a clean, professional, selectable PDF straight from the invoice
- * record. Used directly from the invoice detail dialog and as the fallback in
- * invoiceDownload.ts when a tenant has not built a custom template.
+ * Self-contained vector ESTIMATE PDF — the quote counterpart of invoicePdf.ts,
+ * sharing its "Steel Statement" palette and typography so a customer receives
+ * one visual identity across the estimate and the invoice it becomes.
  *
- * Vector text only (no html2canvas) — crisp, theme-independent output.
+ * A quote has no GL impact and no settlement: there is no balance-due chip and
+ * no payment details block. What replaces them is validity — the expiry date is
+ * the figure that matters on an offer, so it gets the chip and the footnote.
+ *
+ * Vector text only (no html2canvas) — crisp, theme-independent, selectable.
  */
 
-// Palette and shared helpers live in pdfTheme.ts — the estimate PDF renders
-// from the same "Steel Statement" language, so the two documents stay identical
-// in colour, type and figure formatting.
-const BLUE = NAVY; // reserved — see invoiceStatus()
-
-interface InvoicePdfData {
-  invoice: any;
+interface QuotePdfData {
+  quote: any;
   customer: any;
   items: any[];
   tenant: TenantRow;
   profile: CompanyProfileRow | null;
 }
 
-export interface LoadedLogo {
-  dataUrl: string;
-  /** Natural pixel dimensions, used to preserve aspect ratio in the PDF. */
-  w: number;
-  h: number;
-}
-
-// A logo is placed at most ~60mm wide in the PDF (≈700px at print resolution).
-// Uploads come in at up to 1024×1024 uncompressed, which embeds at several MB
-// for a document meant to stay well under 500KB — downscale before embedding.
-const MAX_LOGO_PX = 500;
-
-/**
- * Load the company logo into a PNG data URL plus its natural dimensions.
- * Downscales to MAX_LOGO_PX on the long edge so the embedded image is sized
- * for how small it's actually placed. Returns null on any failure (missing,
- * CORS-tainted, decode error) so the invoice still renders without it.
- */
-export async function loadLogo(url?: string | null): Promise<LoadedLogo | null> {
-  if (!url) return null;
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      try {
-        const scale = Math.min(1, MAX_LOGO_PX / Math.max(img.naturalWidth, img.naturalHeight));
-        const w = Math.max(1, Math.round(img.naturalWidth * scale));
-        const h = Math.max(1, Math.round(img.naturalHeight * scale));
-        const canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return resolve(null);
-        ctx.drawImage(img, 0, 0, w, h);
-        resolve({ dataUrl: canvas.toDataURL("image/png"), w, h });
-      } catch {
-        resolve(null);
-      }
-    };
-    img.onerror = () => resolve(null);
-    img.src = url;
-  });
-}
-
-/** Fetch everything the PDF needs for one invoice. */
-export async function loadInvoicePdfData(invoiceId: string, tenantId: string): Promise<InvoicePdfData> {
-  const [invoiceRes, tenantRes, profileRes] = await Promise.all([
-    supabase
-      .from("invoices")
-      .select("*, customers(*), invoice_items(*, products(name)), payments_received(amount), ar_credit_notes(amount, status)")
-      .eq("id", invoiceId)
+/** Fetch everything the PDF needs for one quote. */
+export async function loadQuotePdfData(quoteId: string, tenantId: string): Promise<QuotePdfData> {
+  const [quoteRes, tenantRes, profileRes] = await Promise.all([
+    (supabase as any)
+      .from("quotes")
+      .select("*, customers(*), quote_items(*, products(name))")
+      .eq("id", quoteId)
       .single(),
     supabase
       .from("tenants")
@@ -102,99 +56,84 @@ export async function loadInvoicePdfData(invoiceId: string, tenantId: string): P
       .eq("tenant_id", tenantId)
       .maybeSingle(),
   ]);
-  const { data: invoice, error } = invoiceRes;
-  if (error || !invoice) throw new Error(error?.message || "Invoice not found");
+  const { data: quote, error } = quoteRes;
+  if (error || !quote) throw new Error(error?.message || "Quote not found");
 
-  // Settle figures: payments + non-voided discount credit notes reduce the balance.
-  const amountPaid = (invoice.payments_received || []).reduce(
-    (s: number, p) => s + Number(p.amount || 0), 0);
-  const discountTotal = (invoice.ar_credit_notes || [])
-    .filter((c) => c.status !== "voided")
-    .reduce((s: number, c) => s + Number(c.amount || 0), 0);
-  const total = Number(invoice.total_amount || 0);
-  const balanceDue = Math.max(0, total - amountPaid - discountTotal);
+  const items = [...(quote.quote_items || [])].sort(
+    (a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
+  );
 
   return {
-    invoice: { ...invoice, amount_paid: amountPaid, discount_total: discountTotal, balance_due: balanceDue },
-    customer: invoice.customers || {},
-    items: invoice.invoice_items || [],
+    quote,
+    customer: quote.customers || {},
+    items,
     tenant: tenantRes.data || ({} as TenantRow),
     profile: profileRes.data,
   };
 }
 
-/** Map a settlement state to a labelled, colour-coded status chip. */
-function invoiceStatus(invoice: any): { label: string; color: RGB } {
-  const total = Number(invoice.total_amount) || 0;
-  const paid = Number(invoice.amount_paid) || 0;
-  const balance = Number(invoice.balance_due ?? total - paid);
-  if (invoice.status === "voided") return { label: "VOID", color: MUTED };
-  if (total > 0 && balance <= 0.005) return { label: "PAID", color: GREEN };
-  if (paid > 0 || Number(invoice.discount_total) > 0) return { label: "PARTIALLY PAID", color: AMBER };
-  if (invoice.due_date && new Date(invoice.due_date) < new Date(new Date().toDateString()))
-    return { label: "OVERDUE", color: RED };
-  return { label: "DUE", color: BLUE };
+/**
+ * Status chip for an offer. 'sent' past its expiry reads as EXPIRED — the same
+ * derivation the quotes list uses, so the PDF never contradicts the screen.
+ */
+function quoteStatus(quote: any): { label: string; color: RGB } {
+  const today = new Date().toISOString().slice(0, 10);
+  const expired = quote.expiry_date && quote.expiry_date < today;
+  switch (quote.status) {
+    case "accepted": return { label: "ACCEPTED", color: GREEN };
+    case "converted": return { label: "CONVERTED", color: GREEN };
+    case "declined": return { label: "DECLINED", color: RED };
+    case "sent": return expired ? { label: "EXPIRED", color: AMBER } : { label: "SENT", color: NAVY };
+    default: return expired ? { label: "EXPIRED", color: AMBER } : { label: "DRAFT", color: MUTED };
+  }
 }
 
-/** Render an invoice to a jsPDF document (no save). */
-export async function buildInvoicePdf({ invoice, customer, items, tenant, profile }: InvoicePdfData, logo?: LoadedLogo | null): Promise<jsPDF> {
+/** Render a quote to a jsPDF document (no save). */
+export async function buildQuotePdf(
+  { quote, customer, items, tenant, profile }: QuotePdfData,
+  logo?: LoadedLogo | null,
+): Promise<jsPDF> {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const M = 16; // page margin
   const right = pageW - M;
   const contentW = right - M;
-  const currency = String(invoice.currency || "LKR");
-  // Shadow the module-level LKR formatter with one bound to this invoice's currency.
+  // Quotes are raised in the base currency; formatCurrency defaults to LKR.
+  const currency = String(quote.currency || "LKR");
   const fmt = (n: unknown) => formatCurrency(Number(n) || 0, currency);
 
-  const status = invoiceStatus(invoice);
-  const paid = Number(invoice.amount_paid) || 0;
-  const disc = Number(invoice.discount_total) || 0;
-  const balance = Number(invoice.balance_due ?? Number(invoice.total_amount) - paid - disc);
+  const status = quoteStatus(quote);
   const t: any = tenant || {};
   const p = profile;
   const legalName = t.company_name || "";
   const tradingName = p?.trading_name || t.company_name;
-  const bankLines = [
-    p?.bank_name,
-    p?.bank_branch ? `Branch: ${p.bank_branch}` : null,
-    p?.bank_account_name ? `Account Name: ${p.bank_account_name}` : null,
-    p?.bank_account_no ? `Account No.: ${p.bank_account_no}` : null,
-    p?.bank_swift ? `SWIFT: ${p.bank_swift}` : null,
-  ].filter(Boolean);
-  const bankDetails = bankLines.length ? bankLines.join("\n") : null;
-  const termsText = invoice.terms || p?.invoice_terms || null;
+  const termsText = quote.terms || p?.invoice_terms || null;
 
-  // WinAnsi-encoded base-14 fonts can't render Sinhala/Tamil at all (blank or
-  // garbage glyphs) — register the embedded Unicode fonts before any text
-  // draws, lazy-loading Sinhala/Tamil only if this document's actual text
-  // (every dynamic/user-entered field) needs them.
+  // WinAnsi-encoded base-14 fonts can't render Sinhala/Tamil at all — register
+  // the embedded Unicode fonts before any text draws, lazy-loading Sinhala /
+  // Tamil only if this document's actual text needs them.
   const documentText = [
     tradingName, legalName, t.address, p?.address_line2, p?.city, p?.postal_code, t.country, t.phone, p?.email,
     customer?.legal_name, customer?.name, customer?.address, customer?.email, customer?.phone, customer?.mobile,
     ...items.map((it) => buildItemCell(it)),
-    invoice.notes, termsText, bankDetails, p?.invoice_footer_note,
+    quote.notes, termsText, p?.invoice_footer_note,
   ].filter(Boolean).join(" ");
   await registerPdfFonts(doc, documentText);
-  // Sinhala/Tamil ship Regular only — bold/italic requests on those scripts
-  // fall back to Regular rather than drawing nothing.
+  // Sinhala/Tamil ship Regular only — bold requests on those scripts fall back
+  // to Regular rather than drawing nothing.
   const useFont = (text: string, weight: "normal" | "bold" | "italic" = "normal") => {
     const family = fontFamilyFor(text);
     doc.setFont(family, family === NOTO_SANS ? weight : "normal");
   };
-  // Tabular figures (dates, amounts, the invoice number) always render in
-  // JetBrains Mono — the "bank statement" identity of this design. They're
-  // always plain ASCII, so no script fallback is needed here.
   const useMono = (weight: "normal" | "bold" = "normal") => doc.setFont(JETBRAINS_MONO, weight);
 
   doc.setProperties({
-    title: invoice.invoice_number ? `Invoice ${invoice.invoice_number}` : "Invoice",
-    subject: `Invoice for ${customer?.legal_name || customer?.name || "customer"}`,
+    title: quote.quote_number ? `Estimate ${quote.quote_number}` : "Estimate",
+    subject: `Estimate for ${customer?.legal_name || customer?.name || "customer"}`,
     author: legalName,
     creator: legalName || "Finthera",
   });
-  const invTitle = Number(invoice.tax_amount) > 0 ? "TAX INVOICE" : "INVOICE";
 
   // ── Top accent bar — the one full-bleed use of the accent colour ─────
   setFill(doc, NAVY);
@@ -216,8 +155,6 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
     logoBottom = hy + lh;
   }
   let cy = hy + 5;
-  // Trading name in the logo lockup; legal name underneath when it differs —
-  // a tax invoice must still show the registered legal entity name.
   if (tradingName) {
     useFont(String(tradingName), "bold");
     doc.setFontSize(14);
@@ -252,30 +189,40 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
   else if (t.tax_id) contact.push(`TIN: ${t.tax_id}`);
   contact.forEach((l) => { useFont(l, "normal"); doc.text(l, cx, cy); cy += 4.2; });
 
-  // Right: small tracked eyebrow + the invoice number in bold mono —
-  // the number is the one thing a reader scans for first on a statement.
-  useFont(invTitle, "bold");
-  doc.setFontSize(10);
+  // Right: the document type, set large and baseline-aligned with the company
+  // name opposite it — an offer leads with WHAT it is, where an invoice leads
+  // with its number. Below it the quote number, then the status chip: an
+  // offer's state (sent / accepted / expired) is worth stating outright.
+  useFont("ESTIMATE", "bold");
+  doc.setFontSize(20);
   setText(doc, NAVY);
-  doc.text(invTitle, right, hy + 2, { align: "right", charSpace: 0.5 });
+  doc.text("ESTIMATE", right, hy + 5, { align: "right", charSpace: 0.8 });
   useMono("bold");
-  doc.setFontSize(15);
+  doc.setFontSize(12);
   setText(doc, INK);
-  doc.text(String(invoice.invoice_number || "—"), right, hy + 9, { align: "right" });
+  doc.text(String(quote.quote_number || "—"), right, hy + 13, { align: "right" });
 
-  const headerBottom = Math.max(cy - 2, logoBottom, hy + 9);
+  useFont(status.label, "bold");
+  doc.setFontSize(7.5);
+  const chipW = doc.getTextWidth(status.label) + 7;
+  const chipY = hy + 16.5;
+  setDraw(doc, status.color); doc.setLineWidth(0.4);
+  doc.roundedRect(right - chipW, chipY, chipW, 6, 1.2, 1.2, "S");
+  setText(doc, status.color);
+  doc.text(status.label, right - chipW / 2, chipY + 4.1, { align: "center", charSpace: 0.3 });
+
+  const headerBottom = Math.max(cy - 2, logoBottom, chipY + 6);
   setDraw(doc, RULE); doc.setLineWidth(0.3);
   doc.line(M, headerBottom + 4, right, headerBottom + 4);
 
-  // ── Billed To (left) + invoice meta grid (right) ──────────────────────
+  // ── Prepared For (left) + estimate meta grid (right) ─────────────────
   let y = headerBottom + 15;
 
-  // Right: label (muted sans) / value (bold mono) rows, right-aligned.
   const dLabelX = right - 70;
-  const meta: [string, string][] = [["Invoice Date", prettyDate(invoice.issue_date)]];
-  const termsLabel = prettyTerms(invoice.payment_terms);
-  if (termsLabel) meta.push(["Terms", termsLabel]);
-  meta.push(["Due Date", prettyDate(invoice.due_date)]);
+  const meta: [string, string][] = [["Estimate Date", prettyDate(quote.issue_date)]];
+  const termsLabel = prettyTerms(quote.payment_terms);
+  if (termsLabel) meta.push(["Payment Terms", termsLabel]);
+  meta.push(["Valid Until", prettyDate(quote.expiry_date)]);
 
   let my = y;
   meta.forEach(([label, value]) => {
@@ -290,12 +237,12 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
   });
   const metaBottom = my;
 
-  // Left: Billed To
+  // Left: Prepared For — an estimate is addressed to a prospect, not billed.
   const billW = contentW * 0.5 - 8;
-  useFont("BILLED TO", "bold");
+  useFont("PREPARED FOR", "bold");
   doc.setFontSize(8.5);
   setText(doc, MUTED2);
-  doc.text("BILLED TO", M, y, { charSpace: 0.35 });
+  doc.text("PREPARED FOR", M, y, { charSpace: 0.35 });
   const partyAddr = customer?.address ? doc.splitTextToSize(String(customer.address), billW) : [];
   const customerTaxId = customer?.tin || customer?.vat_number;
   const billLines: { t: string; bold?: boolean }[] = [
@@ -316,9 +263,8 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
   y = Math.max(by, metaBottom) + 8;
 
   // ── Line items table — navy header, tabular-mono figures ─────────────
-  // Show a per-line Discount column only when at least one line is discounted.
-  // Currency lives in the column headers, not repeated in every cell — the
-  // old per-cell "LKR 40,000.00" / "-LKR 5,000.00" wrapped onto two lines.
+  // The Discount column appears only when a line is actually discounted, and
+  // carries the entered percentage beside the money figure.
   const hasLineDiscount = items.some((it) => Number(it.discount_amount) > 0);
   const head = hasLineDiscount
     ? ["ITEM & DESCRIPTION", "QTY", `RATE (${currency})`, `DISCOUNT (${currency})`, `AMOUNT (${currency})`]
@@ -329,8 +275,6 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
       Number(it.quantity) ? String(Number(it.quantity)) : "—",
       num(it.unit_price),
     ];
-    // The cell carries the percentage the user entered beside the money
-    // figure; a flat discount (no percentage) just prints the amount.
     if (hasLineDiscount) row.push(discountCellText(it));
     row.push(num(it.total));
     return row;
@@ -342,8 +286,6 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
     2: { halign: "right", cellWidth: 28, font: JETBRAINS_MONO },
     [amtCol]: { halign: "right", cellWidth: 32, font: JETBRAINS_MONO, fontStyle: "bold" },
   };
-  // Discount is a reduction in the customer's favour, not an error — keep it
-  // in the neutral body colour, not red. Red is reserved for Balance Due.
   // A cell carrying "(10%)" alongside the figure needs a few extra millimetres.
   const hasDiscountPct = items.some((it) => Number(it.discount_percent) > 0);
   if (hasLineDiscount) colStyles[3] = { halign: "right", cellWidth: hasDiscountPct ? 38 : 33, font: JETBRAINS_MONO };
@@ -364,12 +306,11 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
     alternateRowStyles: { fillColor: [ALT_ROW[0], ALT_ROW[1], ALT_ROW[2]] },
     columnStyles: colStyles,
     theme: "plain",
-    // Item & Description is the one column that can hold Sinhala/Tamil
-    // (product name / description) — switch that cell's font family; Sinhala
-    // and Tamil only ship Regular, so a bold cell falls back to Regular
-    // rather than drawing nothing.
+    // Item & Description is the one column that can hold Sinhala/Tamil —
+    // switch that cell's font family; those scripts ship Regular only, so a
+    // bold cell falls back to Regular rather than drawing nothing.
     didParseCell: (data: any) => {
-      if (data.column.index !== 0) return; // other columns are always plain ASCII figures
+      if (data.column.index !== 0) return;
       const raw = Array.isArray(data.cell.raw) ? data.cell.raw.join(" ") : String(data.cell.raw ?? "");
       const family = fontFamilyFor(raw);
       if (family !== NOTO_SANS) {
@@ -379,7 +320,7 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
     },
   });
 
-  // ── Totals block (right), navy rule + a filled Balance Due chip ──────
+  // ── Totals block (right), navy rule + a filled Estimate Total chip ───
   let ty = (doc as any).lastAutoTable.finalY + 8;
   const totalsW = 74;
   const labelX = right - totalsW;
@@ -397,50 +338,45 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
     ty += 6.2;
   };
 
-  // invoice.subtotal is stored NET of line discounts. Present the breakdown so
+  // quote.subtotal is stored NET of line discounts. Present the breakdown so
   // Total = (gross subtotal) − discount + tax always reconciles on the page.
-  const lineDiscount = Number(invoice.discount_amount) || 0;
-  const grossSubtotal = (Number(invoice.subtotal) || 0) + lineDiscount;
+  const lineDiscount = Number(quote.discount_amount) || 0;
+  const grossSubtotal = (Number(quote.subtotal) || 0) + lineDiscount;
   totalRow("Sub Total", fmt(grossSubtotal));
   if (lineDiscount > 0) {
     totalRow("Discount", `-${fmt(lineDiscount)}`);
-    totalRow("Taxable amount", fmt(invoice.subtotal));
+    totalRow("Taxable amount", fmt(quote.subtotal));
   }
-  if (Number(invoice.tax_amount) > 0) totalRow("Tax", fmt(invoice.tax_amount));
+  if (Number(quote.tax_amount) > 0) totalRow("Tax", fmt(quote.tax_amount));
   ty += 2;
   setDraw(doc, RULE); doc.setLineWidth(0.3);
   doc.line(labelX, ty - 4.5, right, ty - 4.5);
-  totalRow("Total", `${fmt(invoice.total_amount)}`, { bold: true, color: INK });
-  if (paid > 0) totalRow("Amount Paid", `-${fmt(paid)}`, { color: GREEN });
-  if (disc > 0) totalRow("Credit Notes / Discounts", `-${fmt(disc)}`, { color: GREEN });
 
   // Vertical accent rule along the totals column — echoes the top bar.
   setDraw(doc, NAVY); doc.setLineWidth(0.7);
-  doc.line(labelX - 5, totalsTop - 4, labelX - 5, ty + 1);
+  doc.line(labelX - 5, totalsTop - 4, labelX - 5, ty - 3);
 
-  // Balance Due — filled chip (navy; a muted green once settled in full)
-  ty += 1;
+  // Estimate Total — filled navy chip, the counterpart of the invoice's
+  // Balance Due. Nothing is owed on an offer, so the figure is the quote.
   const bH = 11;
-  setFill(doc, balance > 0.005 ? NAVY : GREEN);
+  setFill(doc, NAVY);
   doc.roundedRect(labelX - 1, ty, totalsW + 1, bH, 1.5, 1.5, "F");
-  useFont("Balance Due", "bold");
+  useFont("Estimate Total", "bold");
   doc.setFontSize(9.5);
   setText(doc, WHITE);
-  doc.text("Balance Due", labelX + 4, ty + 7);
+  doc.text("Estimate Total", labelX + 4, ty + 7);
   useMono("bold");
   doc.setFontSize(11);
-  doc.text(fmt(balance), valX - 4, ty + 7.2, { align: "right" });
+  doc.text(fmt(quote.total_amount), valX - 4, ty + 7.2, { align: "right" });
   ty += bH + 4;
 
-  // ── Notes / terms / payment details (left column) ────────────────────
-  // Fills the space left blank under the totals block and gives the customer
-  // what they need to actually pay: bank name, branch, account, SWIFT.
+  // ── Notes / terms (left column) ──────────────────────────────────────
+  // No bank details here: an estimate is not a request for payment.
   let ny = (doc as any).lastAutoTable.finalY + 9;
   const notesW = contentW - totalsW - 12;
   for (const [heading, text] of [
-    ["Notes", invoice.notes],
+    ["Notes", quote.notes],
     ["Terms & Conditions", termsText],
-    ["Payment Details", bankDetails],
   ] as [string, string | null][]) {
     if (!text) continue;
     useFont(heading, "bold");
@@ -456,6 +392,17 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
     ny += wrapped.length * 4.2 + 5;
   }
 
+  // Validity note — set bold, since the deadline is the one condition attached
+  // to the prices above it.
+  const validity = quote.expiry_date
+    ? `Prices are valid only if accepted on or before ${prettyDate(quote.expiry_date)}.`
+    : "Prices are subject to change until accepted in writing.";
+  const noteY = Math.max(ny, ty) + 2;
+  useFont(validity, "bold");
+  doc.setFontSize(8);
+  setText(doc, MUTED);
+  doc.text(doc.splitTextToSize(validity, contentW), M, noteY);
+
   // ── Footer on every page: rule + logo · company · thank-you · page ───
   const pageCount = doc.getNumberOfPages();
   for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
@@ -465,7 +412,6 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
     doc.setLineWidth(0.2);
     doc.line(M, fy - 5, right, fy - 5);
 
-    // Left: small logo (if any) + company name / BR
     let fx = M;
     if (logo) {
       const ratio = logo.w / logo.h || 1;
@@ -477,11 +423,11 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
       doc.addImage(logo.dataUrl, "PNG", fx, fy + 1 - lh, lw, lh, "company-logo", "FAST");
       fx += lw + 3;
     }
-    useFont(tenant?.company_name || "", "bold");
+    useFont(t.company_name || "", "bold");
     doc.setFontSize(8.5);
     setText(doc, MUTED);
-    doc.text(tenant?.company_name || "", fx, fy - 1);
-    const sub = [tenant?.country, tenant?.registration_number ? `BR No: ${tenant.registration_number}` : null]
+    doc.text(t.company_name || "", fx, fy - 1);
+    const sub = [t.country, t.registration_number ? `BR No: ${t.registration_number}` : null]
       .filter(Boolean).join("  ·  ");
     if (sub) {
       useFont(sub, "normal");
@@ -490,7 +436,7 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
       doc.text(sub, fx, fy + 3);
     }
 
-    const footerNote = p?.invoice_footer_note || "Thank you for your business";
+    const footerNote = p?.invoice_footer_note || "Thank you for the opportunity to quote";
     useFont(footerNote, "normal");
     doc.setFontSize(8.5);
     setText(doc, MUTED2);
@@ -504,21 +450,21 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
   return doc;
 }
 
-/** Fetch, render, and trigger a browser download of the invoice PDF. */
-export async function downloadInvoiceVectorPdf(invoiceId: string, tenantId: string): Promise<void> {
-  const data = await loadInvoicePdfData(invoiceId, tenantId);
+const quoteFileName = (quote: any, fallbackId: string) =>
+  `Estimate-${sanitize(quote?.quote_number || fallbackId)}.pdf`;
+
+/** Fetch, render, and trigger a browser download of the estimate PDF. */
+export async function downloadQuotePdf(quoteId: string, tenantId: string): Promise<void> {
+  const data = await loadQuotePdfData(quoteId, tenantId);
   const logo = await loadLogo(data.tenant?.logo_url);
-  const doc = await buildInvoicePdf(data, logo);
-  doc.save(`Invoice-${sanitize(data.invoice.invoice_number || invoiceId)}.pdf`);
+  const doc = await buildQuotePdf(data, logo);
+  doc.save(quoteFileName(data.quote, quoteId));
 }
 
-/** Fetch and render the invoice PDF, returning it as a named File for sharing/attaching. */
-export async function getInvoiceVectorPdfFile(invoiceId: string, tenantId: string): Promise<File> {
-  const data = await loadInvoicePdfData(invoiceId, tenantId);
+/** Fetch and render the estimate PDF, returning it as a named File for sharing/attaching. */
+export async function getQuotePdfFile(quoteId: string, tenantId: string): Promise<File> {
+  const data = await loadQuotePdfData(quoteId, tenantId);
   const logo = await loadLogo(data.tenant?.logo_url);
-  const doc = await buildInvoicePdf(data, logo);
-  const blob = doc.output("blob");
-  return new File([blob], `Invoice-${sanitize(data.invoice.invoice_number || invoiceId)}.pdf`, {
-    type: "application/pdf",
-  });
+  const doc = await buildQuotePdf(data, logo);
+  return new File([doc.output("blob")], quoteFileName(data.quote, quoteId), { type: "application/pdf" });
 }

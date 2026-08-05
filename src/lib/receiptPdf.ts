@@ -28,10 +28,17 @@ export function buildReceiptPdf(model: ReceiptModel, company: any, logo?: Loaded
 
   // ── Header: logo + company (left), title + meta (right) ──
   let leftX = M;
+  let logoBottom = y;
   if (logo) {
-    const lh = 16, lw = (logo.w / logo.h || 1) * lh;
-    try { doc.addImage(logo.dataUrl, "PNG", M, y, Math.min(lw, 22), lh); } catch { /* skip */ }
-    leftX = M + Math.min(lw, 22) + 4;
+    // Fit inside 28×54mm preserving aspect ratio — the old code capped the
+    // width alone, which squashed a wide logo into a smudge.
+    const ratio = logo.w / logo.h || 1;
+    let lh = 28;
+    let lw = ratio * lh;
+    if (lw > 54) { lw = 54; lh = lw / ratio; }
+    try { doc.addImage(logo.dataUrl, "PNG", M, y, lw, lh); } catch { /* skip */ }
+    leftX = M + lw + 4;
+    logoBottom = y + lh;
   }
   doc.setTextColor(...INK).setFont("helvetica", "bold").setFontSize(14);
   doc.text(company?.company_name || "Your Company", leftX, y + 5);
@@ -48,7 +55,7 @@ export function buildReceiptPdf(model: ReceiptModel, company: any, logo?: Loaded
   doc.text(model.receiptNumber || "", right, y + 11, { align: "right" });
   doc.text(model.receiptDate || "", right, y + 16, { align: "right" });
 
-  y = Math.max(cy, y + 20) + 4;
+  y = Math.max(cy, logoBottom + 2, y + 20) + 4;
   doc.setDrawColor(...RULE).setLineWidth(0.3).line(M, y, right, y);
   y += 8;
 

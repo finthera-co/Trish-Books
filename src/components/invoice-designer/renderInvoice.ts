@@ -140,9 +140,10 @@ export function tableCellContent(
       // A discount is a reduction in the customer's favour, not an error —
       // red is reserved for Balance Due, so this stays the neutral body colour.
       const v = Number(item.discount || 0);
-      return v > 0
-        ? { text: `-${formatCurrency(v, currency)}` }
-        : { text: "—", muted: true };
+      if (v <= 0) return { text: "—", muted: true };
+      // Show the percentage the line was discounted by, when one was entered.
+      const pct = Number(item.discount_percent || 0);
+      return { text: pct > 0 ? `-${formatCurrency(v, currency)} (${pct}%)` : `-${formatCurrency(v, currency)}` };
     }
     case "amount":
       return { text: formatCurrency(Number(item.amount || 0), currency), bold: true };

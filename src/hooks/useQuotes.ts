@@ -11,6 +11,8 @@ export interface QuoteItemInput {
   product_id?: string | null;
   account_id?: string | null;
   discount_amount?: number;
+  /** Line discount as a % of quantity × unit_price; 0 for a flat-amount discount. */
+  discount_percent?: number;
   is_tax_inclusive?: boolean;
   tax_code_id?: string | null;
   tax_group_id?: string | null;
@@ -107,6 +109,7 @@ export function useCreateQuote() {
             product_id: it.product_id || null,
             account_id: it.account_id || null,
             discount_amount: it.discount_amount || 0,
+            discount_percent: it.discount_percent || 0,
             is_tax_inclusive: !!it.is_tax_inclusive,
             tax_code_id: it.tax_code_id || null,
             tax_group_id: it.tax_group_id || null,
@@ -225,6 +228,7 @@ export function useConvertQuoteToInvoice() {
             product_id: it.product_id || null,
             account_id: it.account_id || null,
             discount_amount: it.discount_amount || 0,
+            discount_percent: it.discount_percent || 0,
             is_tax_inclusive: !!it.is_tax_inclusive,
             tax_code_id: it.tax_code_id || null,
             tax_group_id: it.tax_group_id || null,

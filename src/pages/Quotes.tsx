@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, FileText, Plus, Trash2, MoreHorizontal, Send, Check, X, ArrowRightCircle, Eye, Printer } from "lucide-react";
+import { ArrowLeft, FileText, Plus, Trash2, MoreHorizontal, Send, Check, X, ArrowRightCircle, Eye, Printer, Download, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -15,11 +16,14 @@ import { formatCurrency } from "@/lib/currency";
 import { useCustomers, useAccounts } from "@/hooks/useData";
 import { useTaxGroups, useTaxCodes, useTaxProfile, currentRate } from "@/hooks/useTaxEngine";
 import { calculateLineTax, type TaxMemberInput } from "@/lib/taxEngine";
+import { discountFromPercent, percentFromDiscount } from "@/lib/lineDiscount";
 import {
   useQuotes, useCreateQuote, useSetQuoteStatus, useDeleteQuote, useConvertQuoteToInvoice, useQuoteDocument,
   type QuoteItemInput,
 } from "@/hooks/useQuotes";
 import QuoteDocument from "@/components/quotes/QuoteDocument";
+import { useAuth } from "@/contexts/AuthContext";
+import { downloadQuotePdf } from "@/lib/quotePdf";
 
 const TERMS = [
   { value: "due_on_receipt", label: "Due on receipt" },
@@ -30,10 +34,14 @@ const TERMS = [
 ];
 
 interface LineDraft {
-  id: string; description: string; qty: number; rate: number; discount: number;
+  id: string; description: string; qty: number; rate: number;
+  /** Discount as a % of qty × rate; drives `discount`. 0 for a flat-amount discount. */
+  discount_pct: number;
+  /** Money value of the discount — what the tax engine and the stored line calculate on. */
+  discount: number;
   tax_sel: string; inclusive: boolean; account_id: string;
 }
-const emptyLine = (): LineDraft => ({ id: crypto.randomUUID(), description: "", qty: 1, rate: 0, discount: 0, tax_sel: "", inclusive: false, account_id: "" });
+const emptyLine = (): LineDraft => ({ id: crypto.randomUUID(), description: "", qty: 1, rate: 0, discount_pct: 0, discount: 0, tax_sel: "", inclusive: false, account_id: "" });
 
 const statusColor = (s: string) =>
   s === "accepted" ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
@@ -45,6 +53,7 @@ const statusColor = (s: string) =>
 
 export default function Quotes() {
   const navigate = useNavigate();
+  const { appUser } = useAuth();
   const { data: customers } = useCustomers();
   const { data: accounts } = useAccounts();
   const { data: taxGroups } = useTaxGroups();
@@ -114,8 +123,19 @@ export default function Quotes() {
   const total = Math.round((subtotal + totalTax) * 100) / 100;
   const totalDiscount = lines.reduce((s, l) => s + l.discount, 0);
 
+  // Editing a line keeps its discount %/amount pair in step: the % re-derives the
+  // money value from qty × rate (and follows any change to either), while typing
+  // straight into the amount box re-derives the %.
   const updateLine = (id: string, field: keyof LineDraft, value: any) =>
-    setLines((p) => p.map((l) => (l.id === id ? { ...l, [field]: value } : l)));
+    setLines((p) => p.map((l) => {
+      if (l.id !== id) return l;
+      const next = { ...l, [field]: value };
+      if (field === "discount_pct") next.discount = discountFromPercent(next.qty, next.rate, next.discount_pct);
+      else if (field === "discount") next.discount_pct = percentFromDiscount(next.qty, next.rate, next.discount);
+      else if ((field === "qty" || field === "rate") && next.discount_pct > 0)
+        next.discount = discountFromPercent(next.qty, next.rate, next.discount_pct);
+      return next;
+    }));
 
   const resetForm = () => {
     setForm({ customer_id: "", issue_date: new Date().toISOString().split("T")[0], expiry_date: "", branch_code: "", payment_terms: "net_30", notes: "", terms: "" });
@@ -126,7 +146,8 @@ export default function Quotes() {
 
   const handleCreate = async () => {
     const items: QuoteItemInput[] = lines.filter((l) => l.rate > 0 || l.description).map((l, idx) => ({
-      description: l.description, quantity: l.qty, unit_price: l.rate, discount_amount: l.discount,
+      description: l.description, quantity: l.qty, unit_price: l.rate,
+      discount_amount: l.discount, discount_percent: l.discount_pct,
       total: lineCalcs[idx]?.lineTotal ?? Math.max(0, l.qty * l.rate - l.discount),
       account_id: l.account_id || null, is_tax_inclusive: l.inclusive,
       tax_group_id: l.tax_sel.startsWith("g:") ? l.tax_sel.slice(2) : null,
@@ -145,6 +166,22 @@ export default function Quotes() {
   const effectiveStatus = (q: any) =>
     q.status === "sent" && q.expiry_date && q.expiry_date < todayIso ? "expired" : q.status;
 
+  // Download the estimate as a vector PDF (same "Steel Statement" design as the
+  // invoice PDF). Tracked per-quote so only the row being generated shows a
+  // spinner — generation embeds fonts and the logo, so it isn't instant.
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const handleDownload = async (quoteId: string) => {
+    if (!appUser?.tenant_id) return toast.error("No tenant context");
+    setDownloadingId(quoteId);
+    try {
+      await downloadQuotePdf(quoteId, appUser.tenant_id);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to generate the estimate PDF");
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
   const handleConvert = async (q: any) => {
     const inv = await convert.mutateAsync(q.id);
     if (inv?.id) navigate(`/sales/invoices/${inv.id}/edit`);
@@ -162,7 +199,7 @@ export default function Quotes() {
         </div>
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
           <DialogTrigger asChild><Button><Plus className="w-4 h-4 mr-2" /> New Quote</Button></DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader><DialogTitle>New Quote</DialogTitle></DialogHeader>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -194,27 +231,66 @@ export default function Quotes() {
                 <Label>Line items</Label>
                 <div className="space-y-2 rounded-lg border border-border p-3">
                   {lines.map((l, idx) => (
-                    <div key={l.id} className="grid grid-cols-12 gap-2 items-center">
-                      <Input className="col-span-4 h-9 text-sm" placeholder="Description" value={l.description} onChange={(e) => updateLine(l.id, "description", e.target.value)} />
-                      <Input className="col-span-1 h-9 text-sm text-center" type="number" min={1} value={l.qty || ""} onChange={(e) => updateLine(l.id, "qty", Number(e.target.value))} title="Qty" />
-                      <Input className="col-span-2 h-9 text-sm text-right" type="number" placeholder="Rate" value={l.rate || ""} onChange={(e) => updateLine(l.id, "rate", Number(e.target.value))} />
-                      <Select value={l.tax_sel || "none"} onValueChange={(v) => updateLine(l.id, "tax_sel", v === "none" ? "" : v)}>
-                        <SelectTrigger className="col-span-2 h-9 text-xs"><SelectValue placeholder="Tax" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">No tax</SelectItem>
-                          {sellableGroups.length > 0 && <SelectGroup><SelectLabel>Groups</SelectLabel>{sellableGroups.map((g: any) => <SelectItem key={g.id} value={`g:${g.id}`}>{g.code}</SelectItem>)}</SelectGroup>}
-                          {sellableCodes.length > 0 && <SelectGroup><SelectLabel>Codes</SelectLabel>{sellableCodes.map((c: any) => <SelectItem key={c.id} value={`c:${c.id}`}>{c.code} ({currentRate(c, form.issue_date) ?? 0}%)</SelectItem>)}</SelectGroup>}
-                        </SelectContent>
-                      </Select>
-                      <Select value={l.account_id || "none"} onValueChange={(v) => updateLine(l.id, "account_id", v === "none" ? "" : v)}>
-                        <SelectTrigger className="col-span-2 h-9 text-xs"><SelectValue placeholder="Revenue a/c" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Default</SelectItem>
-                          {revenueAccounts.map((a: any) => <SelectItem key={a.id} value={a.id}>{a.account_code} {a.account_name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                      <div className="col-span-1 flex justify-end">
-                        {lines.length > 1 && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setLines((p) => p.filter((x) => x.id !== l.id))}><Trash2 className="w-4 h-4 text-muted-foreground" /></Button>}
+                    <div key={l.id} className="space-y-2 rounded-md border border-border/60 p-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="w-4 shrink-0 text-[11px] text-muted-foreground">{idx + 1}</span>
+                        <Input className="h-9 min-w-0 flex-1 text-sm" placeholder="Description" value={l.description} onChange={(e) => updateLine(l.id, "description", e.target.value)} />
+                        <Select value={l.account_id || "none"} onValueChange={(v) => updateLine(l.id, "account_id", v === "none" ? "" : v)}>
+                          <SelectTrigger className="h-9 w-[160px] shrink-0 text-xs"><SelectValue placeholder="Revenue a/c" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Default</SelectItem>
+                            {revenueAccounts.map((a: any) => <SelectItem key={a.id} value={a.id}>{a.account_code} {a.account_name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        <div className="w-8 shrink-0">
+                          {lines.length > 1 && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setLines((p) => p.filter((x) => x.id !== l.id))}><Trash2 className="w-4 h-4 text-muted-foreground" /></Button>}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-12 gap-2">
+                        <div className="col-span-2 space-y-1">
+                          <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">Qty</span>
+                          <Input className="h-9 text-sm text-center tabular-nums" type="number" min={1} value={l.qty || ""} onChange={(e) => updateLine(l.id, "qty", Number(e.target.value))} />
+                        </div>
+                        <div className="col-span-3 space-y-1">
+                          <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">Rate</span>
+                          <Input className="h-9 text-sm text-right tabular-nums" type="number" min={0} placeholder="0.00" value={l.rate || ""} onChange={(e) => updateLine(l.id, "rate", Number(e.target.value))} />
+                        </div>
+                        {/* Discount — enter a % of qty × rate and the money value is
+                            calculated, or enter the money value and the % follows. */}
+                        <div className="col-span-2 space-y-1">
+                          <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">Disc %</span>
+                          <div className="relative">
+                            <Input className="h-9 pr-4 text-sm text-right tabular-nums" type="number" min={0} max={100} step="0.01" placeholder="0"
+                              value={l.discount_pct || ""} onChange={(e) => updateLine(l.id, "discount_pct", Number(e.target.value))} />
+                            <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">%</span>
+                          </div>
+                        </div>
+                        <div className="col-span-2 space-y-1">
+                          <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">Disc amt</span>
+                          <Input className="h-9 text-sm text-right tabular-nums" type="number" min={0} placeholder="0.00"
+                            value={l.discount || ""} onChange={(e) => updateLine(l.id, "discount", Number(e.target.value))} />
+                        </div>
+                        <div className="col-span-3 space-y-1">
+                          <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">Tax</span>
+                          <Select value={l.tax_sel || "none"} onValueChange={(v) => updateLine(l.id, "tax_sel", v === "none" ? "" : v)}>
+                            <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Tax" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">No tax</SelectItem>
+                              {sellableGroups.length > 0 && <SelectGroup><SelectLabel>Groups</SelectLabel>{sellableGroups.map((g: any) => <SelectItem key={g.id} value={`g:${g.id}`}>{g.code}</SelectItem>)}</SelectGroup>}
+                              {sellableCodes.length > 0 && <SelectGroup><SelectLabel>Codes</SelectLabel>{sellableCodes.map((c: any) => <SelectItem key={c.id} value={`c:${c.id}`}>{c.code} ({currentRate(c, form.issue_date) ?? 0}%)</SelectItem>)}</SelectGroup>}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-end gap-4 text-[11px]">
+                        {l.discount > 0 && (
+                          <span className="text-muted-foreground">
+                            Discount <span className="tabular-nums text-destructive">−{formatCurrency(l.discount)}</span>
+                          </span>
+                        )}
+                        <span className="text-muted-foreground">
+                          Amount <span className="ml-1 tabular-nums font-semibold text-foreground">{formatCurrency(lineCalcs[idx]?.lineTotal ?? 0)}</span>
+                        </span>
                       </div>
                     </div>
                   ))}
@@ -222,6 +298,9 @@ export default function Quotes() {
                 </div>
                 <div className="flex justify-end gap-6 text-sm pt-1">
                   <span className="text-muted-foreground">Subtotal <span className="text-foreground font-medium ml-1">{formatCurrency(subtotal)}</span></span>
+                  {totalDiscount > 0 && (
+                    <span className="text-muted-foreground">Discount <span className="text-destructive font-medium ml-1">−{formatCurrency(totalDiscount)}</span></span>
+                  )}
                   <span className="text-muted-foreground">Tax <span className="text-foreground font-medium ml-1">{formatCurrency(totalTax)}</span></span>
                   <span className="text-muted-foreground">Total <span className="text-foreground font-semibold ml-1">{formatCurrency(total)}</span></span>
                 </div>
@@ -284,7 +363,13 @@ export default function Quotes() {
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild><button className="p-1 rounded hover:bg-accent"><MoreHorizontal className="w-4 h-4 text-muted-foreground" /></button></DropdownMenuTrigger>
                           <DropdownMenuContent>
-                            <DropdownMenuItem onClick={() => setPreviewId(q.id)}><Eye className="w-4 h-4 mr-2" /> Preview / PDF</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setPreviewId(q.id)}><Eye className="w-4 h-4 mr-2" /> Preview</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDownload(q.id)} disabled={downloadingId === q.id}>
+                              {downloadingId === q.id
+                                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                : <Download className="w-4 h-4 mr-2" />}
+                              {downloadingId === q.id ? "Preparing…" : "Download PDF"}
+                            </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             {(q.status === "draft") && (
                               <DropdownMenuItem onClick={() => setStatus.mutate({ id: q.id, status: "sent" })}><Send className="w-4 h-4 mr-2" /> Mark as Sent</DropdownMenuItem>
@@ -334,7 +419,13 @@ export default function Quotes() {
           </div>
           <div className="flex justify-end gap-2 px-6 py-4 print:hidden">
             <Button variant="outline" onClick={() => setPreviewId(null)}>Close</Button>
-            <Button onClick={() => window.print()} disabled={!previewDoc}><Printer className="w-4 h-4 mr-1.5" /> Print / PDF</Button>
+            <Button variant="outline" onClick={() => window.print()} disabled={!previewDoc}><Printer className="w-4 h-4 mr-1.5" /> Print</Button>
+            <Button onClick={() => previewId && handleDownload(previewId)} disabled={!previewDoc || downloadingId === previewId}>
+              {downloadingId === previewId
+                ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                : <Download className="w-4 h-4 mr-1.5" />}
+              {downloadingId === previewId ? "Preparing…" : "Download PDF"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
