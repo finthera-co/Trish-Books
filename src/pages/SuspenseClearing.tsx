@@ -1,14 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   HelpCircle, CheckCircle2, Clock, Wand2, Loader2,
-  Search, ArrowUp, ArrowDown, ArrowUpDown, X, Download,
+  Search, ArrowUp, ArrowDown, ArrowUpDown, X, Download, Check, ChevronsUpDown,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -41,6 +42,134 @@ function reasonText(l: SuspenseLine): string {
 const PAGE_SIZE = 25;
 
 type SortKey = "date" | "description" | "reason" | "amount" | "age";
+
+interface AccountOption {
+  id: string;
+  account_code: string;
+  account_name: string;
+  account_type?: string | null;
+}
+
+/**
+ * Type-to-filter picker for the reclass target account. Filters the postable
+ * accounts already in memory, so it matches on code, name or type from the
+ * first keystroke — no round trip and no minimum query length.
+ */
+function AccountCombobox({
+  options, value, onChange, placeholder = "Choose the final ledger account…",
+}: {
+  options: AccountOption[];
+  value: string;
+  onChange: (id: string) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [highlight, setHighlight] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selected = options.find((a) => a.id === value) ?? null;
+
+  const results = useMemo(() => {
+    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return options;
+    return options.filter((a) => {
+      const haystack = `${a.account_code} ${a.account_name} ${a.account_type ?? ""}`.toLowerCase();
+      return terms.every((t) => haystack.includes(t));
+    });
+  }, [options, query]);
+
+  // Opening resets the query so the full list is offered again; the highlight
+  // follows the filter so Enter always picks the row the user is looking at.
+  useEffect(() => {
+    if (open) {
+      setQuery("");
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [open]);
+  useEffect(() => setHighlight(0), [query]);
+
+  function pick(id: string) {
+    onChange(id);
+    setOpen(false);
+  }
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlight((h) => Math.min(h + 1, results.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlight((h) => Math.max(h - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const hit = results[highlight];
+      if (hit) pick(hit.id);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setOpen(false);
+    }
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className={cn("w-full justify-between font-normal h-9", !selected && "text-muted-foreground")}
+        >
+          <span className="truncate">
+            {selected ? `${selected.account_code} — ${selected.account_name}` : placeholder}
+          </span>
+          <ChevronsUpDown className="h-4 w-4 opacity-50 shrink-0 ml-2" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="p-0 w-[--radix-popover-trigger-width] min-w-[320px]" align="start">
+        <div className="flex items-center border-b px-3">
+          <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+          <Input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="Search by code, name or type…"
+            className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 h-10 px-2"
+          />
+        </div>
+        <div className="max-h-72 overflow-y-auto py-1">
+          {results.length === 0 ? (
+            <div className="px-3 py-6 text-center text-sm text-muted-foreground">No accounts found</div>
+          ) : (
+            results.map((a, i) => (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => pick(a.id)}
+                onMouseEnter={() => setHighlight(i)}
+                ref={i === highlight ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
+                className={cn(
+                  "w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-left",
+                  "hover:bg-accent hover:text-accent-foreground",
+                  i === highlight && "bg-accent text-accent-foreground",
+                  a.id === value && "font-medium"
+                )}
+              >
+                <span className="truncate">
+                  <span className="font-mono text-xs text-muted-foreground mr-2">{a.account_code}</span>
+                  {a.account_name}
+                </span>
+                {a.id === value && <Check className="h-4 w-4 text-primary shrink-0" />}
+              </button>
+            ))
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 /** Clickable column header: first click sorts, further clicks flip direction. */
 function SortHead({
@@ -411,15 +540,8 @@ export default function SuspenseClearing() {
             <div>
               <Label className="text-sm">Final account</Label>
               <div className="flex items-start gap-2">
-                <div className="flex-1">
-                  <Select value={targetAccount} onValueChange={setTargetAccount}>
-                    <SelectTrigger><SelectValue placeholder="Choose the final ledger account…" /></SelectTrigger>
-                    <SelectContent>
-                      {postable.map((a: any) => (
-                        <SelectItem key={a.id} value={a.id}>{a.account_code} — {a.account_name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="flex-1 min-w-0">
+                  <AccountCombobox options={postable} value={targetAccount} onChange={setTargetAccount} />
                 </div>
                 {/* No suitable ledger yet? Open the full Chart-of-Accounts
                     creation dialog. On save we pre-select the new account here. */}
@@ -466,7 +588,11 @@ export default function SuspenseClearing() {
         isPending={createAccount.isPending}
         onSubmit={async (data) => {
           const result = await createAccount.mutateAsync(data as any);
-          if (result?.id) setTargetAccount(result.id);
+          // Only pre-select it when it is a valid reclass target, otherwise the
+          // picker would show the placeholder while a hidden id sat in state.
+          const postableResult =
+            result?.is_postable !== false && !(result as any)?.is_control_account;
+          if (result?.id && postableResult) setTargetAccount(result.id);
           setAccountFormOpen(false);
         }}
         onCreateCategory={async (data) => {
