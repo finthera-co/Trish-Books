@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { type User, type Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { clearAllFintheraDrafts } from "@/hooks/useDraftPersistence";
@@ -29,6 +29,19 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+/** Supabase hands back a fresh User object on every token refresh. Treat it as
+ * the same user unless something consumers care about actually changed, so a
+ * background refresh doesn't invalidate identity-based effect dependencies. */
+function sameUser(a: User | null, b: User | null): boolean {
+  if (!a || !b) return a === b;
+  return (
+    a.id === b.id &&
+    a.email === b.email &&
+    a.email_confirmed_at === b.email_confirmed_at &&
+    a.updated_at === b.updated_at
+  );
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -68,32 +81,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          setLoading(true);
-          setTimeout(async () => {
-            await fetchAppUser(session.user.id);
-            setLoading(false);
-          }, 0);
-        } else {
-          setAppUser(null);
-          setLoading(false);
-        }
-      }
-    );
+  // The profile load currently in flight (or already done), keyed by auth user
+  // id, so repeat events for the same user are deduped instead of re-running it.
+  const loadRef = useRef<{ id: string; promise: Promise<void> } | null>(null);
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+  useEffect(() => {
+    const syncSession = async (session: Session | null) => {
       setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        await fetchAppUser(session.user.id);
+      setUser((prev) => (sameUser(prev, session?.user ?? null) ? prev : session?.user ?? null));
+
+      const authUserId = session?.user?.id ?? null;
+      if (!authUserId) {
+        loadRef.current = null;
+        setAppUser(null);
+        setLoading(false);
+        return;
       }
-      setLoading(false);
+
+      // Supabase re-emits auth events (TOKEN_REFRESHED / SIGNED_IN) whenever the
+      // tab regains focus and the access token is renewed. The session object is
+      // new but the user is the same, so there is nothing to re-load — and
+      // flipping `loading` here would make ProtectedRoute swap the whole routed
+      // tree for its spinner, unmounting every page and losing its state,
+      // filters and scroll position. Only load when the user actually changes.
+      if (loadRef.current?.id === authUserId) {
+        await loadRef.current.promise;
+        return;
+      }
+
+      setLoading(true);
+      const promise = fetchAppUser(authUserId).finally(() => setLoading(false));
+      loadRef.current = { id: authUserId, promise };
+      await promise;
+    };
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      // Supabase's callback must not invoke other supabase APIs synchronously
+      // (it deadlocks the auth client) — defer the profile fetch a tick.
+      setTimeout(() => { void syncSession(session); }, 0);
     });
+
+    void supabase.auth.getSession().then(({ data: { session } }) => syncSession(session));
 
     return () => subscription.unsubscribe();
   }, []);

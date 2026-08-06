@@ -27,15 +27,19 @@ export default function ProtectedRoute() {
     }
   }, []);
 
+  // Keyed on the user id, not the User object: Supabase mints a new object on
+  // every background token refresh, and re-entering "checking" there would
+  // replace the whole app with the spinner below and remount the active page.
+  const userId = user?.id ?? null;
   useEffect(() => {
     if (loading) return;
-    if (!user) {
+    if (!userId) {
       setMfa("ok");
       return;
     }
     setMfa("checking");
     checkMfa();
-  }, [user, loading, checkMfa]);
+  }, [userId, loading, checkMfa]);
 
   if (loading || (user && mfa === "checking")) {
     return <Loading />;

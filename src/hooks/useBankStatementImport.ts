@@ -473,6 +473,10 @@ export function useSuspenseLines() {
   return useQuery({
     queryKey: ["suspense_lines", appUser?.tenant_id],
     enabled: !!appUser?.tenant_id,
+    // The list is only invalidated by import/clear mutations, so serve it from
+    // cache when the user navigates back instead of re-fetching (and flashing
+    // the loading state) on every remount. Key is tenant-scoped, so this is safe.
+    staleTime: 5 * 60_000,
     queryFn: async () => {
       // New tables are not yet in the generated Supabase types (regenerate with
       // `supabase gen types` after the migration lands); cast until then.

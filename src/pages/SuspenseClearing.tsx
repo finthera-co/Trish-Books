@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react";
-import { HelpCircle, CheckCircle2, Clock, Wand2, Loader2 } from "lucide-react";
+import {
+  HelpCircle, CheckCircle2, Clock, Wand2, Loader2,
+  Search, ArrowUp, ArrowDown, ArrowUpDown, X,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -10,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox as Check2 } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Plus } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { useAccounts, useCreateAccount } from "@/hooks/useData";
@@ -23,6 +27,46 @@ import {
 
 function ageDays(iso: string): number {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+}
+
+function lineAmount(l: SuspenseLine): number {
+  return Number(l.debit || 0) > 0 ? Number(l.debit) : Number(l.credit || 0);
+}
+
+function reasonText(l: SuspenseLine): string {
+  return (l.suspense_reason ?? "").replace(/_/g, " ");
+}
+
+const PAGE_SIZE = 25;
+
+type SortKey = "date" | "description" | "reason" | "amount" | "age";
+
+/** Clickable column header: first click sorts, further clicks flip direction. */
+function SortHead({
+  sortKey, label, align, activeKey, dir, onSort,
+}: {
+  sortKey: SortKey;
+  label: string;
+  align?: "right";
+  activeKey: SortKey;
+  dir: "asc" | "desc";
+  onSort: (k: SortKey) => void;
+}) {
+  const active = activeKey === sortKey;
+  const Icon = !active ? ArrowUpDown : dir === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <TableHead className={align === "right" ? "text-right" : undefined}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={`inline-flex items-center gap-1 transition-colors hover:text-foreground ${active ? "text-foreground font-medium" : ""}`}
+        aria-label={`Sort by ${label}`}
+      >
+        {label}
+        <Icon className={`w-3 h-3 ${active ? "" : "opacity-40"}`} />
+      </button>
+    </TableHead>
+  );
 }
 
 export default function SuspenseClearing() {
@@ -50,9 +94,74 @@ export default function SuspenseClearing() {
     [accounts]
   );
 
+  // Search / sort / pagination are all client-side over the already-cached list,
+  // so paging never re-queries and never remounts the table.
+  const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [pageIndex, setPageIndex] = useState(0);
+
   const open = lines ?? [];
   const openValue = open.reduce((s, l) => s + Number(l.debit || 0) + Number(l.credit || 0), 0);
   const oldest = open.reduce((max, l) => Math.max(max, ageDays(l.created_at)), 0);
+
+  // Every visible column feeds the search box: date, description, reason,
+  // amount and age, so a query like "rent 2026-03" narrows on any of them.
+  const filtered = useMemo(() => {
+    const terms = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return open;
+    return open.filter((l) => {
+      const amount = lineAmount(l);
+      const haystack = [
+        l.txn_date ?? "",
+        l.description ?? "",
+        l.name ?? "",
+        l.raw_account_type ?? "",
+        reasonText(l),
+        String(amount),
+        formatCurrency(amount),
+        `${ageDays(l.created_at)}d`,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return terms.every((t) => haystack.includes(t));
+    });
+  }, [open, search]);
+
+  const sorted = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      switch (sortKey) {
+        case "date":
+          // Undated lines sort last regardless of direction.
+          if (!a.txn_date || !b.txn_date) return (a.txn_date ? 0 : 1) - (b.txn_date ? 0 : 1);
+          return a.txn_date.localeCompare(b.txn_date) * dir;
+        case "description":
+          return (a.description || a.name || "").localeCompare(b.description || b.name || "") * dir;
+        case "reason":
+          return reasonText(a).localeCompare(reasonText(b)) * dir;
+        case "amount":
+          return (lineAmount(a) - lineAmount(b)) * dir;
+        case "age":
+          return (ageDays(a.created_at) - ageDays(b.created_at)) * dir;
+      }
+    });
+  }, [filtered, sortKey, sortDir]);
+
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const page = Math.min(pageIndex, pageCount - 1); // stays valid when a filter shrinks the list
+  const pageRows = sorted.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "amount" || key === "age" ? "desc" : "asc");
+    }
+    setPageIndex(0);
+  }
+  const sortProps = { activeKey: sortKey, dir: sortDir, onSort: toggleSort };
 
   // Lines sharing the selected line's unknown variant (for "apply to all N").
   const selectedLines = open.filter((l) => selected.has(l.id));
@@ -70,8 +179,15 @@ export default function SuspenseClearing() {
       return next;
     });
   }
+  // Header checkbox acts on the rows currently on screen; selections made on
+  // other pages are kept so a multi-page batch can be cleared in one go.
+  const pageAllSelected = pageRows.length > 0 && pageRows.every((l) => selected.has(l.id));
   function toggleAll() {
-    setSelected((prev) => (prev.size === open.length ? new Set() : new Set(open.map((l) => l.id))));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      pageRows.forEach((l) => (pageAllSelected ? next.delete(l.id) : next.add(l.id)));
+      return next;
+    });
   }
 
   async function submitClear() {
@@ -144,21 +260,47 @@ export default function SuspenseClearing() {
               <p className="text-sm">Suspense is clear. Nothing to reclassify.</p>
             </div>
           ) : (
+            <>
+            <div className="relative mb-4 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPageIndex(0); }}
+                placeholder="Search date, description, reason, amount, age…"
+                className="pl-9 pr-9"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => { setSearch(""); setPageIndex(0); }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
+                  aria-label="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {sorted.length === 0 ? (
+              <div className="text-center py-10 text-muted-foreground">
+                <p className="text-sm">No items match “{search}”.</p>
+              </div>
+            ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-8">
-                    <Checkbox checked={selected.size === open.length && open.length > 0} onCheckedChange={toggleAll} />
+                    <Checkbox checked={pageAllSelected} onCheckedChange={toggleAll} />
                   </TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Reason</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead className="text-right">Age</TableHead>
+                  <SortHead sortKey="date" label="Date" {...sortProps} />
+                  <SortHead sortKey="description" label="Description" {...sortProps} />
+                  <SortHead sortKey="reason" label="Reason" {...sortProps} />
+                  <SortHead sortKey="amount" label="Amount" align="right" {...sortProps} />
+                  <SortHead sortKey="age" label="Age" align="right" {...sortProps} />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {open.map((l: SuspenseLine) => {
+                {pageRows.map((l: SuspenseLine) => {
                   const amount = Number(l.debit || 0) > 0 ? Number(l.debit) : Number(l.credit);
                   const dir = Number(l.debit || 0) > 0 ? "Dr" : "Cr";
                   return (
@@ -177,6 +319,32 @@ export default function SuspenseClearing() {
                 })}
               </TableBody>
             </Table>
+            )}
+
+            {/* Page switching is pure local state — no refetch, no remount, so
+                the table keeps its place on screen. */}
+            {sorted.length > 0 && (
+              <div className="flex items-center justify-between gap-3 mt-4 pt-3 border-t border-border flex-wrap">
+                <p className="text-xs text-muted-foreground tabular-nums">
+                  Showing {(page * PAGE_SIZE + 1).toLocaleString()}–
+                  {(page * PAGE_SIZE + pageRows.length).toLocaleString()} of {sorted.length.toLocaleString()}
+                  {search && open.length !== sorted.length && ` (filtered from ${open.length.toLocaleString()})`}
+                  {selected.size > 0 && ` · ${selected.size} selected`}
+                </p>
+                {pageCount > 1 && (
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setPageIndex(0)} disabled={page === 0}>First</Button>
+                    <Button variant="outline" size="sm" onClick={() => setPageIndex(page - 1)} disabled={page === 0}>Previous</Button>
+                    <span className="text-xs text-muted-foreground tabular-nums px-1">
+                      Page {(page + 1).toLocaleString()} of {pageCount.toLocaleString()}
+                    </span>
+                    <Button variant="outline" size="sm" onClick={() => setPageIndex(page + 1)} disabled={page >= pageCount - 1}>Next</Button>
+                    <Button variant="outline" size="sm" onClick={() => setPageIndex(pageCount - 1)} disabled={page >= pageCount - 1}>Last</Button>
+                  </div>
+                )}
+              </div>
+            )}
+            </>
           )}
         </CardContent>
       </Card>
