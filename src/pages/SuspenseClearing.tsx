@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   HelpCircle, CheckCircle2, Clock, Wand2, Loader2,
-  Search, ArrowUp, ArrowDown, ArrowUpDown, X,
+  Search, ArrowUp, ArrowDown, ArrowUpDown, X, Download,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import { Checkbox as Check2 } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Plus } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
+import { downloadDataExcel } from "@/lib/reportExcel";
 import { useAccounts, useCreateAccount } from "@/hooks/useData";
 import { useAccountCategories, useCreateAccountCategory } from "@/hooks/useAccountCategories";
 import AccountForm from "@/components/chart-of-accounts/AccountForm";
@@ -163,6 +164,43 @@ export default function SuspenseClearing() {
   }
   const sortProps = { activeKey: sortKey, dir: sortDir, onSort: toggleSort };
 
+  // Exports every row in the current view — all pages, not just the one on
+  // screen — in the active sort order. With the search box empty that is the
+  // whole open-suspense list.
+  function exportExcel() {
+    const today = new Date().toISOString().slice(0, 10);
+    downloadDataExcel<SuspenseLine>(
+      {
+        title: "Suspense Clearing — Open Items",
+        subtitle: search
+          ? `Filtered by “${search}” — ${sorted.length} of ${open.length} open items`
+          : `${open.length} open items awaiting reclassification`,
+        dateLine: `As of ${today}`,
+        sheetName: "Suspense",
+        fileName: `Suspense Clearing ${today}.xlsx`,
+      },
+      [
+        { header: "Date", value: (l) => l.txn_date ?? "" },
+        { header: "Description", value: (l) => l.description || l.name || "" },
+        { header: "Name", value: (l) => l.name ?? "" },
+        { header: "Raw Account Type", value: (l) => l.raw_account_type ?? "" },
+        { header: "Category", value: (l) => l.canonical_category ?? "" },
+        { header: "Reason", value: (l) => reasonText(l) },
+        { header: "Debit", numeric: true, value: (l) => Number(l.debit || 0) || null },
+        { header: "Credit", numeric: true, value: (l) => Number(l.credit || 0) || null },
+        { header: "Age (days)", value: (l) => ageDays(l.created_at) },
+        { header: "Source Sheet", value: (l) => l.sheet_name ?? "" },
+        { header: "Imported On", value: (l) => l.created_at.slice(0, 10) },
+      ],
+      sorted,
+      [
+        "TOTAL", "", "", "", "", "",
+        sorted.reduce((s, l) => s + Number(l.debit || 0), 0),
+        sorted.reduce((s, l) => s + Number(l.credit || 0), 0),
+      ],
+    );
+  }
+
   // Lines sharing the selected line's unknown variant (for "apply to all N").
   const selectedLines = open.filter((l) => selected.has(l.id));
   const commonVariant = useMemo(() => {
@@ -245,11 +283,22 @@ export default function SuspenseClearing() {
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-base">Open Suspense items</CardTitle>
-          {selected.size > 0 && (
-            <Button onClick={() => setDialogOpen(true)} size="sm">
-              <Wand2 className="w-4 h-4 mr-2" /> Clear {selected.size} selected
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={exportExcel}
+              size="sm"
+              variant="outline"
+              disabled={sorted.length === 0}
+              title={search ? `Export the ${sorted.length} matching items` : "Export all open suspense items"}
+            >
+              <Download className="w-4 h-4 mr-2" /> Export Excel
             </Button>
-          )}
+            {selected.size > 0 && (
+              <Button onClick={() => setDialogOpen(true)} size="sm">
+                <Wand2 className="w-4 h-4 mr-2" /> Clear {selected.size} selected
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (

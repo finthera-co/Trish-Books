@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { downloadReportPdf } from "@/lib/reportPdf";
 import { downloadReportExcel } from "@/lib/reportExcel";
 import { Button } from "@/components/ui/button";
-import { useAccounts, useJournalEntries, useInvoices, useExpenses, useBudgets } from "@/hooks/useData";
+import { useAccounts, useJournalEntries, useAccountBalances, useInvoices, useExpenses, useBudgets } from "@/hooks/useData";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
@@ -42,7 +42,11 @@ export default function Reports() {
   }, [reportParam]);
 
   const { data: accounts } = useAccounts();
-  const { data: journalEntries } = useJournalEntries();
+  // Only the Cash Flow statement needs line-level entry detail (it classifies
+  // each cash movement by its counterpart accounts). Every other report here
+  // runs off aggregates or its own query, so the whole-table load stays off
+  // until Cash Flow is actually selected.
+  const { data: journalEntries } = useJournalEntries(activeReport === "cash-flow");
   const { data: invoices } = useInvoices();
   const { data: expenses } = useExpenses();
   const { data: budgets } = useBudgets();
@@ -270,8 +274,10 @@ export default function Reports() {
     return postedEntries.filter(e => e.entry_date >= periodFrom && e.entry_date <= periodTo);
   }, [postedEntries, periodFrom, periodTo]);
 
-  // Entries from the opening-balance baseline through periodTo — drives the
-  // "as at" reports (Trial Balance, Balance Sheet) and beginning cash.
+  // Entries from the opening-balance baseline through periodTo — beginning cash
+  // for the Cash Flow statement. The Balance Sheet used to share this, but it
+  // only ever needed per-account totals, so it now reads the aggregate RPC
+  // below instead of every entry in the tenant.
   const cumulativeEntries = useMemo(() => {
     return postedEntries.filter(e =>
       e.entry_date <= periodTo && (!obPeriod || e.entry_date >= obPeriod.period_start)
@@ -281,6 +287,12 @@ export default function Reports() {
   const prePeriodEntries = useMemo(() => {
     return cumulativeEntries.filter(e => e.entry_date < periodFrom);
   }, [cumulativeEntries, periodFrom]);
+
+  // Per-account debit/credit totals from the opening-balance baseline through
+  // periodTo, aggregated server-side by gl_account_balances. This is the whole
+  // input the Balance Sheet needs — ~138 rows in one round trip, rather than
+  // 35k entries and 70k lines pulled into the browser to be summed there.
+  const { data: cumulativeTotals } = useAccountBalances(obPeriod?.period_start, periodTo);
 
   type AccountBal = { id: string; name: string; code: string; type: string; subtype: string | null; subledger_type: string | null; debit: number; credit: number; openingBalance: number };
 
@@ -318,13 +330,35 @@ export default function Reports() {
     [accounts, filteredEntries]
   );
 
-  // As-at-periodTo balances (opening balances + cumulative activity) —
-  // Trial Balance, Balance Sheet.
-  const cumulativeBalances = useMemo(
-    () => buildBalanceMap(cumulativeEntries, true),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [accounts, cumulativeEntries, openingBalanceMap]
-  );
+  // As-at-periodTo balances (opening balances + cumulative activity) — the
+  // Balance Sheet. Same shape buildBalanceMap produces, but the debit/credit
+  // totals come from the server aggregate rather than from summing lines here.
+  // Seeded from `accounts` so an account with an opening balance and no
+  // activity still appears.
+  const cumulativeBalances = useMemo(() => {
+    const map = new Map<string, AccountBal>();
+    accounts?.forEach(a => {
+      map.set(a.id, {
+        id: a.id,
+        name: a.account_name,
+        code: a.account_code,
+        type: a.account_type,
+        subtype: (a as any).account_subtype ?? null,
+        subledger_type: (a as any).subledger_type ?? null,
+        debit: 0,
+        credit: 0,
+        openingBalance: openingBalanceMap.get(a.id) || 0,
+      });
+    });
+    (cumulativeTotals ?? []).forEach((row: any) => {
+      const acc = map.get(row.account_id);
+      if (acc) {
+        acc.debit = Number(row.debit) || 0;
+        acc.credit = Number(row.credit) || 0;
+      }
+    });
+    return map;
+  }, [accounts, cumulativeTotals, openingBalanceMap]);
 
   // As-at-periodFrom balances — beginning cash for the Cash Flow statement.
   const prePeriodBalances = useMemo(
@@ -333,7 +367,6 @@ export default function Reports() {
     [accounts, prePeriodEntries, openingBalanceMap]
   );
 
-  const balances = Array.from(accountBalances.values()).filter(a => a.debit > 0 || a.credit > 0);
   const cumulativeList = Array.from(cumulativeBalances.values()).filter(a => a.debit > 0 || a.credit > 0 || a.openingBalance !== 0);
 
   // Signed closing balance in the account's normal-balance direction
@@ -446,12 +479,6 @@ export default function Reports() {
     const totalEquity = equity.reduce((s, a) => s + getNetBalance(a), 0) + retainedEarnings;
     const totalLiabEquity = totalLiabilities + totalEquity;
 
-    const pieData = [
-      { name: "Assets", value: Math.abs(totalAssets) },
-      { name: "Liabilities", value: Math.abs(totalLiabilities) },
-      { name: "Equity", value: Math.abs(totalEquity) },
-    ].filter(d => d.value > 0);
-
     const SectionRows = ({ items, sign }: { items: typeof allAssets; sign: "debit" | "credit" }) => (
       <>
         {items.map((a, i) => {
@@ -476,9 +503,8 @@ export default function Reports() {
           <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Total Equity</p><p className="text-xl font-bold text-primary mt-1">{fmt(totalEquity)}</p></div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 stat-card print:shadow-none">
-            <StatementHeader title="Statement of Financial Position" subtitle="Balance Sheet" asAt />
+        <div className="stat-card print:shadow-none">
+          <StatementHeader title="Statement of Financial Position" subtitle="Balance Sheet" asAt />
             {!hasAssetData && liabilities.length === 0 && equity.length === 0 ? (
               <p className="text-center py-12 text-muted-foreground">No balance sheet data. Create accounts and post journal entries.</p>
             ) : (
@@ -579,24 +605,9 @@ export default function Reports() {
                 </tbody>
               </table>
             )}
-            <div className={`mt-4 px-4 py-2 rounded-md text-sm font-medium ${Math.abs(totalAssets - totalLiabEquity) < 0.01 ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
-              {Math.abs(totalAssets - totalLiabEquity) < 0.01 ? "✓ Balance sheet is balanced — Assets = Liabilities + Equity" : `✗ Out of balance by ${fmt(Math.abs(totalAssets - totalLiabEquity))}`}
-            </div>
+          <div className={`mt-4 px-4 py-2 rounded-md text-sm font-medium ${Math.abs(totalAssets - totalLiabEquity) < 0.01 ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
+            {Math.abs(totalAssets - totalLiabEquity) < 0.01 ? "✓ Balance sheet is balanced — Assets = Liabilities + Equity" : `✗ Out of balance by ${fmt(Math.abs(totalAssets - totalLiabEquity))}`}
           </div>
-
-          {pieData.length > 0 && (
-            <div className="stat-card print:hidden">
-              <h3 className="text-sm font-medium text-foreground mb-4">Composition</h3>
-              <ResponsiveContainer width="100%" height={250}>
-                <PieChart>
-                  <Pie data={pieData} cx="50%" cy="50%" outerRadius={80} innerRadius={40} dataKey="value" label={({ name, value }) => `${name}: ${fmt(value)}`}>
-                    {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip formatter={(v: number) => fmt(v)} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          )}
         </div>
       </div>
     );

@@ -283,9 +283,15 @@ export function useUpdateAccount() {
 // navigation. Only the aggregate reporting pages (Ledger, Reports, AccountReport,
 // GeneralLedgerReport, dashboard) still use it, and they need date-bounding or a
 // server-side aggregate RPC. For listing entries use useJournalEntriesPage().
-export function useJournalEntries() {
+// `enabled` exists because this fetch is genuinely expensive: on a 35k-entry
+// tenant it is 35 sequential round trips, and PostgREST's deep .range() offset
+// makes the server rebuild the nested journal_lines for EVERY entry on every
+// page. Callers that only need one report out of many must not pay for it until
+// that report is actually open.
+export function useJournalEntries(enabled = true) {
   return useQuery({
     queryKey: ["journal_entries"],
+    enabled,
     queryFn: async () => {
       // PostgREST caps every response at 1000 rows. A tenant easily has more
       // (a single bank-statement import posts thousands of entries), so a plain
