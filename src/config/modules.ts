@@ -43,6 +43,7 @@ import {
   Fingerprint,
   MapPin,
   LayoutTemplate,
+  HardDrive,
 } from "lucide-react";
 import type { ModuleConfig } from "@/components/layout/ModuleLayout";
 
@@ -65,6 +66,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "Audit Logs", path: "/admin/audit-logs", icon: Shield },
       { label: "Error Logs", path: "/admin/error-logs", icon: AlertTriangle },
       { label: "Subscriptions", path: "/admin/subscriptions", icon: CreditCard },
+      { label: "Storage", path: "/admin/storage", icon: HardDrive },
     ],
   },
 

@@ -1,7 +1,9 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { type User, type Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { clearAllFintheraDrafts } from "@/hooks/useDraftPersistence";
+import { useIdleLogout } from "@/hooks/useIdleLogout";
+import { setSignOutReason } from "@/lib/browserSession";
 
 interface AppUser {
   id: string;
@@ -164,6 +166,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
     setAppUser(null);
   };
+
+  // Unattended machine: end the session rather than leave the ledgers open.
+  const handleIdle = useCallback(() => {
+    setSignOutReason("idle");
+    void signOut();
+  }, []);
+  useIdleLogout(!!session, handleIdle);
 
   const isSuperAdmin = appUser?.role_name === "Super Admin";
   const isPrimaryAdmin = appUser?.role_name === "Primary Admin" || appUser?.is_primary === true;

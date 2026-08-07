@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, Link, Navigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { BookOpen, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { takeSignOutReason } from "@/lib/browserSession";
+import { IDLE_TIMEOUT_MS } from "@/hooks/useIdleLogout";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -14,6 +16,14 @@ export default function Login() {
   const [resetting, setResetting] = useState(false);
   const { signIn, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+
+  // Explain the redirect when the session was ended for us rather than by the
+  // user clicking sign out.
+  useEffect(() => {
+    if (takeSignOutReason() === "idle") {
+      toast.info(`You were signed out after ${Math.round(IDLE_TIMEOUT_MS / 60000)} minutes of inactivity.`);
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

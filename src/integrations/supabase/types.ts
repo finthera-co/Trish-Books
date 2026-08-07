@@ -13329,6 +13329,38 @@ export type Database = {
           },
         ]
       }
+      tenant_storage_usage: {
+        Row: {
+          bucket_breakdown: Json
+          last_reconciled_at: string | null
+          tenant_id: string
+          total_bytes: number
+          updated_at: string
+        }
+        Insert: {
+          bucket_breakdown?: Json
+          last_reconciled_at?: string | null
+          tenant_id: string
+          total_bytes?: number
+          updated_at?: string
+        }
+        Update: {
+          bucket_breakdown?: Json
+          last_reconciled_at?: string | null
+          tenant_id?: string
+          total_bytes?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_storage_usage_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenant_tax_profiles: {
         Row: {
           created_at: string

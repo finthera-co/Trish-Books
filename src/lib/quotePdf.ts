@@ -204,12 +204,17 @@ export async function buildQuotePdf(
 
   useFont(status.label, "bold");
   doc.setFontSize(7.5);
-  const chipW = doc.getTextWidth(status.label) + 7;
+  // getTextWidth ignores charSpace, so the tracking has to be added by hand —
+  // without it a long label ("CONVERTED") prints past its own border. Centring
+  // is measured on the untracked width, hence the half-tracking nudge left.
+  const track = 0.3;
+  const trackW = status.label.length * track;
+  const chipW = doc.getTextWidth(status.label) + trackW + 7;
   const chipY = hy + 16.5;
   setDraw(doc, status.color); doc.setLineWidth(0.4);
   doc.roundedRect(right - chipW, chipY, chipW, 6, 1.2, 1.2, "S");
   setText(doc, status.color);
-  doc.text(status.label, right - chipW / 2, chipY + 4.1, { align: "center", charSpace: 0.3 });
+  doc.text(status.label, right - chipW / 2 - trackW / 2, chipY + 4.1, { align: "center", charSpace: track });
 
   const headerBottom = Math.max(cy - 2, logoBottom, chipY + 6);
   setDraw(doc, RULE); doc.setLineWidth(0.3);

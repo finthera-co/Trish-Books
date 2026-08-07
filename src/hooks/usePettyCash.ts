@@ -313,10 +313,12 @@ export function useReverseVoucher() {
 
 // ─── Receipt Upload ───
 export function useUploadReceipt() {
+  const { appUser } = useAuth();
   return useMutation({
     mutationFn: async ({ file, voucherId }: { file: File; voucherId?: string }) => {
+      if (!appUser?.tenant_id) throw new Error("No tenant context");
       const ext = file.name.split(".").pop();
-      const path = `${voucherId || "draft"}/${Date.now()}.${ext}`;
+      const path = `${appUser.tenant_id}/${voucherId || "draft"}/${Date.now()}.${ext}`;
       const { error } = await supabase.storage
         .from("petty-cash-receipts")
         .upload(path, file);

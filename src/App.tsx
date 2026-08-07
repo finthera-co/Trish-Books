@@ -95,6 +95,7 @@ import PostingProfiles from "./pages/PostingProfiles";
 import UsersPage from "./pages/UsersPage";
 import Tenants from "./pages/Tenants";
 import Subscriptions from "./pages/Subscriptions";
+import StorageMonitoring from "./pages/StorageMonitoring";
 import AuditLogs from "./pages/AuditLogs";
 import ResetPassword from "./pages/ResetPassword";
 import AnomalyDashboard from "./pages/AnomalyDashboard";
@@ -185,6 +186,7 @@ const App = () => (
                     <Route path="/admin/audit-logs" element={<AuditLogs />} />
                     <Route path="/admin/error-logs" element={<ErrorLogs />} />
                     <Route path="/admin/subscriptions" element={<Subscriptions />} />
+                    <Route path="/admin/storage" element={<StorageMonitoring />} />
                   </Route>
                 </Route>
 

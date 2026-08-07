@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bell, Check, CheckCheck, AlertTriangle, Info, DollarSign, FileCheck } from "lucide-react";
+import { Bell, Check, CheckCheck, AlertTriangle, Info, DollarSign, FileCheck, HardDrive } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -25,6 +25,7 @@ const typeIcons: Record<string, typeof Bell> = {
   financial: DollarSign,
   approval: FileCheck,
   warning: AlertTriangle,
+  storage: HardDrive,
 };
 
 const typeColors: Record<string, string> = {
@@ -32,6 +33,7 @@ const typeColors: Record<string, string> = {
   financial: "bg-primary/10 text-primary",
   approval: "bg-accent text-accent-foreground",
   warning: "bg-destructive/10 text-destructive",
+  storage: "bg-destructive/10 text-destructive",
 };
 
 export default function NotificationBell({ seeAllLink }: { seeAllLink?: string } = {}) {

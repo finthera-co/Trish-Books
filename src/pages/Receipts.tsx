@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useInvoices, useCustomers, usePaymentsReceived } from "@/hooks/useData";
-import ReceiptDocument, { type ReceiptModel } from "@/components/receipts/ReceiptDocument";
+import ReceiptDocument, { balanceAfterReceipt, type ReceiptModel } from "@/components/receipts/ReceiptDocument";
 import { downloadReceiptPdf, printReceiptPdf } from "@/lib/receiptPdf";
 
 const today = () => new Date().toISOString().split("T")[0];
@@ -38,10 +38,15 @@ export default function Receipts() {
     amount: 0,
     paymentMethod: "",
     reference: "",
+    invoiceTotal: null,
     balanceDue: null,
     notes: "",
     currency: "LKR",
   });
+  // What the invoice had already settled BEFORE this receipt (earlier payments
+  // and credit notes). Held outside the document model — it isn't printed, it
+  // only lets the balance track the amount as the user edits it.
+  const [settledBefore, setSettledBefore] = useState(0);
 
   const { data: company } = useQuery({
     queryKey: ["company_hdr", appUser?.tenant_id],
@@ -61,23 +66,39 @@ export default function Receipts() {
   // Auto-fill the receipt from the chosen invoice + its latest payment.
   useEffect(() => {
     if (!selectedInvoice) return;
-    const cust = (customers || []).find((c: any) => c.id === (selectedInvoice as any).customer_id) as any;
+    const inv = selectedInvoice as any;
+    const cust = (customers || []).find((c: any) => c.id === inv.customer_id) as any;
     const latest = (payments || [])[0] as any; // ordered newest first
+    const invoiceTotal = Number(inv.total_amount) || 0;
+    // balance_due already nets off every recorded payment and credit note.
+    const outstanding = Number(inv.balance_due) || 0;
+    // Receipting a payment that is already recorded? Then it sits inside the
+    // settled figure and must come back out, or it would be counted twice.
+    const amount = latest ? Number(latest.amount) : outstanding;
+    setSettledBefore(Math.max(0, invoiceTotal - outstanding - (latest ? amount : 0)));
     setForm((f) => ({
       ...f,
-      receivedFrom: (selectedInvoice as any).customers?.name || cust?.name || "",
+      receivedFrom: inv.customers?.name || cust?.name || "",
       customerAddress: cust?.address || "",
-      invoiceNumber: (selectedInvoice as any).invoice_number || "",
-      amount: latest ? Number(latest.amount) : Number((selectedInvoice as any).balance_due) || 0,
+      invoiceNumber: inv.invoice_number || "",
+      amount,
       paymentMethod: latest?.payment_method || "",
       reference: latest?.reference || "",
       receiptDate: latest?.payment_date ? String(latest.payment_date).slice(0, 10) : today(),
-      balanceDue: Number((selectedInvoice as any).balance_due) || 0,
-      currency: (selectedInvoice as any).currency || "LKR",
+      invoiceTotal,
+      currency: inv.currency || "LKR",
     }));
   }, [selectedInvoice, payments, customers]);
 
   const set = (patch: Partial<ReceiptModel>) => setForm((f) => ({ ...f, ...patch }));
+
+  // The document that gets previewed, printed and downloaded. The balance is
+  // always derived — invoice total less everything settled including this
+  // receipt — so editing the amount can never leave the two contradicting.
+  const receipt: ReceiptModel = useMemo(() => ({
+    ...form,
+    balanceDue: balanceAfterReceipt(form.invoiceTotal, settledBefore, form.amount),
+  }), [form, settledBefore]);
 
   return (
     <div className="space-y-6">
@@ -117,7 +138,14 @@ export default function Receipts() {
                   value={form.reference || ""}
                   onValueChange={(v) => {
                     const p = (payments || []).find((x: any) => (x.reference || x.id) === v) as any;
-                    if (p) set({ amount: Number(p.amount), paymentMethod: p.payment_method, reference: p.reference || "", receiptDate: String(p.payment_date).slice(0, 10) });
+                    if (!p) return;
+                    // Switching to a different recorded payment moves which one
+                    // this receipt is for — everything else stays "settled before".
+                    const inv = selectedInvoice as any;
+                    const total = Number(inv?.total_amount) || 0;
+                    const outstanding = Number(inv?.balance_due) || 0;
+                    setSettledBefore(Math.max(0, total - outstanding - Number(p.amount)));
+                    set({ amount: Number(p.amount), paymentMethod: p.payment_method, reference: p.reference || "", receiptDate: String(p.payment_date).slice(0, 10) });
                   }}
                 >
                   <SelectTrigger><SelectValue placeholder="Choose which payment" /></SelectTrigger>
@@ -172,15 +200,15 @@ export default function Receipts() {
         {/* Live preview */}
         <div className="space-y-3">
           <div className="flex justify-end gap-2 print:hidden">
-            <Button variant="outline" onClick={async () => { try { await printReceiptPdf(form, company); } catch (e: any) { toast.error(e?.message || "Print failed"); } }}>
+            <Button variant="outline" onClick={async () => { try { await printReceiptPdf(receipt, company); } catch (e: any) { toast.error(e?.message || "Print failed"); } }}>
               <Printer className="w-4 h-4 mr-1.5" /> Print
             </Button>
-            <Button onClick={async () => { try { await downloadReceiptPdf(form, company); toast.success("Receipt downloaded"); } catch (e: any) { toast.error(e?.message || "Download failed"); } }}>
+            <Button onClick={async () => { try { await downloadReceiptPdf(receipt, company); toast.success("Receipt downloaded"); } catch (e: any) { toast.error(e?.message || "Download failed"); } }}>
               <Download className="w-4 h-4 mr-1.5" /> Download PDF
             </Button>
           </div>
           <div className="rounded border border-border overflow-hidden">
-            <ReceiptDocument model={form} company={company} />
+            <ReceiptDocument model={receipt} company={company} />
           </div>
         </div>
       </div>

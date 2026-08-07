@@ -7,6 +7,7 @@ import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { Upload, Loader2, X, AlertTriangle } from "lucide-react";
 import { MfaCard } from "@/components/security/MfaCard";
+import { StorageUsageCard } from "@/components/settings/StorageUsageCard";
 import { useCompanyProfile, useUpdateCompanyProfile } from "@/hooks/useCompanyProfile";
 
 export default function SettingsPage() {
@@ -509,6 +510,7 @@ export default function SettingsPage() {
         </div>
 
         <MfaCard />
+        <StorageUsageCard />
       </div>
     </div>
   );

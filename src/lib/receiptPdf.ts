@@ -8,7 +8,7 @@ import {
   NAVY, INK, MUTED, MUTED2, RULE, ALT_ROW, WHITE, GREEN,
   type RGB, setText, setDraw, setFill, num, prettyDate,
 } from "@/lib/pdfTheme";
-import type { ReceiptModel } from "@/components/receipts/ReceiptDocument";
+import { methodLabel, receiptStatusLabel, type ReceiptModel } from "@/components/receipts/ReceiptDocument";
 
 /**
  * Payment receipt in the shared "Steel Statement" language — the same palette,
@@ -21,19 +21,15 @@ import type { ReceiptModel } from "@/components/receipts/ReceiptDocument";
  * rather than repeating the same figure three times.
  */
 
-export const methodLabel = (m?: string | null) =>
-  m ? m.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "—";
-
 /**
- * Settlement state of the invoice this receipt is against. `balanceDue` is
- * null when the receipt isn't tied to an invoice — there is nothing to settle,
- * so no chip is drawn.
+ * Status chip colour for the label the on-screen receipt already derives.
+ * `balanceDue` is null when the receipt isn't tied to an invoice — there is
+ * nothing to settle, so no chip is drawn.
  */
-export function receiptStatus(balanceDue?: number | null): { label: string; color: RGB } | null {
-  if (balanceDue == null) return null;
-  return balanceDue <= 0.005
-    ? { label: "PAID IN FULL", color: GREEN }
-    : { label: "PART PAYMENT", color: NAVY };
+function receiptStatus(balanceDue?: number | null): { label: string; color: RGB } | null {
+  const label = receiptStatusLabel(balanceDue);
+  if (!label) return null;
+  return { label, color: label === "PAID IN FULL" ? GREEN : NAVY };
 }
 
 /** Render a payment receipt to a jsPDF document (no save). */
@@ -125,12 +121,18 @@ export async function buildReceiptPdf(
   if (status) {
     useFont(status.label, "bold");
     doc.setFontSize(7.5);
-    const chipW = doc.getTextWidth(status.label) + 7;
+    // getTextWidth ignores charSpace, so the tracking has to be added by hand —
+    // without it a long label ("PART PAYMENT") prints past its own border.
+    const track = 0.3;
+    const trackW = status.label.length * track;
+    const chipW = doc.getTextWidth(status.label) + trackW + 7;
     const chipY = hy + 16.5;
     setDraw(doc, status.color); doc.setLineWidth(0.4);
     doc.roundedRect(right - chipW, chipY, chipW, 6, 1.2, 1.2, "S");
     setText(doc, status.color);
-    doc.text(status.label, right - chipW / 2, chipY + 4.1, { align: "center", charSpace: 0.3 });
+    // Centring is measured on the untracked width, so nudge left by half the
+    // tracking to keep the label optically centred in the chip.
+    doc.text(status.label, right - chipW / 2 - trackW / 2, chipY + 4.1, { align: "center", charSpace: track });
     chipBottom = chipY + 6;
   }
 
@@ -250,14 +252,17 @@ export async function buildReceiptPdf(
   });
 
   // ── Settlement ladder (right) ────────────────────────────────────────
-  // Only meaningful when the receipt is tied to an invoice. The invoice total
-  // is derived — received + still owing — so the customer can see the whole
-  // position from this one page instead of pulling the invoice back out.
+  // Only meaningful when the receipt is tied to an invoice, so the customer can
+  // see the whole position without pulling the invoice back out. The invoice
+  // total is taken from the invoice itself — never derived as received +
+  // balance, which double-counts whenever the balance already excludes this
+  // payment (the usual case).
   let ty = (doc as any).lastAutoTable.finalY + 9;
   const laddered = model.balanceDue != null;
   if (laddered) {
     const balance = Number(model.balanceDue) || 0;
     const received = Number(model.amount) || 0;
+    const invoiceTotal = model.invoiceTotal == null ? null : Number(model.invoiceTotal) || 0;
     const totalsW = 74;
     const labelX = right - totalsW;
     const totalsTop = ty;
@@ -273,7 +278,14 @@ export async function buildReceiptPdf(
       ty += 6.2;
     };
 
-    totalRow("Invoice Total", fmt(received + balance));
+    if (invoiceTotal != null) {
+      totalRow("Invoice Total", fmt(invoiceTotal));
+      // Anything settled before this receipt (earlier payments, credit notes)
+      // is stated outright — otherwise the ladder wouldn't add up on an invoice
+      // that was already part-paid.
+      const settledEarlier = Math.round((invoiceTotal - received - balance) * 100) / 100;
+      if (settledEarlier > 0.005) totalRow("Previously Settled", `-${fmt(settledEarlier)}`, { color: GREEN });
+    }
     totalRow("Amount Received", `-${fmt(received)}`, { color: GREEN });
     ty += 2;
     setDraw(doc, RULE); doc.setLineWidth(0.3);
