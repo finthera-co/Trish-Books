@@ -166,8 +166,15 @@ export async function fetchGLTransactions(
       const page = (data ?? []) as any[];
       rows.push(...page.map(mapTransactionRow));
       const total = page.length > 0 ? toNum(page[0].total_rows) : 0;
-      offset += TXN_PAGE_LIMIT;
-      if (page.length < TXN_PAGE_LIMIT || offset >= total) break;
+      // Advance by what the server actually returned, not by what was asked
+      // for. PostgREST truncates any response at its max_rows setting — while
+      // that was 1000 and TXN_PAGE_LIMIT was 5000, a short page was read as
+      // "end of data" and this report silently stopped at 1000 rows per batch.
+      // Trusting the server's own total_rows keeps that from recurring if the
+      // setting ever changes again.
+      if (page.length === 0) break;
+      offset += page.length;
+      if (offset >= total) break;
     }
     return rows;
   };

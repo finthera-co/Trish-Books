@@ -2,7 +2,16 @@ import { useState, useMemo, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAccounts, useAccountLedgerLines, useAccountOpeningBalance, useAccountEarliestEntryDate } from "@/hooks/useData";
+import {
+  useAccounts,
+  useAccountLedgerPage,
+  useAccountLedgerTotals,
+  useAccountLedgerFacets,
+  useAccountOpeningBalance,
+  useAccountEarliestEntryDate,
+  fetchAccountLedgerAll,
+  type AccountLedgerPageRow,
+} from "@/hooks/useData";
 import { useFiscalPeriods, usePeriodOpeningBalances } from "@/hooks/useFiscalPeriodBalances";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,8 +32,13 @@ import {
   FileSpreadsheet,
   Search,
   Calendar,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from "lucide-react";
 import { format } from "date-fns";
+import { toast } from "sonner";
 import { formatCurrency } from "@/lib/currency";
 import { isDebitNormal, getNormalBalance, getTypeLabel, getStatementPlacement, isOpeningBalanceEquityAccount, isPeriodBasedAccount, typeColors } from "@/lib/accountTypes";
 import { netAccountBalance } from "@/lib/accountBalances";
@@ -47,6 +61,47 @@ interface TransactionRow {
   lineId: string;
 }
 
+const PAGE_SIZE = 50;
+
+/**
+ * One account_ledger_page row → one grid row.
+ *
+ * The running balance comes from the server's cumulative sums over the whole
+ * date window in ledger order, so it does not depend on which rows this page
+ * happens to hold or on what the search filtered out.
+ */
+function toTransactionRow(
+  line: AccountLedgerPageRow,
+  openingSides: { debit: number; credit: number },
+  toSigned: (sides: { debit: number; credit: number }) => number,
+): TransactionRow {
+  const contraLines = line.contra_lines || [];
+  const contraAccount = contraLines.length === 1 ? contraLines[0] : null;
+  const cheque = (line.cheque || "").trim();
+  // Bank imports store the cheque in reference too; show it only in the
+  // dedicated Cheque column, not duplicated in Reference.
+  const reference = line.reference && line.reference.trim() !== cheque ? line.reference : "";
+
+  return {
+    date: line.entry_date,
+    entryType: line.entry_type || "manual",
+    journalNo: line.entry_id.slice(0, 8).toUpperCase(),
+    journalEntryId: line.entry_id,
+    reference,
+    chequeNo: cheque,
+    name: contraAccount ? (contraAccount.account_name || "") : (contraLines.length > 1 ? "— Split —" : ""),
+    payee: (line.payee || "").trim(),
+    memo: line.description || "",
+    debit: Number(line.debit) || 0,
+    credit: Number(line.credit) || 0,
+    balance: toSigned({
+      debit: openingSides.debit + Number(line.cum_debit ?? 0),
+      credit: openingSides.credit + Number(line.cum_credit ?? 0),
+    }),
+    lineId: line.line_id,
+  };
+}
+
 export default function AccountReport() {
   const { id: accountId } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -65,6 +120,8 @@ export default function AccountReport() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [page, setPage] = useState(0);
+  const [exporting, setExporting] = useState(false);
   const [editEntry, setEditEntry] = useState<{ journalEntryId: string; lineId: string } | null>(null);
 
   // Keystrokes shouldn't immediately re-run the search/type filter.
@@ -73,16 +130,35 @@ export default function AccountReport() {
     return () => clearTimeout(t);
   }, [search]);
 
+  // Any change to what is being listed puts the reader back on page 1 —
+  // otherwise a narrowed filter can leave them stranded past the last page.
+  useEffect(() => {
+    setPage(0);
+  }, [accountId, dateFrom, dateTo, debouncedSearch, typeFilter]);
+
   const account = useMemo(
     () => (accounts || []).find((a: any) => a.id === accountId) as any,
     [accounts, accountId]
   );
   const isOBEAccount = useMemo(() => isOpeningBalanceEquityAccount(account), [account]);
 
-  // Account-scoped ledger data (idx_jl_account_entry-backed RPCs) — replaces
-  // the old tenant-wide useJournalEntries() fetch with just this account's
-  // history, bounded to the active date range.
-  const { data: ledgerLines, isLoading: entriesLoading } = useAccountLedgerLines(accountId, dateFrom, dateTo);
+  // One page of the register at a time. account_ledger_page resolves the
+  // search, the type filter, the running balance and the row count
+  // server-side. The whole-window fetch this replaced rendered every line as a
+  // <tr> — on an imported bank account (30k+ lines) that was a 20MB download,
+  // and before max_rows was raised PostgREST silently cut it off at 1000 rows,
+  // so the register showed a fraction of the account with totals to match.
+  const { data: ledgerPage, isLoading: entriesLoading } = useAccountLedgerPage({
+    accountId,
+    dateFrom,
+    dateTo,
+    search: debouncedSearch,
+    entryType: typeFilter,
+    page,
+    pageSize: PAGE_SIZE,
+  });
+  const { data: windowTotals } = useAccountLedgerTotals(accountId, dateFrom, dateTo);
+  const { data: facets } = useAccountLedgerFacets(accountId, dateFrom, dateTo);
   const { data: openingBalanceData } = useAccountOpeningBalance(accountId, dateFrom);
   const { data: earliestEntryDate } = useAccountEarliestEntryDate(accountId);
 
@@ -126,24 +202,27 @@ export default function AccountReport() {
     return (accounts as any[]).find((a) => a.id === account.parent_account_id);
   }, [account, accounts]);
 
-  // Build transaction rows.
   // REPORTING LAYER RULE:
   //   - Balance Sheet accounts (Asset/Liability/Equity) → cumulative view with
   //     opening balance carried forward and a true running balance.
   //   - P&L accounts (Income/Expense/COGS) → period-only view; opening balance
   //     is suppressed and the running balance starts at 0 within the window.
   //   The underlying journal_lines are NEVER modified — this is presentation only.
-  const { allRows, openingBalance, totalDebit, totalCredit, closingBalance, isPeriodBased } = useMemo(() => {
-    if (!account || !ledgerLines) return { allRows: [] as TransactionRow[], openingBalance: 0, totalDebit: 0, totalCredit: 0, closingBalance: 0, isPeriodBased: false };
+  const isPeriodBased = account ? isPeriodBasedAccount(account.account_type) : false;
+
+  const { toSigned, openingSides, openingBalance } = useMemo(() => {
+    const zero = { debit: 0, credit: 0 };
+    if (!account) {
+      return { toSigned: () => 0, openingSides: zero, openingBalance: 0 };
+    }
 
     const debitNormal = isDebitNormal(account.account_type);
-    const periodBased = isPeriodBasedAccount(account.account_type);
 
     // Express a {debit, credit} pair as a signed balance in the account's normal
     // direction (positive = normal side) using the shared calculator. AccountReport
     // shows the raw account-type direction, so isContra is false here — behaviour
     // is identical to the previous inline `debitNormal ? d - c : c - d`.
-    const toSigned = (sides: { debit: number; credit: number }) => {
+    const signed = (sides: { debit: number; credit: number }) => {
       const calc = netAccountBalance({
         accountType: account.account_type,
         isContra: false,
@@ -156,108 +235,35 @@ export default function AccountReport() {
     // For Balance Sheet accounts only: sum of all journal lines BEFORE dateFrom,
     // computed server-side by account_opening_balance. For P&L accounts: opening
     // balance is conceptually zero (period-based).
-    const openingSides = periodBased
-      ? { debit: 0, credit: 0 }
+    const sides = isPeriodBasedAccount(account.account_type)
+      ? zero
       : { debit: openingBalanceData?.debit ?? 0, credit: openingBalanceData?.credit ?? 0 };
 
-    const opening = toSigned(openingSides);
+    return { toSigned: signed, openingSides: sides, openingBalance: signed(sides) };
+  }, [account, openingBalanceData]);
 
-    // ledgerLines is already this account's posted, non-voided lines within
-    // [dateFrom, dateTo] — account_ledger_lines did the entry/line filtering.
-    const txRows: TransactionRow[] = ledgerLines
-      .map((line) => {
-        const contraLines = line.contra_lines || [];
-        const contraAccount = contraLines.length === 1 ? contraLines[0] : null;
-        const cheque = (line.cheque || "").trim();
-        // Bank imports store the cheque in reference too; show it only in the
-        // dedicated Cheque column, not duplicated in Reference.
-        const reference = line.reference && line.reference.trim() !== cheque ? line.reference : "";
+  // The page's rows. Filtering, ordering and the cumulative sums behind the
+  // running balance all happened server-side; each row's balance is opening +
+  // its cumulative movement, which is why it stays correct on page 600.
+  const rows = useMemo<TransactionRow[]>(
+    () => (ledgerPage?.rows ?? []).map((line) => toTransactionRow(line, openingSides, toSigned)),
+    [ledgerPage, openingSides, toSigned]
+  );
 
-        return {
-          date: line.entry_date,
-          entryType: line.entry_type || "manual",
-          journalNo: line.entry_id.slice(0, 8).toUpperCase(),
-          journalEntryId: line.entry_id,
-          reference,
-          chequeNo: cheque,
-          name: contraAccount ? (contraAccount.account_name || "") : (contraLines.length > 1 ? "— Split —" : ""),
-          payee: (line.payee || "").trim(),
-          memo: line.description || "",
-          debit: Number(line.debit) || 0,
-          credit: Number(line.credit) || 0,
-          balance: 0,
-          lineId: line.line_id,
-        };
-      })
-      .sort((a, b) => a.date.localeCompare(b.date) || a.journalNo.localeCompare(b.journalNo));
+  // Totals span the whole date window, not the page and not the search — same
+  // as before, when they were summed from every row the client had loaded.
+  const totalDebit = windowTotals?.totalDebit ?? 0;
+  const totalCredit = windowTotals?.totalCredit ?? 0;
+  const closingBalance = toSigned({
+    debit: openingSides.debit + totalDebit,
+    credit: openingSides.credit + totalCredit,
+  });
 
-    // Running balance starts from opening (0 for period-based accounts).
-    let bal = opening;
-    txRows.forEach((row) => {
-      bal += debitNormal ? row.debit - row.credit : row.credit - row.debit;
-      row.balance = bal;
-    });
+  const matchingRows = ledgerPage?.filteredRows ?? 0;
+  const totalPages = Math.max(1, Math.ceil(matchingRows / PAGE_SIZE));
+  const firstRowIndex = page * PAGE_SIZE;
 
-    const tDebit = txRows.reduce((s, r) => s + r.debit, 0);
-    const tCredit = txRows.reduce((s, r) => s + r.credit, 0);
-
-    // Closing balance = opening + window movements, through the shared calculator.
-    // Equals the final running-balance `bal`; sourced from the helper so the three
-    // screens share one balance authority.
-    const closingBalance = toSigned({
-      debit: openingSides.debit + tDebit,
-      credit: openingSides.credit + tCredit,
-    });
-
-    return {
-      allRows: txRows,
-      openingBalance: opening,
-      totalDebit: tDebit,
-      totalCredit: tCredit,
-      closingBalance,
-      isPeriodBased: periodBased,
-    };
-  }, [account, ledgerLines, openingBalanceData]);
-
-  // Search + type filter, split out of the row-building memo above so a
-  // keystroke only re-filters the already-built rows instead of rebuilding,
-  // sorting and re-balancing the whole account window.
-  const rows = useMemo(() => {
-    let filtered = allRows;
-    if (debouncedSearch) {
-      const s = debouncedSearch.toLowerCase();
-      // Amount search: strip commas/currency so "3,080" / "3080" / "3080.00"
-      // all match a debit or credit of 3080.
-      const amt = s.replace(/[,\s₨$]|lkr|rs\.?/g, "");
-      filtered = filtered.filter((r) => {
-        const inAmount = /\d/.test(amt) && (
-          r.debit.toFixed(2).includes(amt) || String(r.debit).includes(amt) ||
-          r.credit.toFixed(2).includes(amt) || String(r.credit).includes(amt)
-        );
-        return (
-          r.memo.toLowerCase().includes(s) ||
-          r.reference.toLowerCase().includes(s) ||
-          r.name.toLowerCase().includes(s) ||
-          r.journalNo.toLowerCase().includes(s) ||
-          (r.chequeNo || "").toLowerCase().includes(s) ||
-          inAmount
-        );
-      });
-    }
-    if (typeFilter !== "all") {
-      filtered = filtered.filter((r) => r.entryType === typeFilter);
-    }
-    return filtered;
-  }, [allRows, debouncedSearch, typeFilter]);
-
-  const entryTypes = useMemo(() => {
-    if (!ledgerLines) return [];
-    const types = new Set<string>();
-    ledgerLines.forEach((line) => {
-      if (line.entry_type) types.add(line.entry_type);
-    });
-    return Array.from(types);
-  }, [ledgerLines]);
+  const entryTypes = facets?.entryTypes ?? [];
 
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
@@ -266,85 +272,115 @@ export default function AccountReport() {
     queryClient.invalidateQueries({ queryKey: ["opening_balances"] });
   };
 
-  const handleExportCSV = () => {
-    if (!account) return;
-    const header = ["Date", "Type", "Journal No", "Reference", "Cheque No", "Name", "Payee", "Memo", "Debit", "Credit", "Balance"];
-    const csvRows = rows.map((r) => [
-      r.date,
-      r.entryType,
-      r.journalNo,
-      r.reference,
-      r.name,
-      `"${(r.payee || "").replace(/"/g, '""')}"`,
-      `"${r.memo.replace(/"/g, '""')}"`,
-      r.debit > 0 ? r.debit.toFixed(2) : "",
-      r.credit > 0 ? r.credit.toFixed(2) : "",
-      r.balance.toFixed(2),
-    ]);
-    const csv = [header, ...csvRows].map((r) => r.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${account.account_code}-${account.account_name}-report.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  // The grid holds one page; an export is expected to hold everything that
+  // matches the current filters, so it fetches the full set on demand.
+  const fetchExportRows = async (): Promise<TransactionRow[]> => {
+    const lines = await fetchAccountLedgerAll({
+      accountId,
+      dateFrom,
+      dateTo,
+      search: debouncedSearch,
+      entryType: typeFilter,
+    });
+    return lines.map((line) => toTransactionRow(line, openingSides, toSigned));
   };
 
-  const handleExportExcel = () => {
+  const handleExportCSV = async () => {
+    if (!account) return;
+    setExporting(true);
+    try {
+      const exportRows = await fetchExportRows();
+      const header = ["Date", "Type", "Journal No", "Reference", "Cheque No", "Name", "Payee", "Memo", "Debit", "Credit", "Balance"];
+      const csvRows = exportRows.map((r) => [
+        r.date,
+        r.entryType,
+        r.journalNo,
+        r.reference,
+        r.chequeNo,
+        r.name,
+        `"${(r.payee || "").replace(/"/g, '""')}"`,
+        `"${r.memo.replace(/"/g, '""')}"`,
+        r.debit > 0 ? r.debit.toFixed(2) : "",
+        r.credit > 0 ? r.credit.toFixed(2) : "",
+        r.balance.toFixed(2),
+      ]);
+      const csv = [header, ...csvRows].map((r) => r.join(",")).join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${account.account_code}-${account.account_name}-report.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportExcel = async () => {
     if (!account) return;
     type ExportRow = {
       date: string; entryType: string; journalNo: string; reference: string;
       name: string; payee: string; chequeNo: string; memo: string;
       debit: number | null; credit: number | null; balance: number;
     };
-    const exportRows: ExportRow[] = [
-      // Balance Sheet accounts carry an opening balance into the window.
-      ...(!isPeriodBased && openingBalance !== 0
-        ? [{
-            date: dateFrom, entryType: "Opening Balance", journalNo: "", reference: "",
-            name: "", payee: "", chequeNo: "", memo: "", debit: null, credit: null, balance: openingBalance,
-          }]
-        : []),
-      ...rows.map((r) => ({
-        date: r.date,
-        entryType: r.entryType,
-        journalNo: r.journalNo,
-        reference: r.reference,
-        chequeNo: r.chequeNo,
-        name: r.name,
-        payee: r.payee,
-        memo: r.memo,
-        debit: r.debit > 0 ? r.debit : null,
-        credit: r.credit > 0 ? r.credit : null,
-        balance: r.balance,
-      })),
-    ];
+    setExporting(true);
+    try {
+      const allRows = await fetchExportRows();
+      const exportRows: ExportRow[] = [
+        // Balance Sheet accounts carry an opening balance into the window.
+        ...(!isPeriodBased && openingBalance !== 0
+          ? [{
+              date: dateFrom, entryType: "Opening Balance", journalNo: "", reference: "",
+              name: "", payee: "", chequeNo: "", memo: "", debit: null, credit: null, balance: openingBalance,
+            }]
+          : []),
+        ...allRows.map((r) => ({
+          date: r.date,
+          entryType: r.entryType,
+          journalNo: r.journalNo,
+          reference: r.reference,
+          chequeNo: r.chequeNo,
+          name: r.name,
+          payee: r.payee,
+          memo: r.memo,
+          debit: r.debit > 0 ? r.debit : null,
+          credit: r.credit > 0 ? r.credit : null,
+          balance: r.balance,
+        })),
+      ];
 
-    downloadDataExcel<ExportRow>(
-      {
-        title: `Account Report — ${account.account_code} ${account.account_name}`,
-        subtitle: getTypeLabel(account.account_type),
-        dateLine: `${dateFrom} → ${dateTo}`,
-        sheetName: `${account.account_code} Report`,
-        fileName: `${account.account_code} ${account.account_name} Report.xlsx`,
-      },
-      [
-        { header: "Date", value: (r) => r.date },
-        { header: "Type", value: (r) => r.entryType },
-        { header: "Journal No", value: (r) => r.journalNo },
-        { header: "Reference", value: (r) => r.reference },
-        { header: "Cheque No", value: (r) => r.chequeNo },
-        { header: "Name", value: (r) => r.name },
-        { header: "Payee", value: (r) => r.payee },
-        { header: "Memo", value: (r) => r.memo },
-        { header: "Debit", numeric: true, value: (r) => r.debit },
-        { header: "Credit", numeric: true, value: (r) => r.credit },
-        { header: "Balance", numeric: true, value: (r) => r.balance },
-      ],
-      exportRows,
-      ["", "TOTALS", "", "", "", "", totalDebit, totalCredit, closingBalance],
-    );
+      downloadDataExcel<ExportRow>(
+        {
+          title: `Account Report — ${account.account_code} ${account.account_name}`,
+          subtitle: getTypeLabel(account.account_type),
+          dateLine: `${dateFrom} → ${dateTo}`,
+          sheetName: `${account.account_code} Report`,
+          fileName: `${account.account_code} ${account.account_name} Report.xlsx`,
+        },
+        [
+          { header: "Date", value: (r) => r.date },
+          { header: "Type", value: (r) => r.entryType },
+          { header: "Journal No", value: (r) => r.journalNo },
+          { header: "Reference", value: (r) => r.reference },
+          { header: "Cheque No", value: (r) => r.chequeNo },
+          { header: "Name", value: (r) => r.name },
+          { header: "Payee", value: (r) => r.payee },
+          { header: "Memo", value: (r) => r.memo },
+          { header: "Debit", numeric: true, value: (r) => r.debit },
+          { header: "Credit", numeric: true, value: (r) => r.credit },
+          { header: "Balance", numeric: true, value: (r) => r.balance },
+        ],
+        exportRows,
+        ["", "TOTALS", "", "", "", "", totalDebit, totalCredit, closingBalance],
+      );
+    } catch (e) {
+      toast.error(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setExporting(false);
+    }
   };
 
   if (!account) {
@@ -369,11 +405,11 @@ export default function AccountReport() {
           <Button variant="outline" size="sm" onClick={handleRefresh}>
             <RefreshCw className="w-4 h-4 mr-1" /> Refresh
           </Button>
-          <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={rows.length === 0}>
-            <Download className="w-4 h-4 mr-1" /> Export CSV
+          <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={matchingRows === 0 || exporting}>
+            <Download className="w-4 h-4 mr-1" /> {exporting ? "Exporting…" : "Export CSV"}
           </Button>
-          <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={rows.length === 0}>
-            <FileSpreadsheet className="w-4 h-4 mr-1" /> Export Excel
+          <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={matchingRows === 0 || exporting}>
+            <FileSpreadsheet className="w-4 h-4 mr-1" /> {exporting ? "Exporting…" : "Export Excel"}
           </Button>
           <Button variant="outline" size="sm" onClick={() => window.print()}>
             <Printer className="w-4 h-4 mr-1" /> Print
@@ -562,8 +598,10 @@ export default function AccountReport() {
                 </tr>
               </thead>
               <tbody>
-                {/* Opening balance row — only for cumulative (Balance Sheet) accounts */}
-                {!isPeriodBased && openingBalance !== 0 && (
+                {/* Opening balance row — only for cumulative (Balance Sheet)
+                    accounts, and only on the first page, where the window
+                    actually starts. */}
+                {!isPeriodBased && openingBalance !== 0 && page === 0 && (
                   <tr className="bg-muted/10 border-b">
                     <td className="px-4 py-2 text-right text-muted-foreground/50 text-xs tabular-nums">—</td>
                     <td className="px-4 py-2 text-muted-foreground">{dateFrom}</td>
@@ -595,7 +633,7 @@ export default function AccountReport() {
                       className="border-b border-border/50 hover:bg-muted/20 cursor-pointer transition-colors"
                       onClick={() => setEditEntry({ journalEntryId: row.journalEntryId, lineId: row.lineId })}
                     >
-                      <td className="px-4 py-2 text-right text-muted-foreground text-xs tabular-nums">{i + 1}</td>
+                      <td className="px-4 py-2 text-right text-muted-foreground text-xs tabular-nums">{firstRowIndex + i + 1}</td>
                       <td className="px-4 py-2 text-muted-foreground tabular-nums">{row.date}</td>
                       <td className="px-4 py-2">
                         <span className="text-[10px] bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded capitalize">
@@ -642,6 +680,34 @@ export default function AccountReport() {
               )}
             </table>
           </div>
+
+          {/* Pagination — the register is paged server-side, so this walks
+              account_ledger_page rather than a fully loaded array. */}
+          {matchingRows > 0 && (
+            <div className="flex items-center justify-between flex-wrap gap-2 border-t px-4 py-3 print:hidden">
+              <p className="text-xs text-muted-foreground">
+                Showing {firstRowIndex + 1}–{Math.min(firstRowIndex + rows.length, matchingRows)} of{" "}
+                {matchingRows.toLocaleString()} transactions
+              </p>
+              <div className="flex items-center gap-1">
+                <Button variant="ghost" size="sm" disabled={page === 0} onClick={() => setPage(0)}>
+                  <ChevronsLeft className="w-4 h-4" />
+                </Button>
+                <Button variant="ghost" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <span className="text-xs text-muted-foreground px-2">
+                  Page {page + 1} of {totalPages.toLocaleString()}
+                </span>
+                <Button variant="ghost" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+                <Button variant="ghost" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage(totalPages - 1)}>
+                  <ChevronsRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

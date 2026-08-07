@@ -1,7 +1,15 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAccounts, useAccountLedgerLines, useAccountOpeningBalance } from "@/hooks/useData";
+import {
+  useAccounts,
+  useAccountLedgerPage,
+  useAccountLedgerTotals,
+  useAccountLedgerFacets,
+  useAccountOpeningBalance,
+  fetchAccountLedgerAll,
+  type AccountLedgerPageRow,
+} from "@/hooks/useData";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -12,6 +20,7 @@ import {
 } from "lucide-react";
 import { downloadDataExcel } from "@/lib/reportExcel";
 import { format } from "date-fns";
+import { toast } from "sonner";
 import { isDebitNormal as checkDebitNormal, isPeriodBasedAccount, getTypeLabel, ACCOUNT_TYPES, typeColors } from "@/lib/accountTypes";
 import { formatCurrency } from "@/lib/currency";
 import GeneralLedgerReport from "@/components/ledger/GeneralLedgerReport";
@@ -58,22 +67,11 @@ const fmtAmt = (n: number) => {
 
 const fmtBal = (n: number) => formatCurrency(n);
 
-/** Detect transaction type from reference prefix or description keywords */
-function detectTransactionType(ref: string, desc: string): string {
-  const r = (ref || "").toUpperCase();
-  const d = (desc || "").toLowerCase();
-  if (r.startsWith("INV") || d.includes("invoice")) return "Invoice";
-  if (r.startsWith("PMT") || d.includes("payment received") || d.includes("receipt")) return "Payment";
-  if (r.startsWith("PV-") || d.includes("payment voucher") || d.includes("bill payment")) return "Bill Payment";
-  if (r.startsWith("EXP") || d.includes("expense")) return "Expense";
-  if (r.startsWith("PAY") || d.includes("payroll")) return "Payroll";
-  if (r.startsWith("ADJ") || d.includes("adjustment")) return "Adjustment";
-  if (r.startsWith("REV") || d.includes("reversal")) return "Reversal";
-  if (d.includes("opening balance")) return "Opening Balance";
-  if (d.includes("depreciation")) return "Depreciation";
-  if (d.includes("bank") || d.includes("transfer")) return "Transfer";
-  return "Journal Entry";
-}
+// The transaction type is no longer derived here. It comes from the register
+// RPC's txn_type (public.ledger_txn_type, ported verbatim from the function
+// that used to live at this spot), because the type filter now runs in SQL
+// across the whole account — a client-side copy could disagree with what the
+// server filtered on, and the register would drop rows for no visible reason.
 
 /** Badge color for transaction types */
 const txnTypeBadge: Record<string, string> = {
@@ -138,6 +136,7 @@ export default function Ledger() {
   const [sortField, setSortField] = useState<SortField>("date");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [page, setPage] = useState(0);
+  const [exporting, setExporting] = useState(false);
   const [drillDownEntry, setDrillDownEntry] = useState<RegisterRow | null>(null);
 
   // Keystrokes shouldn't immediately re-run filter→sort→balance over the
@@ -164,10 +163,25 @@ export default function Ledger() {
   const effectiveDateFrom = selectedPeriod ? selectedPeriod.period_start : dateFrom;
   const effectiveDateTo = selectedPeriod ? selectedPeriod.period_end : dateTo;
 
-  // Account-scoped ledger data (idx_jl_account_entry-backed RPCs) — replaces
-  // the old tenant-wide useJournalEntries() fetch with just this account's
-  // history, bounded to the active date range.
-  const { data: ledgerLines, isLoading: ledgerLoading } = useAccountLedgerLines(
+  // One page of the register at a time. Search, the type filter, the sort, the
+  // running balance and the row count are all resolved server-side by
+  // account_ledger_page — a bank account here can hold 30k+ lines, which is
+  // neither a sensible download nor a sensible number of <tr>s.
+  const { data: ledgerPage, isLoading: ledgerLoading } = useAccountLedgerPage({
+    accountId: selectedAccount?.id,
+    dateFrom: effectiveDateFrom || undefined,
+    dateTo: effectiveDateTo || undefined,
+    search: debouncedSearchTerm,
+    txnType: typeFilter,
+    sort: sortField === "refNumber" ? "reference" : sortField,
+    sortDir,
+    page,
+    pageSize: PAGE_SIZE,
+  });
+  const { data: windowTotals } = useAccountLedgerTotals(
+    selectedAccount?.id, effectiveDateFrom || undefined, effectiveDateTo || undefined
+  );
+  const { data: facets } = useAccountLedgerFacets(
     selectedAccount?.id, effectiveDateFrom || undefined, effectiveDateTo || undefined
   );
   const todayISO = new Date().toISOString().slice(0, 10);
@@ -213,13 +227,15 @@ export default function Ledger() {
     return { transaction_id: entryId, transaction_type: "journal_entry" };
   }, [voucherLookup, payrollLookup]);
 
-  // Build register rows from account-scoped ledger lines. Date/status/account
-  // filtering already happened server-side in account_ledger_lines — this
-  // just reshapes each line into a RegisterRow.
-  const allRows = useMemo<RegisterRow[]>(() => {
-    if (!ledgerLines || !selectedAccount) return [];
+  // Reshape one page of account_ledger_page rows into RegisterRows. Date,
+  // status, account, search, type filtering and ordering all happened
+  // server-side; the running balance comes from the server's cumulative sums
+  // over the whole window in ledger order, so it is a real balance on every
+  // page rather than a re-count of whatever this page holds.
+  const buildRows = useCallback((lines: AccountLedgerPageRow[]): RegisterRow[] => {
+    if (!selectedAccount) return [];
 
-    return ledgerLines.map(line => {
+    return lines.map(line => {
       const contraNames = (line.contra_lines || [])
         .map(cl => cl.account_name || "Unknown")
         .filter((v, i, a) => a.indexOf(v) === i);
@@ -239,7 +255,7 @@ export default function Ledger() {
         if (match) { entityName = match[1].trim(); break; }
       }
 
-      const txnType = detectTransactionType(line.reference || "", desc);
+      const txnType = line.txn_type || "Journal Entry";
       const { transaction_id, transaction_type } = resolveSourceTransaction(line.entry_id, txnType);
 
       const cheque = (line.cheque || "").trim();
@@ -259,7 +275,11 @@ export default function Ledger() {
         memo: desc,
         debit: Number(line.debit) || 0,
         credit: Number(line.credit) || 0,
-        balance: 0,
+        // opening + this row's cumulative movement through the window, in
+        // ledger order — independent of the page, the sort and the search.
+        balance: openingBalance + (isDebitNormal
+          ? Number(line.cum_debit ?? 0) - Number(line.cum_credit ?? 0)
+          : Number(line.cum_credit ?? 0) - Number(line.cum_debit ?? 0)),
         entryId: line.entry_id,
         isReversal: !!line.reversal_of,
         isOpeningBalance: false,
@@ -267,81 +287,30 @@ export default function Ledger() {
         transaction_type,
       };
     });
-  }, [ledgerLines, selectedAccount, resolveSourceTransaction]);
+  }, [selectedAccount, resolveSourceTransaction, openingBalance, isDebitNormal]);
 
-  // Collect transaction types for filter dropdown
-  const availableTypes = useMemo(() => {
-    const set = new Set(allRows.map(r => r.transactionType));
-    return Array.from(set).sort();
-  }, [allRows]);
+  const pagedRows = useMemo(
+    () => buildRows(ledgerPage?.rows ?? []),
+    [buildRows, ledgerPage]
+  );
 
-  // Apply search + type filter
-  const filteredRows = useMemo(() => {
-    return allRows.filter(row => {
-      if (typeFilter !== "all" && row.transactionType !== typeFilter) return false;
-      if (debouncedSearchTerm) {
-        const s = debouncedSearchTerm.toLowerCase();
-        // Amount search: strip commas/currency so "3,080" / "3080" / "3080.00"
-        // all match a debit or credit of 3080.
-        const amt = s.replace(/[,\s₨$]|lkr|rs\.?/g, "");
-        const inAmount = /\d/.test(amt) && (
-          row.debit.toFixed(2).includes(amt) || String(row.debit).includes(amt) ||
-          row.credit.toFixed(2).includes(amt) || String(row.credit).includes(amt)
-        );
-        return (
-          row.memo.toLowerCase().includes(s) ||
-          row.refNumber.toLowerCase().includes(s) ||
-          row.entityName.toLowerCase().includes(s) ||
-          row.contraAccount.toLowerCase().includes(s) ||
-          (row.chequeNo || "").toLowerCase().includes(s) ||
-          inAmount
-        );
-      }
-      return true;
-    });
-  }, [allRows, typeFilter, debouncedSearchTerm]);
+  // Transaction types present in the window, from the server — the same
+  // ledger_txn_type() the filter is applied with.
+  const availableTypes = facets?.txnTypes ?? [];
 
-  // Sort
-  const sortedRows = useMemo(() => {
-    const sorted = [...filteredRows];
-    sorted.sort((a, b) => {
-      let cmp = 0;
-      switch (sortField) {
-        case "date":
-          cmp = a.date.localeCompare(b.date);
-          if (cmp === 0) cmp = a.refNumber.localeCompare(b.refNumber);
-          break;
-        case "amount":
-          cmp = (a.debit + a.credit) - (b.debit + b.credit);
-          break;
-        case "refNumber":
-          cmp = a.refNumber.localeCompare(b.refNumber);
-          break;
-      }
-      return sortDir === "asc" ? cmp : -cmp;
-    });
-    return sorted;
-  }, [filteredRows, sortField, sortDir]);
+  // Pagination — matchingRows counts every row the current search/filter
+  // matches across all pages, not just the ones in hand.
+  const matchingRows = ledgerPage?.filteredRows ?? 0;
+  const totalPages = Math.max(1, Math.ceil(matchingRows / PAGE_SIZE));
 
-  // Running balance
-  const rowsWithBalance = useMemo(() => {
-    let bal = openingBalance;
-    return sortedRows.map(row => {
-      bal += isDebitNormal ? (row.debit - row.credit) : (row.credit - row.debit);
-      return { ...row, balance: bal };
-    });
-  }, [sortedRows, openingBalance, isDebitNormal]);
-
-  // Pagination
-  const totalPages = Math.max(1, Math.ceil(rowsWithBalance.length / PAGE_SIZE));
-  const pagedRows = rowsWithBalance.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-
-  // Totals
-  const totalDebit = filteredRows.reduce((s, r) => s + r.debit, 0);
-  const totalCredit = filteredRows.reduce((s, r) => s + r.credit, 0);
-  const closingBalance = rowsWithBalance.length > 0
-    ? rowsWithBalance[rowsWithBalance.length - 1].balance
-    : openingBalance;
+  // Totals. Debit/Credit follow the active filter (as they always did); the
+  // closing balance is opening + the whole window's movements, because a
+  // balance filtered down to some of its transactions is not a balance.
+  const totalDebit = ledgerPage?.filteredDebit ?? 0;
+  const totalCredit = ledgerPage?.filteredCredit ?? 0;
+  const closingBalance = openingBalance + (isDebitNormal
+    ? (windowTotals?.totalDebit ?? 0) - (windowTotals?.totalCredit ?? 0)
+    : (windowTotals?.totalCredit ?? 0) - (windowTotals?.totalDebit ?? 0));
   const isLoading = accountsLoading || ledgerLoading || openingBalanceLoading;
 
   // Sort toggle
@@ -389,85 +358,116 @@ export default function Ledger() {
     }
   };
 
+  // The grid holds one page; an export covers every row matching the current
+  // filters, so it pulls the full set from the server on demand.
+  const fetchExportRows = useCallback(async (): Promise<RegisterRow[]> => {
+    const lines = await fetchAccountLedgerAll({
+      accountId: selectedAccount?.id,
+      dateFrom: effectiveDateFrom || undefined,
+      dateTo: effectiveDateTo || undefined,
+      search: debouncedSearchTerm,
+      txnType: typeFilter,
+      sort: sortField === "refNumber" ? "reference" : sortField,
+      sortDir,
+    });
+    return buildRows(lines);
+  }, [selectedAccount, effectiveDateFrom, effectiveDateTo, debouncedSearchTerm, typeFilter, sortField, sortDir, buildRows]);
+
   // CSV Export
-  const handleExportCSV = useCallback(() => {
+  const handleExportCSV = useCallback(async () => {
     if (!selectedAccount) return;
-    const header = ["Date", "Type", "Ref No", "Cheque No", "Name", "Account", "Memo", "Debit (LKR)", "Credit (LKR)", "Balance (LKR)"];
-    const rows = [
-      [effectiveDateFrom || "", "Opening Balance", "", "", "", "", "", "", openingBalance.toFixed(2)],
-      ...rowsWithBalance.map(r => [
-        r.date, r.transactionType, r.refNumber, r.chequeNo, r.entityName,
-        r.contraAccount, r.memo.replace(/"/g, '""'),
-        r.debit > 0 ? r.debit.toFixed(2) : "",
-        r.credit > 0 ? r.credit.toFixed(2) : "",
-        r.balance.toFixed(2),
-      ]),
-      ["", "TOTALS", "", "", "", "", totalDebit.toFixed(2), totalCredit.toFixed(2), closingBalance.toFixed(2)],
-    ];
-    const csv = [header, ...rows].map(r => r.map(c => `"${c}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `register-${selectedAccount.account_code}-${selectedAccount.account_name.replace(/\s+/g, "_")}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [selectedAccount, rowsWithBalance, openingBalance, totalDebit, totalCredit, closingBalance, effectiveDateFrom]);
+    setExporting(true);
+    try {
+      const exportRows = await fetchExportRows();
+      const header = ["Date", "Type", "Ref No", "Cheque No", "Name", "Account", "Memo", "Debit (LKR)", "Credit (LKR)", "Balance (LKR)"];
+      const rows = [
+        [effectiveDateFrom || "", "Opening Balance", "", "", "", "", "", "", openingBalance.toFixed(2)],
+        ...exportRows.map(r => [
+          r.date, r.transactionType, r.refNumber, r.chequeNo, r.entityName,
+          r.contraAccount, r.memo.replace(/"/g, '""'),
+          r.debit > 0 ? r.debit.toFixed(2) : "",
+          r.credit > 0 ? r.credit.toFixed(2) : "",
+          r.balance.toFixed(2),
+        ]),
+        ["", "TOTALS", "", "", "", "", totalDebit.toFixed(2), totalCredit.toFixed(2), closingBalance.toFixed(2)],
+      ];
+      const csv = [header, ...rows].map(r => r.map(c => `"${c}"`).join(",")).join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `register-${selectedAccount.account_code}-${selectedAccount.account_name.replace(/\s+/g, "_")}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setExporting(false);
+    }
+  }, [selectedAccount, fetchExportRows, openingBalance, totalDebit, totalCredit, closingBalance, effectiveDateFrom]);
 
   // Excel Export — built from the full filtered register, not the current
   // page, so the workbook covers every transaction in the selection.
-  const handleExportExcel = useCallback(() => {
+  const handleExportExcel = useCallback(async () => {
     if (!selectedAccount) return;
     type ExportRow = {
       date: string; type: string; ref: string; chequeNo: string; name: string;
       account: string; memo: string;
       debit: number | null; credit: number | null; balance: number;
     };
-    const exportRows: ExportRow[] = [
-      {
-        date: effectiveDateFrom || "", type: "Opening Balance", ref: "", chequeNo: "", name: "",
-        account: "", memo: "", debit: null, credit: null, balance: openingBalance,
-      },
-      ...rowsWithBalance.map(r => ({
-        date: r.date,
-        type: r.transactionType,
-        ref: r.refNumber,
-        chequeNo: r.chequeNo,
-        name: r.entityName,
-        account: r.contraAccount,
-        memo: r.memo,
-        debit: r.debit > 0 ? r.debit : null,
-        credit: r.credit > 0 ? r.credit : null,
-        balance: r.balance,
-      })),
-    ];
+    setExporting(true);
+    try {
+      const registerRows = await fetchExportRows();
+      const exportRows: ExportRow[] = [
+        {
+          date: effectiveDateFrom || "", type: "Opening Balance", ref: "", chequeNo: "", name: "",
+          account: "", memo: "", debit: null, credit: null, balance: openingBalance,
+        },
+        ...registerRows.map(r => ({
+          date: r.date,
+          type: r.transactionType,
+          ref: r.refNumber,
+          chequeNo: r.chequeNo,
+          name: r.entityName,
+          account: r.contraAccount,
+          memo: r.memo,
+          debit: r.debit > 0 ? r.debit : null,
+          credit: r.credit > 0 ? r.credit : null,
+          balance: r.balance,
+        })),
+      ];
 
-    downloadDataExcel<ExportRow>(
-      {
-        title: `Account Register — ${selectedAccount.account_code} ${selectedAccount.account_name}`,
-        subtitle: getTypeLabel(selectedAccount.account_type),
-        dateLine: (effectiveDateFrom || dateTo)
-          ? `${effectiveDateFrom || "Inception"} → ${dateTo || "Today"}`
-          : undefined,
-        sheetName: `${selectedAccount.account_code} Register`,
-        fileName: `Register ${selectedAccount.account_code} ${selectedAccount.account_name}.xlsx`,
-      },
-      [
-        { header: "Date", value: r => r.date },
-        { header: "Type", value: r => r.type },
-        { header: "Ref No", value: r => r.ref },
-        { header: "Cheque No", value: r => r.chequeNo || "" },
-        { header: "Name", value: r => r.name },
-        { header: "Account", value: r => r.account },
-        { header: "Memo", value: r => r.memo },
-        { header: "Debit", numeric: true, value: r => r.debit },
-        { header: "Credit", numeric: true, value: r => r.credit },
-        { header: "Balance", numeric: true, value: r => r.balance },
-      ],
-      exportRows,
-      ["", "TOTALS", "", "", "", "", totalDebit, totalCredit, closingBalance],
-    );
-  }, [selectedAccount, rowsWithBalance, openingBalance, totalDebit, totalCredit, closingBalance, effectiveDateFrom, dateTo]);
+      downloadDataExcel<ExportRow>(
+        {
+          title: `Account Register — ${selectedAccount.account_code} ${selectedAccount.account_name}`,
+          subtitle: getTypeLabel(selectedAccount.account_type),
+          dateLine: (effectiveDateFrom || dateTo)
+            ? `${effectiveDateFrom || "Inception"} → ${dateTo || "Today"}`
+            : undefined,
+          sheetName: `${selectedAccount.account_code} Register`,
+          fileName: `Register ${selectedAccount.account_code} ${selectedAccount.account_name}.xlsx`,
+        },
+        [
+          { header: "Date", value: r => r.date },
+          { header: "Type", value: r => r.type },
+          { header: "Ref No", value: r => r.ref },
+          { header: "Cheque No", value: r => r.chequeNo || "" },
+          { header: "Name", value: r => r.name },
+          { header: "Account", value: r => r.account },
+          { header: "Memo", value: r => r.memo },
+          { header: "Debit", numeric: true, value: r => r.debit },
+          { header: "Credit", numeric: true, value: r => r.credit },
+          { header: "Balance", numeric: true, value: r => r.balance },
+        ],
+        exportRows,
+        ["", "TOTALS", "", "", "", "", totalDebit, totalCredit, closingBalance],
+      );
+    } catch (e) {
+      toast.error(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setExporting(false);
+    }
+  }, [selectedAccount, fetchExportRows, openingBalance, totalDebit, totalCredit, closingBalance, effectiveDateFrom, dateTo]);
 
   // Reset filters
   const clearFilters = () => {
@@ -544,10 +544,10 @@ export default function Ledger() {
                     Filters
                     {hasActiveFilters && <span className="ml-1 w-2 h-2 rounded-full bg-primary" />}
                   </Button>
-                  <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={filteredRows.length === 0}>
+                  <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={matchingRows === 0 || exporting}>
                     <Download className="w-4 h-4 mr-1" /> Export
                   </Button>
-                  <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={filteredRows.length === 0}>
+                  <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={matchingRows === 0 || exporting}>
                     <FileSpreadsheet className="w-4 h-4 mr-1" /> Excel
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => window.print()}>
@@ -649,7 +649,7 @@ export default function Ledger() {
                 <p className={`text-base font-bold mt-0.5 font-mono ${closingBalance < 0 ? "text-destructive" : "text-foreground"}`}>
                   {fmtBal(closingBalance)}
                 </p>
-                <p className="text-[10px] text-muted-foreground">{filteredRows.length} transaction{filteredRows.length !== 1 ? "s" : ""}</p>
+                <p className="text-[10px] text-muted-foreground">{matchingRows.toLocaleString()} transaction{matchingRows !== 1 ? "s" : ""}</p>
               </div>
             </div>
 
@@ -675,7 +675,7 @@ export default function Ledger() {
                   <p className="text-muted-foreground font-medium">No accounts found</p>
                   <p className="text-sm text-muted-foreground mt-1">Create accounts in Chart of Accounts first.</p>
                 </div>
-              ) : filteredRows.length === 0 && openingBalance === 0 ? (
+              ) : matchingRows === 0 && openingBalance === 0 ? (
                 <div className="text-center py-16">
                   <BookOpen className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
                   <p className="text-muted-foreground font-medium">No transactions found</p>
@@ -818,7 +818,7 @@ export default function Ledger() {
                   {totalPages > 1 && (
                     <div className="flex items-center justify-between pt-4 px-1 print:hidden">
                       <p className="text-xs text-muted-foreground">
-                        Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, rowsWithBalance.length)} of {rowsWithBalance.length} transactions
+                        Showing {page * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE + pagedRows.length, matchingRows)} of {matchingRows.toLocaleString()} transactions
                       </p>
                       <div className="flex items-center gap-1">
                         <Button variant="ghost" size="sm" disabled={page === 0} onClick={() => setPage(0)}>

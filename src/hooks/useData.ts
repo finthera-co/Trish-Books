@@ -399,6 +399,174 @@ export function useAccountEarliestEntryDate(accountId?: string) {
   });
 }
 
+// Server-side paging for the account register.
+//
+// useAccountLedgerLines() above returns an account's ENTIRE window in one call.
+// For 1110 Sampath Bank (32,916 posted lines) that is a 20MB payload, and it
+// was silently truncated to PostgREST's max_rows, so the register showed 1000
+// of 32,916 transactions. These hooks fetch one page at a time via
+// account_ledger_page (supabase/migrations/20260807000000_account_ledger_paging.sql):
+// search, filters, sort, the running balance and the totals are all resolved
+// server-side, so the client only ever holds the rows it renders.
+//
+// cum_debit/cum_credit are cumulative over the whole date window in ledger
+// order, so the caller derives a row's running balance as opening + cumulative
+// — correct on any page, under any sort, with any search active.
+export interface AccountLedgerPageRow extends AccountLedgerLine {
+  txn_type: string;
+  cum_debit: number;
+  cum_credit: number;
+}
+
+export interface AccountLedgerPageResult {
+  rows: AccountLedgerPageRow[];
+  /** Rows matching the current search/filters across ALL pages. */
+  filteredRows: number;
+  filteredDebit: number;
+  filteredCredit: number;
+}
+
+export interface AccountLedgerPageParams {
+  accountId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  search?: string;
+  entryType?: string;
+  txnType?: string;
+  sort?: "date" | "amount" | "reference";
+  sortDir?: "asc" | "desc";
+  page: number;
+  pageSize: number;
+}
+
+export function useAccountLedgerPage(params: AccountLedgerPageParams) {
+  const {
+    accountId, dateFrom, dateTo, search, entryType, txnType,
+    sort = "date", sortDir = "asc", page, pageSize,
+  } = params;
+
+  return useQuery({
+    queryKey: [
+      "journal_entries", "account_ledger_page", accountId, dateFrom || null, dateTo || null,
+      search || null, entryType || null, txnType || null, sort, sortDir, page, pageSize,
+    ],
+    enabled: !!accountId,
+    // Keep the previous page on screen while the next one loads instead of
+    // flashing an empty table on every page click.
+    placeholderData: (prev) => prev,
+    queryFn: async (): Promise<AccountLedgerPageResult> => {
+      const { data, error } = await supabase.rpc("account_ledger_page", {
+        p_account_id: accountId!,
+        p_date_from: dateFrom || null,
+        p_date_to: dateTo || null,
+        p_search: search && search.trim() !== "" ? search.trim() : null,
+        p_entry_type: entryType && entryType !== "all" ? entryType : null,
+        p_txn_type: txnType && txnType !== "all" ? txnType : null,
+        p_sort: sort,
+        p_sort_dir: sortDir,
+        p_limit: pageSize,
+        p_offset: page * pageSize,
+      });
+      if (error) throw error;
+      const rows = (data ?? []) as unknown as (AccountLedgerPageRow & {
+        filtered_rows: number; filtered_debit: number; filtered_credit: number;
+      })[];
+      // The three filtered_* columns repeat on every row of the page. An empty
+      // page means nothing matched (or the offset ran past the end) — either
+      // way there is nothing to total.
+      const first = rows[0];
+      return {
+        rows,
+        filteredRows: Number(first?.filtered_rows ?? 0),
+        filteredDebit: Number(first?.filtered_debit ?? 0),
+        filteredCredit: Number(first?.filtered_credit ?? 0),
+      };
+    },
+  });
+}
+
+/**
+ * Every row matching the current filters, for CSV/Excel export.
+ *
+ * The register itself never holds more than a page, but an export is expected
+ * to contain the whole thing — so this walks account_ledger_page in chunks
+ * rather than asking for 32,916 rows in one response. Only ever called from an
+ * explicit export click, never on render.
+ */
+export async function fetchAccountLedgerAll(
+  params: Omit<AccountLedgerPageParams, "page" | "pageSize">,
+  chunkSize = 5000,
+): Promise<AccountLedgerPageRow[]> {
+  const { accountId, dateFrom, dateTo, search, entryType, txnType, sort = "date", sortDir = "asc" } = params;
+  if (!accountId) return [];
+
+  const all: AccountLedgerPageRow[] = [];
+  for (let page = 0; ; page++) {
+    const { data, error } = await supabase.rpc("account_ledger_page", {
+      p_account_id: accountId,
+      p_date_from: dateFrom || null,
+      p_date_to: dateTo || null,
+      p_search: search && search.trim() !== "" ? search.trim() : null,
+      p_entry_type: entryType && entryType !== "all" ? entryType : null,
+      p_txn_type: txnType && txnType !== "all" ? txnType : null,
+      p_sort: sort,
+      p_sort_dir: sortDir,
+      p_limit: chunkSize,
+      p_offset: page * chunkSize,
+    });
+    if (error) throw error;
+    const rows = (data ?? []) as unknown as (AccountLedgerPageRow & { filtered_rows: number })[];
+    all.push(...rows);
+    // Stop on a short chunk, and independently on the server's own row count so
+    // a full final chunk doesn't cost an extra empty round trip.
+    if (rows.length < chunkSize || all.length >= Number(rows[0]?.filtered_rows ?? 0)) break;
+  }
+  return all;
+}
+
+/** Row count + debit/credit totals for the whole date window, ignoring search. */
+export function useAccountLedgerTotals(accountId?: string, dateFrom?: string, dateTo?: string) {
+  return useQuery({
+    queryKey: ["journal_entries", "account_ledger_totals", accountId, dateFrom || null, dateTo || null],
+    enabled: !!accountId,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("account_ledger_totals", {
+        p_account_id: accountId!,
+        p_date_from: dateFrom || null,
+        p_date_to: dateTo || null,
+      });
+      if (error) throw error;
+      const row = (data as any)?.[0];
+      return {
+        lineCount: Number(row?.line_count ?? 0),
+        totalDebit: Number(row?.total_debit ?? 0),
+        totalCredit: Number(row?.total_credit ?? 0),
+      };
+    },
+  });
+}
+
+/** Distinct entry types / transaction types present in the window, for the filter dropdowns. */
+export function useAccountLedgerFacets(accountId?: string, dateFrom?: string, dateTo?: string) {
+  return useQuery({
+    queryKey: ["journal_entries", "account_ledger_facets", accountId, dateFrom || null, dateTo || null],
+    enabled: !!accountId,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("account_ledger_facets", {
+        p_account_id: accountId!,
+        p_date_from: dateFrom || null,
+        p_date_to: dateTo || null,
+      });
+      if (error) throw error;
+      const facets = (data ?? {}) as { entry_types?: string[]; txn_types?: string[] };
+      return {
+        entryTypes: facets.entry_types ?? [],
+        txnTypes: facets.txn_types ?? [],
+      };
+    },
+  });
+}
+
 export type JournalStatusFilter = "all" | "posted" | "voided";
 export type JournalSourceFilter =
   | "all" | "manual" | "invoice" | "payment_received"

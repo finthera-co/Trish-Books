@@ -14033,6 +14033,10 @@ export type Database = {
         Args: { p_account_id: string }
         Returns: string
       }
+      account_ledger_facets: {
+        Args: { p_account_id: string; p_date_from?: string; p_date_to?: string }
+        Returns: Json
+      }
       account_ledger_lines: {
         Args: { p_account_id: string; p_date_from?: string; p_date_to?: string }
         Returns: {
@@ -14054,6 +14058,54 @@ export type Database = {
           status: string
           void_reason: string
           voided_at: string
+        }[]
+      }
+      account_ledger_page: {
+        Args: {
+          p_account_id: string
+          p_date_from?: string
+          p_date_to?: string
+          p_entry_type?: string
+          p_limit?: number
+          p_offset?: number
+          p_search?: string
+          p_sort?: string
+          p_sort_dir?: string
+          p_txn_type?: string
+        }
+        Returns: {
+          cheque: string
+          contra_lines: Json
+          created_at: string
+          credit: number
+          cum_credit: number
+          cum_debit: number
+          debit: number
+          description: string
+          entry_date: string
+          entry_id: string
+          entry_type: string
+          filtered_credit: number
+          filtered_debit: number
+          filtered_rows: number
+          is_system_generated: boolean
+          line_id: string
+          payee: string
+          reference: string
+          reversal_of: string
+          source_type: string
+          status: string
+          txn_type: string
+          void_reason: string
+          voided_at: string
+        }[]
+      }
+      account_ledger_totals: {
+        Args: { p_account_id: string; p_date_from?: string; p_date_to?: string }
+        Returns: {
+          line_count: number
+          total_credit: number
+          total_debit: number
         }[]
       }
       account_opening_balance: {
@@ -14494,6 +14546,10 @@ export type Database = {
           total: number
           voided: number
         }[]
+      }
+      ledger_txn_type: {
+        Args: { p_desc: string; p_ref: string }
+        Returns: string
       }
       list_journal_entries: {
         Args: {
