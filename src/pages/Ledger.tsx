@@ -184,9 +184,17 @@ export default function Ledger() {
   const { data: facets } = useAccountLedgerFacets(
     selectedAccount?.id, effectiveDateFrom || undefined, effectiveDateTo || undefined
   );
-  const todayISO = new Date().toISOString().slice(0, 10);
+  // The opening balance is what sits BEFORE the register's start date. With no
+  // start date the register shows the account's whole history, so nothing
+  // precedes it and the opening balance is zero.
+  //
+  // This used to fall back to today's date when no filter was set, which asked
+  // for "everything before today" — i.e. the entire account — while the rows
+  // below listed that same entire account. The account's whole balance was
+  // counted twice: 1110 Sampath Bank showed opening 190,192,738.18 and closing
+  // 380,385,476.36, exactly double its real 190,192,738.18.
   const { data: openingBalanceData, isLoading: openingBalanceLoading } = useAccountOpeningBalance(
-    selectedAccount?.id, effectiveDateFrom || todayISO
+    selectedAccount?.id, effectiveDateFrom || undefined
   );
 
   // Reporting Layer rule:

@@ -369,14 +369,22 @@ export function useAccountLedgerLines(accountId?: string, dateFrom?: string, dat
   });
 }
 
-export function useAccountOpeningBalance(accountId: string | undefined, dateFrom: string) {
+/**
+ * Movements strictly BEFORE `dateFrom`, i.e. the balance carried into the
+ * window. Omitting `dateFrom` means the window is unbounded — nothing precedes
+ * it, so the query stays disabled and the caller reads an opening balance of
+ * zero. Never substitute today's date for a missing one: that asks for the
+ * account's entire history as its own opening balance, and any view that also
+ * lists those transactions will count them twice.
+ */
+export function useAccountOpeningBalance(accountId: string | undefined, dateFrom?: string) {
   return useQuery({
-    queryKey: ["journal_entries", "account_opening_balance", accountId, dateFrom],
+    queryKey: ["journal_entries", "account_opening_balance", accountId, dateFrom ?? null],
     enabled: !!accountId && !!dateFrom,
     queryFn: async () => {
       const { data, error } = await supabase.rpc("account_opening_balance", {
         p_account_id: accountId!,
-        p_date_from: dateFrom,
+        p_date_from: dateFrom!,
       });
       if (error) throw error;
       const row = (data as any)?.[0];
