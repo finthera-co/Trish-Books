@@ -30,14 +30,20 @@ export function buildStatementPdf({ stmt, customer, company, from, to }: Stateme
   const fmt = (n: unknown) => formatCurrency(Number(n) || 0);
 
   // ── Header: logo + company (left), title (right) ──
-  let cx = M;
   let logoBottom = M;
   if (logo) {
-    const lh = 16, lw = Math.min((logo.w / logo.h || 1) * lh, 40);
+    // Fit inside the box preserving aspect ratio — capping the width alone
+    // squashes a wide logo into a smudge.
+    const ratio = logo.w / logo.h || 1;
+    let lh = 16, lw = ratio * lh;
+    if (lw > 40) { lw = 40; lh = lw / ratio; }
     try { doc.addImage(logo.dataUrl, "PNG", M, M, lw, lh); } catch { /* skip */ }
-    cx = M + lw + 5; logoBottom = M + lh;
+    logoBottom = M + lh;
   }
-  let cy = M + 5;
+  // Company details sit BELOW the logo, never beside it — a long company name
+  // next to a wide mark collides with the title on the right.
+  const cx = M;
+  let cy = logo ? logoBottom + 6 : M + 5;
   if (t.company_name) {
     doc.setFont("helvetica", "bold").setFontSize(13).setTextColor(...INK);
     doc.text(String(t.company_name), cx, cy); cy += 5.5;

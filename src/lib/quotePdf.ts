@@ -7,7 +7,7 @@ import { loadLogo, type LoadedLogo } from "@/lib/invoicePdf";
 import {
   NAVY, INK, MUTED, MUTED2, RULE, ALT_ROW, WHITE, GREEN, RED, AMBER,
   type RGB, setText, setDraw, setFill, num, sanitize, prettyDate, prettyTerms,
-  buildItemCell, discountCellText,
+  buildItemCell, discountCellText, fitText,
 } from "@/lib/pdfTheme";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -141,7 +141,6 @@ export async function buildQuotePdf(
 
   // ── Header: logo + company (left) · doc type + number (right) ────────
   const hy = 18;
-  let cx = M;
   let logoBottom = hy;
   if (logo) {
     // Fit inside 28×60mm preserving aspect ratio — capping only the width
@@ -151,16 +150,21 @@ export async function buildQuotePdf(
     let lw = ratio * lh;
     if (lw > 60) { lw = 60; lh = lw / ratio; }
     try { doc.addImage(logo.dataUrl, "PNG", M, hy, lw, lh, "company-logo", "FAST"); } catch { /* skip */ }
-    cx = M + lw + 5;
     logoBottom = hy + lh;
   }
-  let cy = hy + 5;
+  // The company block sits BELOW the logo, never beside it: a long company name
+  // next to a wide mark runs into the ESTIMATE block on the right of the page.
+  const cx = M;
+  let cy = logo ? logoBottom + 7 : hy + 5;
   if (tradingName) {
     useFont(String(tradingName), "bold");
     doc.setFontSize(14);
     setText(doc, INK);
-    doc.text(String(tradingName), cx, cy);
-    cy += 5.8;
+    // Stacked under the logo the name owns the full column; with no logo it sits
+    // level with the ESTIMATE block, so it wraps instead of running under it.
+    const nameLines = doc.splitTextToSize(String(tradingName), logo ? contentW : contentW * 0.56);
+    doc.text(nameLines, cx, cy);
+    cy += nameLines.length * 5.8;
   }
   if (p?.trading_name && t.company_name && p.trading_name !== t.company_name) {
     useFont(String(t.company_name), "normal");
@@ -180,7 +184,9 @@ export async function buildQuotePdf(
   ].filter(Boolean) as string[];
   if (addressParts.length) {
     useFont(addressParts.join(", "), "normal");
-    for (const l of doc.splitTextToSize(addressParts.join(", "), 90)) contact.push(l);
+    // Stacked under the logo the block owns the full column; unstacked it must
+    // still clear the document title on the right.
+    for (const l of doc.splitTextToSize(addressParts.join(", "), logo ? 120 : 90)) contact.push(l);
   }
   if (t.phone) contact.push(String(t.phone));
   if (p?.email) contact.push(String(p.email));
@@ -428,20 +434,26 @@ export async function buildQuotePdf(
       doc.addImage(logo.dataUrl, "PNG", fx, fy + 1 - lh, lw, lh, "company-logo", "FAST");
       fx += lw + 3;
     }
+    // Measure the centred note first: it fixes how much room the company name
+    // on the left actually has before the two would overprint each other.
+    const footerNote = p?.invoice_footer_note || "Thank you for the opportunity to quote";
+    useFont(footerNote, "normal");
+    doc.setFontSize(8.5);
+    const leftRoom = pageW / 2 - doc.getTextWidth(footerNote) / 2 - fx - 4;
+
     useFont(t.company_name || "", "bold");
     doc.setFontSize(8.5);
     setText(doc, MUTED);
-    doc.text(t.company_name || "", fx, fy - 1);
+    doc.text(fitText(doc, t.company_name || "", leftRoom), fx, fy - 1);
     const sub = [t.country, t.registration_number ? `BR No: ${t.registration_number}` : null]
       .filter(Boolean).join("  ·  ");
     if (sub) {
       useFont(sub, "normal");
       doc.setFontSize(7.5);
       setText(doc, MUTED2);
-      doc.text(sub, fx, fy + 3);
+      doc.text(fitText(doc, sub, leftRoom), fx, fy + 3);
     }
 
-    const footerNote = p?.invoice_footer_note || "Thank you for the opportunity to quote";
     useFont(footerNote, "normal");
     doc.setFontSize(8.5);
     setText(doc, MUTED2);

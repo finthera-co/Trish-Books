@@ -6,7 +6,7 @@ import { registerPdfFonts, fontFamilyFor, NOTO_SANS, JETBRAINS_MONO } from "@/li
 import {
   NAVY, INK, MUTED, MUTED2, RULE, ALT_ROW, WHITE, GREEN, RED, AMBER,
   type RGB, setText, setDraw, setFill, num, sanitize, prettyDate, prettyTerms,
-  buildItemCell, discountCellText,
+  buildItemCell, discountCellText, fitText,
 } from "@/lib/pdfTheme";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -205,7 +205,6 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
 
   // ── Header: logo + company (left) · doc type + number (right) ────────
   const hy = 18;
-  let cx = M;
   let logoBottom = hy;
   if (logo) {
     // Fit inside 28×60mm preserving aspect ratio — capping only the width
@@ -215,18 +214,24 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
     let lw = ratio * lh;
     if (lw > 60) { lw = 60; lh = lw / ratio; }
     try { doc.addImage(logo.dataUrl, "PNG", M, hy, lw, lh, "company-logo", "FAST"); } catch { /* skip */ }
-    cx = M + lw + 5;
     logoBottom = hy + lh;
   }
-  let cy = hy + 5;
+  // The company block sits BELOW the logo, never beside it: a long company name
+  // next to a wide mark runs into the document block on the right of the page.
+  // Stacked, the name gets the full column width whatever the logo's shape.
+  const cx = M;
+  let cy = logo ? logoBottom + 7 : hy + 5;
   // Trading name in the logo lockup; legal name underneath when it differs —
   // a tax invoice must still show the registered legal entity name.
   if (tradingName) {
     useFont(String(tradingName), "bold");
     doc.setFontSize(14);
     setText(doc, INK);
-    doc.text(String(tradingName), cx, cy);
-    cy += 5.8;
+    // Stacked under the logo the name owns the full column; with no logo it sits
+    // level with the document title, so it wraps instead of running under it.
+    const nameLines = doc.splitTextToSize(String(tradingName), logo ? contentW : contentW * 0.56);
+    doc.text(nameLines, cx, cy);
+    cy += nameLines.length * 5.8;
   }
   if (p?.trading_name && t.company_name && p.trading_name !== t.company_name) {
     useFont(String(t.company_name), "normal");
@@ -246,7 +251,9 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
   ].filter(Boolean) as string[];
   if (addressParts.length) {
     useFont(addressParts.join(", "), "normal");
-    for (const l of doc.splitTextToSize(addressParts.join(", "), 90)) contact.push(l);
+    // Stacked under the logo the block owns the full column; unstacked it must
+    // still clear the document title on the right.
+    for (const l of doc.splitTextToSize(addressParts.join(", "), logo ? 120 : 90)) contact.push(l);
   }
   if (t.phone) contact.push(String(t.phone));
   if (p?.email) contact.push(String(p.email));
@@ -547,20 +554,26 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
       doc.addImage(logo.dataUrl, "PNG", fx, fy + 1 - lh, lw, lh, "company-logo", "FAST");
       fx += lw + 3;
     }
+    // Measure the centred note first: it fixes how much room the company name
+    // on the left actually has before the two would overprint each other.
+    const footerNote = p?.invoice_footer_note || "Thank you for your business";
+    useFont(footerNote, "normal");
+    doc.setFontSize(8.5);
+    const leftRoom = pageW / 2 - doc.getTextWidth(footerNote) / 2 - fx - 4;
+
     useFont(tenant?.company_name || "", "bold");
     doc.setFontSize(8.5);
     setText(doc, MUTED);
-    doc.text(tenant?.company_name || "", fx, fy - 1);
+    doc.text(fitText(doc, tenant?.company_name || "", leftRoom), fx, fy - 1);
     const sub = [tenant?.country, tenant?.registration_number ? `BR No: ${tenant.registration_number}` : null]
       .filter(Boolean).join("  ·  ");
     if (sub) {
       useFont(sub, "normal");
       doc.setFontSize(7.5);
       setText(doc, MUTED2);
-      doc.text(sub, fx, fy + 3);
+      doc.text(fitText(doc, sub, leftRoom), fx, fy + 3);
     }
 
-    const footerNote = p?.invoice_footer_note || "Thank you for your business";
     useFont(footerNote, "normal");
     doc.setFontSize(8.5);
     setText(doc, MUTED2);

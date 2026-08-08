@@ -6,7 +6,7 @@ import { loadLogo, type LoadedLogo } from "@/lib/invoicePdf";
 import { registerPdfFonts, fontFamilyFor, NOTO_SANS, JETBRAINS_MONO } from "@/lib/pdfFonts";
 import {
   NAVY, INK, MUTED, MUTED2, RULE, ALT_ROW, WHITE, GREEN,
-  type RGB, setText, setDraw, setFill, num, prettyDate,
+  type RGB, setText, setDraw, setFill, num, prettyDate, fitText,
 } from "@/lib/pdfTheme";
 import { methodLabel, receiptStatusLabel, type ReceiptModel } from "@/components/receipts/ReceiptDocument";
 
@@ -78,7 +78,6 @@ export async function buildReceiptPdf(
 
   // ── Header: logo + company (left) · doc type + number + status (right) ──
   const hy = 18;
-  let cx = M;
   let logoBottom = hy;
   if (logo) {
     // Fit inside 28×60mm preserving aspect ratio — capping only the width
@@ -88,16 +87,21 @@ export async function buildReceiptPdf(
     let lw = ratio * lh;
     if (lw > 60) { lw = 60; lh = lw / ratio; }
     try { doc.addImage(logo.dataUrl, "PNG", M, hy, lw, lh, "company-logo", "FAST"); } catch { /* skip */ }
-    cx = M + lw + 5;
     logoBottom = hy + lh;
   }
-  let cy = hy + 5;
+  // The company block sits BELOW the logo, never beside it: a long company name
+  // next to a wide mark runs into the PAYMENT RECEIPT block on the right.
+  const cx = M;
+  let cy = logo ? logoBottom + 7 : hy + 5;
   if (c.company_name) {
     useFont(String(c.company_name), "bold");
     doc.setFontSize(14);
     setText(doc, INK);
-    doc.text(String(c.company_name), cx, cy);
-    cy += 5.8;
+    // Stacked under the logo the name owns the full column; with no logo it sits
+    // level with the PAYMENT RECEIPT block, so it wraps instead of running under it.
+    const nameLines = doc.splitTextToSize(String(c.company_name), logo ? contentW : contentW * 0.56);
+    doc.text(nameLines, cx, cy);
+    cy += nameLines.length * 5.8;
   }
   doc.setFontSize(8.5);
   setText(doc, MUTED);
@@ -357,21 +361,28 @@ export async function buildReceiptPdf(
       doc.addImage(logo.dataUrl, "PNG", fx, fy + 1 - lh, lw, lh, "company-logo", "FAST");
       fx += lw + 3;
     }
+    // Measure the centred note first: it fixes how much room the company name
+    // on the left actually has before the two would overprint each other.
+    const footerNote = "Thank you for your payment";
+    useFont(footerNote, "normal");
+    doc.setFontSize(8.5);
+    const leftRoom = pageW / 2 - doc.getTextWidth(footerNote) / 2 - fx - 4;
+
     useFont(c.company_name || "", "bold");
     doc.setFontSize(8.5);
     setText(doc, MUTED);
-    doc.text(c.company_name || "", fx, fy - 1);
+    doc.text(fitText(doc, c.company_name || "", leftRoom), fx, fy - 1);
     if (c.tax_id) {
       useFont(`TIN: ${c.tax_id}`, "normal");
       doc.setFontSize(7.5);
       setText(doc, MUTED2);
-      doc.text(`TIN: ${c.tax_id}`, fx, fy + 3);
+      doc.text(fitText(doc, `TIN: ${c.tax_id}`, leftRoom), fx, fy + 3);
     }
 
-    useFont("Thank you for your payment", "normal");
+    useFont(footerNote, "normal");
     doc.setFontSize(8.5);
     setText(doc, MUTED2);
-    doc.text("Thank you for your payment", pageW / 2, fy, { align: "center" });
+    doc.text(footerNote, pageW / 2, fy, { align: "center" });
     useMono("normal");
     doc.setFontSize(7.5);
     setText(doc, MUTED2);

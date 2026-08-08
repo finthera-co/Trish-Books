@@ -32,6 +32,23 @@ export const num = (n: unknown) => {
   return v < 0 ? `(${s})` : s;
 };
 
+/**
+ * Trim `text` to fit `maxW`, adding an ellipsis when it has to cut. Call with
+ * the intended font and size already set — jsPDF measures against current state.
+ *
+ * Footers put a company name, a centred note and a page number on one line, and
+ * jsPDF happily draws text straight through whatever is next to it. A long name
+ * has to be cut rather than allowed to overprint.
+ */
+export function fitText(d: jsPDF, text: string, maxW: number): string {
+  const s = String(text ?? "");
+  if (!s || maxW <= 0) return "";
+  if (d.getTextWidth(s) <= maxW) return s;
+  let cut = s;
+  while (cut.length > 1 && d.getTextWidth(`${cut}…`) > maxW) cut = cut.slice(0, -1);
+  return `${cut.trimEnd()}…`;
+}
+
 /** Filename-safe slug for a document number. */
 export const sanitize = (s: string) => (s || "").replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "");
 
