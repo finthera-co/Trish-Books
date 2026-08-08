@@ -402,13 +402,21 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
 
   // invoice.subtotal is stored NET of line discounts. Present the breakdown so
   // Total = (gross subtotal) − discount + tax always reconciles on the page.
-  const lineDiscount = Number(invoice.discount_amount) || 0;
-  const grossSubtotal = (Number(invoice.subtotal) || 0) + lineDiscount;
+  // discount_amount is every discount on the invoice; document_discount is the
+  // part given on the total rather than line by line. Both are already inside
+  // the lines (apportioned at save time), so they are only ever presented here —
+  // never subtracted again.
+  const totalDiscount = Number(invoice.discount_amount) || 0;
+  const docDiscount = Math.min(Number(invoice.document_discount) || 0, totalDiscount);
+  const lineDiscount = Math.round((totalDiscount - docDiscount) * 100) / 100;
+  const grossSubtotal = (Number(invoice.subtotal) || 0) + totalDiscount;
   totalRow("Sub Total", fmt(grossSubtotal));
-  if (lineDiscount > 0) {
-    totalRow("Discount", `-${fmt(lineDiscount)}`);
-    totalRow("Taxable amount", fmt(invoice.subtotal));
+  if (lineDiscount > 0) totalRow("Discount", `-${fmt(lineDiscount)}`);
+  if (docDiscount > 0) {
+    const pct = Number(invoice.document_discount_percent) || 0;
+    totalRow(pct > 0 ? `Discount on Total (${pct}%)` : "Discount on Total", `-${fmt(docDiscount)}`);
   }
+  if (totalDiscount > 0) totalRow("Taxable amount", fmt(invoice.subtotal));
   if (Number(invoice.tax_amount) > 0) totalRow("Tax", fmt(invoice.tax_amount));
   ty += 2;
   setDraw(doc, RULE); doc.setLineWidth(0.3);

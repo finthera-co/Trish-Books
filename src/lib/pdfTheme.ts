@@ -61,5 +61,11 @@ export function discountCellText(it: any): string {
   const amt = Number(it.discount_amount) || 0;
   if (amt <= 0) return "—";
   const pct = Number(it.discount_percent) || 0;
-  return pct > 0 ? `-${num(amt)} (${pct}%)` : `-${num(amt)}`;
+  // discount_amount can also carry this line's share of an invoice-level
+  // discount, in which case it no longer equals the line's own percentage —
+  // printing the two together would state something untrue, so the percentage
+  // is shown only while it still describes the figure beside it.
+  const gross = (Number(it.quantity) || 0) * (Number(it.unit_price) || 0);
+  const matches = pct > 0 && Math.abs(gross * (pct / 100) - amt) < 0.005;
+  return matches ? `-${num(amt)} (${pct}%)` : `-${num(amt)}`;
 }

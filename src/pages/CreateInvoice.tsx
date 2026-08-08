@@ -14,7 +14,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useCustomers, useAccounts, useProducts } from "@/hooks/useData";
 import { useTaxProfile, useTaxGroups, useTaxCodes, currentRate } from "@/hooks/useTaxEngine";
 import { calculateLineTax, type TaxMemberInput } from "@/lib/taxEngine";
-import { discountFromPercent, percentFromDiscount } from "@/lib/lineDiscount";
+import { discountFromPercent, percentFromDiscount, apportionDiscount } from "@/lib/lineDiscount";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCurrency } from "@/lib/currency";
 import { toast } from "sonner";
@@ -107,9 +107,12 @@ export default function CreateInvoice() {
   }, [setHideSidebar]);
 
   const [customerId, setCustomerId] = useState("");
-  // Invoice number is system-generated on save per IRD Gazette 2481/22
-  // (YYMMM_QQQQ_XXXXX); never user-typed. Held only for post-save display.
+  // Typed if the user wants their own scheme, otherwise generated on save per
+  // IRD Gazette 2481/22 (YYMMM_QQQQ_XXXXX).
   const [invoiceNumber, setInvoiceNumber] = useState("");
+  // The number the draft already carries, so an edit can tell "left alone"
+  // (blank or unchanged) apart from a deliberate renumber.
+  const [originalNumber, setOriginalNumber] = useState("");
   const [issueDate, setIssueDate] = useState(new Date().toISOString().split("T")[0]);
   const [dueDate, setDueDate] = useState("");
   const [paymentTerms, setPaymentTerms] = useState("net_30");
@@ -126,6 +129,11 @@ export default function CreateInvoice() {
   const [notes, setNotes] = useState("");
   const [terms, setTerms] = useState("");
   const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
+  // Invoice-level discount — one figure off the whole invoice, entered as a %
+  // of the net line total or as money. Apportioned across the lines at save
+  // time so tax and revenue land on the discounted value (see apportionDiscount).
+  const [docDiscountPct, setDocDiscountPct] = useState(0);
+  const [docDiscount, setDocDiscount] = useState(0);
   const [saving, setSaving] = useState(false);
   const [posting, setPosting] = useState(false);
   // Guards while an existing draft is being hydrated in edit mode.
@@ -156,6 +164,7 @@ export default function CreateInvoice() {
       }
       setCustomerId(inv.customer_id ?? "");
       setInvoiceNumber(inv.invoice_number ?? "");
+      setOriginalNumber(inv.invoice_number ?? "");
       setIssueDate(inv.issue_date ?? new Date().toISOString().split("T")[0]);
       setDueDate(inv.due_date ?? "");
       setPaymentTerms(inv.payment_terms ?? "net_30");
@@ -169,6 +178,8 @@ export default function CreateInvoice() {
       setNotes(inv.notes ?? "");
       setTerms(inv.terms ?? "");
       const items = ((inv as any).invoice_items ?? []) as any[];
+      setDocDiscount(Number((inv as any).document_discount) || 0);
+      setDocDiscountPct(Number((inv as any).document_discount_percent) || 0);
       setLines(
         items.length
           ? items.map((it) => ({
@@ -180,7 +191,10 @@ export default function CreateInvoice() {
               tax_sel: it.tax_group_id ? `g:${it.tax_group_id}` : it.tax_code_id ? `c:${it.tax_code_id}` : "",
               inclusive: !!it.is_tax_inclusive,
               discount_pct: Number(it.discount_percent) || 0,
-              discount: Number(it.discount_amount) || 0,
+              // The line's OWN discount. discount_amount also carries this line's
+              // share of the invoice-level discount, which is re-apportioned from
+              // the header figure — taking it from there would compound it.
+              discount: Number(it.line_discount_amount ?? it.discount_amount) || 0,
               account_id: it.account_id ?? "",
             }))
           : [emptyLine()]
@@ -389,10 +403,50 @@ export default function CreateInvoice() {
   const addLine = () => setLines((prev) => [...prev, emptyLine()]);
   const removeLine = (id: string) => setLines((prev) => prev.filter((l) => l.id !== id));
 
+  // ── Invoice-level discount, apportioned onto the lines ───────────────
+  // Everything downstream (tax, revenue split, the server-side recompute) works
+  // from per-line figures, so the invoice discount is spread across the lines
+  // here and the lines are what get calculated on from this point.
+  const lineNets = useMemo(
+    () => lines.map((l) => Math.max(0, Math.round((l.qty * l.rate - l.discount) * 100) / 100)),
+    [lines],
+  );
+  const netTotal = useMemo(
+    () => Math.round(lineNets.reduce((s, n) => s + n, 0) * 100) / 100,
+    [lineNets],
+  );
+  // A discount can never exceed what's left to discount.
+  const docDiscountApplied = useMemo(
+    () => Math.min(Math.max(0, docDiscount), netTotal),
+    [docDiscount, netTotal],
+  );
+  const docShares = useMemo(
+    () => apportionDiscount(lineNets, docDiscountApplied),
+    [lineNets, docDiscountApplied],
+  );
+
+  // Same %/amount pairing as a line discount: the % re-derives the money value
+  // and keeps following the net total as lines are edited, while typing into
+  // the money box re-derives the %.
+  const setDocPct = (v: number) => {
+    const pct = Math.min(100, Math.max(0, Number(v) || 0));
+    setDocDiscountPct(pct);
+    setDocDiscount(Math.round(netTotal * pct) / 100);
+  };
+  const setDocAmount = (v: number) => {
+    const amt = Math.max(0, Number(v) || 0);
+    setDocDiscount(amt);
+    setDocDiscountPct(netTotal > 0 ? Math.min(100, Math.round((amt / netTotal) * 10000) / 100) : 0);
+  };
+  useEffect(() => {
+    if (loadingExisting || docDiscountPct <= 0) return;
+    setDocDiscount(Math.round(netTotal * docDiscountPct) / 100);
+  }, [netTotal, docDiscountPct, loadingExisting]);
+
   // ── Live tax computation via the shared engine ──────────────────────
   const lineCalcs = useMemo(() => {
-    return lines.map((l) => {
-      const lineAmount = l.qty * l.rate - l.discount;
+    return lines.map((l, i) => {
+      const lineAmount = l.qty * l.rate - l.discount - (docShares[i] ?? 0);
       const members = membersFor(l.tax_sel);
       if (members.length === 0 || lineAmount <= 0) {
         const base = Math.round(Math.max(0, lineAmount) * 100) / 100;
@@ -408,10 +462,21 @@ export default function CreateInvoice() {
         documentDate: issueDate,
       });
     });
-  }, [lines, membersFor, codesById, issueDate]);
+  }, [lines, docShares, membersFor, codesById, issueDate]);
 
   const subtotal = useMemo(() => Math.round(lineCalcs.reduce((s, c) => s + c.exclusiveBase, 0) * 100) / 100, [lineCalcs]);
-  const totalDiscount = useMemo(() => lines.reduce((s, l) => s + l.discount, 0), [lines]);
+  // Discounts entered line by line, kept apart from the invoice-level one so the
+  // summary can show where the money went.
+  const lineDiscountTotal = useMemo(
+    () => Math.round(lines.reduce((s, l) => s + l.discount, 0) * 100) / 100,
+    [lines],
+  );
+  const totalDiscount = Math.round((lineDiscountTotal + docDiscountApplied) * 100) / 100;
+  // Gross line value, before any discount — the top of the summary ladder.
+  const grossSubtotal = useMemo(
+    () => Math.round(lines.reduce((s, l) => s + l.qty * l.rate, 0) * 100) / 100,
+    [lines],
+  );
 
   // Aggregate tax per code across lines for the footer ("one row per code")
   const taxByCode = useMemo(() => {
@@ -430,8 +495,14 @@ export default function CreateInvoice() {
   const total = Math.round((subtotal + totalTax) * 100) / 100;
 
   const handleSave = async (shouldPost = false) => {
+    const typedNumber = invoiceNumber.trim();
+    // The branch/QQQQ code is optional. The serial generator refuses a blank
+    // one, so an unset branch falls back to MAIN — the same default the
+    // quote→invoice conversion already uses, keeping single-branch tenants
+    // from having to invent a code.
+    const effectiveBranch = branchCode.trim() || "MAIN";
     if (!customerId) return toast.error("Please select a customer");
-    if (!branchCode.trim()) return toast.error("Branch/Entity code (QQQQ) is required");
+    if (typedNumber.length > 40) return toast.error("Invoice number cannot exceed 40 characters");
     if (lines.every((l) => l.rate === 0)) return toast.error("Add at least one line item");
 
     // Non-blocking warning: a posted line with an amount but no revenue account and no
@@ -464,11 +535,15 @@ export default function CreateInvoice() {
         template_id: templateId || null,
         currency,
         exchange_rate: exchangeRate,
-        branch_code: branchCode.trim(),
+        // Store what the number actually carries: the fallback when we generated
+        // the serial, otherwise only what the user typed.
+        branch_code: branchCode.trim() || (typedNumber ? null : effectiveBranch),
         total_amount: total,
         subtotal,
         tax_amount: totalTax,
         discount_amount: totalDiscount,
+        document_discount: docDiscountApplied,
+        document_discount_percent: docDiscountPct,
         notes: notes || null,
         terms: terms || null,
         status: "draft",
@@ -479,9 +554,14 @@ export default function CreateInvoice() {
       if (isEdit) {
         // Edit an existing draft in place: update the header, then fully
         // replace its line items (drafts have no dependent GL/stock rows yet).
+        // A blank number here means "keep the one it already has" rather than
+        // renumber the draft — only a typed change moves it.
+        const renumber = typedNumber && typedNumber !== originalNumber
+          ? { invoice_number: typedNumber }
+          : {};
         const { data: upd, error: updErr } = await supabase
           .from("invoices")
-          .update(headerFields as any)
+          .update({ ...headerFields, ...renumber } as any)
           .eq("id", editId!)
           .eq("status", "draft") // belt-and-braces: never touch a posted invoice
           .select()
@@ -489,18 +569,26 @@ export default function CreateInvoice() {
         if (updErr) throw updErr;
         if (!upd) throw new Error("Draft no longer editable (it may have been posted)");
         invoice = upd;
+        setOriginalNumber(upd.invoice_number ?? originalNumber);
+        setInvoiceNumber(upd.invoice_number ?? originalNumber);
         const { error: delErr } = await supabase.from("invoice_items").delete().eq("invoice_id", editId!);
         if (delErr) throw delErr;
       } else {
-        // Generate the IRD-compliant serial (YYMMM_QQQQ_XXXXX) atomically before
-        // the insert. The RPC increments a row-locked per-tenant/branch/month
-        // counter, so concurrent saves never collide.
-        const { data: serial, error: serialErr } = await supabase
-          .rpc("next_invoice_serial", {
-            p_branch_code: branchCode.trim(),
-            p_issue_date: issueDate,
-          });
-        if (serialErr || !serial) throw new Error(serialErr?.message || "Failed to generate invoice serial");
+        // A typed number is used as entered. Otherwise generate the IRD-compliant
+        // serial (YYMMM_QQQQ_XXXXX) atomically before the insert: the RPC bumps a
+        // row-locked per-tenant/branch/month counter and records the number in the
+        // serial register, so concurrent saves never collide and the sequence has
+        // no unexplained gaps. A typed number sits outside that register.
+        let serial = typedNumber;
+        if (!serial) {
+          const { data: generated, error: serialErr } = await supabase
+            .rpc("next_invoice_serial", {
+              p_branch_code: effectiveBranch,
+              p_issue_date: issueDate,
+            });
+          if (serialErr || !generated) throw new Error(serialErr?.message || "Failed to generate invoice serial");
+          serial = generated;
+        }
 
         const { data: created, error: invErr } = await supabase
           .from("invoices")
@@ -532,7 +620,11 @@ export default function CreateInvoice() {
           // Do NOT set inventory_item_id here — the DB trigger snapshots it from the product
           // only when the product is tracked, so service lines correctly stay null.
           account_id: l.account_id || null,
-          discount_amount: l.discount,
+          // Own discount plus this line's share of the invoice-level one: the
+          // server recomputes tax and revenue from this figure, so the discount
+          // has to be in it. The split is preserved in line_discount_amount.
+          discount_amount: Math.round((l.discount + (docShares[lines.indexOf(l)] ?? 0)) * 100) / 100,
+          line_discount_amount: l.discount,
           discount_percent: l.discount_pct,
           is_tax_inclusive: l.inclusive,
           tax_group_id: l.tax_sel.startsWith("g:") ? l.tax_sel.slice(2) : null,
@@ -553,13 +645,24 @@ export default function CreateInvoice() {
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
       navigate("/sales/invoices");
     } catch (err: any) {
-      toast.error(err.message || "Failed to save invoice");
+      // (tenant_id, invoice_number) is unique — a typed number that's already in
+      // use comes back as 23505, which reads as gibberish to the user.
+      if (err?.code === "23505" || /duplicate key|unique constraint/i.test(err?.message || "")) {
+        toast.error(`Invoice number "${invoiceNumber.trim()}" is already used — enter a different one`);
+      } else {
+        toast.error(err.message || "Failed to save invoice");
+      }
     } finally {
       setter(false);
     }
   };
 
   const customer = customers?.find((c) => c.id === customerId);
+  // A typed number is kept exactly as entered, but one that doesn't follow the
+  // Gazette 2481/22 shape is worth flagging — it won't join the serial register
+  // that accounts for the generated sequence.
+  const numberIsGazette = /^\d{2}(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)_.+_\d+$/.test(invoiceNumber.trim());
+  const numberIsManual = !!invoiceNumber.trim() && invoiceNumber.trim() !== originalNumber;
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-12">
@@ -609,15 +712,37 @@ export default function CreateInvoice() {
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Invoice number</Label>
+                  <div className="flex items-center justify-between gap-2">
+                    <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Invoice number</Label>
+                    {numberIsManual && (
+                      <button
+                        type="button"
+                        className="text-[10px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                        onClick={() => setInvoiceNumber(originalNumber)}
+                      >
+                        {isEdit ? "Undo change" : "Use auto number"}
+                      </button>
+                    )}
+                  </div>
                   <Input
-                    className="h-9 font-mono bg-muted/50 text-muted-foreground"
+                    className="h-9 font-mono"
                     value={invoiceNumber}
-                    readOnly
-                    tabIndex={-1}
-                    placeholder="System-generated on save"
+                    onChange={(e) => setInvoiceNumber(e.target.value)}
+                    maxLength={40}
+                    placeholder="Auto-generated on save"
                   />
-                  <p className="text-[10px] text-muted-foreground">Generated on save per IRD format (YYMMM_QQQQ_XXXXX)</p>
+                  {numberIsManual && !numberIsGazette ? (
+                    <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                      Saved exactly as typed. It doesn't follow the IRD format (YYMMM_QQQQ_XXXXX), so it
+                      won't appear in the serial register.
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-muted-foreground">
+                      {isEdit
+                        ? "Edit to renumber this draft, or leave it as it is."
+                        : "Leave blank to generate one per IRD format (YYMMM_QQQQ_XXXXX), or type your own."}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
@@ -630,6 +755,9 @@ export default function CreateInvoice() {
                     maxLength={15}
                     placeholder="e.g. BR03"
                   />
+                  <p className="text-[10px] text-muted-foreground">
+                    Optional. Used as the QQQQ segment of an auto-generated number; defaults to MAIN.
+                  </p>
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Date of supply</Label>
@@ -947,14 +1075,57 @@ export default function CreateInvoice() {
           <Card>
             <CardHeader className="pb-3"><CardTitle className="text-base">Summary</CardTitle></CardHeader>
             <CardContent className="space-y-2.5">
+              {/* Gross, then each deduction, then the taxable figure — so the
+                  ladder reconciles down to the total the customer pays. */}
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Subtotal</span>
-                <span className="font-mono tabular-nums text-foreground">{formatCurrency(subtotal, currency)}</span>
+                <span className="font-mono tabular-nums text-foreground">{formatCurrency(grossSubtotal, currency)}</span>
               </div>
+              {lineDiscountTotal > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Line discounts</span>
+                  <span className="font-mono tabular-nums text-destructive">-{formatCurrency(lineDiscountTotal, currency)}</span>
+                </div>
+              )}
+
+              {/* Invoice-level discount — one figure off the whole invoice. It
+                  comes off the taxable value, so the tax rows below react to it. */}
+              <div className="space-y-1.5 rounded-md border border-dashed border-border p-2.5">
+                <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Discount on total
+                </Label>
+                <div className="flex items-center gap-1.5">
+                  <div className="relative w-[44%] shrink-0">
+                    <Input type="number" className="h-9 pr-5 text-sm text-right font-mono" placeholder="0"
+                      value={docDiscountPct || ""} min={0} max={100} step="0.01"
+                      onChange={(e) => setDocPct(Number(e.target.value))} />
+                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">%</span>
+                  </div>
+                  <Input type="number" className="h-9 min-w-0 flex-1 text-sm text-right font-mono" placeholder="0.00"
+                    value={docDiscount || ""} min={0}
+                    onChange={(e) => setDocAmount(Number(e.target.value))} />
+                </div>
+                {docDiscount > netTotal ? (
+                  <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                    Capped at {formatCurrency(netTotal, currency)} — an invoice can't be discounted below zero.
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-muted-foreground">
+                    Spread across the lines, so tax is charged on the discounted value.
+                  </p>
+                )}
+              </div>
+
+              {docDiscountApplied > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Discount on total</span>
+                  <span className="font-mono tabular-nums text-destructive">-{formatCurrency(docDiscountApplied, currency)}</span>
+                </div>
+              )}
               {totalDiscount > 0 && (
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Discount</span>
-                  <span className="font-mono tabular-nums text-destructive">-{formatCurrency(totalDiscount, currency)}</span>
+                  <span className="text-muted-foreground">Taxable amount</span>
+                  <span className="font-mono tabular-nums text-foreground">{formatCurrency(subtotal, currency)}</span>
                 </div>
               )}
               {/* One row per tax code */}
