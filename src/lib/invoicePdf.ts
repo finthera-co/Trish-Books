@@ -156,14 +156,17 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
   const p = profile;
   const legalName = t.company_name || "";
   const tradingName = p?.trading_name || t.company_name;
-  const bankLines = [
-    p?.bank_name,
-    p?.bank_branch ? `Branch: ${p.bank_branch}` : null,
-    p?.bank_account_name ? `Account Name: ${p.bank_account_name}` : null,
-    p?.bank_account_no ? `Account No.: ${p.bank_account_no}` : null,
-    p?.bank_swift ? `SWIFT: ${p.bank_swift}` : null,
-  ].filter(Boolean);
-  const bankDetails = bankLines.length ? bankLines.join("\n") : null;
+  // Remittance details for the payment panel at the foot of the invoice, in the
+  // order a payer works through them: who to pay, into which account, at which
+  // bank. Anything the tenant hasn't set in Settings is simply left out.
+  const bankFields = ([
+    ["Account Holder", p?.bank_account_name],
+    ["Account No.", p?.bank_account_no],
+    ["Bank", p?.bank_name],
+    ["Branch", p?.bank_branch],
+    ["SWIFT", p?.bank_swift],
+  ] as [string, string | null | undefined][]).filter(([, v]) => !!String(v ?? "").trim()) as [string, string][];
+  const bankDetails = bankFields.length ? bankFields.map(([k, v]) => `${k}: ${v}`).join("\n") : null;
   const termsText = invoice.terms || p?.invoice_terms || null;
 
   // WinAnsi-encoded base-14 fonts can't render Sinhala/Tamil at all (blank or
@@ -440,7 +443,6 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
   for (const [heading, text] of [
     ["Notes", invoice.notes],
     ["Terms & Conditions", termsText],
-    ["Payment Details", bankDetails],
   ] as [string, string | null][]) {
     if (!text) continue;
     useFont(heading, "bold");
@@ -454,6 +456,66 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
     const wrapped = doc.splitTextToSize(String(text), notesW);
     doc.text(wrapped, M, ny);
     ny += wrapped.length * 4.2 + 5;
+  }
+
+  // ── Payment details — pinned to the foot of the invoice ──────────────
+  // Where a payer looks for it, and the last thing read before the total is
+  // acted on. Laid out as labelled columns rather than a stacked list so the
+  // account number is scannable; only the fields the tenant has filled in
+  // appear. Set them in Settings → Company Profile → Bank Details.
+  if (bankFields.length > 0) {
+    const padX = 5;
+    const colGap = 4;
+    const colW = (contentW - padX * 2 - colGap * (bankFields.length - 1)) / bankFields.length;
+    // Wrap each value to its column first — the panel is as tall as its
+    // deepest cell, so a long account name can't spill outside the border.
+    const cells = bankFields.map(([label, value]) => {
+      useFont(String(value), "bold");
+      doc.setFontSize(9);
+      return { label, lines: doc.splitTextToSize(String(value), colW) as string[] };
+    });
+    const deepest = Math.max(...cells.map((c) => c.lines.length));
+    const panelH = 9 + 4 + deepest * 4.6 + 5;
+
+    // Keep it at the bottom, but never let it ride over the footer or collide
+    // with the notes above — a content-heavy invoice pushes it to a new page.
+    const footTop = pageH - 24;
+    let panelY = Math.max(Math.max(ny, ty) + 6, footTop - panelH);
+    if (panelY + panelH > footTop) {
+      doc.addPage();
+      panelY = M + 6;
+    }
+
+    setFill(doc, ALT_ROW); setDraw(doc, RULE); doc.setLineWidth(0.2);
+    doc.roundedRect(M, panelY, contentW, panelH, 1.5, 1.5, "FD");
+    // Navy edge — the same accent that opens the page closes it.
+    setFill(doc, NAVY);
+    doc.rect(M, panelY + 1, 1.2, panelH - 2, "F");
+
+    useFont("PAYMENT DETAILS", "bold");
+    doc.setFontSize(8);
+    setText(doc, NAVY);
+    doc.text("PAYMENT DETAILS", M + padX, panelY + 6.5, { charSpace: 0.4 });
+
+    let bx = M + padX;
+    cells.forEach((cell, i) => {
+      useFont(cell.label, "normal");
+      doc.setFontSize(7);
+      setText(doc, MUTED2);
+      doc.text(cell.label.toUpperCase(), bx, panelY + 13, { charSpace: 0.2 });
+      // The account number is a figure to transcribe — mono, like every other
+      // number on the document.
+      if (cell.label === "Account No.") useMono("bold");
+      else useFont(cell.lines.join(" "), "bold");
+      doc.setFontSize(9);
+      setText(doc, INK);
+      doc.text(cell.lines, bx, panelY + 18);
+      bx += colW + colGap;
+      if (i < cells.length - 1) {
+        setDraw(doc, RULE); doc.setLineWidth(0.2);
+        doc.line(bx - colGap / 2, panelY + 9.5, bx - colGap / 2, panelY + panelH - 3);
+      }
+    });
   }
 
   // ── Footer on every page: rule + logo · company · thank-you · page ───

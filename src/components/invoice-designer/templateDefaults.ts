@@ -153,5 +153,12 @@ export function getStandardTemplate(): DesignerComponent[] {
     // ── Notes / terms (left, print only when the invoice has them) ───────
     { id: uid(), type: 'text', category: 'footer', label: 'Notes', binding: 'notes', defaultValue: '', x: 0, y: 17, w: 6, h: 2, style: { fontSize: 9, color: MUTED, textAlign: 'left' } },
     { id: uid(), type: 'text', category: 'footer', label: 'Terms', binding: 'terms', defaultValue: '', x: 0, y: 19, w: 6, h: 2, style: { fontSize: 9, color: MUTED, textAlign: 'left' } },
+
+    // ── Payment details, along the foot of the page ─────────────────────
+    // Mirrors the built-in vector PDF: a customer must be able to remit
+    // payment from the invoice alone. Pulled from Settings → Bank Details;
+    // prints nothing when the tenant hasn't filled them in.
+    { id: uid(), type: 'text', category: 'custom', label: 'Payment Details Label', defaultValue: 'PAYMENT DETAILS', x: 0, y: 22, w: 4, h: 1, style: { fontSize: 8, fontWeight: 'bold', color: SLATE, textAlign: 'left' } },
+    { id: uid(), type: 'text', category: 'footer', label: 'Bank Details', binding: 'bank_details', defaultValue: '', x: 0, y: 23, w: 12, h: 2, style: { fontSize: 9, color: MUTED, textAlign: 'left' } },
   ];
 }

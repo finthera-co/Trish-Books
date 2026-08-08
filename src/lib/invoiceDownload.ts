@@ -121,13 +121,17 @@ export async function loadInvoiceForDownload(invoiceId: string, tenantId: string
           ? `BR No: ${tenant.registration_number}`
           : "";
 
-  const bankLines = [
-    profile?.bank_name,
-    profile?.bank_branch ? `Branch: ${profile.bank_branch}` : null,
-    profile?.bank_account_name ? `Account Name: ${profile.bank_account_name}` : null,
-    profile?.bank_account_no ? `Account No.: ${profile.bank_account_no}` : null,
-    profile?.bank_swift ? `SWIFT: ${profile.bank_swift}` : null,
-  ].filter(Boolean);
+  // Same fields and order as the built-in vector PDF's payment panel, so the
+  // two download paths give a customer the same remittance details.
+  const bankLines = ([
+    ["Account Holder", profile?.bank_account_name],
+    ["Account No.", profile?.bank_account_no],
+    ["Bank", profile?.bank_name],
+    ["Branch", profile?.bank_branch],
+    ["SWIFT", profile?.bank_swift],
+  ] as [string, string | null | undefined][])
+    .filter(([, v]) => !!String(v ?? "").trim())
+    .map(([k, v]) => `${k}: ${v}`);
 
   const data: InvoiceData = {
     company_name: tenant?.company_name || "",

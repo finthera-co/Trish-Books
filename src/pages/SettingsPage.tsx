@@ -409,7 +409,7 @@ export default function SettingsPage() {
         <div className="stat-card">
           <h3 className="text-sm font-medium text-foreground mb-4">Bank Details</h3>
           <div className="space-y-4">
-            <p className="text-xs text-muted-foreground -mt-2">Shown on invoices so customers can remit payment.</p>
+            <p className="text-xs text-muted-foreground -mt-2">Printed in the Payment Details panel at the foot of every invoice PDF, so customers can remit payment. Blank fields are left off.</p>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-sm text-muted-foreground">Bank Name</label>
@@ -431,7 +431,7 @@ export default function SettingsPage() {
               </div>
             </div>
             <div>
-              <label className="text-sm text-muted-foreground">Account Name</label>
+              <label className="text-sm text-muted-foreground">Account Holder Name</label>
               <input
                 type="text"
                 value={bankAccountName}
