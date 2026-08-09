@@ -1,10 +1,106 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, ShieldCheck, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, ShieldCheck, AlertTriangle, CheckCircle2, Hash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useSerialRegister } from "@/hooks/useSerialRegister";
+import { useInvoiceNextNumbers, useSetInvoiceNextNumber } from "@/hooks/useInvoiceNumbering";
+import { useLegacyInvoiceNumbering } from "@/hooks/useTenantFeature";
+
+const today = () => new Date().toISOString().slice(0, 10);
+const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+const periodLabel = (iso: string) => {
+  const d = new Date(iso + "T00:00:00");
+  return isNaN(d.getTime()) ? "—" : `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+};
+
+/**
+ * Set where the automatic numbering carries on from — the control a business
+ * migrating from another system needs: point it past the invoices they already
+ * raised, key those in by hand with their original numbers, and the sequence
+ * continues cleanly from there.
+ *
+ * Numbering restarts each month per branch under the IRD format, so the counter
+ * belongs to one branch + month rather than the whole company.
+ */
+function NextNumberCard() {
+  const [period, setPeriod] = useState(today());
+  const [branch, setBranch] = useState("");
+  const [nextSeq, setNextSeq] = useState("");
+  const { data: current } = useInvoiceNextNumbers(period);
+  const setNext = useSetInvoiceNextNumber();
+
+  const apply = () => {
+    const n = Number(nextSeq);
+    if (!Number.isInteger(n) || n < 1) return;
+    setNext.mutate(
+      { branchCode: branch.trim() || "MAIN", period, nextSeq: n },
+      { onSuccess: () => setNextSeq("") },
+    );
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Hash className="w-4 h-4 text-primary" /> Next invoice number
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Where automatic numbering carries on from. Moving to Trish Books mid-year? Set this past your
+          existing invoices, then enter the old ones with their original numbers typed into the
+          invoice number field.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+          <div className="space-y-1.5">
+            <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Month</Label>
+            <Input type="date" className="h-9" value={period} onChange={(e) => setPeriod(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Branch (QQQQ)</Label>
+            <Input className="h-9 font-mono" value={branch} onChange={(e) => setBranch(e.target.value)}
+              placeholder="MAIN" maxLength={15} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Next number</Label>
+            <Input type="number" className="h-9 font-mono" value={nextSeq} min={1} step={1}
+              onChange={(e) => setNextSeq(e.target.value)} placeholder="e.g. 61" />
+          </div>
+          <div className="flex items-end">
+            <Button className="h-9 w-full" onClick={apply} disabled={!nextSeq || setNext.isPending}>
+              {setNext.isPending ? "Setting…" : "Set"}
+            </Button>
+          </div>
+        </div>
+
+        <p className="text-[11px] text-muted-foreground">
+          Numbering restarts every month, so this applies to {periodLabel(period)} for the branch shown.
+          It can only move forward — a number already issued is never handed out twice.
+        </p>
+
+        {(current ?? []).length > 0 && (
+          <div className="rounded-lg border border-border divide-y divide-border">
+            {(current ?? []).map((r) => (
+              <div key={`${r.branch_code}-${r.yy}-${r.mmm}`} className="flex items-center justify-between px-3 py-2 text-sm">
+                <span className="text-muted-foreground">
+                  Branch <span className="font-mono text-foreground">{r.branch_code}</span> · {r.mmm} 20{String(r.yy).padStart(2, "0")}
+                </span>
+                <span className="font-mono tabular-nums text-foreground">
+                  next: <span className="font-semibold">{r.next_serial}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 const statusBadge = (s: string) =>
   s === "issued" ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
@@ -14,6 +110,7 @@ const statusBadge = (s: string) =>
 export default function InvoiceSerialRegister() {
   const navigate = useNavigate();
   const { data: groups, isLoading } = useSerialRegister();
+  const canSetNextNumber = useLegacyInvoiceNumbering();
 
   const totalMissing = (groups ?? []).reduce((s, g) => s + g.missing.length, 0);
 
@@ -35,6 +132,10 @@ export default function InvoiceSerialRegister() {
           ? <><CheckCircle2 className="w-4 h-4" /> Every issued number is accounted for — no unexplained gaps in the sequence.</>
           : <><AlertTriangle className="w-4 h-4" /> {totalMissing} number(s) are missing from the sequence and need investigation.</>}
       </div>
+
+      {/* Only for tenants migrating from another system — see
+          useLegacyInvoiceNumbering. The RPC behind it is gated too. */}
+      {canSetNextNumber && <NextNumberCard />}
 
       {isLoading ? (
         <p className="text-center py-8 text-muted-foreground">Loading…</p>

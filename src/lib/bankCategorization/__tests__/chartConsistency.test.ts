@@ -101,7 +101,7 @@ describe("category taxonomy consistency", () => {
     expect(new Set(codes).size).toBe(codes.length);
   });
 
-  it("every template account uses a canonical Finthera account_type", () => {
+  it("every template account uses a canonical Trish Books account_type", () => {
     const valid = new Set([
       "Asset", "Liability", "Equity", "Income",
       "Cost of Goods Sold", "Expense", "Other Income", "Other Expense",

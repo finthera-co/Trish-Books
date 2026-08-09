@@ -39,10 +39,10 @@ export const DEFAULT_PAGE_SETTINGS: PageSettings = {
 };
 
 export const SAMPLE_INVOICE_DATA: InvoiceData = {
-  company_name: 'Finthera Ltd.',
+  company_name: 'Trish Books Ltd.',
   company_address: '123 Business Ave, Colombo 03, Sri Lanka',
   company_phone: '+94 11 234 5678',
-  company_email: 'info@finthera.com',
+  company_email: 'info@trishbooks.com',
   company_tax_number: 'TIN: 123456789',
   company_registration: 'PV 12345678',
   customer_name: 'ABC Corporation',

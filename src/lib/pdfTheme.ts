@@ -2,7 +2,7 @@ import type { jsPDF } from "jspdf";
 import { formatInvoiceDate } from "@/lib/format";
 
 /**
- * "Steel Statement" — the shared visual language of Finthera's vector
+ * "Steel Statement" — the shared visual language of Trish Books' vector
  * documents (invoices, estimates). Bank-statement precision: one deep navy
  * accent, tabular monospace figures, minimal colour everywhere else.
  *

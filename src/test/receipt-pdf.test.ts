@@ -18,7 +18,7 @@ vi.mock("@/lib/pdfFonts", () => ({
 const { buildReceiptPdf } = await import("@/lib/receiptPdf");
 
 const company = {
-  company_name: "Finthera Ltd.", address: "45 Union Place, Colombo 02",
+  company_name: "Trish Books Ltd.", address: "45 Union Place, Colombo 02",
   phone: "+94 11 555 0000", tax_id: "134567890",
 };
 const base = {

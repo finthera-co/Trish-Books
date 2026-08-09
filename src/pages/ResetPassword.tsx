@@ -59,7 +59,7 @@ export default function ResetPassword() {
           <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow-sm">
             <BookOpen className="w-4.5 h-4.5 text-primary-foreground" />
           </div>
-          <span className="text-lg font-bold text-foreground tracking-tight">Finthera</span>
+          <span className="text-lg font-bold text-foreground tracking-tight">Trish Books</span>
         </div>
 
         <h1 className="text-[28px] font-bold text-foreground tracking-tight">Set a new password</h1>

@@ -239,7 +239,7 @@ export const fmtBal = (n?: number | null): string => {
   return n < -0.005 ? `(${s})` : s;
 };
 
-// The QuickBooks reference uses MM/dd/yyyy (US locale). Finthera defaults to dd/MM/yyyy
+// The QuickBooks reference uses MM/dd/yyyy (US locale). Trish Books defaults to dd/MM/yyyy
 // for Sri Lanka. Change this ONE constant for byte-exact parity with the reference.
 export const GL_DATE_FORMAT = "dd/MM/yyyy";
 

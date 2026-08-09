@@ -69,7 +69,7 @@ export default function Login() {
             <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow-sm">
               <BookOpen className="w-4.5 h-4.5 text-primary-foreground" />
             </div>
-            <span className="text-lg font-bold text-foreground tracking-tight">Finthera</span>
+            <span className="text-lg font-bold text-foreground tracking-tight">Trish Books</span>
           </div>
         </div>
 
@@ -150,7 +150,7 @@ export default function Login() {
 
         {/* Footer */}
         <div className="px-8 pb-8">
-          <p className="text-xs text-muted-foreground">Finthera {new Date().getFullYear()}</p>
+          <p className="text-xs text-muted-foreground">Trish Books {new Date().getFullYear()}</p>
         </div>
       </div>
     </div>

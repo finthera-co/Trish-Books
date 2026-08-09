@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
       .select("company_name")
       .eq("id", appUser.tenant_id)
       .single();
-    const companyName = tenant?.company_name || "Finthera";
+    const companyName = tenant?.company_name || "Trish Books";
 
     const subject = body.subject?.trim() || `Invoice ${invoice.invoice_number} from ${companyName}`;
     const messageText = body.message?.trim() || `Please find invoice ${invoice.invoice_number} attached.`;

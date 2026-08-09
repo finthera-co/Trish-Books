@@ -53,7 +53,7 @@ export default function EmployeeLayout() {
         <div className="flex items-center gap-2.5 px-5 h-16 border-b border-white/15">
           <div className="w-9 h-9 rounded-xl bg-white/15 backdrop-blur flex items-center justify-center font-bold">FT</div>
           <div className="leading-tight">
-            <p className="text-sm font-semibold">Finthera</p>
+            <p className="text-sm font-semibold">Trish Books</p>
             <p className="text-[11px] text-white/70">Employee Portal</p>
           </div>
         </div>

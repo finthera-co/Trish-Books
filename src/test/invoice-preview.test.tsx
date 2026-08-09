@@ -21,7 +21,7 @@ describe("invoice preview rendering", () => {
       data: SAMPLE_INVOICE_DATA,
     });
     expect(node.children.length).toBeGreaterThan(5);
-    expect(node.textContent).toContain("Finthera Ltd.");
+    expect(node.textContent).toContain("Trish Books Ltd.");
     expect(node.textContent).toContain("INVOICE");
     const table = node.querySelector("table");
     expect(table).toBeTruthy();
@@ -57,7 +57,7 @@ describe("invoice preview rendering", () => {
     );
     expect(screen.getByText("Invoice Preview")).toBeTruthy();
     await waitFor(() => {
-      expect(document.body.textContent).toContain("Finthera Ltd.");
+      expect(document.body.textContent).toContain("Trish Books Ltd.");
     });
   });
 });

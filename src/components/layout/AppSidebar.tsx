@@ -129,7 +129,7 @@ export default function AppSidebar() {
           </div>
           {!collapsed && (
             <span className="text-lg font-semibold text-sidebar-foreground truncate">
-              Finthera
+              Trish Books
             </span>
           )}
         </div>

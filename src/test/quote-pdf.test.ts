@@ -30,7 +30,7 @@ const baseQuote = {
   terms: "50% advance, balance on delivery.",
 };
 const customer = { name: "Acme (Pvt) Ltd", address: "12 Galle Road\nColombo 03", email: "ap@acme.lk" };
-const tenant = { company_name: "Finthera Ltd.", country: "Sri Lanka", registration_number: "PV 12345" } as any;
+const tenant = { company_name: "Trish Books Ltd.", country: "Sri Lanka", registration_number: "PV 12345" } as any;
 const items = [
   { description: "Implementation services", quantity: 1, unit_price: 60000, discount_amount: 6000, discount_percent: 10, total: 54000 },
   { description: "Support retainer", quantity: 2, unit_price: 20000, discount_amount: 4000, discount_percent: 10, total: 36000 },

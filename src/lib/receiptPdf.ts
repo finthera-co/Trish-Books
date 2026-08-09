@@ -69,7 +69,7 @@ export async function buildReceiptPdf(
     title: model.receiptNumber ? `Receipt ${model.receiptNumber}` : "Payment Receipt",
     subject: `Payment receipt for ${model.receivedFrom || "customer"}`,
     author: c.company_name || "",
-    creator: c.company_name || "Finthera",
+    creator: c.company_name || "Trish Books",
   });
 
   // ── Top accent bar — the one full-bleed use of the accent colour ─────

@@ -158,7 +158,7 @@ Deno.serve(async (req) => {
     } else {
       const html = `
         <div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:520px;color:#001D39">
-          <h2 style="font-size:20px;margin:0 0 12px">Your Finthera account is ready</h2>
+          <h2 style="font-size:20px;margin:0 0 12px">Your Trish Books account is ready</h2>
           <p style="margin:0 0 16px;line-height:1.6">
             Hello ${escapeHtml(reqRow.first_name)}, your application for
             <strong>${escapeHtml(reqRow.company_name)}</strong> has been approved.
@@ -184,9 +184,9 @@ Deno.serve(async (req) => {
         method: "POST",
         headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          from: `Finthera <${fromEmail}>`,
+          from: `Trish Books <${fromEmail}>`,
           to: [reqRow.email],
-          subject: "Your Finthera account is ready",
+          subject: "Your Trish Books account is ready",
           html,
         }),
       });

@@ -89,21 +89,25 @@ function useScrollZoom<T extends HTMLElement>() {
   return ref;
 }
 
-/* Gives a section its own 3D entrance as it scrolls into view — the same idea as
-   the hero, but triggered by position rather than page load: the section arrives
-   out of depth, tilted back, and rights itself.
+/* Gives a section its own entrance as it scrolls into view — the same idea as the
+   hero, but triggered by position rather than page load: the section rises the
+   last few centimetres into place and comes up to full opacity.
+
+   Fired early, at a 12% negative bottom margin, so the movement is finished by the
+   time the section is properly in the reading area. A reveal the reader has to
+   wait on is a reveal they are watching instead of reading.
 
    The class is added from JS rather than sitting in the markup, so a section is
    never left transformed-and-invisible if this never runs. Same safety timeout as
    useReveal for the case where the observer stays quiet.                        */
-function useSection3d<T extends HTMLElement>() {
+function useSectionRise<T extends HTMLElement>() {
   const ref = useRef<T>(null);
 
   useEffect(() => {
     const el = ref.current;
     if (!el || prefersReducedMotion()) return;
 
-    el.classList.add("lp-s3d");
+    el.classList.add("lp-srise");
     const show = () => el.classList.add("is-in");
 
     const io = new IntersectionObserver(
@@ -113,7 +117,7 @@ function useSection3d<T extends HTMLElement>() {
           io.disconnect();
         }
       },
-      { threshold: 0.08, rootMargin: "0px 0px -6% 0px" },
+      { threshold: 0, rootMargin: "0px 0px -12% 0px" },
     );
     io.observe(el);
 
@@ -328,7 +332,7 @@ function useReveal<T extends HTMLElement>() {
           io.disconnect();
         }
       },
-      { threshold: 0, rootMargin: "0px 0px -8% 0px" },
+      { threshold: 0, rootMargin: "0px 0px -12% 0px" },
     );
     io.observe(el);
 
@@ -769,7 +773,7 @@ function TaxInvoiceSpecimen() {
 
       <header className="lp-doc-top">
         <div>
-          <p className="lp-doc-co">Finthera Advisory (Pvt) Ltd</p>
+          <p className="lp-doc-co">Trish Books Advisory (Pvt) Ltd</p>
           <p className="lp-doc-sm">No. 42, Janadhipathi Mawatha, Colombo 01</p>
           <p className="lp-doc-sm">TIN 104567890-7000 · BR No. PV 128394</p>
         </div>
@@ -853,7 +857,7 @@ function ReceiptSpecimen() {
 
       <header className="lp-doc-top">
         <div>
-          <p className="lp-doc-co">Finthera Advisory (Pvt) Ltd</p>
+          <p className="lp-doc-co">Trish Books Advisory (Pvt) Ltd</p>
           <p className="lp-doc-sm">No. 42, Janadhipathi Mawatha, Colombo 01</p>
           <p className="lp-doc-sm">TIN 104567890-7000</p>
         </div>
@@ -922,6 +926,10 @@ function DocumentShowcase() {
   const [idx, setIdx] = useState(0);
   const [armed, setArmed] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  // The sheet drifts against the page as the section passes, which separates it
+  // from the band behind it. Scroll-linked rather than triggered, so it keeps
+  // answering the scroll for as long as the section is on screen.
+  const parallaxRef = useScrollProgress<HTMLDivElement>();
   const docs = ["Tax invoice", "Payment receipt"];
 
   useEffect(() => {
@@ -950,7 +958,7 @@ function DocumentShowcase() {
     <div className="lp-docs" ref={ref}>
       {/* Both sheets stay mounted and stacked; only the active one is shown, so the
           block never changes height as they swap. */}
-      <div className="lp-docs-stack">
+      <div className="lp-docs-stack" ref={parallaxRef}>
         <div className={`lp-docs-slot${idx === 0 ? " is-live" : ""}`} aria-hidden={idx !== 0}>
           <TaxInvoiceSpecimen />
         </div>
@@ -993,7 +1001,7 @@ function SplitHeading({
   text,
   accent,
   className = "",
-  step = 55,
+  step = 90,
 }: {
   text: string;
   /** Word or contiguous phrase within `text` to carry the shifting gradient. */
@@ -1517,20 +1525,20 @@ export default function Landing() {
   const reportsRef = useReveal<HTMLUListElement>();
   const controlsRef = useReveal<HTMLDivElement>();
   const stageRef = useScrollZoom<HTMLDivElement>();
-  // One 3D entrance per section. Separate refs rather than a loop, since hooks
+  // One entrance per section. Separate refs rather than a loop, since hooks
   // can't be called conditionally or iteratively.
-  const s3dBalance = useSection3d<HTMLDivElement>();
-  const s3dCoa = useSection3d<HTMLDivElement>();
-  const s3dClose = useSection3d<HTMLElement>();
-  const s3dReports = useSection3d<HTMLElement>();
-  const s3dLocal = useSection3d<HTMLElement>();
-  const s3dDocs = useSection3d<HTMLElement>();
-  const s3dShots = useSection3d<HTMLElement>();
-  const s3dStart = useSection3d<HTMLElement>();
-  const s3dPricing = useSection3d<HTMLElement>();
-  const s3dClosing = useSection3d<HTMLElement>();
-  const s3dControls = useSection3d<HTMLDivElement>();
-  const s3dFooter = useSection3d<HTMLDivElement>();
+  const sRiseBalance = useSectionRise<HTMLDivElement>();
+  const sRiseCoa = useSectionRise<HTMLDivElement>();
+  const sRiseClose = useSectionRise<HTMLElement>();
+  const sRiseReports = useSectionRise<HTMLElement>();
+  const sRiseLocal = useSectionRise<HTMLElement>();
+  const sRiseDocs = useSectionRise<HTMLElement>();
+  const sRiseShots = useSectionRise<HTMLElement>();
+  const sRiseStart = useSectionRise<HTMLElement>();
+  const sRisePricing = useSectionRise<HTMLElement>();
+  const sRiseClosing = useSectionRise<HTMLElement>();
+  const sRiseControls = useSectionRise<HTMLDivElement>();
+  const sRiseFooter = useSectionRise<HTMLDivElement>();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -1603,7 +1611,7 @@ export default function Landing() {
               <span />
               <span />
             </span>
-            <span className="font-serif text-[1.35rem] leading-none tracking-tight">Finthera</span>
+            <span className="font-serif text-[1.35rem] leading-none tracking-tight">Trish Books</span>
           </div>
 
           {/* Desktop nav */}
@@ -1791,7 +1799,7 @@ export default function Landing() {
         </div>
 
         {/* ── The rule that runs the product ───────────────────── */}
-        <section className="lp-shell" ref={s3dBalance}>
+        <section className="lp-shell" ref={sRiseBalance}>
           <p className="lp-axiom">
             <span className="lp-mono lp-axiom-eq">Σ debits = Σ credits</span>
             Nothing saves until it balances. Nothing posts twice. Nothing disappears.
@@ -1802,7 +1810,7 @@ export default function Landing() {
                Set on navy and run full-bleed, matching the Industry-bundles panel
                further down; the inner shell keeps the content on the page grid. ── */}
         <section id="ledger" className="lp-band is-navy" ref={mapRef}>
-          <div className="lp-shell lp-section" ref={s3dCoa}>
+          <div className="lp-shell lp-section" ref={sRiseCoa}>
             <header className="lp-section-head">
               <p className="lp-eyebrow">Chart of accounts</p>
               <SplitHeading text="Every number traceable to the document behind it" accent="traceable" />
@@ -1815,7 +1823,7 @@ export default function Landing() {
 
             <div className="lp-map">
               {LEDGER_MAP.map((group, i) => (
-                <article key={group.code} className="lp-group" style={{ transitionDelay: `${i * 70}ms` }}>
+                <article key={group.code} className="lp-group" style={{ transitionDelay: `${i * 110}ms` }}>
                   <div className="lp-group-key">
                     <span className="lp-mono lp-group-code">{group.code}</span>
                     <span className="lp-mono lp-group-class">{group.klass}</span>
@@ -1838,7 +1846,7 @@ export default function Landing() {
         <div className="lp-shell" aria-hidden="true"><div className="lp-stripe" /></div>
 
         {/* ── The close cycle. Numbered because it genuinely is an order. ── */}
-        <section id="close" className="lp-shell lp-section" ref={s3dClose}>
+        <section id="close" className="lp-shell lp-section" ref={sRiseClose}>
           <header className="lp-section-head">
             <p className="lp-eyebrow">The month, end to end</p>
             <SplitHeading text="Close the month in six steps, not six weeks" accent="six steps" />
@@ -1850,7 +1858,7 @@ export default function Landing() {
 
           <ol className="lp-steps" ref={stepsRef}>
             {CLOSE_STEPS.map(([term, desc], i) => (
-              <li key={term} className="lp-step" style={{ transitionDelay: `${i * 60}ms` }}>
+              <li key={term} className="lp-step" style={{ transitionDelay: `${i * 100}ms` }}>
                 <span className="lp-mono lp-step-no">{String(i + 1).padStart(2, "0")}</span>
                 <div>
                   <h3 className="lp-step-term">{term}</h3>
@@ -1862,7 +1870,7 @@ export default function Landing() {
         </section>
 
         {/* ── What the ledger produces ─────────────────────────── */}
-        <section id="reports" className="lp-shell lp-section" ref={s3dReports}>
+        <section id="reports" className="lp-shell lp-section" ref={sRiseReports}>
           <header className="lp-section-head">
             <p className="lp-eyebrow">Reports</p>
             <SplitHeading text="The statement your accountant asks for, ready now" accent="ready now" />
@@ -1875,7 +1883,7 @@ export default function Landing() {
 
           <ul className="lp-reports" ref={reportsRef}>
             {REPORTS.map(([name, desc], i) => (
-              <li key={name} className="lp-report" style={{ transitionDelay: `${i * 45}ms` }}>
+              <li key={name} className="lp-report" style={{ transitionDelay: `${i * 90}ms` }}>
                 <h3>{name}</h3>
                 <p>{desc}</p>
               </li>
@@ -1887,10 +1895,10 @@ export default function Landing() {
                Placed straight after Reports: the claim is made above, the screens
                that back it are here. Dark ground so the light UI reads as a screen
                rather than as more page. ── */}
-        <section id="screens" className="lp-band is-navy" ref={s3dShots}>
+        <section id="screens" className="lp-band is-navy" ref={sRiseShots}>
           <div className="lp-shell lp-section">
             <header className="lp-section-head">
-              <p className="lp-eyebrow">Inside Finthera</p>
+              <p className="lp-eyebrow">Inside Trish Books</p>
               <SplitHeading text="This is what you get on day one" accent="day one" />
               <p className="lp-body lp-section-lede">
                 Not a mock-up. These are the dashboards and the ledger as they ship —
@@ -1902,7 +1910,7 @@ export default function Landing() {
         </section>
 
         {/* ── Local specifics ──────────────────────────────────── */}
-        <section id="sri-lanka" className="lp-shell lp-section" ref={s3dLocal}>
+        <section id="sri-lanka" className="lp-shell lp-section" ref={sRiseLocal}>
           <header className="lp-section-head">
             <p className="lp-eyebrow">Sri Lanka</p>
             <SplitHeading text="Built for Sri Lankan compliance, not adapted to it" accent="not adapted to it" />
@@ -1926,7 +1934,7 @@ export default function Landing() {
                The compliance claim made concrete: the actual tax invoice and receipt
                the system issues, on a dark ground so the white sheets read as paper.
                Kept immediately after the Sri Lanka section it evidences. ── */}
-        <section id="documents" className="lp-band is-navy is-docs" ref={s3dDocs}>
+        <section id="documents" className="lp-band is-navy is-docs" ref={sRiseDocs}>
           <div className="lp-shell lp-section">
             <header className="lp-section-head">
               <p className="lp-eyebrow">Documents</p>
@@ -1951,7 +1959,7 @@ export default function Landing() {
                Set on violet and run full-bleed: this is the section the page is
                built to deliver a reader to, so it gets the one dark band on an
                otherwise pale page. Contents invert for the dark ground. ── */}
-        <section id="getting-started" className="lp-band" ref={s3dStart}>
+        <section id="getting-started" className="lp-band" ref={sRiseStart}>
           <div className="lp-shell lp-section">
             <header className="lp-section-head">
               <p className="lp-eyebrow">Getting started</p>
@@ -1974,7 +1982,7 @@ export default function Landing() {
         </div>
 
         {/* ── Pricing ──────────────────────────────────────────── */}
-        <section id="pricing" className="lp-shell lp-section lp-pricing" ref={s3dPricing}>
+        <section id="pricing" className="lp-shell lp-section lp-pricing" ref={sRisePricing}>
           <header className="lp-section-head">
             <p className="lp-eyebrow">Packages &amp; pricing</p>
             <SplitHeading text="Pay for the ledger, not for seats you don’t fill" accent="you don’t fill" />
@@ -2243,7 +2251,7 @@ export default function Landing() {
 
         {/* ── Controls ─────────────────────────────────────────── */}
         <section id="controls" className="lp-band is-joined" ref={controlsRef}>
-          <div className="lp-shell lp-section" ref={s3dControls}>
+          <div className="lp-shell lp-section" ref={sRiseControls}>
             <header className="lp-section-head">
               <p className="lp-eyebrow">Controls</p>
               <SplitHeading text="Built to survive an audit" accent="audit" />
@@ -2256,7 +2264,7 @@ export default function Landing() {
 
             <dl className="lp-controls">
               {CONTROLS.map(([term, desc], i) => (
-                <div key={term} className="lp-control" style={{ transitionDelay: `${i * 70}ms` }}>
+                <div key={term} className="lp-control" style={{ transitionDelay: `${i * 110}ms` }}>
                   <dt>{term}</dt>
                   <dd>{desc}</dd>
                 </div>
@@ -2271,7 +2279,7 @@ export default function Landing() {
                and give a reason to take it now. The offer figure is read from PROMO,
                so this section can never quote a discount the rest of the page has
                stopped running. ── */}
-        <section className="lp-shell lp-closing" ref={s3dClosing}>
+        <section className="lp-shell lp-closing" ref={sRiseClosing}>
           <div className="lp-closing-main">
             <p className="lp-closing-eyebrow">
               <Tag className="w-3 h-3" strokeWidth={2.5} />
@@ -2361,7 +2369,7 @@ export default function Landing() {
              figure (ENTRY_TOTAL), so the page opens and closes on a ledger that
              ties. It stays a plain <nav> of real links underneath the styling. ── */}
       <footer className="lp-footer">
-        <div className="lp-shell" ref={s3dFooter}>
+        <div className="lp-shell" ref={sRiseFooter}>
           <div className="lp-foot-head">
             <span className="lp-mono lp-foot-jv">JV-2026-CLOSE</span>
             <span className="lp-foot-posted">
@@ -2414,7 +2422,7 @@ export default function Landing() {
                 <span />
                 <span />
               </span>
-              <span className="font-serif text-base">Finthera</span>
+              <span className="font-serif text-base">Trish Books</span>
               <span className="lp-foot-tag">Double-entry accounting, built in Sri Lanka</span>
             </div>
             <div className="lp-foot-meta">
@@ -2423,7 +2431,7 @@ export default function Landing() {
                 <ArrowRight className="w-3.5 h-3.5" />
               </Link>
               <p className="lp-mono lp-foot-copy">
-                © {new Date().getFullYear()} Finthera
+                © {new Date().getFullYear()} Trish Books
               </p>
             </div>
           </div>
@@ -2450,15 +2458,28 @@ const css = `
   --amber-lo: #FFD24A;
   --violet: #1F1E1D;
   --violet-lo: #D97757;
-  /* ── 3D motion system ──────────────────────────────────────────────────
-     One depth for the whole page, so every hinge, turn and lift is seen from
-     the same camera. The vocabulary is paper: this is a ledger, so sheets
-     hinge up off a desk, turn like pages, and lift toward the reader — they
-     never spin or tumble. Big surfaces rotate least; small ones most.        */
-  --lp-persp: 1200px;      /* shared camera distance */
-  --lp-hinge: 7deg;        /* a sheet settling onto the desk */
-  --lp-turn: 9deg;         /* a page turning on its spine */
-  --lp-lift: 26px;         /* how far a card comes toward the reader */
+  /* ── Motion system ─────────────────────────────────────────────────────
+     One curve and one travel distance for the whole page.
+
+     The curve leaves decisively and settles without overshoot. Nothing here
+     bounces: a bounce reads as playful, and the subject is a ledger. Reveals
+     are long and unhurried — the movement finishes before the reader has
+     finished reading what moved, so the animation is never the thing being
+     watched.
+
+     Entrances travel on one axis only, up. A section that rotates into place
+     announces the transition rather than the content, and at 1000px+ tall it
+     keystones badly at the far edge. Depth is kept for the pointer alone,
+     where a small lift reads as a surface answering the cursor.              */
+  --lp-ease: cubic-bezier(0.28, 0.11, 0.32, 1);  /* the page's only easing */
+  --lp-ease-io: var(--lp-ease-io);    /* for things that leave and return */
+  --lp-rise: 3rem;         /* how far a section travels into place */
+  --lp-rise-sm: 1.5rem;    /* items inside a section that is already arriving */
+  --lp-dur: 900ms;         /* item reveal */
+  --lp-dur-lg: 1200ms;     /* whole-section reveal */
+  --lp-dur-ui: 400ms;      /* hover / pointer response */
+  --lp-persp: 1200px;      /* shared camera, pointer states only */
+  --lp-lift: 10px;         /* how far a card lifts under the pointer */
   font-family: var(--font-sans);
   /* The page itself is the gradient: near-white at the top, deepening
      through mint into a soft green by the footer. */
@@ -2473,34 +2494,33 @@ const css = `
 .lp .lp-shell { width: 100%; max-width: 74rem; margin-inline: auto; padding-inline: 1.5rem; }
 
 /* Hero stage — ambient video under a light scrim */
-/* Scroll-zoom hero. --lp-zoom runs 0 -> 1 as the stage scrolls past (set from JS in
-   useScrollZoom); everything below is derived from it, so the browser animates
-   transform/filter/opacity on the compositor and JS only writes one number.
-   The stage keeps its own height — the backdrop is what moves. */
-/* perspective here is what makes the hero's translateZ read as depth rather than
-   as a flat scale. overflow:hidden then clips the content as it flies past the
-   viewer, which is what sells the "pop and disappear". */
-.lp .lp-stage { position: relative; isolation: isolate; overflow: hidden; --lp-zoom: 0; perspective: 1100px; perspective-origin: 50% 40%; }
+/* Scroll-scrubbed hero. --lp-zoom runs 0 -> 1 as the stage scrolls past (set from
+   JS in useScrollZoom); everything below is derived from it, so the browser
+   animates transform/filter/opacity on the compositor and JS only writes one
+   number. The stage keeps its own height — the backdrop is what moves.
 
-/* Backdrop pushes away and softens as the foreground comes forward — opposing
+   The hero doesn't fly at the reader on the way out. It drifts up a little faster
+   than the page carries it and dissolves, while the video behind it drifts the
+   other way: two planes separating at different rates, which is what reads as
+   depth. Rushing the foreground toward the camera reads as a transition effect
+   and makes the type illegible for the whole of it. */
+.lp .lp-stage { position: relative; isolation: isolate; overflow: hidden; --lp-zoom: 0; }
+
+/* Backdrop settles back and softens as the foreground lifts away — opposing
    directions are what give the shot its depth. */
 .lp .lp-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; pointer-events: none;
-  transform: scale(calc(1 + var(--lp-zoom) * 0.38));
-  filter: blur(calc(var(--lp-zoom) * 16px));
-  opacity: calc(1 - var(--lp-zoom) * 0.8);
+  transform: scale(calc(1 + var(--lp-zoom) * 0.14)) translate3d(0, calc(var(--lp-zoom) * 3rem), 0);
+  filter: blur(calc(var(--lp-zoom) * 7px));
+  opacity: calc(1 - var(--lp-zoom) * 0.6);
   transform-origin: 50% 45%;
   will-change: transform, filter, opacity; }
 
-/* The hero itself pops toward the reader and dissolves. Opacity is multiplied so
-   it reaches zero around 65% of the travel — gone before the stage ends, rather
-   than lingering as a ghost over the next section. */
+/* The hero itself lifts and dissolves. Opacity is multiplied so it reaches zero
+   around 70% of the travel — gone before the stage ends, rather than lingering as
+   a ghost over the next section. */
 .lp .lp-stage .lp-hero {
-  transform:
-    translate3d(0, calc(var(--lp-zoom) * -2.2rem), calc(var(--lp-zoom) * 300px))
-    rotateX(calc(var(--lp-zoom) * -10deg))
-    scale(calc(1 + var(--lp-zoom) * 0.06));
-  opacity: calc(1 - var(--lp-zoom) * 1.55);
-  transform-origin: 50% 100%;
+  transform: translate3d(0, calc(var(--lp-zoom) * -4rem), 0);
+  opacity: calc(1 - var(--lp-zoom) * 1.45);
   will-change: transform, opacity; }
 .lp .lp-scrim { position: absolute; inset: 0; z-index: -1; pointer-events: none;
   background-image:
@@ -2529,7 +2549,7 @@ const css = `
 /* Mobile menu panel + scrim */
 .lp .lp-menu-scrim { position: fixed; inset: 0; z-index: 38; background: rgba(20, 20, 19, 0.42); backdrop-filter: blur(2px); opacity: 0; visibility: hidden; transition: opacity 220ms ease, visibility 220ms ease; }
 .lp .lp-menu-scrim.is-open { opacity: 1; visibility: visible; }
-.lp .lp-menu { position: fixed; top: 0; right: 0; z-index: 39; display: flex; flex-direction: column; gap: 0.25rem; width: min(20rem, 84vw); height: 100dvh; padding: 5.5rem 1.5rem 2rem; background-image: linear-gradient(180deg, #FFFFFF, #FAF9F5); border-left: 1px solid var(--rule); box-shadow: -24px 0 60px -30px rgba(20, 20, 19, 0.5); transform: translateX(100%); transition: transform 280ms cubic-bezier(0.16, 1, 0.3, 1); overflow-y: auto; }
+.lp .lp-menu { position: fixed; top: 0; right: 0; z-index: 39; display: flex; flex-direction: column; gap: 0.25rem; width: min(20rem, 84vw); height: 100dvh; padding: 5.5rem 1.5rem 2rem; background-image: linear-gradient(180deg, #FFFFFF, #FAF9F5); border-left: 1px solid var(--rule); box-shadow: -24px 0 60px -30px rgba(20, 20, 19, 0.5); transform: translateX(100%); transition: transform 280ms var(--lp-ease); overflow-y: auto; }
 .lp .lp-menu.is-open { transform: translateX(0); }
 .lp .lp-menu-link { font-size: 1.05rem; font-weight: 600; color: var(--ink); text-decoration: none; padding: 0.9rem 0.25rem; border-bottom: 1px solid var(--rule); }
 .lp .lp-menu-link:hover { color: var(--emerald); }
@@ -2545,27 +2565,28 @@ const css = `
   .lp .lp-menu, .lp .lp-menu-scrim { transition: none; }
 }
 
-/* ── More 3D, on the same camera ────────────────────────────────────────
-   Hover states that turn a surface rather than merely lifting it. Each one
-   pivots from the edge nearest the pointer's approach, so the motion reads as
-   paper being tipped up off the desk. */
-.lp .lp-pack-group.is-boxed { transform-style: preserve-3d;
-  transition: transform 320ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 320ms ease, border-color 320ms ease; }
-.lp .lp-pack-group.is-boxed:hover { transform: perspective(var(--lp-persp)) rotateY(calc(var(--lp-turn) * -0.5)) translate3d(0, -6px, var(--lp-lift));
-  border-color: rgba(196, 105, 74, 0.5); box-shadow: -14px 26px 46px -28px rgba(20, 20, 19, 0.55); }
+/* ── Pointer states ─────────────────────────────────────────────────────
+   A surface answering the cursor lifts straight up and deepens its shadow. It
+   does not turn: rotation under the pointer draws attention to the card's
+   geometry, and the shadow alone already says "this is above the page". The
+   lift is small enough that reading is never interrupted by it. */
+.lp .lp-pack-group.is-boxed {
+  transition: transform var(--lp-dur-ui) var(--lp-ease), box-shadow var(--lp-dur-ui) ease, border-color var(--lp-dur-ui) ease; }
+.lp .lp-pack-group.is-boxed:hover { transform: translate3d(0, calc(var(--lp-lift) * -1), 0);
+  border-color: rgba(196, 105, 74, 0.5); box-shadow: 0 26px 46px -28px rgba(20, 20, 19, 0.55); }
 
-.lp .lp-report { transform-style: preserve-3d;
-  transition: transform 320ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 320ms ease, border-color 320ms ease; }
+.lp .lp-report {
+  transition: transform var(--lp-dur-ui) var(--lp-ease), box-shadow var(--lp-dur-ui) ease, border-color var(--lp-dur-ui) ease; }
 .lp .lp-armed.is-visible .lp-report:hover, .lp .lp-reports .lp-report:hover {
-  transform: perspective(var(--lp-persp)) rotateX(calc(var(--lp-hinge) * 0.7)) translate3d(0, -5px, var(--lp-lift));
+  transform: translate3d(0, calc(var(--lp-lift) * -0.8), 0);
   box-shadow: 0 30px 50px -30px rgba(20, 20, 19, 0.5); }
 
-.lp .lp-trust li { transform-style: preserve-3d; transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1); }
-.lp .lp-trust li:hover { transform: perspective(var(--lp-persp)) translateZ(16px) rotateX(-6deg); }
+.lp .lp-trust li { transition: transform var(--lp-dur-ui) var(--lp-ease); }
+.lp .lp-trust li:hover { transform: translate3d(0, -4px, 0); }
 
-.lp .lp-menu-link { transform-origin: left center;
-  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1), color 200ms ease; }
-.lp .lp-menu-link:hover { transform: perspective(600px) rotateY(-7deg) translateZ(10px); }
+.lp .lp-menu-link {
+  transition: transform var(--lp-dur-ui) var(--lp-ease), color 200ms ease; }
+.lp .lp-menu-link:hover { transform: translate3d(4px, 0, 0); }
 
 @media (prefers-reduced-motion: reduce) {
   .lp .lp-pack-group.is-boxed, .lp .lp-report, .lp .lp-trust li, .lp .lp-menu-link { transition: none; }
@@ -2574,18 +2595,20 @@ const css = `
 }
 
 /* ── Star ad ────────────────────────────────────────────────────────────
-   A spiked sale sticker hung in the corner. It sways on its own axis using
-   the page's shared camera, so it sits in the same 3D space as the cards and
-   sheets rather than floating in a separate one. */
+   A spiked sale sticker hung in the corner. It keeps its thickness — two
+   bursts offset in depth — but holds still: a sticker that sways forever
+   competes with the page for attention, and this one already has colour and
+   position doing that work. It comes to rest at a slight angle so the depth
+   still reads, and only moves when the pointer arrives. */
 .lp .lp-star-wrap { position: fixed; left: 1.5rem; bottom: 1.5rem; z-index: 45;
   width: 8.5rem; height: 8.5rem; perspective: var(--lp-persp);
-  opacity: 0; transform: translate3d(0, 1.5rem, -240px) scale(0.7);
-  transition: opacity 720ms ease, transform 900ms cubic-bezier(0.22, 1.15, 0.36, 1); }
+  opacity: 0; transform: translate3d(0, 1.5rem, 0) scale(0.92);
+  transition: opacity var(--lp-dur) var(--lp-ease), transform var(--lp-dur-lg) var(--lp-ease); }
 .lp .lp-star-wrap.is-in { opacity: 1; transform: none; }
 
 .lp .lp-star { position: absolute; inset: 0; display: grid; place-items: center; text-decoration: none;
-  transform-style: preserve-3d; animation: lp-star-sway 7s ease-in-out infinite;
-  transition: filter 240ms ease; will-change: transform; }
+  transform-style: preserve-3d; transform: rotateY(-9deg) rotateX(4deg);
+  transition: transform var(--lp-dur-ui) var(--lp-ease), filter var(--lp-dur-ui) ease; }
 .lp .lp-star::before { content: ""; position: absolute; inset: 0;
   clip-path: polygon(50.0% 0.0%, 57.4% 12.7%, 69.1% 3.8%, 71.1% 18.4%, 85.4% 14.6%, 81.6% 28.9%, 96.2% 30.9%, 87.3% 42.6%, 100.0% 50.0%, 87.3% 57.4%, 96.2% 69.1%, 81.6% 71.1%, 85.4% 85.4%, 71.1% 81.6%, 69.1% 96.2%, 57.4% 87.3%, 50.0% 100.0%, 42.6% 87.3%, 30.9% 96.2%, 28.9% 81.6%, 14.6% 85.4%, 18.4% 71.1%, 3.8% 69.1%, 12.7% 57.4%, 0.0% 50.0%, 12.7% 42.6%, 3.8% 30.9%, 18.4% 28.9%, 14.6% 14.6%, 28.9% 18.4%, 30.9% 3.8%, 42.6% 12.7%);
   background-image: linear-gradient(150deg, #E89A72 0%, var(--bright) 44%, #B4462A 100%);
@@ -2594,8 +2617,7 @@ const css = `
 .lp .lp-star::after { content: ""; position: absolute; inset: 0;
   clip-path: polygon(50.0% 0.0%, 57.4% 12.7%, 69.1% 3.8%, 71.1% 18.4%, 85.4% 14.6%, 81.6% 28.9%, 96.2% 30.9%, 87.3% 42.6%, 100.0% 50.0%, 87.3% 57.4%, 96.2% 69.1%, 81.6% 71.1%, 85.4% 85.4%, 71.1% 81.6%, 69.1% 96.2%, 57.4% 87.3%, 50.0% 100.0%, 42.6% 87.3%, 30.9% 96.2%, 28.9% 81.6%, 14.6% 85.4%, 18.4% 71.1%, 3.8% 69.1%, 12.7% 57.4%, 0.0% 50.0%, 12.7% 42.6%, 3.8% 30.9%, 18.4% 28.9%, 14.6% 14.6%, 28.9% 18.4%, 30.9% 3.8%, 42.6% 12.7%);
   background: #8E3A22; transform: translateZ(-14px) scale(0.985); }
-.lp .lp-star:hover { filter: brightness(1.06); }
-.lp .lp-star:hover, .lp .lp-star:focus-visible { animation-play-state: paused; }
+.lp .lp-star:hover, .lp .lp-star:focus-visible { filter: brightness(1.06); transform: rotateY(0deg) rotateX(0deg) scale(1.04); }
 .lp .lp-star:focus-visible { outline: 3px solid var(--ink); outline-offset: 6px; border-radius: 50%; }
 
 .lp .lp-star-face { position: relative; display: grid; justify-items: center; gap: 0.05rem;
@@ -2614,27 +2636,20 @@ const css = `
 .lp .lp-star-x:hover { background: #F0EEE6; }
 .lp .lp-star-x:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
-/* Swings on two axes at once, so the burst turns rather than merely wobbling. */
-@keyframes lp-star-sway {
-  0%, 100% { transform: rotateY(-19deg) rotateX(7deg) translateZ(0); }
-  25%      { transform: rotateY(4deg) rotateX(-5deg) translateZ(14px); }
-  50%      { transform: rotateY(19deg) rotateX(7deg) translateZ(0); }
-  75%      { transform: rotateY(4deg) rotateX(-5deg) translateZ(-10px); }
-}
-
 @media (max-width: 46rem) {
   .lp .lp-star-wrap { left: 0.9rem; bottom: 0.9rem; width: 6.6rem; height: 6.6rem; }
   .lp .lp-star-num { font-size: 1.6rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   .lp .lp-star-wrap { transition: none; opacity: 1; transform: none; }
-  .lp .lp-star { animation: none; transform: none; }
+  /* The resting tilt is geometry, not motion — it stays. Only the transition goes. */
+  .lp .lp-star { transition: none; }
+  .lp .lp-star:hover, .lp .lp-star:focus-visible { transform: rotateY(-9deg) rotateX(4deg); }
 }
 
 /* Buttons */
-.lp .lp-btn { display: inline-flex; align-items: center; gap: 0.5rem; border-radius: 999px; background-image: linear-gradient(135deg, #C4694A 0%, #BD5D3A 100%); color: #FFFFFF; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; box-shadow: 0 10px 22px -12px rgba(189, 93, 58, 0.75); transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease; }
-.lp .lp-btn { transform-style: preserve-3d; }
-.lp .lp-btn:hover { filter: brightness(1.09); transform: perspective(600px) translate3d(0, -1px, 8px); box-shadow: 0 16px 30px -14px rgba(189, 93, 58, 0.85); }
+.lp .lp-btn { display: inline-flex; align-items: center; gap: 0.5rem; border-radius: 999px; background-image: linear-gradient(135deg, #C4694A 0%, #BD5D3A 100%); color: #FFFFFF; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; box-shadow: 0 10px 22px -12px rgba(189, 93, 58, 0.75); transition: transform 260ms var(--lp-ease), box-shadow 260ms ease, filter 260ms ease; }
+.lp .lp-btn:hover { filter: brightness(1.09); transform: translate3d(0, -2px, 0); box-shadow: 0 16px 30px -14px rgba(189, 93, 58, 0.85); }
 .lp .lp-btn:focus-visible { outline: 2px solid #BD5D3A; outline-offset: 3px; }
 .lp .lp-btn-sm { padding: 0.5rem 1rem; font-size: 0.875rem; }
 .lp .lp-btn-lg { padding: 0.85rem 1.6rem; font-size: 1rem; }
@@ -2649,8 +2664,10 @@ const css = `
 
 /* The window clips; the track carries the two runs and slides by exactly half its
    width, which is one full run — so the loop repeats seamlessly. */
-.lp .lp-ticker-window { flex: 1 1 auto; min-width: 0; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 3rem, #000 calc(100% - 3rem), transparent); mask-image: linear-gradient(90deg, transparent, #000 3rem, #000 calc(100% - 3rem), transparent); }
-.lp .lp-ticker-track { display: flex; width: max-content; animation: lp-ticker-scroll 34s linear infinite; }
+.lp .lp-ticker-window { flex: 1 1 auto; min-width: 0; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 5rem, #000 calc(100% - 5rem), transparent); mask-image: linear-gradient(90deg, transparent, #000 5rem, #000 calc(100% - 5rem), transparent); }
+/* Slow enough to read a single offer without tracking it, and with a wide
+   enough fade at each end that offers arrive and leave rather than clipping. */
+.lp .lp-ticker-track { display: flex; width: max-content; animation: lp-ticker-scroll 56s linear infinite; }
 .lp .lp-ticker-run { display: flex; align-items: center; flex: none; }
 .lp .lp-ticker:hover .lp-ticker-track { animation-play-state: paused; }
 
@@ -2677,8 +2694,8 @@ const css = `
   border: 1px solid rgba(61, 42, 0, 0.2); color: #3D2A00; cursor: pointer;
   background-image: linear-gradient(135deg, var(--amber-lo), var(--amber));
   box-shadow: 0 18px 36px -14px rgba(20, 20, 19, 0.55);
-  transition: transform 320ms cubic-bezier(0.22, 1.12, 0.36, 1), box-shadow 320ms ease; }
-.lp .lp-chat-fab:hover { transform: perspective(600px) translate3d(0, -3px, 14px); box-shadow: 0 26px 46px -16px rgba(20, 20, 19, 0.6); }
+  transition: transform var(--lp-dur-ui) var(--lp-ease), box-shadow var(--lp-dur-ui) ease; }
+.lp .lp-chat-fab:hover { transform: translate3d(0, -3px, 0) scale(1.04); box-shadow: 0 26px 46px -16px rgba(20, 20, 19, 0.6); }
 .lp .lp-chat-fab:focus-visible { outline: 2px solid #141413; outline-offset: 3px; }
 /* A single unread pip, only before the first exchange. */
 .lp .lp-chat-dot { position: absolute; top: 0.45rem; right: 0.45rem; width: 0.7rem; height: 0.7rem;
@@ -2693,9 +2710,9 @@ const css = `
     linear-gradient(165deg, #0A3560 0%, var(--ink) 55%, #141413 100%);
   box-shadow: 0 34px 70px -26px rgba(20, 20, 19, 0.75);
   opacity: 0; pointer-events: none;
-  transform: perspective(var(--lp-persp)) rotateX(calc(var(--lp-hinge) * -0.7)) translate3d(0, 1rem, -80px);
+  transform: translate3d(0, 1rem, 0) scale(0.98);
   transform-origin: 50% 100%;
-  transition: opacity 260ms ease, transform 420ms cubic-bezier(0.22, 1.12, 0.36, 1); }
+  transition: opacity 260ms ease, transform 480ms var(--lp-ease); }
 .lp .lp-chat.is-open { opacity: 1; pointer-events: auto; transform: none; }
 
 .lp .lp-chat-head { position: relative; padding: 1rem 3rem 0.85rem 1.15rem; border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
@@ -2750,7 +2767,7 @@ const css = `
    on the page beneath it. */
 /* Scrim: centres the card and dims the page behind it. pointer-events go off while
    closed so the invisible layer can never swallow a click on the page. */
-.lp .lp-pop-wrap { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 1.25rem; perspective: var(--lp-persp);
+.lp .lp-pop-wrap { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 1.25rem;
   background: rgba(20, 20, 19, 0.55); backdrop-filter: blur(3px);
   opacity: 0; pointer-events: none; transition: opacity 320ms ease; }
 .lp .lp-pop-wrap.is-open { opacity: 1; pointer-events: auto; }
@@ -2765,8 +2782,8 @@ const css = `
     radial-gradient(26rem 16rem at 8% -20%, rgba(217, 119, 87, 0.6), transparent 64%),
     linear-gradient(155deg, #2A2724 0%, var(--violet) 42%, #0A2E58 100%);
   box-shadow: 0 34px 80px -26px rgba(20, 20, 19, 0.8);
-  transform: rotateX(calc(var(--lp-hinge) * -1)) translate3d(0, 1.25rem, -120px);
-  transition: transform 560ms cubic-bezier(0.22, 1.12, 0.36, 1); }
+  transform: translate3d(0, 1.25rem, 0) scale(0.96);
+  transition: transform 560ms var(--lp-ease); }
 .lp .lp-pop-wrap.is-open .lp-pop { transform: none; }
 /* Amber top hairline, the same signal the marquee and bands use. */
 .lp .lp-pop::before { content: ""; position: absolute; left: 1.1rem; right: 1.1rem; top: 0; height: 3px; border-radius: 0 0 3px 3px;
@@ -2969,7 +2986,7 @@ const css = `
    drives the row sideways and then the page resumes downwards on its own. */
 .lp .lp-shots-stage { position: relative; --lp-x: 0px; }
 .lp .lp-shots-pin { position: sticky; top: 0; height: 100vh; height: 100dvh;
-  display: flex; align-items: center; overflow: hidden; perspective: var(--lp-persp); }
+  display: flex; align-items: center; overflow: hidden; }
 .lp .lp-shots-track { display: flex; align-items: center; gap: 1.75rem; width: max-content;
   padding-inline: max(1.5rem, calc((100vw - 74rem) / 2));
   transform: translate3d(var(--lp-x), 0, 0);
@@ -2978,10 +2995,7 @@ const css = `
 .lp .lp-shot { flex: none; width: min(52rem, 84vw); margin: 0; }
 .lp .lp-shot-frame { position: relative; border-radius: 0.85rem; overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.18); background: #0B1D30;
-  box-shadow: 0 40px 80px -34px rgba(20, 20, 19, 0.8);
-  /* Each shot sits very slightly turned, so the row reads with depth rather than
-     as a flat filmstrip. */
-  transform: rotateY(calc(var(--lp-turn) * 0.22)); transform-origin: 50% 50%; }
+  box-shadow: 0 40px 80px -34px rgba(20, 20, 19, 0.8); }
 .lp .lp-shot-bar { display: flex; align-items: center; gap: 0.35rem; padding: 0.55rem 0.75rem;
   background: rgba(255, 255, 255, 0.06); border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
 .lp .lp-shot-bar i { width: 0.5rem; height: 0.5rem; border-radius: 999px; background: rgba(255, 255, 255, 0.22); }
@@ -2999,17 +3013,23 @@ const css = `
 .lp .lp-shot-missing { width: 100%; height: 100%; background:
   repeating-linear-gradient(135deg, rgba(20,20,19,0.06) 0 12px, rgba(20,20,19,0.02) 12px 24px); }
 
-.lp .lp-shot figcaption { margin-top: 1rem; }
+/* Depth without turning anything: the caption lags the frame it belongs to as the
+   row pans, so the two planes separate. --lp-x is the track's own offset, and a
+   small negative fraction of it moves the caption against the direction of travel,
+   which is what reads as parallax. */
+.lp .lp-shot figcaption { margin-top: 1rem;
+  transform: translate3d(calc(var(--lp-x, 0px) * -0.075), 0, 0);
+  will-change: transform; }
 .lp .lp-shot-title { margin: 0; font-family: var(--font-serif); font-size: 1.1rem; color: #FFFFFF; }
 .lp .lp-shot-body { margin: 0.3rem 0 0; font-size: 0.875rem; line-height: 1.55; color: rgba(240, 238, 230, 0.72); max-width: 42ch; }
 
 @media (prefers-reduced-motion: reduce) {
-  /* No pinning and no turn — the row becomes an ordinary horizontal scroller, and
-     the JS that would set the stage height bails out before running. */
+  /* No pinning and no parallax — the row becomes an ordinary horizontal scroller,
+     and the JS that would set the stage height bails out before running. */
   .lp .lp-shots-stage { height: auto !important; }
   .lp .lp-shots-pin { position: static; height: auto; overflow-x: auto; padding-block: 1rem; }
   .lp .lp-shots-track { transform: none; }
-  .lp .lp-shot-frame { transform: none; }
+  .lp .lp-shot figcaption { transform: none; }
 }
 
 /* ── Document specimens ──────────────────────────────────────────────────────
@@ -3017,18 +3037,26 @@ const css = `
    sheets are stacked in the same grid cell and cross-fade, which keeps the block a
    fixed height while they swap — no layout jump mid-cycle. */
 .lp .lp-docs { margin-top: 2.5rem; }
-.lp .lp-docs-stack { display: grid; perspective: var(--lp-persp); }
+.lp .lp-docs-stack { display: grid; }
 .lp .lp-docs-slot { grid-area: 1 / 1; display: flex; justify-content: center;
-  /* The outgoing sheet turns away on its spine while the next turns in — a page
-     being flipped, rather than two cards cross-fading. */
-  opacity: 0; transform-origin: 0% 50%;
-  transform: rotateY(calc(var(--lp-turn) * -1)) translate3d(-18px, 8px, -70px); pointer-events: none;
-  transition: opacity 620ms ease, transform 780ms cubic-bezier(0.19, 1, 0.22, 1); }
+  /* A cross-dissolve, not a page flip: the incoming sheet rises the last few
+     pixels into place while the outgoing one settles back. The scale is small
+     enough that the type inside never visibly resamples. */
+  opacity: 0; transform: translate3d(0, 1.25rem, 0) scale(0.985); pointer-events: none;
+  transition: opacity 700ms var(--lp-ease), transform 900ms var(--lp-ease); }
 .lp .lp-docs-slot.is-live { opacity: 1; transform: none; pointer-events: auto; }
 
 /* The sheet itself. A4-ish proportion via max-width; type is deliberately small so
-   it reads as a document rather than as page content. */
-.lp .lp-doc { position: relative; width: 100%; max-width: 46rem; padding: 1.9rem 1.9rem 1.6rem;
+   it reads as a document rather than as page content.
+
+   --lp-p is written 0→1 by useScrollProgress as the stack crosses the viewport.
+   Re-centring it on 0.5 turns it into -0.5→0.5, so the sheet drifts up through the
+   section instead of only ever moving one way from wherever it started. The travel
+   is small: this is the sheet sitting a little in front of the band, not a
+   separate thing sliding across it. */
+.lp .lp-doc { transform: translate3d(0, calc((var(--lp-p, 0.5) - 0.5) * -3rem), 0);
+  will-change: transform;
+  position: relative; width: 100%; max-width: 46rem; padding: 1.9rem 1.9rem 1.6rem;
   background: #FFFFFF; color: #1F1E1D; border-radius: 0.4rem;
   box-shadow: 0 40px 80px -30px rgba(20, 20, 19, 0.75), 0 2px 0 rgba(255, 255, 255, 0.5) inset;
   font-size: 0.78rem; line-height: 1.5; text-align: left; }
@@ -3116,7 +3144,7 @@ const css = `
 }
 .lp .lp-start-step:last-child .lp-start-rail { display: none; }
 .lp .lp-start-rail-fill { display: block; width: 100%; height: 100%; background: linear-gradient(180deg, var(--violet), var(--amber));
-  transform: scaleY(0); transform-origin: top; transition: transform 620ms cubic-bezier(0.4, 0, 0.2, 1); }
+  transform: scaleY(0); transform-origin: top; transition: transform 620ms var(--lp-ease-io); }
 @media (min-width: 60rem) {
   .lp .lp-start-rail-fill { background: linear-gradient(90deg, var(--violet), var(--amber)); transform: scaleX(0); transform-origin: left; }
 }
@@ -3130,7 +3158,10 @@ const css = `
 .lp .lp-start-icon-done { opacity: 0; transform: scale(0.6); }
 /* Violet marks the step being worked, amber the rail it has already filled — the
    two accents split the "now" and "done" states between them. */
-.lp .lp-start-step.is-live .lp-start-dot { border-color: var(--violet); color: var(--violet); animation: lp-pulse-ring 1.6s ease-out infinite; }
+/* One ring as the step becomes current, then it holds. The spinner on the rim is
+   already saying "working" for as long as that lasts; a second looping signal
+   saying the same thing is just noise. */
+.lp .lp-start-step.is-live .lp-start-dot { border-color: var(--violet); color: var(--violet); animation: lp-pulse-ring 1.4s var(--lp-ease-io) 1 both; }
 .lp .lp-start-step.is-done .lp-start-dot { background: var(--violet); border-color: var(--violet); color: #FFFFFF; }
 .lp .lp-start-step.is-done .lp-start-icon-idle { opacity: 0; transform: scale(0.6); }
 .lp .lp-start-step.is-done .lp-start-icon-done { opacity: 1; transform: scale(1); }
@@ -3141,17 +3172,17 @@ const css = `
 .lp .lp-start-step.is-live .lp-start-spin { opacity: 1; animation: lp-start-spin 900ms linear infinite; }
 @keyframes lp-start-spin { to { transform: rotate(360deg); } }
 
-/* When a step becomes current it pops toward the reader in 3D and settles back —
-   the whole card lifts, not just the dot, so the eye is pulled along the row. The
-   keyframe returns to its own start, so a step that has already played sits flat
-   again once the sequence moves on. */
+/* When a step becomes current the whole card lifts and settles back, so the eye is
+   carried along the row rather than having to find the next dot. It rises and
+   returns — no scale, since scaling the step resamples the type inside it at every
+   frame of a sequence that runs on a loop. The keyframe returns to its own start,
+   so a step that has already played sits flat again once the sequence moves on. */
 @keyframes lp-start-pop {
-  0%   { transform: perspective(700px) translate3d(0, 0, 0) scale(1); }
-  38%  { transform: perspective(700px) translate3d(0, -6px, 46px) scale(1.05); }
-  100% { transform: perspective(700px) translate3d(0, 0, 0) scale(1); }
+  0%   { transform: translate3d(0, 0, 0); }
+  38%  { transform: translate3d(0, -8px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
 }
-.lp .lp-start-step { transform-origin: 50% 70%; }
-.lp .lp-start-step.is-live { animation: lp-start-pop 1900ms cubic-bezier(0.22, 1.1, 0.36, 1) both; z-index: 1; }
+.lp .lp-start-step.is-live { animation: lp-start-pop 1900ms var(--lp-ease-io) both; z-index: 1; }
 .lp .lp-start-step.is-live .lp-start-copy { transition: none; }
 
 .lp .lp-start-copy { display: flex; flex-direction: column; gap: 0.2rem; }
@@ -3239,12 +3270,11 @@ const css = `
 /* Account groups — ruled like a ledger sheet */
 .lp .lp-group { display: grid; grid-template-columns: 1fr; gap: 0.85rem; padding-block: 1.75rem; border-top: 1px solid var(--rule); }
 .lp .lp-group:last-child { border-bottom: 1px solid var(--rule); }
-/* Ledger rows hinge up off the desk rather than sliding. Bottom-anchored, so the
-   near edge stays put and the far edge rises — the way a sheet is laid down. */
-.lp .lp-map { perspective: var(--lp-persp); }
-.lp .lp-armed .lp-group { opacity: 0; transform-origin: 50% 100%;
-  transform: rotateX(calc(var(--lp-hinge) * -1)) translate3d(0, 14px, -50px);
-  transition: opacity 600ms ease, transform 700ms cubic-bezier(0.19, 1, 0.22, 1); }
+/* Rows rise into place, staggered by a delay set per row in the markup. One axis,
+   one curve — the same entrance every other group of items on this page uses. */
+.lp .lp-armed .lp-group { opacity: 0;
+  transform: translate3d(0, var(--lp-rise-sm), 0);
+  transition: opacity var(--lp-dur) var(--lp-ease), transform var(--lp-dur) var(--lp-ease); }
 .lp .lp-armed.is-visible .lp-group { opacity: 1; transform: none; }
 @media (min-width: 48rem) { .lp .lp-group { grid-template-columns: 10rem 1fr; gap: 2.5rem; } }
 .lp .lp-group-key { display: flex; align-items: baseline; gap: 0.75rem; }
@@ -3259,10 +3289,9 @@ const css = `
 @media (min-width: 44rem) { .lp .lp-steps { grid-template-columns: repeat(2, 1fr); } }
 @media (min-width: 68rem) { .lp .lp-steps { grid-template-columns: repeat(3, 1fr); } }
 .lp .lp-step { display: flex; gap: 1rem; padding: 1.6rem 1.4rem; background-image: linear-gradient(165deg, rgba(255, 255, 255, 0.92), rgba(250, 249, 245, 0.72)); }
-.lp .lp-steps { perspective: var(--lp-persp); }
-.lp .lp-armed .lp-step { opacity: 0; transform-origin: 50% 100%;
-  transform: rotateX(calc(var(--lp-hinge) * -1)) translate3d(0, 14px, -50px);
-  transition: opacity 600ms ease, transform 700ms cubic-bezier(0.19, 1, 0.22, 1); }
+.lp .lp-armed .lp-step { opacity: 0;
+  transform: translate3d(0, var(--lp-rise-sm), 0);
+  transition: opacity var(--lp-dur) var(--lp-ease), transform var(--lp-dur) var(--lp-ease); }
 .lp .lp-armed.is-visible .lp-step { opacity: 1; transform: none; }
 .lp .lp-step-no { font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.06em; color: var(--emerald); padding-top: 0.15rem; }
 .lp .lp-step-term { font-family: var(--font-serif); font-size: 1.15rem; letter-spacing: -0.015em; color: var(--ink); }
@@ -3273,10 +3302,9 @@ const css = `
 @media (min-width: 44rem) { .lp .lp-reports { grid-template-columns: repeat(2, 1fr); } }
 @media (min-width: 68rem) { .lp .lp-reports { grid-template-columns: repeat(4, 1fr); } }
 .lp .lp-report { padding: 1.15rem 1.15rem 1.25rem; border: 1px solid var(--rule); border-radius: 0.85rem; background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.95), rgba(240, 238, 230, 0.75)); border-top: 2px solid rgba(217, 119, 87, 0.55); }
-.lp .lp-reports { perspective: var(--lp-persp); }
-.lp .lp-armed .lp-report { opacity: 0; transform-origin: 50% 100%;
-  transform: rotateX(calc(var(--lp-hinge) * -1)) translate3d(0, 12px, -44px);
-  transition: opacity 520ms ease, transform 640ms cubic-bezier(0.19, 1, 0.22, 1); }
+.lp .lp-armed .lp-report { opacity: 0;
+  transform: translate3d(0, var(--lp-rise-sm), 0);
+  transition: opacity var(--lp-dur) var(--lp-ease), transform var(--lp-dur) var(--lp-ease); }
 .lp .lp-armed.is-visible .lp-report { opacity: 1; transform: none; }
 .lp .lp-report h3 { font-size: 0.9375rem; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
 .lp .lp-report p { margin-top: 0.35rem; font-size: 0.8125rem; line-height: 1.55; color: var(--body); }
@@ -3307,9 +3335,8 @@ const css = `
 .lp .lp-bases { display: grid; grid-template-columns: 1fr; gap: 1.5rem; align-items: stretch; padding-top: 1rem; }
 @media (min-width: 44rem) { .lp .lp-bases { grid-template-columns: repeat(2, 1fr); } }
 @media (min-width: 68rem) { .lp .lp-bases { grid-template-columns: repeat(3, 1fr); } }
-.lp .lp-tier { position: relative; display: flex; flex-direction: column; padding: 2.25rem 2rem; border: 1px solid var(--rule); border-radius: 1.5rem; background-image: linear-gradient(168deg, rgba(255, 255, 255, 0.98), rgba(240, 238, 230, 0.85)); box-shadow: 0 24px 48px -34px rgba(20, 20, 19, 0.4); transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 260ms ease, border-color 260ms ease; }
-.lp .lp-bases { perspective: var(--lp-persp); }
-.lp .lp-tier:hover { transform: translate3d(0, -10px, var(--lp-lift)) rotateX(2.5deg); border-color: rgba(196, 105, 74, 0.65); box-shadow: 0 40px 70px -30px rgba(20, 20, 19, 0.55); z-index: 2; }
+.lp .lp-tier { position: relative; display: flex; flex-direction: column; padding: 2.25rem 2rem; border: 1px solid var(--rule); border-radius: 1.5rem; background-image: linear-gradient(168deg, rgba(255, 255, 255, 0.98), rgba(240, 238, 230, 0.85)); box-shadow: 0 24px 48px -34px rgba(20, 20, 19, 0.4); transition: transform var(--lp-dur-ui) var(--lp-ease), box-shadow var(--lp-dur-ui) ease, border-color var(--lp-dur-ui) ease; }
+.lp .lp-tier:hover { transform: translate3d(0, -10px, 0); border-color: rgba(196, 105, 74, 0.65); box-shadow: 0 40px 70px -30px rgba(20, 20, 19, 0.55); z-index: 2; }
 /* Accent edge on every tier: a hairline of amber running into violet across the
    top of the card, tucked inside the rounded corner. */
 .lp .lp-tier::before { content: ""; position: absolute; left: 1.75rem; right: 1.75rem; top: -1px; height: 3px; border-radius: 0 0 3px 3px;
@@ -3317,7 +3344,9 @@ const css = `
 .lp .lp-tier:hover { border-color: rgba(31, 30, 29, 0.42); }
 .lp .lp-tier.is-popular { border-color: transparent; box-shadow: 0 0 0 2px var(--violet), 0 34px 60px -30px rgba(31, 30, 29, 0.45); background-image: linear-gradient(168deg, #FFFFFF, #F5F2EA); }
 .lp .lp-tier.is-popular::before { left: 1.25rem; right: 1.25rem; height: 4px; opacity: 1; }
-@media (min-width: 68rem) { .lp .lp-tier.is-popular { transform: translateZ(18px); } .lp .lp-tier.is-popular:hover { transform: translate3d(0, -10px, calc(var(--lp-lift) + 18px)) rotateX(2.5deg); } }
+/* The popular tier already stands slightly proud of its neighbours; hovering it
+   lifts from there rather than resetting to the row. */
+@media (min-width: 68rem) { .lp .lp-tier.is-popular { transform: translate3d(0, -8px, 0); } .lp .lp-tier.is-popular:hover { transform: translate3d(0, -18px, 0); } }
 .lp .lp-tier.is-popular:hover { box-shadow: 0 0 0 2px var(--violet), 0 40px 70px -30px rgba(31, 30, 29, 0.5); }
 
 .lp .lp-tier-top { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; min-height: 1.6rem; margin-bottom: 0.9rem; }
@@ -3469,7 +3498,7 @@ const css = `
   border: 1px solid var(--rule);
   background-image: linear-gradient(160deg, #FFFFFF 0%, #FAF9F5 100%);
   box-shadow: 0 16px 32px -28px rgba(20, 20, 19, 0.5);
-  transition: transform 340ms cubic-bezier(0.19, 1, 0.22, 1), box-shadow 340ms ease, border-color 340ms ease; }
+  transition: transform var(--lp-dur-ui) var(--lp-ease), box-shadow var(--lp-dur-ui) ease, border-color var(--lp-dur-ui) ease; }
 
 /* Hovering a control should read as the control ENGAGING, not as a card floating.
    Two borrowings from audit working papers, where these four things actually live:
@@ -3482,27 +3511,24 @@ const css = `
 .lp .lp-control::before { content: ""; position: absolute; left: -1px; top: 0.9rem; bottom: 0.9rem; width: 3px;
   border-radius: 3px; background: linear-gradient(180deg, var(--amber), var(--violet));
   transform: scaleY(0); transform-origin: 50% 0;
-  transition: transform 260ms cubic-bezier(0.22, 1.1, 0.36, 1); }
+  transition: transform 320ms var(--lp-ease); }
 
 /* The tick: the mark an auditor leaves once a control has been tested. Decorative
    reinforcement — the section lede already states these come as standard. */
 .lp .lp-control::after { content: "✓ Enforced"; position: absolute; top: 0.95rem; right: 1.1rem;
   font-family: var(--font-mono); font-size: 0.55rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
   color: var(--amber); opacity: 0; transform: translateX(-0.35rem);
-  transition: opacity 220ms ease, transform 320ms cubic-bezier(0.22, 1.1, 0.36, 1); }
+  transition: opacity 220ms ease, transform 320ms var(--lp-ease); }
 
 /* The lift. Deliberately no scale: a control engaging is a snap, not a zoom, and
-   scaling a card blurs the type inside it. The overshoot in the easing is what
-   makes it pop.
+   scaling a card blurs the type inside it.
 
    Both selectors are needed — the first outranks the reveal rule below (which pins
    transform:none once the section is visible), the second covers the never-armed
    case. z-index lifts the card so its shadow isn't drawn under its neighbours. */
 .lp .lp-armed.is-visible .lp-control:hover,
 .lp .lp-controls .lp-control:hover {
-  /* Comes toward the reader and tips its top edge back — a sheet being picked up,
-     not a box sliding north. */
-  transform: translate3d(0, -6px, var(--lp-lift)) rotateX(2.5deg); z-index: 2;
+  transform: translate3d(0, calc(var(--lp-lift) * -1), 0); z-index: 2;
   border-color: rgba(31, 30, 29, 0.45);
   box-shadow: 0 30px 56px -24px rgba(20, 20, 19, 0.55); }
 .lp .lp-control:hover::before, .lp .lp-control:focus-within::before { transform: scaleY(1); }
@@ -3510,12 +3536,13 @@ const css = `
 /* Keyboard parity — same state on focus, since a card can hold links. */
 .lp .lp-control:focus-within { border-color: rgba(31, 30, 29, 0.45); }
 
-.lp .lp-controls { perspective: var(--lp-persp); }
-.lp .lp-armed .lp-control { opacity: 0; transform-origin: 50% 100%;
-  transform: rotateX(calc(var(--lp-hinge) * -1)) translate3d(0, 14px, -50px);
-  transition: opacity 600ms ease, transform 700ms cubic-bezier(0.19, 1, 0.22, 1); }
+.lp .lp-armed .lp-control { opacity: 0;
+  transform: translate3d(0, var(--lp-rise-sm), 0);
+  transition: opacity var(--lp-dur) var(--lp-ease), transform var(--lp-dur) var(--lp-ease); }
+/* Once revealed, the card hands its transform back to the hover rule — which needs
+   the shorter pointer timing, not the long reveal one. */
 .lp .lp-armed.is-visible .lp-control { opacity: 1; transform: none;
-  transition: opacity 600ms ease, transform 340ms cubic-bezier(0.19, 1, 0.22, 1), box-shadow 340ms ease, border-color 340ms ease; }
+  transition: opacity var(--lp-dur) var(--lp-ease), transform var(--lp-dur-ui) var(--lp-ease), box-shadow var(--lp-dur-ui) ease, border-color var(--lp-dur-ui) ease; }
 .lp .lp-control dt { padding-right: 5.5rem; font-size: 0.95rem; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
 .lp .lp-control dd { margin: 0.45rem 0 0; font-size: 0.875rem; line-height: 1.6; color: var(--body); }
 
@@ -3644,55 +3671,42 @@ const css = `
 .lp .lp-footer .lp-mark span { background: var(--mint); }
 
 /* Motion
-   Hero entrance runs as two animations on different clocks: the element pops
-   forward out of depth on a short, slightly overshooting curve, while the opacity
-   comes up on its own much longer ramp. Splitting them is the whole effect —
-   things arrive in space well before they arrive in colour, which reads as
-   dimensional rather than as a plain slide-and-fade. */
-/* The two hero columns fly in from opposite sides and meet in the middle: the copy
-   swings in from the left, the ledger card from the right, each rotating on Y out
-   of depth so the movement reads as dimensional rather than as a slide. The
-   overshoot in the easing is what makes them pop as they land. */
-@keyframes lp-in-left {
-  from { transform: perspective(1200px) translate3d(-120px, 14px, -260px) rotateY(16deg) rotateX(5deg) scale(0.94); }
-  to   { transform: perspective(1200px) translate3d(0, 0, 0) rotateY(0deg) rotateX(0deg) scale(1); }
-}
-@keyframes lp-in-right {
-  from { transform: perspective(1200px) translate3d(120px, 14px, -260px) rotateY(-16deg) rotateX(5deg) scale(0.94); }
-  to   { transform: perspective(1200px) translate3d(0, 0, 0) rotateY(0deg) rotateX(0deg) scale(1); }
+   The hero's two columns rise into place rather than flying in from the sides.
+   Movement and opacity still run on separate clocks — the travel finishes well
+   before the fade does, so the copy is settled and legible while it is still
+   coming up to full strength. That split is what makes an entrance feel
+   unhurried instead of merely slow.
+
+   The ledger card follows the copy by a beat. One direction, one curve, and a
+   delay is enough to say which of the two is the subject. */
+@keyframes lp-rise-in {
+  from { transform: translate3d(0, 2.5rem, 0); }
+  to   { transform: translate3d(0, 0, 0); }
 }
 /* Opacity runs on its own, much longer ramp than the movement — things arrive in
-   space well before they arrive in colour, which is what makes it feel slow. */
+   place well before they arrive in colour, which is what makes it feel slow. */
 @keyframes lp-fade-slow { from { opacity: 0; } to { opacity: 1; } }
-/* Rows swing in on their left edge, like lines being written onto the sheet. */
+/* Rows arrive one after another, as lines being written onto the sheet. */
 @keyframes lp-row-in {
-  from { opacity: 0; transform: rotateY(calc(var(--lp-turn) * 1.6)) translate3d(-10px, 0, -30px); }
+  from { opacity: 0; transform: translate3d(0, 0.75rem, 0); }
   to   { opacity: 1; transform: none; }
 }
 
-.lp .lp-fade { opacity: 0; transform-origin: 100% 50%; backface-visibility: hidden;
+.lp .lp-fade { opacity: 0;
   animation:
-    lp-in-left 1250ms cubic-bezier(0.22, 1.12, 0.36, 1) forwards,
-    lp-fade-slow 1900ms cubic-bezier(0.33, 0, 0.2, 1) forwards; }
-.lp .lp-row-in { opacity: 0; animation: lp-row-in 520ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    lp-rise-in var(--lp-dur-lg) var(--lp-ease) forwards,
+    lp-fade-slow 1900ms var(--lp-ease-io) forwards; }
+.lp .lp-row-in { opacity: 0; animation: lp-row-in 620ms var(--lp-ease) forwards; }
 
-/* Hero ledger — pops in out of depth, then drifts forever like paper on a desk.
-   lp-float is declared last so it owns the transform once its delay elapses; until
-   then lp-pop-3d holds the entrance, which is why that one uses "both". */
-/* Paper on a desk: it lifts and tilts, so the drift has to read in depth too. */
-@keyframes lp-float {
-  0%, 100% { transform: perspective(var(--lp-persp)) translate3d(0, 0, 0) rotateX(0.8deg) rotateY(-1.2deg); }
-  50%      { transform: perspective(var(--lp-persp)) translate3d(0, -12px, 22px) rotateX(-0.8deg) rotateY(1.2deg); }
-}
-.lp .lp-ledger-anim { opacity: 0; transform-origin: 0% 50%; backface-visibility: hidden;
+.lp .lp-ledger-anim { opacity: 0;
   animation:
-    lp-in-right 1250ms cubic-bezier(0.22, 1.12, 0.36, 1) 260ms both,
-    lp-fade-slow 2000ms cubic-bezier(0.33, 0, 0.2, 1) 260ms forwards,
-    lp-float 7s ease-in-out 1.9s infinite; }
+    lp-rise-in var(--lp-dur-lg) var(--lp-ease) 180ms both,
+    lp-fade-slow 2000ms var(--lp-ease-io) 180ms forwards; }
 
-/* Promo bar — a slow light sweep passes across the offer */
+/* Promo bar — a light sweep passes across the offer, slowly enough that it reads
+   as the surface catching the light rather than as something demanding a look. */
 @keyframes lp-sheen { 0% { transform: translateX(-120%); } 100% { transform: translateX(120%); } }
-.lp .lp-ticker::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.45) 48%, rgba(255, 255, 255, 0.45) 52%, transparent 70%); transform: translateX(-120%); animation: lp-sheen 5.5s ease-in-out 1.5s infinite; }
+.lp .lp-ticker::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(105deg, transparent 34%, rgba(255, 255, 255, 0.3) 48%, rgba(255, 255, 255, 0.3) 52%, transparent 66%); transform: translateX(-120%); animation: lp-sheen 9s var(--lp-ease-io) 2s infinite; }
 
 /* "both" — the gradient itself pans back and forth */
 /* ── Kinetic typography ──────────────────────────────────────────────────────
@@ -3703,36 +3717,36 @@ const css = `
    each box carries a little bottom padding and aligns on its bottom edge — that
    moves the mask below the baseline without shifting the line. */
 
-/* Hero: line by line, on a delay set per line in the markup. */
+/* Hero: line by line, on a delay set per line in the markup. The line travels
+   straight up out of its mask — no rotation, because a rotating line of type
+   distorts its own letterforms on the way in, and the clipped edge is already
+   doing all the work. */
 @keyframes lp-line-rise {
-  from { transform: translateY(108%) rotateX(-38deg); opacity: 0; }
-  to   { transform: translateY(0) rotateX(0deg); opacity: 1; }
+  from { transform: translateY(105%); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
 }
-.lp .lp-kinetic { perspective: 800px; }
 .lp .lp-line { display: block; overflow: hidden;
   padding-bottom: 0.09em; margin-bottom: -0.09em;
   padding-inline: 0.09em; margin-inline: -0.09em; }
-.lp .lp-line-i { display: block; transform-origin: 50% 0; will-change: transform, opacity;
-  animation: lp-line-rise 1150ms cubic-bezier(0.19, 1, 0.22, 1) both; }
+.lp .lp-line-i { display: block; will-change: transform, opacity;
+  animation: lp-line-rise 1000ms var(--lp-ease) both; }
 
-/* Per-section 3D entrance. Angles and depth are deliberately small: these elements
-   are often 1000px+ tall, and a rotateX that looks good on a card turns into heavy
-   keystone distortion across a whole section. transform-origin sits at the top edge
-   so the section hinges down from where the reader already is, rather than pivoting
-   about a centre that may be off-screen. */
-/* Sections hinge from their top edge — the same gesture as the cards inside them,
-   at a damped angle. A section is often 1000px+ tall, and the full --lp-hinge
-   across that height becomes heavy keystone distortion at the far edge, so this
-   takes roughly half of it. Same camera, same easing; only the magnitude differs. */
-.lp .lp-s3d { opacity: 0; transform-origin: 50% 0;
-  transform: perspective(calc(var(--lp-persp) * 1.5))
-             rotateX(calc(var(--lp-hinge) * 0.55)) translate3d(0, 34px, -70px);
-  transition: transform 1150ms cubic-bezier(0.19, 1, 0.22, 1), opacity 850ms ease;
+/* Per-section entrance: the whole section rises the last few centimetres into
+   place and comes up to full opacity, and that is all. These elements are often
+   1000px+ tall — anything rotational across that height keystones at the far edge,
+   and any transform involving depth makes the section announce its own arrival
+   rather than its contents.
+
+   The travel is short on purpose. A long slide re-reads as the page scrolling
+   twice; --lp-rise is roughly the distance at which movement is felt but not
+   tracked. */
+.lp .lp-srise { opacity: 0;
+  transform: translate3d(0, var(--lp-rise), 0);
+  transition: transform var(--lp-dur-lg) var(--lp-ease), opacity var(--lp-dur-lg) var(--lp-ease);
   will-change: transform, opacity; }
-.lp .lp-s3d.is-in { opacity: 1; transform: none; }
+.lp .lp-srise.is-in { opacity: 1; transform: none; }
 
 /* Section headings: word by word, released when the heading scrolls into view. */
-.lp .lp-split { perspective: 800px; }
 /* The mask is only meant to clip vertically — the reveal travels up. But
    overflow:hidden clips both axes, and an italic glyph overhangs its box to the
    right, so the last letter of an accent word was being cut. Padding the sides and
@@ -3741,9 +3755,9 @@ const css = `
 .lp .lp-split-w { display: inline-block; overflow: hidden; vertical-align: bottom;
   padding-bottom: 0.1em; margin-bottom: -0.1em;
   padding-inline: 0.09em; margin-inline: -0.09em; }
-.lp .lp-split-i { display: inline-block; transform: translateY(112%) rotateX(-42deg); opacity: 0; transform-origin: 50% 0;
-  transition: transform 820ms cubic-bezier(0.19, 1, 0.22, 1), opacity 620ms ease; }
-.lp .lp-split.is-shown .lp-split-i { transform: translateY(0) rotateX(0deg); opacity: 1; }
+.lp .lp-split-i { display: inline-block; transform: translateY(108%); opacity: 0;
+  transition: transform var(--lp-dur) var(--lp-ease), opacity var(--lp-dur) var(--lp-ease); }
+.lp .lp-split.is-shown .lp-split-i { transform: translateY(0); opacity: 1; }
 
 /* The emphasised word carries a gradient that keeps moving, so the headline has
    one point of continuous motion after the reveal has settled. Amber and violet
@@ -3764,23 +3778,24 @@ const css = `
   background-size: 280% 100%;
   -webkit-background-clip: text; background-clip: text;
   color: transparent; -webkit-text-fill-color: transparent;
-  animation: lp-gradient-pan 7s ease-in-out infinite; }
+  animation: lp-gradient-pan 16s var(--lp-ease-io) infinite; }
 
 /* On the violet band the cool half of that ramp disappears into the background,
    so the accent there runs amber into white instead. */
 .lp .lp-band .lp-grad { background-image: linear-gradient(100deg, #FFFFFF 0%, var(--amber) 34%, #FFF3D0 62%, var(--amber-lo) 100%); }
 
-/* Balanced badge — the tick gives one satisfied pulse on loop */
+/* Balanced badge — one ring, once, as the entry lands. A pulse on loop turns an
+   acknowledgement into a notification that never stops asking to be dealt with. */
 @keyframes lp-pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(224, 155, 125, 0.5); } 70%, 100% { box-shadow: 0 0 0 8px rgba(224, 155, 125, 0); } }
-.lp .lp-balance-value { border-radius: 999px; animation: lp-pulse-ring 3.5s ease-out 2s infinite; }
+.lp .lp-balance-value { border-radius: 999px; animation: lp-pulse-ring 2.4s var(--lp-ease-io) 1.8s 1 both; }
 
 @media (prefers-reduced-motion: reduce) {
   .lp .lp-fade, .lp .lp-row-in { animation: none; opacity: 1; transform: none; }
   .lp .lp-ledger-anim { animation: none; opacity: 1; transform: none; }
   .lp .lp-ticker::after, .lp .lp-h1 em, .lp .lp-grad, .lp .lp-balance-value { animation: none; }
-  /* useSection3d never adds its class in this mode, but pin the values anyway so
+  /* useSectionRise never adds its class in this mode, but pin the values anyway so
      nothing depends on that hook having run. */
-  .lp .lp-s3d { opacity: 1; transform: none; transition: none; }
+  .lp .lp-srise { opacity: 1; transform: none; transition: none; }
   /* The popup still appears, it just doesn't travel to get there. */
   .lp .lp-pop { transition: none; transform: none; }
   .lp .lp-pop-wrap.is-open .lp-pop { transform: none; }
@@ -3800,6 +3815,9 @@ const css = `
      shown rather than sitting at opacity 0 behind a stopped carousel. */
   .lp .lp-docs-slot { transition: none; transform: none; }
   .lp .lp-docs-slot:first-child { opacity: 1; pointer-events: auto; }
+  /* useScrollProgress bails out here so --lp-p never gets written and the sheet
+     already resolves to no offset — pin it anyway, same reasoning as --lp-zoom. */
+  .lp .lp-doc { transform: none; }
   /* Marquee holds still and wraps to the visible offers instead of scrolling. */
   .lp .lp-ticker-track { animation: none; width: 100%; }
   .lp .lp-ticker-run:nth-child(2) { display: none; }

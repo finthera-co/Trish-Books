@@ -17,7 +17,7 @@ function safeRemove(key: string) {
   try { localStorage.removeItem(key); } catch { /* ignore */ }
 }
 
-// Remove every Finthera draft (call on sign-out — see 11.4).
+// Remove every Trish Books draft (call on sign-out — see 11.4).
 export function clearAllFintheraDrafts() {
   try {
     const toRemove: string[] = [];

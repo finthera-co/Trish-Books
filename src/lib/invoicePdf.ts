@@ -195,7 +195,7 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
     title: invoice.invoice_number ? `Invoice ${invoice.invoice_number}` : "Invoice",
     subject: `Invoice for ${customer?.legal_name || customer?.name || "customer"}`,
     author: legalName,
-    creator: legalName || "Finthera",
+    creator: legalName || "Trish Books",
   });
   const invTitle = Number(invoice.tax_amount) > 0 ? "TAX INVOICE" : "INVOICE";
 

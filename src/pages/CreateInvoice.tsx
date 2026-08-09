@@ -23,6 +23,7 @@ import { usePostInvoice } from "@/hooks/useAccountSettings";
 import { useInvoiceTemplates } from "@/hooks/useInvoiceTemplates";
 import { QuickCustomerDialog } from "@/components/invoices/QuickCustomerDialog";
 import { useSetHideSidebar } from "@/stores/useAppStore";
+import { useLegacyInvoiceNumbering } from "@/hooks/useTenantFeature";
 
 interface LineItem {
   id: string;
@@ -98,6 +99,10 @@ export default function CreateInvoice() {
   const postInvoiceFn = usePostInvoice();
   const { data: invoiceTemplates } = useInvoiceTemplates();
   const setHideSidebar = useSetHideSidebar();
+  // Hand-entered invoice numbers are a per-tenant entitlement (a business
+  // migrating in with invoices already raised). Everyone else gets a strictly
+  // system-generated IRD serial, so the number register stays complete.
+  const canTypeNumber = useLegacyInvoiceNumbering();
 
   // Collapse the module sidebar while drafting an invoice so the line-item
   // grid has room to breathe; restore it on leave.
@@ -495,7 +500,9 @@ export default function CreateInvoice() {
   const total = Math.round((subtotal + totalTax) * 100) / 100;
 
   const handleSave = async (shouldPost = false) => {
-    const typedNumber = invoiceNumber.trim();
+    // Ignored unless the tenant is entitled to type one — otherwise the serial
+    // generator is the only source of an invoice number.
+    const typedNumber = canTypeNumber ? invoiceNumber.trim() : "";
     // The branch/QQQQ code is optional. The serial generator refuses a blank
     // one, so an unset branch falls back to MAIN — the same default the
     // quote→invoice conversion already uses, keeping single-branch tenants
@@ -662,7 +669,7 @@ export default function CreateInvoice() {
   // Gazette 2481/22 shape is worth flagging — it won't join the serial register
   // that accounts for the generated sequence.
   const numberIsGazette = /^\d{2}(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)_.+_\d+$/.test(invoiceNumber.trim());
-  const numberIsManual = !!invoiceNumber.trim() && invoiceNumber.trim() !== originalNumber;
+  const numberIsManual = canTypeNumber && !!invoiceNumber.trim() && invoiceNumber.trim() !== originalNumber;
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-12">
@@ -724,14 +731,22 @@ export default function CreateInvoice() {
                       </button>
                     )}
                   </div>
+                  {/* Typing a number is a per-tenant entitlement; without it the
+                      field is a read-only display of the generated serial. */}
                   <Input
-                    className="h-9 font-mono"
+                    className={`h-9 font-mono${canTypeNumber ? "" : " bg-muted/50 text-muted-foreground"}`}
                     value={invoiceNumber}
                     onChange={(e) => setInvoiceNumber(e.target.value)}
+                    readOnly={!canTypeNumber}
+                    tabIndex={canTypeNumber ? undefined : -1}
                     maxLength={40}
-                    placeholder="Auto-generated on save"
+                    placeholder={canTypeNumber ? "Auto-generated on save" : "System-generated on save"}
                   />
-                  {numberIsManual && !numberIsGazette ? (
+                  {!canTypeNumber ? (
+                    <p className="text-[10px] text-muted-foreground">
+                      Generated on save per IRD format (YYMMM_QQQQ_XXXXX)
+                    </p>
+                  ) : numberIsManual && !numberIsGazette ? (
                     <p className="text-[10px] text-amber-600 dark:text-amber-400">
                       Saved exactly as typed. It doesn't follow the IRD format (YYMMM_QQQQ_XXXXX), so it
                       won't appear in the serial register.

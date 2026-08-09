@@ -132,7 +132,7 @@ export async function buildQuotePdf(
     title: quote.quote_number ? `Estimate ${quote.quote_number}` : "Estimate",
     subject: `Estimate for ${customer?.legal_name || customer?.name || "customer"}`,
     author: legalName,
-    creator: legalName || "Finthera",
+    creator: legalName || "Trish Books",
   });
 
   // ── Top accent bar — the one full-bleed use of the accent colour ─────
