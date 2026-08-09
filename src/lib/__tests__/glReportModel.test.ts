@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildGeneralLedgerRows, fmtAmt, fmtBal, type BuildGLOptions } from "../glReportModel";
+import { buildGeneralLedgerRows, getVisibleLeafAccountIds, fmtAmt, fmtBal, type BuildGLOptions } from "../glReportModel";
 import type { GLAccountNode, GLTransactionRow } from "@/hooks/useGeneralLedger";
 
 function node(partial: Partial<GLAccountNode> & Pick<GLAccountNode, "node_key" | "account_id" | "sort_path" | "depth">): GLAccountNode {
@@ -166,6 +166,60 @@ describe("buildGeneralLedgerRows", () => {
     expect(grandCredit).toBe(100);
     expect(imbalance).toBeCloseTo(0.004, 10);
     expect(imbalance).not.toBe(0);
+  });
+
+  it("gives the grand total a real closing balance instead of a hardcoded zero", () => {
+    const { rows, grandOpening, grandBalance } = buildGeneralLedgerRows(FULL_TREE, fullTxnsByAccount());
+    // Only nodeA is a root: opening 55, debit 150, credit 50.
+    expect(grandOpening).toBe(55);
+    expect(grandBalance).toBe(155);
+    expect(rows.find((r) => r.key === "grand")!.balance).toBe(155);
+  });
+
+  it("totals the roots of the visible forest, not whatever happens to sit at depth 1", () => {
+    // An account-type filter (or a Trial Balance drill-through) can leave a tree
+    // whose shallowest node is nested. Summing depth === 1 returned zero here.
+    const nested = [nodeA2, nodeA21, nodeA2Other];
+    const { rows, grandDebit, grandCredit, grandBalance } = buildGeneralLedgerRows(nested, fullTxnsByAccount());
+    expect(grandDebit).toBe(50);
+    expect(grandCredit).toBe(10);
+    expect(grandBalance).toBe(95); // subtree_opening(55) + 50 - 10
+    // The grand total equals the single top-level "Total …" row on screen.
+    expect(rows.find((r) => r.key === "total:A2")!.balance).toBe(95);
+  });
+
+  it("focusAccountId narrows the report to one account's subtree and totals just that", () => {
+    const { rows, grandDebit, grandCredit, grandBalance } = buildGeneralLedgerRows(
+      FULL_TREE,
+      fullTxnsByAccount(),
+      { focusAccountId: "A2" }
+    );
+    const keys = rows.map((r) => r.key);
+    expect(keys).toEqual([
+      "header:A2",
+      "header:A21", "txn:l3", "total:A21",
+      "header:A2:other", "txn:l4", "total:A2:other",
+      "total:A2",
+      "grand",
+    ]);
+    expect(grandDebit).toBe(50);
+    expect(grandCredit).toBe(10);
+    expect(grandBalance).toBe(95);
+  });
+
+  it("returns an empty report for a focus account that isn't in the tree", () => {
+    const { rows, grandDebit, grandBalance } = buildGeneralLedgerRows(FULL_TREE, fullTxnsByAccount(), {
+      focusAccountId: "does-not-exist",
+    });
+    expect(rows.map((r) => r.key)).toEqual(["grand"]);
+    expect(grandDebit).toBe(0);
+    expect(grandBalance).toBe(0);
+  });
+});
+
+describe("getVisibleLeafAccountIds", () => {
+  it("fetches transactions only for the focused subtree", () => {
+    expect([...getVisibleLeafAccountIds(FULL_TREE, { focusAccountId: "A2" })].sort()).toEqual(["A2", "A21"]);
   });
 });
 

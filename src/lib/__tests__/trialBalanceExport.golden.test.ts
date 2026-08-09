@@ -45,45 +45,55 @@ const FIXTURE_ROWS: TrialBalanceRow[] = [
 ];
 
 describe("Trial Balance CSV golden file", () => {
-  it("has the expected 7-column headers", () => {
-    expect(TRIAL_BALANCE_CSV_HEADERS).toEqual(["No", "Ledger Name", "Ledger Opening", "Audit Opening", "Debit", "Credit", "Closing"]);
+  const FP_LINE = "TB/2025-04-01/2026-03-31/deadbeef · 3 rows · Closing Dr 1,150.00 = Cr 1,150.00";
+
+  it("has the expected 8-column headers", () => {
+    expect(TRIAL_BALANCE_CSV_HEADERS).toEqual([
+      "No", "Ledger Name",
+      "Opening Debit", "Opening Credit",
+      "Transaction Debit", "Transaction Credit",
+      "Closing Debit", "Closing Credit",
+    ]);
   });
 
   it("matches the golden row-by-row layout for a small fixed fixture", () => {
     const { groups, grand } = buildTrialBalanceGroups(FIXTURE_ROWS);
-    const rows = buildTrialBalanceCsvRows(groups, grand, "TB/2025-04-01/2026-03-31/deadbeef · 3 rows · Closing 0.00");
+    const rows = buildTrialBalanceCsvRows(groups, grand, FP_LINE);
 
     expect(rows).toEqual([
       // group header: Assets
-      ["", "Assets", "", "", "", "", ""],
-      // cash: ledger 100, audit 500 (override), debit 1000, credit 350, closing 1150
-      ["1000", "Cash", "100.00", "500.00", "1000.00", "350.00", "1150.00"],
-      // no-hist: ledger 0 (blank), audit -400, closing -400
-      ["1900", "No History Asset", "", "-400.00", "", "", "-400.00"],
-      // group subtotal: Assets
-      ["", "Total Assets", "100.00", "100.00", "1000.00", "350.00", "750.00"],
+      ["", "Assets", "", "", "", "", "", ""],
+      // cash: opening is the 500 audit override (the figure closing ties to),
+      // not the 100 ledger opening; debit 1000, credit 350, closing 1150 Dr
+      ["1000", "Cash", "500.00", "", "1000.00", "350.00", "1150.00", ""],
+      // no-hist: -400 opening and closing both land in the credit column
+      ["1900", "No History Asset", "", "400.00", "", "", "", "400.00"],
+      // group subtotal: split per account THEN summed, so the 500 Dr and 400 Cr
+      // both stay visible instead of netting into a single 100
+      ["", "Total Assets", "500.00", "400.00", "1000.00", "350.00", "1150.00", "400.00"],
       [],
       // group header: Income
-      ["", "Income", "", "", "", "", ""],
-      // sales: credit-normal, closing negative (raw Dr-Cr, never signed by normal balance)
-      ["4000", "Sales Revenue", "", "", "", "750.00", "-750.00"],
+      ["", "Income", "", "", "", "", "", ""],
+      // sales: credit-normal, closing lands in the credit column (raw Dr-Cr,
+      // never signed by normal balance)
+      ["4000", "Sales Revenue", "", "", "", "750.00", "", "750.00"],
       // group subtotal: Income
-      ["", "Total Income", "", "", "", "750.00", "-750.00"],
+      ["", "Total Income", "", "", "", "750.00", "", "750.00"],
       [],
-      // grand total
-      ["", "TOTAL", "100.00", "100.00", "1000.00", "1100.00", ""],
+      // grand total: the closing pair proves out at 1,150.00 each side
+      ["", "TOTAL", "500.00", "400.00", "1000.00", "1100.00", "1150.00", "1150.00"],
       [],
-      ["TB/2025-04-01/2026-03-31/deadbeef · 3 rows · Closing 0.00"],
+      [FP_LINE],
     ]);
   });
 
-  it("every detail/subtotal/total row has exactly 7 columns (footer/blank rows excluded)", () => {
+  it("every detail/subtotal/total row has exactly 8 columns (footer/blank rows excluded)", () => {
     const { groups, grand } = buildTrialBalanceGroups(FIXTURE_ROWS);
     const rows = buildTrialBalanceCsvRows(groups, grand, "fp");
     const dataRows = rows.filter((r) => r.length > 1);
     expect(dataRows.length).toBeGreaterThan(0);
     for (const row of dataRows) {
-      expect(row).toHaveLength(7);
+      expect(row).toHaveLength(8);
     }
   });
 });

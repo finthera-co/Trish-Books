@@ -72,6 +72,7 @@ export default function SettingsPage() {
   const [bankAccountName, setBankAccountName] = useState("");
   const [bankAccountNo, setBankAccountNo] = useState("");
   const [bankSwift, setBankSwift] = useState("");
+  const [defaultBranchCode, setDefaultBranchCode] = useState("");
   const [invoiceTerms, setInvoiceTerms] = useState("");
   const [invoiceFooterNote, setInvoiceFooterNote] = useState("");
 
@@ -91,6 +92,7 @@ export default function SettingsPage() {
       setBankAccountName(profile.bank_account_name || "");
       setBankAccountNo(profile.bank_account_no || "");
       setBankSwift(profile.bank_swift || "");
+      setDefaultBranchCode(profile.default_branch_code || "");
       setInvoiceTerms(profile.invoice_terms || "");
       setInvoiceFooterNote(profile.invoice_footer_note || "");
     }
@@ -112,6 +114,7 @@ export default function SettingsPage() {
       bank_account_name: bankAccountName.trim() || null,
       bank_account_no: bankAccountNo.trim() || null,
       bank_swift: bankSwift.trim() || null,
+      default_branch_code: defaultBranchCode.trim() || null,
       invoice_terms: invoiceTerms.trim() || null,
       invoice_footer_note: invoiceFooterNote.trim() || "Thank you for your business",
     });
@@ -465,6 +468,22 @@ export default function SettingsPage() {
         <div className="stat-card">
           <h3 className="text-sm font-medium text-foreground mb-4">Invoice Defaults</h3>
           <div className="space-y-4">
+            <div>
+              <label className="text-sm text-muted-foreground">Branch / Entity Code (QQQQ)</label>
+              <input
+                type="text"
+                value={defaultBranchCode}
+                // A serial may not contain whitespace, so never let one in.
+                onChange={(e) => setDefaultBranchCode(e.target.value.replace(/\s/g, ""))}
+                maxLength={15}
+                placeholder="MAIN"
+                className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground font-mono"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                The QQQQ segment of your invoice serials (YYMMM_QQQQ_XXXXX). Pre-filled on every new
+                invoice; falls back to MAIN when blank.
+              </p>
+            </div>
             <div>
               <label className="text-sm text-muted-foreground">Invoice Terms</label>
               <textarea

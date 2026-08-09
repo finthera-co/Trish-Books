@@ -21,12 +21,19 @@ export interface BuildGLOptions {
   includeOtherRows?: boolean;
   showAccountCodes?: boolean;
   collapsed?: ReadonlySet<string>;
+  /**
+   * Restrict the report to one account's subtree (its own postings, its
+   * descendants and its "- Other" row). Used by the Trial Balance drill-through.
+   */
+  focusAccountId?: string | null;
 }
 
 interface BuildGLResult {
   rows: GLReportRow[];
+  grandOpening: number;
   grandDebit: number;
   grandCredit: number;
+  grandBalance: number;
   imbalance: number;
 }
 
@@ -85,14 +92,44 @@ function pruneZeroActivity(nodes: readonly GLAccountNode[]): GLAccountNode[] {
   });
 }
 
+/**
+ * Narrow the tree to one account's subtree. Matches on sort_path rather than
+ * parent_account_id so descendants at any depth — and the account's own
+ * "- Other" pseudo-child, which hangs off the same path — come along in one pass.
+ */
+function focusSubtree(nodes: readonly GLAccountNode[], accountId: string): readonly GLAccountNode[] {
+  const target = nodes.find((n) => n.account_id === accountId && !n.is_other_node);
+  if (!target) return [];
+  const prefix = target.sort_path + "/";
+  return nodes.filter((n) => n.sort_path === target.sort_path || n.sort_path.startsWith(prefix));
+}
+
 function applyDisplayFilters(
   nodes: readonly GLAccountNode[],
-  options?: Pick<BuildGLOptions, "includeZeroActivity" | "includeOtherRows">
+  options?: Pick<BuildGLOptions, "includeZeroActivity" | "includeOtherRows" | "focusAccountId">
 ): readonly GLAccountNode[] {
   let working: readonly GLAccountNode[] = nodes;
+  if (options?.focusAccountId) working = focusSubtree(working, options.focusAccountId);
   if (options?.includeZeroActivity === false) working = pruneZeroActivity(working);
   if (options?.includeOtherRows === false) working = working.filter((n) => !n.is_other_node);
   return working;
+}
+
+/**
+ * Roots of the *visible* forest — nodes with no surviving ancestor in the set.
+ *
+ * The grand total used to sum `depth === 1` nodes, which silently produced a
+ * zero total whenever the top of the tree wasn't in scope (drilling into one
+ * account, or an account-type filter that leaves only nested nodes). Deriving
+ * the roots from the set actually being rendered means the grand total always
+ * equals the sum of the top-level "Total …" rows on screen, whatever the filters.
+ *
+ * "- Other" nodes are excluded: their amounts are their parent's own postings,
+ * already inside that parent's subtree_* figures.
+ */
+function visibleForestRoots(nodes: readonly GLAccountNode[]): GLAccountNode[] {
+  const real = nodes.filter((n) => !n.is_other_node);
+  return real.filter((n) => !real.some((p) => n.sort_path.startsWith(p.sort_path + "/")));
 }
 
 /**
@@ -103,7 +140,7 @@ function applyDisplayFilters(
  */
 export function getVisibleLeafAccountIds(
   nodes: readonly GLAccountNode[],
-  options?: Pick<BuildGLOptions, "includeZeroActivity" | "includeOtherRows" | "collapsed">
+  options?: Pick<BuildGLOptions, "includeZeroActivity" | "includeOtherRows" | "collapsed" | "focusAccountId">
 ): string[] {
   const working = applyDisplayFilters(nodes, options);
   const collapsed = options?.collapsed ?? new Set<string>();
@@ -211,9 +248,15 @@ export function buildGeneralLedgerRows(
     pushTotal(frame, true);
   }
 
-  const topNodes = working.filter((n) => n.depth === 1 && !n.is_other_node);
+  const topNodes = visibleForestRoots(working);
+  const grandOpening = topNodes.reduce((s, n) => s + n.subtree_opening, 0);
   const grandDebit = topNodes.reduce((s, n) => s + n.subtree_debit, 0);
   const grandCredit = topNodes.reduce((s, n) => s + n.subtree_credit, 0);
+  // Closing, on the same opening + Dr - Cr basis every other total row uses.
+  // This was hardcoded to 0 — which happens to be right only for a complete,
+  // balanced ledger, and hid the real figure under every filter as well as any
+  // genuine imbalance.
+  const grandBalance = grandOpening + grandDebit - grandCredit;
 
   rows.push({
     kind: "grand-total",
@@ -222,10 +265,10 @@ export function buildGeneralLedgerRows(
     label: "TOTAL",
     debit: grandDebit,
     credit: grandCredit,
-    balance: 0,
+    balance: grandBalance,
   });
 
-  return { rows, grandDebit, grandCredit, imbalance: grandDebit - grandCredit };
+  return { rows, grandOpening, grandDebit, grandCredit, grandBalance, imbalance: grandDebit - grandCredit };
 }
 
 // Zero renders as an empty cell — QuickBooks leaves these blank, not "0.00", not "—".

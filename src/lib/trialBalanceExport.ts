@@ -3,7 +3,10 @@ import { exportToPdf } from "@/lib/pdfExport";
 import { computeFingerprint } from "@/lib/reportFingerprint";
 import { supabase } from "@/integrations/supabase/client";
 import type { TrialBalanceGroupBy } from "@/hooks/useTrialBalance";
-import type { TrialBalanceGroupBlock, TrialBalanceGrandTotal } from "@/lib/trialBalanceModel";
+import {
+  openingSplit, closingSplit, closingDifference,
+  type TrialBalanceGroupBlock, type TrialBalanceGrandTotal,
+} from "@/lib/trialBalanceModel";
 
 export type { TrialBalanceGroupBlock, TrialBalanceGrandTotal } from "@/lib/trialBalanceModel";
 
@@ -23,9 +26,15 @@ function num(n: number): string {
   return Math.abs(n) < 0.005 ? "" : n.toFixed(2);
 }
 
-export const TRIAL_BALANCE_CSV_HEADERS = ["No", "Ledger Name", "Ledger Opening", "Audit Opening", "Debit", "Credit", "Closing"];
+export const TRIAL_BALANCE_CSV_HEADERS = [
+  "No", "Ledger Name",
+  "Opening Debit", "Opening Credit",
+  "Transaction Debit", "Transaction Credit",
+  "Closing Debit", "Closing Credit",
+];
 
-function fingerprintFor(meta: TrialBalanceExportMeta, grand: TrialBalanceGrandTotal) {
+export function fingerprintFor(meta: TrialBalanceExportMeta, grand: TrialBalanceGrandTotal) {
+  const diff = closingDifference(grand);
   const params = {
     tenantId: meta.tenantId,
     dateFrom: meta.dateFrom,
@@ -33,14 +42,18 @@ function fingerprintFor(meta: TrialBalanceExportMeta, grand: TrialBalanceGrandTo
     groupBy: meta.groupBy,
     includeZero: meta.includeZero,
     includeInactive: meta.includeInactive,
-    closing: round2(grand.closing),
+    closingDebit: round2(grand.closing_debit),
+    closingCredit: round2(grand.closing_credit),
     rowCount: meta.rowCount,
   };
   const hash = computeFingerprint(params);
-  const balanced = Math.abs(grand.closing) < 0.005;
+  const balanced = Math.abs(diff) < 0.005;
+  const money = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return {
     hash,
-    line: `TB/${meta.dateFrom}/${meta.dateTo}/${hash} · ${meta.rowCount.toLocaleString("en-US")} rows · Closing ${balanced ? "0.00" : grand.closing.toFixed(2)}`,
+    line:
+      `TB/${meta.dateFrom}/${meta.dateTo}/${hash} · ${meta.rowCount.toLocaleString("en-US")} rows · ` +
+      `Closing Dr ${money(grand.closing_debit)} ${balanced ? "=" : "≠"} Cr ${money(grand.closing_credit)}`,
   };
 }
 
@@ -48,7 +61,12 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-async function logExport(meta: TrialBalanceExportMeta, format: "csv" | "pdf", fingerprint: string, grand: TrialBalanceGrandTotal) {
+export async function logExport(
+  meta: TrialBalanceExportMeta,
+  format: "csv" | "pdf" | "xlsx",
+  fingerprint: string,
+  grand: TrialBalanceGrandTotal
+) {
   await supabase.from("audit_logs").insert({
     action: "Trial Balance Exported",
     table_name: "accounts",
@@ -62,15 +80,17 @@ async function logExport(meta: TrialBalanceExportMeta, format: "csv" | "pdf", fi
       group_by: meta.groupBy,
       fingerprint,
       row_count: meta.rowCount,
-      closing: round2(grand.closing),
+      closing_debit: round2(grand.closing_debit),
+      closing_credit: round2(grand.closing_credit),
     },
   });
 }
 
-/** 7-column CSV mirroring the on-screen face. Group headers occupy the Ledger
- * Name cell with numeric cells blank, matching the reference workbook's layout.
- * Pure — split out from exportTrialBalanceCsv so it's testable without Blob/URL
- * download side effects (see the golden-file snapshot test). */
+/** 8-column CSV mirroring the on-screen face: an opening debit/credit pair, the
+ * period's movement, and a closing debit/credit pair. Group headers occupy the
+ * Ledger Name cell with numeric cells blank, matching the reference workbook's
+ * layout. Pure — split out from exportTrialBalanceCsv so it's testable without
+ * Blob/URL download side effects (see the golden-file snapshot test). */
 export function buildTrialBalanceCsvRows(
   groups: TrialBalanceGroupBlock[],
   grand: TrialBalanceGrandTotal,
@@ -79,14 +99,31 @@ export function buildTrialBalanceCsvRows(
   const rows: (string | number)[][] = [];
 
   for (const g of groups) {
-    rows.push(["", g.label, "", "", "", "", ""]);
+    rows.push(["", g.label, "", "", "", "", "", ""]);
     for (const r of g.rows) {
-      rows.push([r.account_code, r.account_name, num(r.ledger_opening), num(r.audit_opening), num(r.period_debit), num(r.period_credit), num(r.closing)]);
+      const open = openingSplit(r);
+      const close = closingSplit(r);
+      rows.push([
+        r.account_code, r.account_name,
+        num(open.debit), num(open.credit),
+        num(r.period_debit), num(r.period_credit),
+        num(close.debit), num(close.credit),
+      ]);
     }
-    rows.push(["", `Total ${g.label}`, num(g.ledger_opening), num(g.audit_opening), num(g.period_debit), num(g.period_credit), num(g.closing)]);
+    rows.push([
+      "", `Total ${g.label}`,
+      num(g.opening_debit), num(g.opening_credit),
+      num(g.period_debit), num(g.period_credit),
+      num(g.closing_debit), num(g.closing_credit),
+    ]);
     rows.push([]);
   }
-  rows.push(["", "TOTAL", num(grand.ledger_opening), num(grand.audit_opening), num(grand.period_debit), num(grand.period_credit), num(grand.closing)]);
+  rows.push([
+    "", "TOTAL",
+    num(grand.opening_debit), num(grand.opening_credit),
+    num(grand.period_debit), num(grand.period_credit),
+    num(grand.closing_debit), num(grand.closing_credit),
+  ]);
   rows.push([]);
   rows.push([fingerprintLine]);
   return rows;
@@ -104,29 +141,44 @@ export function exportTrialBalancePdf(groups: TrialBalanceGroupBlock[], grand: T
 
   for (const g of groups) {
     boldRows.add(rows.length);
-    rows.push([g.label, "", "", "", ""]);
+    rows.push([g.label, "", "", "", "", "", ""]);
     for (const r of g.rows) {
-      rows.push([r.account_name, fmt(r.ledger_opening), fmt(r.audit_opening), fmtDrCr(r.period_debit, r.period_credit), fmt(r.closing)]);
+      const open = openingSplit(r);
+      const close = closingSplit(r);
+      rows.push([r.account_name, fmt(open.debit), fmt(open.credit), fmt(r.period_debit), fmt(r.period_credit), fmt(close.debit), fmt(close.credit)]);
     }
     boldRows.add(rows.length);
-    rows.push([`Total ${g.label}`, fmt(g.ledger_opening), fmt(g.audit_opening), fmtDrCr(g.period_debit, g.period_credit), fmt(g.closing)]);
+    rows.push([
+      `Total ${g.label}`,
+      fmt(g.opening_debit), fmt(g.opening_credit),
+      fmt(g.period_debit), fmt(g.period_credit),
+      fmt(g.closing_debit), fmt(g.closing_credit),
+    ]);
   }
   boldRows.add(rows.length);
-  rows.push(["TOTAL", fmt(grand.ledger_opening), fmt(grand.audit_opening), fmtDrCr(grand.period_debit, grand.period_credit), fmt(grand.closing)]);
+  rows.push([
+    "TOTAL",
+    fmt(grand.opening_debit), fmt(grand.opening_credit),
+    fmt(grand.period_debit), fmt(grand.period_credit),
+    fmt(grand.closing_debit), fmt(grand.closing_credit),
+  ]);
 
   const fp = fingerprintFor(meta, grand);
 
   exportToPdf(
     `trial-balance-${meta.dateFrom}-to-${meta.dateTo}.pdf`,
     "Trial Balance",
-    ["Ledger Name", "Ledger Opening", "Audit Opening", "Debit / Credit", "Closing"],
+    ["Ledger Name", "Opening Dr", "Opening Cr", "Debit", "Credit", "Closing Dr", "Closing Cr"],
     rows,
     {
       orientation: "landscape",
       subtitle: `${meta.dateFrom} to ${meta.dateTo} · All amounts in LKR`,
       footer: fp.line,
       boldRows,
-      columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } },
+      columnStyles: {
+        1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" },
+        4: { halign: "right" }, 5: { halign: "right" }, 6: { halign: "right" },
+      },
     }
   );
   void logExport(meta, "pdf", fp.hash, grand);
@@ -136,11 +188,4 @@ function fmt(n: number): string {
   if (Math.abs(n) < 0.005) return "";
   const s = Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return n < 0 ? `(${s})` : s;
-}
-
-function fmtDrCr(debit: number, credit: number): string {
-  const parts = [];
-  if (Math.abs(debit) >= 0.005) parts.push(`Dr ${debit.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
-  if (Math.abs(credit) >= 0.005) parts.push(`Cr ${credit.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
-  return parts.join(" / ");
 }

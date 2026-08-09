@@ -4,14 +4,14 @@ import { useAuth } from "@/contexts/AuthContext";
 
 export interface SerialRow {
   id: string; serial: string; branch_code: string; yy: number; mmm: string; seq: number;
-  invoice_id: string | null; status: "reserved" | "issued" | "cancelled"; reason: string | null; created_at: string;
+  invoice_id: string | null; status: "reserved" | "issued" | "cancelled" | "skipped"; reason: string | null; created_at: string;
 }
 
 export interface SerialGroup {
   key: string; branch_code: string; yy: number; mmm: string;
   rows: SerialRow[]; minSeq: number; maxSeq: number;
   missing: number[]; // seq numbers with no register row = unexplained gaps (should be empty)
-  issued: number; cancelled: number; reserved: number;
+  issued: number; cancelled: number; reserved: number; skipped: number;
 }
 
 export function useSerialRegister() {
@@ -33,7 +33,7 @@ export function useSerialRegister() {
         const key = `${r.branch_code}·${r.yy}·${r.mmm}`;
         let g = groups.get(key);
         if (!g) {
-          g = { key, branch_code: r.branch_code, yy: r.yy, mmm: r.mmm, rows: [], minSeq: r.seq, maxSeq: r.seq, missing: [], issued: 0, cancelled: 0, reserved: 0 };
+          g = { key, branch_code: r.branch_code, yy: r.yy, mmm: r.mmm, rows: [], minSeq: r.seq, maxSeq: r.seq, missing: [], issued: 0, cancelled: 0, reserved: 0, skipped: 0 };
           groups.set(key, g);
         }
         g.rows.push(r);
@@ -41,6 +41,7 @@ export function useSerialRegister() {
         g.maxSeq = Math.max(g.maxSeq, r.seq);
         if (r.status === "issued") g.issued++;
         else if (r.status === "cancelled") g.cancelled++;
+        else if (r.status === "skipped") g.skipped++;
         else g.reserved++;
       }
       // Flag any seq in the contiguous range with no register row.

@@ -24,6 +24,7 @@ import { useInvoiceTemplates } from "@/hooks/useInvoiceTemplates";
 import { QuickCustomerDialog } from "@/components/invoices/QuickCustomerDialog";
 import { useSetHideSidebar } from "@/stores/useAppStore";
 import { useLegacyInvoiceNumbering } from "@/hooks/useTenantFeature";
+import { useCompanyProfile } from "@/hooks/useCompanyProfile";
 
 interface LineItem {
   id: string;
@@ -103,6 +104,7 @@ export default function CreateInvoice() {
   // migrating in with invoices already raised). Everyone else gets a strictly
   // system-generated IRD serial, so the number register stays complete.
   const canTypeNumber = useLegacyInvoiceNumbering();
+  const { data: companyProfile } = useCompanyProfile();
 
   // Collapse the module sidebar while drafting an invoice so the line-item
   // grid has room to breathe; restore it on leave.
@@ -208,6 +210,14 @@ export default function CreateInvoice() {
     })();
     return () => { cancelled = true; };
   }, [editId, navigate]);
+
+  // A new invoice starts from the company's saved branch/QQQQ code. Without
+  // this the field sat empty and the serial silently fell back to MAIN, so a
+  // business coded BR03 issued MAIN invoices unless someone re-typed it.
+  useEffect(() => {
+    if (isEdit || !companyProfile?.default_branch_code) return;
+    setBranchCode((prev) => prev || companyProfile.default_branch_code!);
+  }, [companyProfile?.default_branch_code, isEdit]);
 
   // Inherit the selected customer's default payment term. Skipped while an
   // existing draft is hydrating so we don't clobber its saved term.
@@ -766,12 +776,14 @@ export default function CreateInvoice() {
                   <Input
                     className="h-9 font-mono"
                     value={branchCode}
-                    onChange={(e) => setBranchCode(e.target.value)}
+                    // A serial may not contain whitespace, so never let one in.
+                    onChange={(e) => setBranchCode(e.target.value.replace(/\s/g, ""))}
                     maxLength={15}
                     placeholder="e.g. BR03"
                   />
                   <p className="text-[10px] text-muted-foreground">
-                    Optional. Used as the QQQQ segment of an auto-generated number; defaults to MAIN.
+                    Used as the QQQQ segment of an auto-generated number. Pre-filled from your company
+                    default{companyProfile?.default_branch_code ? "" : "; falls back to MAIN when left blank"}.
                   </p>
                 </div>
                 <div className="space-y-1.5">

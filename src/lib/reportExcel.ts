@@ -18,7 +18,7 @@ import * as XLSX from "xlsx";
  * the workbook can be summed and pivoted rather than just read.
  */
 
-const MONEY_FORMAT = "#,##0.00;(#,##0.00)";
+export const MONEY_FORMAT = "#,##0.00;(#,##0.00)";
 const PERCENT_FORMAT = "0.0%";
 
 /** Placeholders used for "no value" across the reports. */
@@ -40,7 +40,42 @@ export interface ReportExcelMeta {
   sheetName?: string;
 }
 
-type SheetCell = { v: string | number | null; z?: string };
+/** An in-workbook jump, e.g. `#'General Ledger'!A42`. */
+export interface SheetLink {
+  Target: string;
+  Tooltip?: string;
+}
+
+export type SheetCell = { v: string | number | null; z?: string; l?: SheetLink };
+
+/**
+ * Reference to a cell on another sheet, for a hyperlink Target. Sheet names
+ * containing spaces must be quoted, and a literal apostrophe inside one has to
+ * be doubled, or Excel rejects the whole link.
+ */
+export function sheetRef(sheetName: string, row1Based: number, column = "A"): string {
+  return `#'${sheetName.replace(/'/g, "''")}'!${column}${row1Based}`;
+}
+
+/** Attach a link to an existing cell without disturbing its value or format. */
+export function withLink(cell: SheetCell, target: string, tooltip?: string): SheetCell {
+  return { ...cell, l: tooltip ? { Target: target, Tooltip: tooltip } : { Target: target } };
+}
+
+/** A money cell, or an empty one when the amount is absent or sub-cent noise. */
+export function moneyCell(n: number | null | undefined): SheetCell {
+  if (n == null || Math.abs(n) < 0.005) return { v: null };
+  return { v: n, z: MONEY_FORMAT };
+}
+
+/** A money cell that renders 0.00 rather than blanking — for balance columns,
+ * where an empty cell and a zero balance mean different things. */
+export function balanceCell(n: number | null | undefined): SheetCell {
+  if (n == null) return { v: null };
+  return { v: n, z: MONEY_FORMAT };
+}
+
+export const textCell = (s: string | null | undefined): SheetCell => ({ v: s || null });
 
 /**
  * Parse a rendered amount back to a number. Returns the sign-corrected value
@@ -165,6 +200,16 @@ function buildHeading(meta: ReportExcelMeta): SheetCell[][] {
   return lines.map((text) => [{ v: text || null }]);
 }
 
+/**
+ * How many rows the company/report heading occupies, so a caller can turn a
+ * row index inside its own section grid into the absolute Excel row a
+ * hyperlink has to point at. Valid for a single-section sheet — buildSheet
+ * inserts a spacer row between sections, which would shift later ones.
+ */
+export function headingRowCount(meta: ReportExcelMeta): number {
+  return buildHeading(meta).length;
+}
+
 function normaliseFileName(name: string): string {
   const stripped = name.replace(/\.(pdf|csv|xlsx?)$/i, "");
   // Windows/macOS reject these in filenames.
@@ -176,8 +221,16 @@ function sheetNameOf(meta: ReportExcelMeta): string {
   return raw.replace(/[\\/*?:[\]]/g, " ").slice(0, 31) || "Report";
 }
 
-/** Assemble the heading + section grids into a workbook and download it. */
-function writeWorkbook(meta: ReportExcelMeta, sections: { grid: SheetCell[][]; merges: XLSX.Range[] }[]) {
+export type SheetSection = { grid: SheetCell[][]; merges: XLSX.Range[] };
+
+/** One tab of a workbook: its own heading block and its own section grids. */
+export interface WorkbookSheet {
+  meta: ReportExcelMeta;
+  sections: SheetSection[];
+}
+
+/** Assemble one sheet's heading + section grids into a worksheet. */
+function buildSheet(meta: ReportExcelMeta, sections: SheetSection[]): XLSX.WorkSheet {
   const heading = buildHeading(meta);
   const grid: SheetCell[][] = [...heading];
   const merges: XLSX.Range[] = [];
@@ -202,12 +255,14 @@ function writeWorkbook(meta: ReportExcelMeta, sections: { grid: SheetCell[][]; m
 
   const ws = XLSX.utils.aoa_to_sheet(grid.map((row) => row.map((cell) => cell.v)));
 
-  // Re-apply number formats — aoa_to_sheet only carries values.
+  // Re-apply number formats and hyperlinks — aoa_to_sheet only carries values.
   grid.forEach((row, r) => {
     row.forEach((cell, c) => {
-      if (!cell.z) return;
+      if (!cell.z && !cell.l) return;
       const ref = XLSX.utils.encode_cell({ r, c });
-      if (ws[ref]) ws[ref].z = cell.z;
+      if (!ws[ref]) return;
+      if (cell.z) ws[ref].z = cell.z;
+      if (cell.l) ws[ref].l = cell.l;
     });
   });
 
@@ -223,9 +278,32 @@ function writeWorkbook(meta: ReportExcelMeta, sections: { grid: SheetCell[][]; m
     return { wch: Math.min(Math.max(longest + 2, 10), 48) };
   });
 
+  return ws;
+}
+
+function writeWorkbook(meta: ReportExcelMeta, sections: SheetSection[]) {
+  downloadWorkbook(meta.fileName, [{ meta, sections }]);
+}
+
+/**
+ * Write several sheets into a single .xlsx and download it. Sheet names are
+ * de-duplicated because Excel refuses a workbook with two tabs of the same name
+ * — and silently dropping the second sheet would lose a whole report.
+ */
+export function downloadWorkbook(fileName: string, sheets: WorkbookSheet[]): boolean {
+  const present = sheets.filter((s) => s.sections.some((sec) => sec.grid.length > 0));
+  if (present.length === 0) return false;
+
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, sheetNameOf(meta));
-  XLSX.writeFile(wb, normaliseFileName(meta.fileName));
+  const used = new Set<string>();
+  for (const sheet of present) {
+    let name = sheetNameOf(sheet.meta);
+    for (let i = 2; used.has(name); i++) name = `${sheetNameOf(sheet.meta).slice(0, 28)} ${i}`;
+    used.add(name);
+    XLSX.utils.book_append_sheet(wb, buildSheet(sheet.meta, sheet.sections), name);
+  }
+  XLSX.writeFile(wb, normaliseFileName(fileName));
+  return true;
 }
 
 /** The single-cell rows prepended before the tables — merged, so not sized. */

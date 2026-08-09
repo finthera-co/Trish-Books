@@ -14,9 +14,33 @@ export interface ShareInvoiceArgs {
   companyName?: string | null;
 }
 
-/** Strip everything but digits so the number is wa.me-friendly (expects country code, no +). */
-function normalizePhone(phone?: string | null): string {
-  return (phone || "").replace(/[^\d]/g, "");
+/** Sri Lanka. wa.me has no notion of a "local" number, so one has to be assumed. */
+const DEFAULT_DIAL_CODE = "94";
+
+/**
+ * Put a phone number into the form wa.me expects: country code first, digits
+ * only, no `+`.
+ *
+ * Customers get entered the way they're written locally — "077 123 4567" — and
+ * simply stripping punctuation leaves `0771234567`, which wa.me reads as a
+ * different country's number and opens the wrong chat (or none). A leading 0 is
+ * the local trunk prefix and has to be swapped for the dial code.
+ */
+export function normalizePhone(phone?: string | null, dialCode = DEFAULT_DIAL_CODE): string {
+  const raw = (phone || "").trim();
+  if (!raw) return "";
+  // A written +94… or 0094… is already international; keep it as given.
+  if (raw.startsWith("+")) return raw.replace(/\D/g, "");
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("00")) return digits.slice(2);
+  // Local trunk form (0XX…) → country code. SL mobiles are 0 + 9 digits.
+  if (digits.startsWith("0")) return dialCode + digits.slice(1);
+  // Already carries the dial code and is long enough to be a full number.
+  if (digits.startsWith(dialCode) && digits.length > 9) return digits;
+  // Anything else is ambiguous — a bare local number with no trunk prefix is
+  // the common case, so assume the home country rather than sending nowhere.
+  return digits.length <= 9 ? dialCode + digits : digits;
 }
 
 function buildSubject(a: ShareInvoiceArgs): string {

@@ -25,7 +25,7 @@ import { isDebitNormal as checkDebitNormal, isPeriodBasedAccount, getTypeLabel, 
 import { formatCurrency } from "@/lib/currency";
 import GeneralLedgerReport from "@/components/ledger/GeneralLedgerReport";
 import { ARSubledger, APSubledger } from "@/components/ledger/SubsidiaryLedger";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -92,7 +92,21 @@ const txnTypeBadge: Record<string, string> = {
 
 export default function Ledger() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: accounts, isLoading: accountsLoading } = useAccounts();
+
+  // Drill-through from the Trial Balance: ?tab=general-ledger&account=<uuid>&from=&to=
+  const focusAccountId = searchParams.get("account");
+  const focusFrom = searchParams.get("from") ?? undefined;
+  const focusTo = searchParams.get("to") ?? undefined;
+  const focusAccount = focusAccountId ? accounts?.find((a) => a.id === focusAccountId) : undefined;
+  const clearFocus = useCallback(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("account");
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   // Reverse-lookup: journal_entry_id → source transaction
   const { data: voucherLookup } = useQuery({
@@ -132,7 +146,16 @@ export default function Ledger() {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState<string>("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
-  const [activeTab, setActiveTab] = useState("register");
+  // Tab lives in the URL so the Trial Balance can link straight to the General
+  // Ledger tab, and so a drilled-into ledger is a shareable/bookmarkable link.
+  const activeTab = searchParams.get("tab") ?? "register";
+  const setActiveTab = useCallback((tab: string) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("tab", tab);
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
   const [sortField, setSortField] = useState<SortField>("date");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [page, setPage] = useState(0);
@@ -387,9 +410,12 @@ export default function Ledger() {
     setExporting(true);
     try {
       const exportRows = await fetchExportRows();
+      // 10 columns. The opening and TOTALS rows used to carry only 9 cells, which
+      // shifted every figure one column left — the closing balance landed under
+      // Credit and the debit total under Memo.
       const header = ["Date", "Type", "Ref No", "Cheque No", "Name", "Account", "Memo", "Debit (LKR)", "Credit (LKR)", "Balance (LKR)"];
       const rows = [
-        [effectiveDateFrom || "", "Opening Balance", "", "", "", "", "", "", openingBalance.toFixed(2)],
+        [effectiveDateFrom || "", "Opening Balance", "", "", "", "", "Carried forward from prior period", "", "", openingBalance.toFixed(2)],
         ...exportRows.map(r => [
           r.date, r.transactionType, r.refNumber, r.chequeNo, r.entityName,
           r.contraAccount, r.memo.replace(/"/g, '""'),
@@ -397,7 +423,7 @@ export default function Ledger() {
           r.credit > 0 ? r.credit.toFixed(2) : "",
           r.balance.toFixed(2),
         ]),
-        ["", "TOTALS", "", "", "", "", totalDebit.toFixed(2), totalCredit.toFixed(2), closingBalance.toFixed(2)],
+        ["", "TOTALS", "", "", "", "", "", totalDebit.toFixed(2), totalCredit.toFixed(2), closingBalance.toFixed(2)],
       ];
       const csv = [header, ...rows].map(r => r.map(c => `"${c}"`).join(",")).join("\n");
       const blob = new Blob([csv], { type: "text/csv" });
@@ -468,7 +494,9 @@ export default function Ledger() {
           { header: "Balance", numeric: true, value: r => r.balance },
         ],
         exportRows,
-        ["", "TOTALS", "", "", "", "", totalDebit, totalCredit, closingBalance],
+        // One cell per column (10) — a short row silently shifted the totals into
+        // the Memo/Debit/Credit columns and lost their currency format.
+        ["", "TOTALS", "", "", "", "", "", totalDebit, totalCredit, closingBalance],
       );
     } catch (e) {
       toast.error(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -853,7 +881,15 @@ export default function Ledger() {
           </div>
         </TabsContent>
 
-        <TabsContent value="general-ledger"><GeneralLedgerReport /></TabsContent>
+        <TabsContent value="general-ledger">
+          <GeneralLedgerReport
+            focusAccountId={focusAccountId}
+            focusAccountLabel={focusAccount ? `${focusAccount.account_code} · ${focusAccount.account_name}` : null}
+            onClearFocus={clearFocus}
+            initialDateFrom={focusFrom}
+            initialDateTo={focusTo}
+          />
+        </TabsContent>
         <TabsContent value="ar"><ARSubledger /></TabsContent>
         <TabsContent value="ap"><APSubledger /></TabsContent>
       </Tabs>

@@ -99,6 +99,27 @@ function mapTransactionRow(r: any): GLTransactionRow {
   };
 }
 
+/**
+ * Exported standalone as well as behind the hook, because reports that only
+ * need the tree at export time (the Trial Balance's combined workbook) must not
+ * have to re-derive the row mapping — two copies of it would be free to drift.
+ */
+export async function fetchGLAccountTree(
+  dateFrom: string,
+  dateTo: string,
+  accountType?: string,
+  includeInactive = true
+): Promise<GLAccountNode[]> {
+  const { data, error } = await supabase.rpc("rpc_gl_account_tree" as any, {
+    p_date_from: dateFrom,
+    p_date_to: dateTo,
+    p_account_type: accountType ?? null,
+    p_include_inactive: includeInactive,
+  });
+  if (error) throw error;
+  return mapAccountTree((data ?? []) as any[]);
+}
+
 export function useGLAccountTree(
   dateFrom: string,
   dateTo: string,
@@ -109,16 +130,7 @@ export function useGLAccountTree(
   return useQuery({
     queryKey: ["gl_tree", appUser?.tenant_id, dateFrom, dateTo, accountType ?? "all", includeInactive],
     enabled: Boolean(dateFrom && dateTo),
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc("rpc_gl_account_tree" as any, {
-        p_date_from: dateFrom,
-        p_date_to: dateTo,
-        p_account_type: accountType ?? null,
-        p_include_inactive: includeInactive,
-      });
-      if (error) throw error;
-      return mapAccountTree((data ?? []) as any[]);
-    },
+    queryFn: () => fetchGLAccountTree(dateFrom, dateTo, accountType, includeInactive),
     staleTime: 60_000,
     gcTime: 5 * 60_000,
     retry: 1,

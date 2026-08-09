@@ -73,8 +73,10 @@ const GOLDEN_ROWS: (string | number)[][] = [
   ["", "", "Total Bank Accounts - Other", "", "", "", "", "", "", "", "", "", "", "", "30.00", "10.00", "25.00"],
   // total:P — subtree_debit=50, subtree_credit=10, balance=subtree_opening(55)+50-10=95
   ["", "Total Bank Accounts", "", "", "", "", "", "", "", "", "", "", "", "", "50.00", "10.00", "95.00"],
-  // grand-total — Dr=50/Cr=10 at this single top-level node (deliberately unbalanced fixture; not a real report)
-  ["TOTAL", "", "", "", "", "", "", "", "", "", "", "", "", "", "50.00", "10.00", "0.00"],
+  // grand-total — Dr=50/Cr=10 at this single top-level node (deliberately unbalanced fixture; not a real report).
+  // Balance is opening + Dr - Cr, matching the "Total Bank Accounts" row above it;
+  // it used to be hardcoded to 0.00, which was right only for a complete balanced ledger.
+  ["TOTAL", "", "", "", "", "", "", "", "", "", "", "", "", "", "50.00", "10.00", "95.00"],
   [],
   ["GL/2025-06-01/2025-06-30/deadbeef · 9 rows · Dr 50.00 ≠ Cr 10.00"],
 ];

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, ShieldCheck, AlertTriangle, CheckCircle2, Hash } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useSerialRegister } from "@/hooks/useSerialRegister";
 import { useInvoiceNextNumbers, useSetInvoiceNextNumber } from "@/hooks/useInvoiceNumbering";
 import { useLegacyInvoiceNumbering } from "@/hooks/useTenantFeature";
+import { useCompanyProfile, useUpdateCompanyProfile } from "@/hooks/useCompanyProfile";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
@@ -33,13 +34,33 @@ function NextNumberCard() {
   const [nextSeq, setNextSeq] = useState("");
   const { data: current } = useInvoiceNextNumbers(period);
   const setNext = useSetInvoiceNextNumber();
+  // The branch code differs per business, so it's a saved tenant default rather
+  // than something to re-type: it pre-fills here and on every new invoice.
+  const { data: profile } = useCompanyProfile();
+  const updateProfile = useUpdateCompanyProfile();
+  const savedBranch = profile?.default_branch_code ?? "";
+  const [branchTouched, setBranchTouched] = useState(false);
+  useEffect(() => {
+    if (!branchTouched) setBranch(savedBranch);
+  }, [savedBranch, branchTouched]);
 
   const apply = () => {
     const n = Number(nextSeq);
     if (!Number.isInteger(n) || n < 1) return;
+    const code = branch.trim() || "MAIN";
     setNext.mutate(
-      { branchCode: branch.trim() || "MAIN", period, nextSeq: n },
-      { onSuccess: () => setNextSeq("") },
+      { branchCode: code, period, nextSeq: n },
+      {
+        onSuccess: () => {
+          setNextSeq("");
+          // Remember the code that was actually used, so the next invoice and
+          // the next visit here both start from it.
+          if (code !== savedBranch) {
+            updateProfile.mutate({ default_branch_code: code });
+            setBranchTouched(false);
+          }
+        },
+      },
     );
   };
 
@@ -63,8 +84,9 @@ function NextNumberCard() {
           </div>
           <div className="space-y-1.5">
             <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Branch (QQQQ)</Label>
-            <Input className="h-9 font-mono" value={branch} onChange={(e) => setBranch(e.target.value)}
-              placeholder="MAIN" maxLength={15} />
+            <Input className="h-9 font-mono" value={branch} maxLength={15}
+              onChange={(e) => { setBranchTouched(true); setBranch(e.target.value.replace(/\s/g, "")); }}
+              placeholder="MAIN" />
           </div>
           <div className="space-y-1.5">
             <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Next number</Label>
@@ -81,6 +103,7 @@ function NextNumberCard() {
         <p className="text-[11px] text-muted-foreground">
           Numbering restarts every month, so this applies to {periodLabel(period)} for the branch shown.
           It can only move forward — a number already issued is never handed out twice.
+          {" "}The branch code is saved as this company's default and pre-fills new invoices.
         </p>
 
         {(current ?? []).length > 0 && (
@@ -105,6 +128,8 @@ function NextNumberCard() {
 const statusBadge = (s: string) =>
   s === "issued" ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
   : s === "cancelled" ? "bg-destructive/10 text-destructive"
+  // Skipped is deliberate, not a problem — keep it neutral rather than alarming.
+  : s === "skipped" ? "bg-muted text-muted-foreground"
   : "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400";
 
 export default function InvoiceSerialRegister() {
@@ -151,6 +176,7 @@ export default function InvoiceSerialRegister() {
                   <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">{g.issued} issued</Badge>
                   {g.reserved > 0 && <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">{g.reserved} reserved</Badge>}
                   {g.cancelled > 0 && <Badge className="bg-destructive/10 text-destructive">{g.cancelled} cancelled</Badge>}
+                  {g.skipped > 0 && <Badge className="bg-muted text-muted-foreground">{g.skipped} skipped</Badge>}
                   {g.missing.length > 0 && <Badge className="bg-destructive/10 text-destructive">gap: {g.missing.join(", ")}</Badge>}
                 </div>
               </div>

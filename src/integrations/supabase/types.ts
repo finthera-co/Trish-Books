@@ -3683,6 +3683,7 @@ export type Database = {
           bank_name: string | null
           bank_swift: string | null
           city: string | null
+          default_branch_code: string | null
           created_at: string
           email: string | null
           id: string
@@ -3705,6 +3706,7 @@ export type Database = {
           bank_name?: string | null
           bank_swift?: string | null
           city?: string | null
+          default_branch_code?: string | null
           created_at?: string
           email?: string | null
           id?: string
@@ -3727,6 +3729,7 @@ export type Database = {
           bank_name?: string | null
           bank_swift?: string | null
           city?: string | null
+          default_branch_code?: string | null
           created_at?: string
           email?: string | null
           id?: string

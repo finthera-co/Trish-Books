@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Download, FileText, Printer, BookOpen, ChevronRight, ChevronDown,
-  AlertTriangle, XCircle, Loader2, Rows3, Lock,
+  AlertTriangle, XCircle, Loader2, Rows3, Lock, Filter,
 } from "lucide-react";
 import { ACCOUNT_TYPES } from "@/lib/accountTypes";
 import { useAuth } from "@/contexts/AuthContext";
@@ -25,6 +25,7 @@ import {
 } from "@/lib/glReportExport";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { describeError } from "@/lib/errorMessage";
 
 const ROW_HEIGHT = 36;
 const RENDER_ALL_WARN_THRESHOLD = 20_000;
@@ -95,13 +96,30 @@ const DEFAULT_COL_WIDTHS = [280, 130, 110, 110, 60, 160, 200, 160, 140, 140, 150
 const MIN_COL_WIDTH = 48;
 const COL_GAP = 4;
 
-export default function GeneralLedgerReport() {
+export interface GeneralLedgerReportProps {
+  /** Drill-through target from the Trial Balance: show only this account's subtree. */
+  focusAccountId?: string | null;
+  /** Label for the focus chip — the caller already knows the account's name. */
+  focusAccountLabel?: string | null;
+  onClearFocus?: () => void;
+  /** Date range to open with, when the caller arrives from another report. */
+  initialDateFrom?: string;
+  initialDateTo?: string;
+}
+
+export default function GeneralLedgerReport({
+  focusAccountId = null,
+  focusAccountLabel = null,
+  onClearFocus,
+  initialDateFrom,
+  initialDateTo,
+}: GeneralLedgerReportProps = {}) {
   const { appUser } = useAuth();
   const { canView } = useMyPermissions();
   const { data: fiscalPeriods } = useFiscalPeriods();
 
-  const [dateFrom, setDateFrom] = useState(defaultDateFrom);
-  const [dateTo, setDateTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [dateFrom, setDateFrom] = useState(() => initialDateFrom || defaultDateFrom());
+  const [dateTo, setDateTo] = useState(() => initialDateTo || new Date().toISOString().slice(0, 10));
   const [periodPreset, setPeriodPreset] = useState<string>("custom");
   const [accountType, setAccountType] = useState<string>("all");
   const [includeZeroActivity, setIncludeZeroActivity] = useState(true);
@@ -163,9 +181,17 @@ export default function GeneralLedgerReport() {
   const integrityQuery = useGLIntegrity(dateFrom, dateTo);
   const reconciliation = useGLOpeningReconciliation(dateFrom);
 
+  // Arriving from the Trial Balance a second time (different account, different
+  // period) remounts nothing, so the range has to follow the caller's params.
+  useEffect(() => {
+    if (initialDateFrom) setDateFrom(initialDateFrom);
+    if (initialDateTo) setDateTo(initialDateTo);
+    if (initialDateFrom || initialDateTo) setPeriodPreset("custom");
+  }, [initialDateFrom, initialDateTo]);
+
   const buildOptions = useMemo(
-    () => ({ includeZeroActivity, includeOtherRows, showAccountCodes, collapsed }),
-    [includeZeroActivity, includeOtherRows, showAccountCodes, collapsed]
+    () => ({ includeZeroActivity, includeOtherRows, showAccountCodes, collapsed, focusAccountId }),
+    [includeZeroActivity, includeOtherRows, showAccountCodes, collapsed, focusAccountId]
   );
 
   const visibleAccountIds = useMemo(() => {
@@ -198,9 +224,17 @@ export default function GeneralLedgerReport() {
   }, [sortedVisibleIds, txnsQuery.data]);
 
   const { rows, grandDebit, grandCredit, imbalance } = useMemo(() => {
-    if (!treeQuery.data) return { rows: [] as GLReportRow[], grandDebit: 0, grandCredit: 0, imbalance: 0 };
+    if (!treeQuery.data) {
+      return { rows: [] as GLReportRow[], grandOpening: 0, grandDebit: 0, grandCredit: 0, grandBalance: 0, imbalance: 0 };
+    }
     return buildGeneralLedgerRows(treeQuery.data, txnsByAccount, buildOptions);
   }, [treeQuery.data, txnsByAccount, buildOptions]);
+
+  // A deliberately narrowed report (one account, one account type, actives only)
+  // has no reason to balance — flagging it as an imbalance would cry wolf on
+  // every drill-through. Only a whole-ledger view can be out of balance.
+  const isScopedView = accountType !== "all" || focusAccountId != null || !includeInactive;
+  const reportImbalance = isScopedView ? 0 : imbalance;
 
   const fingerprint = useMemo(() => {
     if (!appUser?.tenant_id) return null;
@@ -264,12 +298,12 @@ export default function GeneralLedgerReport() {
     for (const issue of integrityQuery.data ?? []) {
       lines.push(`[${issue.severity.toUpperCase()}] ${issue.code}: ${issue.detail}${issue.amount != null ? ` (${issue.amount.toFixed(2)})` : ""}`);
     }
-    if (Math.abs(imbalance) > 0.005) lines.push(`[ERROR] IMBALANCE: Dr/Cr differ by ${imbalance.toFixed(2)}`);
+    if (Math.abs(reportImbalance) > 0.005) lines.push(`[ERROR] IMBALANCE: Dr/Cr differ by ${reportImbalance.toFixed(2)}`);
     if (reconciliation.status === "variance") {
       lines.push(`[WARNING] OPENING_VARIANCE: ledger vs opening_balances differ by ${reconciliation.totalVariance.toFixed(2)} across ${reconciliation.accounts.length} account(s)`);
     }
     return lines;
-  }, [integrityQuery.data, imbalance, reconciliation]);
+  }, [integrityQuery.data, reportImbalance, reconciliation]);
 
   const runExport = useCallback(
     async (kind: "csv" | "pdf") => {
@@ -278,7 +312,7 @@ export default function GeneralLedgerReport() {
       try {
         // Exports cover every in-scope account regardless of on-screen collapse —
         // collapse is a navigation aid, not a data filter.
-        const fullIds = getVisibleLeafAccountIds(treeQuery.data, { includeZeroActivity, includeOtherRows });
+        const fullIds = getVisibleLeafAccountIds(treeQuery.data, { includeZeroActivity, includeOtherRows, focusAccountId });
         const sortedFullIds = [...fullIds].sort();
         const allTxns = await fetchGLTransactions(dateFrom, dateTo, sortedFullIds);
         const fullTxnsByAccount = new Map<string, GLTransactionRow[]>();
@@ -292,6 +326,7 @@ export default function GeneralLedgerReport() {
           includeZeroActivity,
           includeOtherRows,
           showAccountCodes,
+          focusAccountId,
           collapsed: new Set(),
         });
 
@@ -328,12 +363,15 @@ export default function GeneralLedgerReport() {
           grandCredit: full.grandCredit,
         });
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Export failed");
+        // supabase-js rejects with a plain PostgrestError, not an Error — the
+        // old `instanceof Error` check threw the actual diagnosis away.
+        console.error("General Ledger export failed", e);
+        toast.error(describeError(e, "Export failed"));
       } finally {
         setIsExporting(null);
       }
     },
-    [treeQuery.data, appUser, dateFrom, dateTo, accountType, includeZeroActivity, includeOtherRows, includeInactive, showAccountCodes, warningLines]
+    [treeQuery.data, appUser, dateFrom, dateTo, accountType, includeZeroActivity, includeOtherRows, includeInactive, showAccountCodes, focusAccountId, warningLines]
   );
 
   if (!canViewReport) {
@@ -431,6 +469,20 @@ export default function GeneralLedgerReport() {
         </div>
       </div>
 
+      {focusAccountId && (
+        <div className="print:border print:border-border rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5 flex items-center gap-3 text-sm">
+          <Filter className="w-4 h-4 text-primary flex-shrink-0" />
+          <span className="text-foreground">
+            Showing only <strong>{focusAccountLabel || "the selected ledger"}</strong> and its sub-accounts, from the Trial Balance.
+          </span>
+          {onClearFocus && (
+            <Button variant="outline" size="sm" className="ml-auto print:hidden" onClick={onClearFocus}>
+              <XCircle className="w-3.5 h-3.5 mr-1" /> Show all accounts
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* ── Banner stack ── */}
       {!dismissedBanners.has("integrity") && (integrityQuery.data?.some((i) => i.severity === "error")) && (
         <Banner tone="error" icon={XCircle} onDismiss={() => setDismissedBanners((s) => new Set(s).add("integrity"))}>
@@ -441,9 +493,9 @@ export default function GeneralLedgerReport() {
           </ul>
         </Banner>
       )}
-      {!dismissedBanners.has("imbalance") && Math.abs(imbalance) > 0.005 && (
+      {!dismissedBanners.has("imbalance") && Math.abs(reportImbalance) > 0.005 && (
         <Banner tone="error" icon={XCircle} onDismiss={() => setDismissedBanners((s) => new Set(s).add("imbalance"))}>
-          <strong>Report does not balance.</strong> Debits and credits differ by {GL_REPORT_CURRENCY} {Math.abs(imbalance).toFixed(2)}.
+          <strong>Report does not balance.</strong> Debits and credits differ by {GL_REPORT_CURRENCY} {Math.abs(reportImbalance).toFixed(2)}.
         </Banner>
       )}
       {!dismissedBanners.has("reconciliation") && reconciliation.status === "variance" && (
