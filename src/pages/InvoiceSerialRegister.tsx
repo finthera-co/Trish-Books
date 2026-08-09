@@ -8,8 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useSerialRegister } from "@/hooks/useSerialRegister";
-import { useInvoiceNextNumbers, useSetInvoiceNextNumber, useDeleteInvoiceNumberSeries, type NextNumberRow } from "@/hooks/useInvoiceNumbering";
+import { useSerialRegister, type SerialRow } from "@/hooks/useSerialRegister";
+import { useInvoiceNextNumbers, useSetInvoiceNextNumber, useDeleteInvoiceNumberSeries, useDeleteInvoiceNumberRow, type NextNumberRow } from "@/hooks/useInvoiceNumbering";
 import { useLegacyInvoiceNumbering } from "@/hooks/useTenantFeature";
 import { useCompanyProfile, useUpdateCompanyProfile } from "@/hooks/useCompanyProfile";
 
@@ -173,6 +173,8 @@ export default function InvoiceSerialRegister() {
   const navigate = useNavigate();
   const { data: groups, isLoading } = useSerialRegister();
   const canSetNextNumber = useLegacyInvoiceNumbering();
+  const deleteRow = useDeleteInvoiceNumberRow();
+  const [rowTarget, setRowTarget] = useState<SerialRow | null>(null);
 
   const totalMissing = (groups ?? []).reduce((s, g) => s + g.missing.length, 0);
 
@@ -223,6 +225,7 @@ export default function InvoiceSerialRegister() {
                 <TableHeader><TableRow>
                   <TableHead className="w-16">Seq</TableHead><TableHead>Serial</TableHead>
                   <TableHead>Status</TableHead><TableHead>Reason</TableHead><TableHead>Recorded</TableHead>
+                  {canSetNextNumber && <TableHead className="w-10"></TableHead>}
                 </TableRow></TableHeader>
                 <TableBody>
                   {g.rows.map((r) => (
@@ -232,6 +235,18 @@ export default function InvoiceSerialRegister() {
                       <TableCell><Badge className={statusBadge(r.status)}>{r.status}</Badge></TableCell>
                       <TableCell className="text-muted-foreground">{r.reason || "—"}</TableCell>
                       <TableCell className="text-muted-foreground">{new Date(r.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</TableCell>
+                      {canSetNextNumber && (
+                        <TableCell>
+                          {/* An issued number is part of the statutory record and
+                              can never be removed; the RPC refuses it too. */}
+                          {r.status !== "issued" && !r.invoice_id && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7" title={`Remove ${r.serial}`}
+                              onClick={() => setRowTarget(r)} disabled={deleteRow.isPending}>
+                              <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
+                            </Button>
+                          )}
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -240,6 +255,28 @@ export default function InvoiceSerialRegister() {
           </Card>
         ))
       )}
+
+      <AlertDialog open={!!rowTarget} onOpenChange={(v) => { if (!v) setRowTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {rowTarget?.serial} from the register?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The number goes back into the sequence and can be handed out again. If it is the
+              highest number recorded, the counter moves back to it — so clearing a run of unused
+              numbers lets numbering resume from the first of them.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (rowTarget) deleteRow.mutate(rowTarget.serial); setRowTarget(null); }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

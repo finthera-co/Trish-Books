@@ -280,6 +280,35 @@ export function useAnalystIndexStatus() {
   });
 }
 
+/**
+ * Pulls the real reason out of a functions.invoke() failure.
+ *
+ * supabase-js reports every non-2xx as the same sentence — "Edge Function
+ * returned a non-2xx status code" — and hides the response on `error.context`.
+ * The body is where the actionable text lives ("VOYAGE_API_KEY is not
+ * configured"), so without this the user is told only that something failed.
+ */
+async function functionErrorMessage(error: unknown): Promise<string> {
+  const context = (error as { context?: unknown }).context;
+
+  if (context instanceof Response) {
+    try {
+      // The body can only be read once, so work on a clone — supabase-js may
+      // have already consumed the original.
+      const body = await context.clone().json();
+      if (typeof body?.error === "string") return body.error;
+    } catch {
+      // Not JSON (a gateway HTML error page, say) — fall through.
+    }
+    if (context.status === 404) {
+      return "The analyst-reindex function isn't deployed to this project yet.";
+    }
+    return `The indexer returned ${context.status}.`;
+  }
+
+  return describeError(error);
+}
+
 export function useBuildAnalystIndex() {
   const { appUser } = useAuth();
   const queryClient = useQueryClient();
@@ -292,7 +321,7 @@ export function useBuildAnalystIndex() {
       const { data, error } = await supabase.functions.invoke("analyst-reindex", {
         body: { mode: "full", tenant_id: appUser.tenant_id },
       });
-      if (error) throw error;
+      if (error) throw new Error(await functionErrorMessage(error));
 
       const result = (data as { results?: ReindexResult[] } | null)?.results?.[0];
       const pending = Number(result?.pending ?? 0);

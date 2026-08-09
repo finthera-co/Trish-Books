@@ -54,6 +54,28 @@ export function useDeleteInvoiceNumberSeries() {
   });
 }
 
+/**
+ * Remove one unissued number from the register. Deleting the highest numbers
+ * pulls the branch counter back with them, so those numbers get handed out
+ * again — which is how a botched run of test drafts is undone.
+ */
+export function useDeleteInvoiceNumberRow() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (serial: string) => {
+      const { data, error } = await supabase.rpc("delete_invoice_number_row" as any, { p_serial: serial });
+      if (error) throw new Error(error.message);
+      return data as number;
+    },
+    onSuccess: (nextSeq, serial) => {
+      qc.invalidateQueries({ queryKey: ["invoice_next_numbers"] });
+      qc.invalidateQueries({ queryKey: ["invoice_serial_register"] });
+      toast.success(`Removed ${serial} — next number is now ${nextSeq}`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
 export function useSetInvoiceNextNumber() {
   const qc = useQueryClient();
   return useMutation({
