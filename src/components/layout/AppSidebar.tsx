@@ -25,6 +25,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { useSubscriptionLimits } from "@/hooks/useSubscriptionLimits";
 import { NavLink } from "@/components/NavLink";
+import BrandMark from "@/components/BrandMark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Sidebar,
@@ -124,9 +125,7 @@ export default function AppSidebar() {
     <Sidebar collapsible="icon" className="border-r border-sidebar-border bg-sidebar">
       <SidebarHeader className="border-b border-sidebar-border px-3 py-3">
         <div className="flex items-center gap-2 overflow-hidden">
-          <div className="w-8 h-8 shrink-0 rounded-lg bg-sidebar-primary flex items-center justify-center">
-            <BookOpen className="w-4 h-4 text-sidebar-primary-foreground" />
-          </div>
+          <BrandMark className="w-8 h-8 shrink-0 rounded-lg" />
           {!collapsed && (
             <span className="text-lg font-semibold text-sidebar-foreground truncate">
               Trish Books

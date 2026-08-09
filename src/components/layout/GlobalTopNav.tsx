@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import GlobalSearchBar from "@/components/layout/GlobalSearchBar";
+import BrandMark from "@/components/BrandMark";
 
 export default function GlobalTopNav() {
   const { appUser, isSuperAdmin, signOut } = useAuth();
@@ -29,9 +30,7 @@ export default function GlobalTopNav() {
       {/* Left: Logo + Search */}
       <div className="flex items-center gap-5">
         <button onClick={() => navigate("/home")} className="flex items-center gap-2.5 shrink-0 group">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shadow-sm transition-transform duration-200 group-hover:scale-105">
-            <span className="text-xs font-bold text-primary-foreground">FT</span>
-          </div>
+          <BrandMark className="w-8 h-8 shrink-0 rounded-lg shadow-sm transition-transform duration-200 group-hover:scale-105" />
           <span className="text-sm font-bold text-foreground hidden sm:inline tracking-tight">Trish Books</span>
         </button>
 

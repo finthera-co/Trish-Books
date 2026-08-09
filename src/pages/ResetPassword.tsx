@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { BookOpen, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
+import BrandMark from "@/components/BrandMark";
 
 /**
  * Landing page for the password-recovery email link. Supabase puts the user in
@@ -56,9 +57,7 @@ export default function ResetPassword() {
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-[400px] animate-fade-in">
         <div className="flex items-center gap-2.5 mb-8">
-          <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow-sm">
-            <BookOpen className="w-4.5 h-4.5 text-primary-foreground" />
-          </div>
+          <BrandMark className="w-9 h-9 shrink-0 rounded-xl shadow-sm" />
           <span className="text-lg font-bold text-foreground tracking-tight">Trish Books</span>
         </div>
 

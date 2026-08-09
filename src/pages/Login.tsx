@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { useNavigate, Link, Navigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-import { BookOpen, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
+import BrandMark from "@/components/BrandMark";
 import { supabase } from "@/integrations/supabase/client";
 import { takeSignOutReason } from "@/lib/browserSession";
 import { IDLE_TIMEOUT_MS } from "@/hooks/useIdleLogout";
@@ -66,9 +67,7 @@ export default function Login() {
         {/* Logo */}
         <div className="px-8 pt-8">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow-sm">
-              <BookOpen className="w-4.5 h-4.5 text-primary-foreground" />
-            </div>
+            <BrandMark className="w-9 h-9 shrink-0 rounded-xl shadow-sm" />
             <span className="text-lg font-bold text-foreground tracking-tight">Trish Books</span>
           </div>
         </div>
