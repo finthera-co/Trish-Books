@@ -21,6 +21,13 @@
 
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
 
+-- IF NOT EXISTS ignores the WITH SCHEMA clause, so on a project where pgvector
+-- was already installed into `public` the line above is a silent no-op and
+-- `extensions.vector` would not resolve. Naming the type unqualified under a
+-- search_path covering both schemas works either way; the resolved type OID is
+-- what gets stored, so the setting does not need to outlive this script.
+SET search_path = public, extensions;
+
 -- ── Retrieval index ──────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS public.analyst_documents (
@@ -44,7 +51,7 @@ CREATE TABLE IF NOT EXISTS public.analyst_documents (
   -- Identifiers and dates the analyst needs to turn a hit into a tool call
   -- (account_code, account_id, customer_id, entry_date, amount, ...).
   metadata     jsonb NOT NULL DEFAULT '{}'::jsonb,
-  embedding    extensions.vector(1024),
+  embedding    vector(1024),
   indexed_at   timestamptz,
   created_at   timestamptz NOT NULL DEFAULT now(),
   updated_at   timestamptz NOT NULL DEFAULT now(),
@@ -65,7 +72,7 @@ CREATE INDEX IF NOT EXISTS idx_analyst_documents_pending
 -- rows; HNSW has no training step and is correct from the first insert.
 CREATE INDEX IF NOT EXISTS idx_analyst_documents_embedding
   ON public.analyst_documents
-  USING hnsw (embedding extensions.vector_cosine_ops)
+  USING hnsw (embedding vector_cosine_ops)
   WITH (m = 16, ef_construction = 64);
 
 ALTER TABLE public.analyst_documents ENABLE ROW LEVEL SECURITY;
@@ -105,11 +112,19 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  -- One function serves six tables, so the row is read as jsonb rather than
+  -- One function serves five tables, so the row is read as jsonb rather than
   -- through static field access: plpgsql cannot dereference a field on a
   -- `record` whose type varies per trigger.
-  v_row jsonb := to_jsonb(CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END);
+  v_row jsonb;
 BEGIN
+  -- Branched rather than a CASE expression: a CASE evaluates both arms, and
+  -- OLD is unassigned on INSERT (as is NEW on DELETE).
+  IF TG_OP = 'DELETE' THEN
+    v_row := to_jsonb(OLD);
+  ELSE
+    v_row := to_jsonb(NEW);
+  END IF;
+
   IF (v_row->>'tenant_id') IS NULL THEN
     RETURN NULL;
   END IF;
@@ -203,7 +218,7 @@ CREATE TRIGGER trg_analyst_enqueue_bill_lines
 -- ── Semantic search ──────────────────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION public.analyst_search(
-  p_query_embedding extensions.vector(1024),
+  p_query_embedding vector(1024),
   p_source_types    text[] DEFAULT NULL,
   p_limit           int    DEFAULT 12,
   p_min_similarity  real   DEFAULT 0.25
@@ -246,7 +261,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.analyst_search(extensions.vector, text[], int, real) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.analyst_search(vector, text[], int, real) TO authenticated;
 
 -- Coverage, so the UI can say "index is 82% built" instead of silently
 -- answering from a third of the ledger.

@@ -1,6 +1,7 @@
 import {
   BookOpen,
   Bell,
+  Sparkles,
   Inbox,
   FileText,
   Receipt,
@@ -178,6 +179,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
     color: "bg-[hsl(var(--chart-5))]",
     basePath: "/reports",
     sidebarItems: [
+      { label: "Financial Analyst", path: "/reports/analyst", icon: Sparkles },
       { label: "Financial Reports", path: "/reports/financial", icon: BarChart3 },
       { label: "Asset Schedule", path: "/reports/financial?report=fixed-asset-schedule", icon: Warehouse },
       { label: "Budgets", path: "/reports/budgets", icon: TrendingUp },

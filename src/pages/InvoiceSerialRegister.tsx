@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, ShieldCheck, AlertTriangle, CheckCircle2, Hash } from "lucide-react";
+import { ArrowLeft, ShieldCheck, AlertTriangle, CheckCircle2, Hash, Trash2 } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useSerialRegister } from "@/hooks/useSerialRegister";
-import { useInvoiceNextNumbers, useSetInvoiceNextNumber } from "@/hooks/useInvoiceNumbering";
+import { useInvoiceNextNumbers, useSetInvoiceNextNumber, useDeleteInvoiceNumberSeries, type NextNumberRow } from "@/hooks/useInvoiceNumbering";
 import { useLegacyInvoiceNumbering } from "@/hooks/useTenantFeature";
 import { useCompanyProfile, useUpdateCompanyProfile } from "@/hooks/useCompanyProfile";
 
@@ -34,6 +35,8 @@ function NextNumberCard() {
   const [nextSeq, setNextSeq] = useState("");
   const { data: current } = useInvoiceNextNumbers(period);
   const setNext = useSetInvoiceNextNumber();
+  const deleteSeries = useDeleteInvoiceNumberSeries();
+  const [deleteTarget, setDeleteTarget] = useState<NextNumberRow | null>(null);
   // The branch code differs per business, so it's a saved tenant default rather
   // than something to re-type: it pre-fills here and on every new invoice.
   const { data: profile } = useCompanyProfile();
@@ -109,17 +112,51 @@ function NextNumberCard() {
         {(current ?? []).length > 0 && (
           <div className="rounded-lg border border-border divide-y divide-border">
             {(current ?? []).map((r) => (
-              <div key={`${r.branch_code}-${r.yy}-${r.mmm}`} className="flex items-center justify-between px-3 py-2 text-sm">
+              <div key={`${r.branch_code}-${r.yy}-${r.mmm}`} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
                 <span className="text-muted-foreground">
                   Branch <span className="font-mono text-foreground">{r.branch_code}</span> · {r.mmm} 20{String(r.yy).padStart(2, "0")}
                 </span>
-                <span className="font-mono tabular-nums text-foreground">
-                  next: <span className="font-semibold">{r.next_serial}</span>
+                <span className="flex items-center gap-2">
+                  <span className="font-mono tabular-nums text-foreground">
+                    next: <span className="font-semibold">{r.next_serial}</span>
+                  </span>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" title={`Remove the ${r.branch_code} series`}
+                    onClick={() => setDeleteTarget(r)} disabled={deleteSeries.isPending}>
+                    <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
+                  </Button>
                 </span>
               </div>
             ))}
           </div>
         )}
+
+        {/* Removing a series is only possible while it has issued nothing — the
+            RPC re-checks and refuses otherwise. */}
+        <AlertDialog open={!!deleteTarget} onOpenChange={(v) => { if (!v) setDeleteTarget(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove the {deleteTarget?.branch_code} number series?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This deletes the counter and every register row for branch {deleteTarget?.branch_code} in{" "}
+                {deleteTarget?.mmm} 20{String(deleteTarget?.yy ?? "").padStart(2, "0")}. It is refused if any
+                invoice still uses a number from this series.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  if (!deleteTarget) return;
+                  deleteSeries.mutate({ branchCode: deleteTarget.branch_code, period });
+                  setDeleteTarget(null);
+                }}
+              >
+                Remove
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </CardContent>
     </Card>
   );

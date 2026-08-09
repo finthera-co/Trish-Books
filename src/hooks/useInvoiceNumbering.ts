@@ -29,6 +29,31 @@ export function useInvoiceNextNumbers(period: string) {
   });
 }
 
+/**
+ * Remove a branch's number series outright — counter and register rows.
+ * The RPC refuses when any invoice uses a number from it, so a series that
+ * actually issued something can't be erased.
+ */
+export function useDeleteInvoiceNumberSeries() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { branchCode: string; period: string }) => {
+      const { data, error } = await supabase.rpc("delete_invoice_number_series" as any, {
+        p_branch_code: input.branchCode,
+        p_period: input.period,
+      });
+      if (error) throw new Error(error.message);
+      return data as number;
+    },
+    onSuccess: (_rows, input) => {
+      qc.invalidateQueries({ queryKey: ["invoice_next_numbers"] });
+      qc.invalidateQueries({ queryKey: ["invoice_serial_register"] });
+      toast.success(`Removed the ${input.branchCode} number series`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
 export function useSetInvoiceNextNumber() {
   const qc = useQueryClient();
   return useMutation({

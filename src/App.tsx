@@ -101,6 +101,7 @@ import ResetPassword from "./pages/ResetPassword";
 import AnomalyDashboard from "./pages/AnomalyDashboard";
 
 import ForecastDashboard from "./pages/ForecastDashboard";
+import FinancialAnalyst from "./pages/FinancialAnalyst";
 import AccountReport from "./pages/AccountReport";
 import GLVerification from "./pages/GLVerification";
 import CustomersPage from "./pages/CustomersPage";
@@ -294,6 +295,7 @@ const App = () => (
                     <Route path="/reports/budgets" element={<Budgets />} />
                     <Route path="/reports/budget-vs-actual" element={<BudgetVsActual />} />
                     <Route path="/reports/exports" element={<DataExports />} />
+                    <Route path="/reports/analyst" element={<FinancialAnalyst />} />
                     <Route path="/reports/anomalies" element={<AnomalyDashboard />} />
                     <Route path="/reports/forecasting" element={<ForecastDashboard />} />
                     <Route path="/tax" element={<TaxCenter />} />
