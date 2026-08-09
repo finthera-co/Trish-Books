@@ -152,13 +152,21 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_line   record := CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+  v_row    jsonb;
   v_tenant uuid;
 BEGIN
+  IF TG_OP = 'DELETE' THEN
+    v_row := to_jsonb(OLD);
+  ELSE
+    v_row := to_jsonb(NEW);
+  END IF;
+
   SELECT i.tenant_id INTO v_tenant
   FROM public.invoices i
-  WHERE i.id = v_line.invoice_id;
+  WHERE i.id = (v_row->>'invoice_id')::uuid;
 
+  -- A line deleted as part of its invoice cascading away has no invoice left
+  -- to resolve; the index row is dropped by the next full reindex instead.
   IF v_tenant IS NULL THEN
     RETURN NULL;
   END IF;
@@ -167,7 +175,7 @@ BEGIN
   VALUES (
     v_tenant,
     'invoice_line',
-    v_line.id,
+    (v_row->>'id')::uuid,
     CASE WHEN TG_OP = 'DELETE' THEN 'delete' ELSE 'upsert' END
   )
   ON CONFLICT (tenant_id, source_type, source_id)
