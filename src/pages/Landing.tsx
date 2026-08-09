@@ -2472,7 +2472,7 @@ const css = `
      keystones badly at the far edge. Depth is kept for the pointer alone,
      where a small lift reads as a surface answering the cursor.              */
   --lp-ease: cubic-bezier(0.28, 0.11, 0.32, 1);  /* the page's only easing */
-  --lp-ease-io: var(--lp-ease-io);    /* for things that leave and return */
+  --lp-ease-io: cubic-bezier(0.4, 0, 0.2, 1);    /* for things that leave and return */
   --lp-rise: 3rem;         /* how far a section travels into place */
   --lp-rise-sm: 1.5rem;    /* items inside a section that is already arriving */
   --lp-dur: 900ms;         /* item reveal */
