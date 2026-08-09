@@ -100,8 +100,74 @@ function evaluateCondition(
 }
 
 /* ---------------- Expression Evaluator ----------------
- * Safe: only +, -, *, /, parentheses, numbers, and component codes.
+ * Supports +, -, *, /, unary +/-, parentheses, numbers, and component codes.
+ *
+ * This is a hand-written recursive-descent parser rather than `new Function`.
+ * The tokeniser already reduces an expression to digits and operators, so eval
+ * was not an injection risk — but it *is* a Content-Security-Policy risk: our
+ * `script-src 'self'` (vercel.json) has no `'unsafe-eval'`, so `new Function`
+ * throws in production. That throw was caught and turned into 0, which meant
+ * every EXPRESSION/DERIVED rule silently computed as zero once deployed.
+ * Parsing the tokens ourselves needs no CSP exemption.
  */
+
+/** Recursive-descent parser over an already-substituted numeric token list. */
+function parseTokens(tokens: string[]): number {
+  let pos = 0;
+  const peek = () => tokens[pos];
+
+  // expr := term (('+' | '-') term)*
+  function expr(): number {
+    let value = term();
+    while (peek() === "+" || peek() === "-") {
+      const op = tokens[pos++];
+      const rhs = term();
+      value = op === "+" ? value + rhs : value - rhs;
+    }
+    return value;
+  }
+
+  // term := factor (('*' | '/') factor)*
+  function term(): number {
+    let value = factor();
+    while (peek() === "*" || peek() === "/") {
+      const op = tokens[pos++];
+      const rhs = factor();
+      if (op === "/" && rhs === 0) throw new Error("division by zero");
+      value = op === "*" ? value * rhs : value / rhs;
+    }
+    return value;
+  }
+
+  // factor := ('+' | '-') factor | '(' expr ')' | number
+  function factor(): number {
+    const tok = peek();
+    if (tok === undefined) throw new Error("unexpected end of expression");
+    if (tok === "+" || tok === "-") {
+      pos++;
+      const operand = factor();
+      return tok === "-" ? -operand : operand;
+    }
+    if (tok === "(") {
+      pos++;
+      const inner = expr();
+      if (peek() !== ")") throw new Error("missing closing parenthesis");
+      pos++;
+      return inner;
+    }
+    if (tok === ")") throw new Error("unexpected ')'");
+    pos++;
+    const num = Number(tok);
+    // The tokeniser's [0-9.]+ class admits malformed literals like "1.2.3".
+    if (!Number.isFinite(num)) throw new Error(`invalid number "${tok}"`);
+    return num;
+  }
+
+  const result = expr();
+  if (pos < tokens.length) throw new Error(`unexpected token "${tokens[pos]}"`);
+  return result;
+}
+
 function evaluateExpression(
   expr: string,
   context: PayrollContext,
@@ -109,7 +175,7 @@ function evaluateExpression(
   steps: string[]
 ): number {
   const tokens = expr.match(/[A-Z_][A-Z0-9_]*|[0-9.]+|[+\-*/()]/g) || [];
-  const safeExpr = tokens.map((t) => {
+  const substituted = tokens.map((t) => {
     if (/^[A-Z_]/.test(t)) {
       const v = context[t];
       const num = typeof v === "number" && isFinite(v) ? v : 0;
@@ -117,12 +183,14 @@ function evaluateExpression(
       return String(num);
     }
     return t;
-  }).join(" ");
+  });
   steps.push(`Expression: ${expr}`);
-  steps.push(`Resolved:   ${safeExpr}`);
+  steps.push(`Resolved:   ${substituted.join(" ")}`);
   try {
-    // eslint-disable-next-line no-new-func
-    const out = Number(new Function(`return (${safeExpr});`)()) || 0;
+    const out = parseTokens(substituted);
+    // Overflow or an operand that resolved to a non-number lands here; a
+    // non-finite figure must never reach payroll_results.
+    if (!Number.isFinite(out)) throw new Error("result is not a finite number");
     steps.push(`= ${out}`);
     return out;
   } catch (err) {
