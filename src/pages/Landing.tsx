@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import LandingChat from "@/components/landing/LandingChat";
+import BrandMark from "@/components/BrandMark";
 import {
   ArrowRight, Check, Tag, X, Menu,
   Building2, ListTree, FileSpreadsheet, BookOpen, BarChart3,
@@ -1607,10 +1608,7 @@ export default function Landing() {
       <header className="lp-header">
         <div className="lp-shell lp-header-row">
           <div className="lp-brand">
-            <span className="lp-mark" aria-hidden="true">
-              <span />
-              <span />
-            </span>
+            <BrandMark className="w-[1.65rem] h-[1.65rem] shrink-0 rounded-md" />
             <span className="font-serif text-[1.35rem] leading-none tracking-tight">Trish Books</span>
           </div>
 
@@ -2418,10 +2416,7 @@ export default function Landing() {
 
           <div className="lp-foot-base">
             <div className="lp-foot-brand">
-              <span className="lp-mark lp-mark-sm" aria-hidden="true">
-                <span />
-                <span />
-              </span>
+              <BrandMark className="w-[1.3rem] h-[1.3rem] shrink-0 rounded" />
               <span className="font-serif text-base">Trish Books</span>
               <span className="lp-foot-tag">Double-entry accounting, built in Sri Lanka</span>
             </div>
@@ -2528,13 +2523,6 @@ const css = `
     linear-gradient(180deg, rgba(255, 255, 255, 0.74) 0%, rgba(255, 255, 255, 0.56) 40%, rgba(250, 249, 245, 0.88) 84%, #FAF9F5 100%); }
 .lp .lp-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .lp .font-serif { font-family: var(--font-serif); }
-
-/* Mark: two stacked bars — the debit and credit column */
-.lp .lp-mark { display: inline-flex; flex-direction: column; justify-content: center; gap: 3px; width: 1.65rem; height: 1.65rem; }
-.lp .lp-mark > span { display: block; height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--bright), #E09B7D); }
-.lp .lp-mark > span:last-child { width: 62%; background: var(--emerald); }
-.lp .lp-mark-sm { width: 1.3rem; height: 1.3rem; gap: 2px; }
-.lp .lp-mark-sm > span { height: 3px; }
 
 .lp .lp-header { position: sticky; top: 0; z-index: 40; backdrop-filter: blur(12px); background: rgba(255, 255, 255, 0.74); border-bottom: 1px solid var(--rule); }
 .lp .lp-header-row { position: relative; display: flex; align-items: center; justify-content: space-between; padding-block: 1rem; }
@@ -3667,8 +3655,6 @@ const css = `
   border-radius: 999px; padding: 0.45rem 0.9rem; text-decoration: none; }
 .lp .lp-foot-cta:hover { filter: brightness(1.06); }
 .lp .lp-foot-copy { font-size: 0.7rem; color: rgba(235, 231, 220, 0.5); }
-/* The mark is drawn for the light page; invert it here. */
-.lp .lp-footer .lp-mark span { background: var(--mint); }
 
 /* Motion
    The hero's two columns rise into place rather than flying in from the sides.
