@@ -487,18 +487,35 @@ Deno.serve(async (req) => {
     // signed off). System (cron) auto-post respects the same gate.
     const approvalStatus = (invoice as any).approval_status as string | undefined;
     if (approvalStatus === "pending") {
-      errors.push("Invoice requires approval before it can be posted (Sales → Invoices → Approve)");
+      const at = (invoice as any).approval_step_name
+        ? ` (waiting at ${(invoice as any).approval_step_name})`
+        : "";
+      errors.push(`Invoice requires approval before it can be posted${at} — Sales → Approvals`);
     } else if (approvalStatus === "rejected") {
       errors.push("Invoice approval was rejected; it cannot be posted");
+    } else if (approvalStatus === "changes_requested") {
+      errors.push("An approver sent this invoice back for changes; resubmit it for approval before posting");
     }
 
-    // Defense in depth: re-verify against the threshold in BASE currency rather
-    // than trusting the stored approval_status alone (catches pre-threshold
-    // invoices and any status drift). fx is defined above.
-    const approvalThreshold = Number(settings?.invoice_approval_threshold || 0);
-    if (approvalThreshold > 0) {
-      const baseTotal = Math.round(total * fx * 100) / 100;
-      if (baseTotal >= approvalThreshold && approvalStatus !== "approved") {
+    // Defense in depth: rebuild the approval chain for this invoice's BASE total
+    // rather than trusting the stored approval_status alone (catches invoices
+    // raised before the workflow existed, and any status drift). fx is defined above.
+    const baseTotal = Math.round(total * fx * 100) / 100;
+    const { data: planRows, error: planErr } = await admin.rpc("invoice_approval_plan", {
+      p_tenant_id: appUser.tenant_id,
+      p_base: baseTotal,
+    });
+    const plan = Array.isArray(planRows) ? planRows : [];
+    if (!planErr && plan.length > 0 && approvalStatus !== "approved") {
+      const levels = plan.map((s: any) => s.name).join(" → ");
+      errors.push(
+        `Invoice total (base ${baseTotal.toFixed(2)}) must clear ${plan.length} approval ` +
+        `level${plan.length > 1 ? "s" : ""} (${levels}) before posting.`,
+      );
+    } else if (planErr) {
+      // RPC unavailable (pre-migration): fall back to the flat threshold.
+      const approvalThreshold = Number(settings?.invoice_approval_threshold || 0);
+      if (approvalThreshold > 0 && baseTotal >= approvalThreshold && approvalStatus !== "approved") {
         errors.push(
           `Invoice total (base ${baseTotal.toFixed(2)}) is at/above the approval threshold ` +
           `(${approvalThreshold.toFixed(2)}) and must be approved before posting.`,

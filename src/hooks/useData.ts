@@ -933,34 +933,8 @@ export function useUpdateInvoice() {
   });
 }
 
-// Approve or reject an invoice pending approval. The approve_invoice RPC enforces
-// the approver's role AND segregation of duties (approver ≠ creator) server-side.
-export function useApproveInvoice() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id, decision, note }: { id: string; decision: "approved" | "rejected"; note?: string }) => {
-      const { data, error } = await supabase.rpc("approve_invoice" as any, {
-        p_invoice_id: id,
-        p_decision: decision,
-        p_note: note ?? null,
-      });
-      if (error) throw error;
-      return { data: data as any, decision };
-    },
-    onSuccess: ({ data, decision }) => {
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["invoice_approval_history"] });
-      if (decision === "rejected") {
-        toast.success("Invoice rejected");
-      } else if (data?.final === false) {
-        toast.success(`Approval recorded — ${data.collected} of ${data.required} approvals`);
-      } else {
-        toast.success("Invoice approved");
-      }
-    },
-    onError: (e: Error) => toast.error(e.message.replace(/^.*?:\s*/, "")),
-  });
-}
+// Approval decisions live in useApprovals.ts (useDecideInvoice) — the chain,
+// its per-level routing and the resubmit/comment actions all belong together.
 
 // Delete a DRAFT invoice (and its line items). Guards against removing a
 // posted invoice — those carry GL/subledger rows and must be voided instead.

@@ -1,14 +1,15 @@
-import { Plus, Search, MoreHorizontal, Eye, Send, Ban, Download, MessageCircle, Mail, FileText, Pencil, Trash2, CheckCircle2, XCircle, ShieldAlert, Receipt } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Eye, Send, Ban, Download, MessageCircle, Mail, FileText, Pencil, Trash2, CheckCircle2, XCircle, ShieldAlert, Receipt, CornerUpLeft, RotateCcw, ArrowDown } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useState, useMemo } from "react";
-import { useInvoices, useUpdateInvoice, useAccounts, useDeleteInvoice, useApproveInvoice } from "@/hooks/useData";
+import { useInvoices, useUpdateInvoice, useAccounts, useDeleteInvoice } from "@/hooks/useData";
+import { useApprovalQueue, useDecideInvoice, useResubmitInvoice } from "@/hooks/useApprovals";
 import { usePostInvoice } from "@/hooks/useAccountSettings";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import JournalPreview, { type JournalPreviewLine } from "@/components/accounting/JournalPreview";
-import { useAccountSettings, useUpsertAccountSettings } from "@/hooks/useAccountSettings";
+import { useAccountSettings, useUpsertAccountSettings, type AccountSettings } from "@/hooks/useAccountSettings";
 import { useTenantUsers } from "@/hooks/usePettyCash";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -37,6 +38,36 @@ const statusColors: Record<string, string> = {
   voided: "bg-destructive/10 text-destructive line-through",
 };
 
+// One editable level of the approval chain (amounts stay strings while typing).
+type GovLevel = { name: string; min_amount: string; required_approvals: number; approver_ids: string[] };
+
+// Read the saved policy back into the editor. Tenants still on the flat tier
+// model see each tier as a level, so saving migrates them to a real chain.
+function levelsFromSettings(settings: AccountSettings | null | undefined): GovLevel[] {
+  const chain = settings?.invoice_approval_workflow;
+  if (chain?.length) {
+    return chain.map((s) => ({
+      name: s.name ?? "",
+      min_amount: String(s.min_amount ?? ""),
+      required_approvals: Math.max(1, Number(s.required_approvals) || 1),
+      approver_ids: s.approver_ids ?? [],
+    }));
+  }
+  const tiers = settings?.invoice_approval_tiers?.length
+    ? settings.invoice_approval_tiers
+    : (settings?.invoice_approval_threshold
+        ? [{ min_amount: settings.invoice_approval_threshold, required_approvals: 1 }]
+        : []);
+  return [...tiers]
+    .sort((a, b) => a.min_amount - b.min_amount)
+    .map((t, i) => ({
+      name: `Level ${i + 1}`,
+      min_amount: String(t.min_amount),
+      required_approvals: Math.max(1, Number(t.required_approvals) || 1),
+      approver_ids: [],
+    }));
+}
+
 export default function Invoices() {
   const navigate = useNavigate();
   const { appUser, isCompanyAdmin } = useAuth();
@@ -51,10 +82,13 @@ export default function Invoices() {
   const [postConfirmInvoice, setPostConfirmInvoice] = useState<any>(null);
   const [deleteDialogInvoice, setDeleteDialogInvoice] = useState<any>(null);
   const [govOpen, setGovOpen] = useState(false);
-  const [govTiers, setGovTiers] = useState<{ min_amount: string; required_approvals: number }[]>([]);
+  // The approval chain being edited: ordered levels, each with its own approvers.
+  const [govLevels, setGovLevels] = useState<GovLevel[]>([]);
   const [govEnforce, setGovEnforce] = useState(true);
   const [govApprovers, setGovApprovers] = useState<string[]>([]);
+  const [govDistinct, setGovDistinct] = useState(false);
   const [rejectInvoice, setRejectInvoice] = useState<any>(null);
+  const [rejectDecision, setRejectDecision] = useState<"rejected" | "changes_requested">("rejected");
   const [rejectReason, setRejectReason] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const upsertSettings = useUpsertAccountSettings();
@@ -67,8 +101,14 @@ export default function Invoices() {
   const { data: accounts } = useAccounts();
   const updateInvoice = useUpdateInvoice();
   const deleteInvoice = useDeleteInvoice();
-  const approveInvoice = useApproveInvoice();
+  const decide = useDecideInvoice();
+  const resubmit = useResubmitInvoice();
+  const { data: approvalQueue } = useApprovalQueue();
   const { canEdit: canEditSales } = useMyPermissions();
+
+  // The queue RPC already answers "may this user act on this invoice, at its
+  // current level?" — reuse that verdict rather than re-deriving it here.
+  const approvalRow = (id: string) => (approvalQueue ?? []).find((r) => r.id === id);
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
@@ -131,13 +171,6 @@ export default function Invoices() {
   const postInvoice = usePostInvoice();
   const { data: settings } = useAccountSettings();
 
-  // Who may approve: if specific approvers are appointed, only they qualify;
-  // otherwise it falls back to the owner (Company/Primary Admin). Mirrors the
-  // server-side eligible_invoice_approvers() — the RPC is the real enforcement.
-  const appointedApprovers = settings?.invoice_approver_ids ?? [];
-  const canApproveInvoices = appointedApprovers.length > 0
-    ? appointedApprovers.includes(appUser?.id ?? "")
-    : isCompanyAdmin;
   const { data: arAccountData }       = useAccountById(settings?.ar_account_id       ?? null);
   const { data: salesAccountData }    = useAccountById(settings?.sales_account_id    ?? null);
   const outputVatAccountId = settings?.vat_output_payable_account_id ?? settings?.tax_payable_account_id ?? null;
@@ -309,7 +342,8 @@ export default function Invoices() {
   const toggleAll = () => setSelected(allFilteredSelected ? new Set() : new Set(filtered.map((i) => i.id)));
   const clearSelection = () => setSelected(new Set());
   const selectedInvoices = filtered.filter((i) => selected.has(i.id));
-  const selectedDrafts = selectedInvoices.filter((i) => i.status === "draft" && (i as any).approval_status !== "pending" && (i as any).approval_status !== "rejected");
+  const selectedDrafts = selectedInvoices.filter((i) =>
+    i.status === "draft" && !["pending", "rejected", "changes_requested"].includes((i as any).approval_status));
   const selectedPosted = selectedInvoices.filter((i) => !["draft", "voided"].includes(i.status));
 
   const csvCell = (v: any) => {
@@ -377,14 +411,10 @@ export default function Invoices() {
               <Button
                 variant="outline"
                 onClick={() => {
-                  const tiers = settings?.invoice_approval_tiers?.length
-                    ? settings.invoice_approval_tiers
-                    : (settings?.invoice_approval_threshold
-                        ? [{ min_amount: settings.invoice_approval_threshold, required_approvals: 1 }]
-                        : []);
-                  setGovTiers(tiers.map((t) => ({ min_amount: String(t.min_amount), required_approvals: t.required_approvals })));
+                  setGovLevels(levelsFromSettings(settings));
                   setGovEnforce(settings?.enforce_credit_limit !== false);
                   setGovApprovers(settings?.invoice_approver_ids ?? []);
+                  setGovDistinct(!!settings?.invoice_approval_require_distinct);
                   setGovOpen(true);
                 }}
               >
@@ -520,12 +550,22 @@ export default function Invoices() {
                             {status}
                           </span>
                           {isDraft && (inv as any).approval_status === "pending" && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400" title="Awaiting approval">
-                              <ShieldAlert className="w-3 h-3" /> {(inv as any).approvals_count ?? 0}/{(inv as any).required_approvals || 1}
+                            <span
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                              title={`${(inv as any).approval_step_name || "Approval"} — ${(inv as any).approvals_count ?? 0} of ${(inv as any).required_approvals || 1} sign-offs at this level`}
+                            >
+                              <ShieldAlert className="w-3 h-3" />
+                              L{(inv as any).approval_step || 1}/{(inv as any).approval_steps_total || 1}
+                              {" · "}{(inv as any).approvals_count ?? 0}/{(inv as any).required_approvals || 1}
+                            </span>
+                          )}
+                          {isDraft && (inv as any).approval_status === "changes_requested" && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400" title={(inv as any).approval_note || "Sent back for changes"}>
+                              changes requested
                             </span>
                           )}
                           {isDraft && (inv as any).approval_status === "rejected" && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-destructive/10 text-destructive" title="Approval rejected">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-destructive/10 text-destructive" title={(inv as any).approval_note || "Approval rejected"}>
                               rejected
                             </span>
                           )}
@@ -550,9 +590,15 @@ export default function Invoices() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              title={(inv as any).approval_status === "pending" ? "Awaiting approval" : (inv as any).approval_status === "rejected" ? "Approval rejected" : "Post Invoice"}
+                              title={
+                                (inv as any).approval_status === "pending"
+                                  ? `Awaiting ${(inv as any).approval_step_name || "approval"}`
+                                  : (inv as any).approval_status === "changes_requested" ? "Sent back for changes"
+                                  : (inv as any).approval_status === "rejected" ? "Approval rejected"
+                                  : "Post Invoice"
+                              }
                               onClick={() => setPostConfirmInvoice(inv)}
-                              disabled={processing || (inv as any).approval_status === "pending" || (inv as any).approval_status === "rejected"}
+                              disabled={processing || ["pending", "rejected", "changes_requested"].includes((inv as any).approval_status)}
                             >
                               <Send className="w-4 h-4 text-primary" />
                             </Button>
@@ -585,13 +631,25 @@ export default function Invoices() {
                                   <DropdownMenuSeparator />
                                 </>
                               )}
-                              {isDraft && (inv as any).approval_status === "pending" && canApproveInvoices && (
+                              {isDraft && approvalRow(inv.id)?.can_act && (
                                 <>
-                                  <DropdownMenuItem onClick={() => approveInvoice.mutate({ id: inv.id, decision: "approved" })}>
-                                    <CheckCircle2 className="w-4 h-4 mr-2 text-green-600" /> Approve
+                                  <DropdownMenuItem onClick={() => decide.mutate({ id: inv.id, decision: "approved" })}>
+                                    <CheckCircle2 className="w-4 h-4 mr-2 text-green-600" />
+                                    Approve · {approvalRow(inv.id)?.step_name}
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => { setRejectInvoice(inv); setRejectReason(""); }}>
+                                  <DropdownMenuItem onClick={() => { setRejectInvoice(inv); setRejectDecision("changes_requested"); setRejectReason(""); }}>
+                                    <CornerUpLeft className="w-4 h-4 mr-2 text-amber-600" /> Request changes
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => { setRejectInvoice(inv); setRejectDecision("rejected"); setRejectReason(""); }}>
                                     <XCircle className="w-4 h-4 mr-2 text-destructive" /> Reject
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                </>
+                              )}
+                              {isDraft && ["changes_requested", "rejected"].includes((inv as any).approval_status) && (
+                                <>
+                                  <DropdownMenuItem onClick={() => resubmit.mutate({ id: inv.id })} disabled={resubmit.isPending}>
+                                    <RotateCcw className="w-4 h-4 mr-2 text-primary" /> Resubmit for approval
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                 </>
@@ -694,13 +752,20 @@ export default function Invoices() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Reject invoice — reason required */}
+      {/* Reject / request changes — reason required either way */}
       <Dialog open={!!rejectInvoice} onOpenChange={(v) => { if (!v) setRejectInvoice(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-destructive"><XCircle className="w-5 h-5" /> Reject invoice</DialogTitle>
+            <DialogTitle className={`flex items-center gap-2 ${rejectDecision === "rejected" ? "text-destructive" : ""}`}>
+              {rejectDecision === "rejected"
+                ? <><XCircle className="w-5 h-5" /> Reject invoice</>
+                : <><CornerUpLeft className="w-5 h-5" /> Request changes</>}
+            </DialogTitle>
             <DialogDescription>
-              {rejectInvoice?.invoice_number} — the creator will need to amend and resubmit. A reason is required.
+              {rejectInvoice?.invoice_number}
+              {rejectDecision === "rejected"
+                ? " — this ends the approval round; the invoice must be resubmitted from level 1. A reason is required."
+                : " — the invoice goes back to the raiser to edit and resubmit. Say what needs to change."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 pt-2">
@@ -713,14 +778,14 @@ export default function Invoices() {
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setRejectInvoice(null)}>Cancel</Button>
               <Button
-                variant="destructive"
-                disabled={!rejectReason.trim() || approveInvoice.isPending}
+                variant={rejectDecision === "rejected" ? "destructive" : "default"}
+                disabled={!rejectReason.trim() || decide.isPending}
                 onClick={async () => {
-                  await approveInvoice.mutateAsync({ id: rejectInvoice.id, decision: "rejected", note: rejectReason.trim() });
+                  await decide.mutateAsync({ id: rejectInvoice.id, decision: rejectDecision, note: rejectReason.trim() });
                   setRejectInvoice(null);
                 }}
               >
-                {approveInvoice.isPending ? "Rejecting…" : "Reject invoice"}
+                {decide.isPending ? "Saving…" : rejectDecision === "rejected" ? "Reject invoice" : "Send back"}
               </Button>
             </div>
           </div>
@@ -729,56 +794,129 @@ export default function Invoices() {
 
       {/* Approval & Credit Control settings */}
       <Dialog open={govOpen} onOpenChange={setGovOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl max-h-[88vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><ShieldAlert className="w-5 h-5" /> Approval &amp; Credit Control</DialogTitle>
             <DialogDescription>Tenant-wide policy applied when posting invoices.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 pt-2">
+          <div className="space-y-5 pt-2">
             <div>
-              <label className="text-sm font-medium">Approval levels</label>
-              <p className="text-xs text-muted-foreground mb-2">
-                Add an amount and how many different approvers it needs. An invoice uses the highest level its total
-                (in LKR) reaches — e.g. ≥ 500,000 needs 1 approver, ≥ 2,000,000 needs 2. No levels = no approval required.
+              <label className="text-sm font-medium">Approval chain</label>
+              <p className="text-xs text-muted-foreground mb-3">
+                Levels run in order — each one only opens once the level above it has signed off. A level applies
+                only when the invoice total (in LKR) reaches its threshold, so bigger invoices travel further up the
+                chain. No levels = no approval required.
               </p>
               <div className="space-y-2">
-                {govTiers.length === 0 && (
+                {govLevels.length === 0 && (
                   <p className="text-xs text-muted-foreground italic">No approval required for any amount.</p>
                 )}
-                {govTiers.map((t, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground shrink-0">Total ≥</span>
-                    <input
-                      type="number"
-                      value={t.min_amount}
-                      onChange={(e) => setGovTiers((prev) => prev.map((x, i) => i === idx ? { ...x, min_amount: e.target.value } : x))}
-                      placeholder="amount (LKR)"
-                      className="flex-1 min-w-0 text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground font-mono"
-                    />
-                    <span className="text-xs text-muted-foreground shrink-0">needs</span>
-                    <input
-                      type="number"
-                      min={1}
-                      value={t.required_approvals}
-                      onChange={(e) => setGovTiers((prev) => prev.map((x, i) => i === idx ? { ...x, required_approvals: Number(e.target.value) } : x))}
-                      className="w-16 text-sm border border-input rounded-lg px-2 py-2 bg-background text-foreground text-center"
-                    />
-                    <span className="text-xs text-muted-foreground shrink-0">approver{t.required_approvals === 1 ? "" : "s"}</span>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setGovTiers((prev) => prev.filter((_, i) => i !== idx))}>
-                      <Trash2 className="w-4 h-4 text-muted-foreground" />
-                    </Button>
+                {govLevels.map((lv, idx) => (
+                  <div key={idx}>
+                    <div className="rounded-lg border border-border p-3 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-muted-foreground shrink-0 w-12">Level {idx + 1}</span>
+                        <input
+                          value={lv.name}
+                          onChange={(e) => setGovLevels((p) => p.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))}
+                          placeholder="e.g. Finance Manager"
+                          className="flex-1 min-w-0 text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground"
+                        />
+                        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0"
+                          onClick={() => setGovLevels((p) => p.filter((_, i) => i !== idx))}>
+                          <Trash2 className="w-4 h-4 text-muted-foreground" />
+                        </Button>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 pl-14">
+                        <span className="text-xs text-muted-foreground">Applies from</span>
+                        <input
+                          type="number"
+                          value={lv.min_amount}
+                          onChange={(e) => setGovLevels((p) => p.map((x, i) => i === idx ? { ...x, min_amount: e.target.value } : x))}
+                          placeholder="0"
+                          className="w-32 text-sm border border-input rounded-lg px-3 py-1.5 bg-background text-foreground font-mono"
+                        />
+                        <span className="text-xs text-muted-foreground">LKR · needs</span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={lv.required_approvals}
+                          onChange={(e) => setGovLevels((p) => p.map((x, i) => i === idx ? { ...x, required_approvals: Number(e.target.value) } : x))}
+                          className="w-14 text-sm border border-input rounded-lg px-2 py-1.5 bg-background text-foreground text-center"
+                        />
+                        <span className="text-xs text-muted-foreground">
+                          sign-off{lv.required_approvals === 1 ? "" : "s"} at this level
+                        </span>
+                      </div>
+                      <div className="pl-14">
+                        <div className="max-h-32 overflow-y-auto rounded-lg border border-border divide-y divide-border">
+                          {(tenantUsers ?? []).length === 0 ? (
+                            <p className="px-3 py-2 text-xs text-muted-foreground">No users found</p>
+                          ) : (
+                            (tenantUsers ?? []).map((u: any) => {
+                              const name = [u.first_name, u.last_name].filter(Boolean).join(" ") || u.email;
+                              return (
+                                <label key={u.id} className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-muted/40">
+                                  <input
+                                    type="checkbox"
+                                    checked={lv.approver_ids.includes(u.id)}
+                                    onChange={(e) => setGovLevels((p) => p.map((x, i) => i === idx ? {
+                                      ...x,
+                                      approver_ids: e.target.checked
+                                        ? [...x.approver_ids, u.id]
+                                        : x.approver_ids.filter((id) => id !== u.id),
+                                    } : x))}
+                                  />
+                                  <span className="text-foreground">{name}</span>
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
+                        {lv.approver_ids.length === 0 && (
+                          <p className="text-[11px] text-muted-foreground mt-1">
+                            Nobody picked — this level falls back to the appointed approvers below.
+                          </p>
+                        )}
+                        {lv.approver_ids.length > 0 && lv.approver_ids.length < lv.required_approvals && (
+                          <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
+                            Only {lv.approver_ids.length} approver{lv.approver_ids.length === 1 ? "" : "s"} selected but{" "}
+                            {lv.required_approvals} sign-offs required — this level can never clear.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {idx < govLevels.length - 1 && (
+                      <div className="flex justify-center py-1">
+                        <ArrowDown className="w-4 h-4 text-muted-foreground" />
+                      </div>
+                    )}
                   </div>
                 ))}
                 <Button
                   variant="outline"
                   size="sm"
                   className="w-full border-dashed"
-                  onClick={() => setGovTiers((prev) => [...prev, { min_amount: "", required_approvals: 1 }])}
+                  onClick={() => setGovLevels((p) => [...p, {
+                    name: "", min_amount: p.length === 0 ? "" : String(p[p.length - 1].min_amount || ""),
+                    required_approvals: 1, approver_ids: [],
+                  }])}
                 >
-                  <Plus className="w-4 h-4 mr-1.5" /> Add approval level
+                  <Plus className="w-4 h-4 mr-1.5" /> Add level
                 </Button>
               </div>
             </div>
+
+            <label className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+              <span>
+                <span className="text-sm font-medium block">One person, one level</span>
+                <span className="text-xs text-muted-foreground">
+                  Someone who signs one level cannot also sign another level of the same invoice.
+                </span>
+              </span>
+              <Switch checked={govDistinct} onCheckedChange={setGovDistinct} />
+            </label>
+
             <label className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
               <span>
                 <span className="text-sm font-medium block">Enforce customer credit limit</span>
@@ -786,11 +924,12 @@ export default function Invoices() {
               </span>
               <Switch checked={govEnforce} onCheckedChange={setGovEnforce} />
             </label>
+
             <div>
-              <label className="text-sm font-medium">Appointed approvers</label>
+              <label className="text-sm font-medium">Fallback approvers</label>
               <p className="text-xs text-muted-foreground mb-2">
-                Select who may approve invoices. If none are selected, approval falls to the owner (Primary Admin).
-                Owners can always approve. An approver can never approve their own invoice (unless they are the only eligible approver).
+                Used by any level that names nobody. If this is empty too, approval falls to the owner (Primary Admin).
+                An approver can never approve their own invoice unless they are the only eligible approver.
               </p>
               <div className="max-h-44 overflow-y-auto rounded-lg border border-border divide-y divide-border">
                 {(tenantUsers ?? []).length === 0 ? (
@@ -816,17 +955,31 @@ export default function Invoices() {
                 )}
               </div>
             </div>
+
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setGovOpen(false)}>Cancel</Button>
               <Button
                 onClick={async () => {
-                  const cleanTiers = govTiers
-                    .map((t) => ({ min_amount: Number(t.min_amount), required_approvals: Math.max(1, Number(t.required_approvals) || 1) }))
-                    .filter((t) => t.min_amount > 0)
-                    .sort((a, b) => a.min_amount - b.min_amount);
+                  // Levels keep their order; thresholds only ever climb, so a level
+                  // can never apply to an invoice that skipped the one above it.
+                  let floor = 0;
+                  const chain = govLevels.map((lv, i) => {
+                    const min = Math.max(floor, Number(lv.min_amount) || 0);
+                    floor = min;
+                    return {
+                      name: lv.name.trim() || `Level ${i + 1}`,
+                      min_amount: min,
+                      required_approvals: Math.max(1, Number(lv.required_approvals) || 1),
+                      approver_ids: lv.approver_ids,
+                    };
+                  });
                   await upsertSettings.mutateAsync({
-                    invoice_approval_tiers: cleanTiers.length ? cleanTiers : null,
-                    invoice_approval_threshold: cleanTiers.length ? cleanTiers[0].min_amount : null,
+                    invoice_approval_workflow: chain.length ? chain : null,
+                    // The chain supersedes the flat tiers — clear them so there is
+                    // exactly one definition of the policy.
+                    invoice_approval_tiers: null,
+                    invoice_approval_threshold: chain.length ? chain[0].min_amount : null,
+                    invoice_approval_require_distinct: govDistinct,
                     enforce_credit_limit: govEnforce,
                     invoice_approver_ids: govApprovers.length ? govApprovers : null,
                   } as any);

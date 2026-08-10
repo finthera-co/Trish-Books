@@ -48,7 +48,11 @@ export interface AccountSettings {
   enforce_credit_limit?:                boolean | null;   // block posting past customer credit limit
   invoice_approver_ids?:                string[] | null;  // appointed approvers; empty → owners (Primary/Super Admin)
   customer_advance_account_id?:         string | null;    // liability account for customer deposits/advances
-  invoice_approval_tiers?:              { min_amount: number; required_approvals: number }[] | null;
+  invoice_approval_tiers?:              { min_amount: number; required_approvals: number }[] | null;   // legacy flat tiers; read as a single-step chain
+  // Sequential approval chain — ordered levels, each opening only once the
+  // previous one has collected its sign-offs. Supersedes invoice_approval_tiers.
+  invoice_approval_workflow?:           { name: string; min_amount: number; required_approvals: number; approver_ids: string[] }[] | null;
+  invoice_approval_require_distinct?:   boolean | null;   // one person may not sign two levels of the same invoice
   // Bank Statement Import — DIRECTIONAL suspense, mirroring the client's own
   // workbook: unresolved money IN → Unrecognized Deposits, unresolved money OUT
   // → Unrecognized Payments. Both REQUIRED before importing; tracked to zero in
