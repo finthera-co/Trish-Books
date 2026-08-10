@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useHideSidebar } from "@/stores/useAppStore";
 import { useAuth } from "@/contexts/AuthContext";
+import { useShellV2 } from "@/lib/shellFlag";
+import AppShell from "@/components/layout/AppShell";
 
 export interface ModuleConfig {
   id: string;
@@ -11,7 +13,7 @@ export interface ModuleConfig {
   icon: React.ElementType;
   color: string;
   basePath: string;
-  sidebarItems: { label: string; path: string; icon: React.ElementType; adminOnly?: boolean }[];
+  sidebarItems: { label: string; path: string; icon: React.ElementType; adminOnly?: boolean; group?: string }[];
 }
 
 interface ModuleLayoutProps {
@@ -19,6 +21,12 @@ interface ModuleLayoutProps {
 }
 
 export default function ModuleLayout({ config }: ModuleLayoutProps) {
+  const shellV2 = useShellV2();
+  return shellV2 ? <AppShell config={config} /> : <LegacyModuleLayout config={config} />;
+}
+
+/** Original single-sidebar shell. Removed once shell v2 is approved. */
+function LegacyModuleLayout({ config }: ModuleLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const hideSidebar = useHideSidebar();
