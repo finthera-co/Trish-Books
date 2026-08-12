@@ -1466,7 +1466,7 @@ function PromoHero({
     <aside className="lp-hero-promo" aria-label={PROMO.label}>
       <p className="lp-hero-promo-eyebrow">Ready. Set. Balance.</p>
       <h2 className="lp-hero-promo-head">
-        <strong>{best}% OFF</strong> Finthera for 3 months
+        <strong>{best}% OFF</strong> for your first 3 months
       </h2>
       <div className="lp-hero-promo-actions">
         <Link to="/signup" className="lp-hero-promo-cta">
