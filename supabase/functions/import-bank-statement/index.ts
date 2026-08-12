@@ -43,11 +43,8 @@ import {
   type ResolvedLine,
 } from "../_shared/bankCategorization/index.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
 // Guard rails. Without these a large or malformed workbook can exhaust the
 // function's memory or wall clock with no useful error.
@@ -102,6 +99,18 @@ Deno.serve(async (req) => {
     }
     const tenantId = au.tenant_id as string;
     const actorId = au.id as string;
+
+    // Before the workbook is downloaded and parsed — the expensive part — and
+    // before any batch is posted, so a rejected call does no I/O and writes
+    // nothing.
+    {
+      const { blocked } = await enforceRateLimit(admin, "import-bank-statement", {
+        userId: actorId,
+        tenantId,
+        ip: clientIp(req),
+      });
+      if (blocked) return blocked;
+    }
 
     // ── Input ─────────────────────────────────────────────────────────────
     // ONE call handles the WHOLE workbook. The file is downloaded and parsed

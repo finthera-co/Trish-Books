@@ -1,9 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
 // Fields that belong to the employees table. Anything else in the payload is ignored.
 const EMPLOYEE_FIELDS = [
@@ -58,6 +55,25 @@ Deno.serve(async (req) => {
     if (!targetTenantId) throw new Error("No tenant context");
 
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
+
+    // The caller's users.id is not resolved anywhere else in this handler, but
+    // the rule is user-scoped, so without it every rule would be skipped and the
+    // limiter would be inert. Runs before any auth user or employee row exists.
+    const { data: { user: callerAuthUser } } = await callerClient.auth.getUser();
+    const { data: callerRow } = callerAuthUser
+      ? await adminClient
+          .from("users")
+          .select("id")
+          .eq("auth_user_id", callerAuthUser.id)
+          .maybeSingle()
+      : { data: null };
+
+    const { blocked } = await enforceRateLimit(adminClient, "provision-employee", {
+      userId: callerRow?.id ?? null,
+      tenantId: targetTenantId,
+      ip: clientIp(req),
+    });
+    if (blocked) return blocked;
 
     // Resolve the Employee role id
     const { data: empRole, error: roleErr } = await adminClient

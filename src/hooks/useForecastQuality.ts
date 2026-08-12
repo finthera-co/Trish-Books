@@ -1,6 +1,7 @@
 // Hooks for forecast hardening layer: validation, accuracy, runs.
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction } from "@/lib/edgeFunction";
 
 export interface ForecastRun {
   id: string;
@@ -58,15 +59,11 @@ export function useRunValidation(tenantId?: string) {
   return useMutation({
     mutationFn: async () => {
       if (!tenantId) throw new Error("Tenant required");
-      const { data, error } = await supabase.functions.invoke("forecast-validation", {
-        body: { tenant_id: tenantId },
-      });
-      if (error) throw error;
-      return data as {
+      return await invokeEdgeFunction<{
         forecast_run_id: string | null;
         checks: ForecastValidation[];
         summary: ValidationSummary;
-      };
+      }>("forecast-validation", { tenant_id: tenantId });
     },
   });
 }
@@ -75,17 +72,13 @@ export function useRunBacktest(tenantId?: string) {
   return useMutation({
     mutationFn: async () => {
       if (!tenantId) throw new Error("Tenant required");
-      const { data, error } = await supabase.functions.invoke("forecast-backtest", {
-        body: { tenant_id: tenantId, persist: true },
-      });
-      if (error) throw error;
-      return data as {
+      return await invokeEdgeFunction<{
         forecast_run_id: string | null;
         categories_evaluated: number;
         overall_mape: number | null;
         overall_rmse: number | null;
         results: ForecastAccuracy[];
-      };
+      }>("forecast-backtest", { tenant_id: tenantId, persist: true });
     },
   });
 }

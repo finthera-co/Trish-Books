@@ -27,17 +27,13 @@
  * to look up configured accounts before building journal lines.
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
-
-function json(body: unknown, status = 200) {
+function json(body: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json", ...extraHeaders },
   });
 }
 
@@ -50,6 +46,7 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const anonKey    = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
     // Use user's auth context so RLS + get_user_tenant_id() work correctly
     const userClient = createClient(supabaseUrl, anonKey, {
@@ -58,6 +55,27 @@ Deno.serve(async (req) => {
 
     const { data: { user }, error: authErr } = await userClient.auth.getUser();
     if (authErr || !user) return json({ ok: false, error: "Unauthorized" }, 401);
+
+    // consume_rate_limit is service_role-only, so the limiter needs an admin
+    // client; this handler otherwise runs entirely as the caller.
+    const admin = createClient(supabaseUrl, serviceKey);
+    const { data: appUser } = await admin
+      .from("users")
+      .select("id, tenant_id")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+
+    // Read-only route: nothing is mutated here at all, before or after.
+    const { blocked, headers: rlHeaders } = await enforceRateLimit(
+      admin,
+      "resolve-posting-profile",
+      {
+        userId: appUser?.id ?? null,
+        tenantId: appUser?.tenant_id ?? null,
+        ip: clientIp(req),
+      },
+    );
+    if (blocked) return blocked;
 
     const body = await req.json();
     const {
@@ -93,7 +111,7 @@ Deno.serve(async (req) => {
       transaction_type,
       roles_resolved: roleCount,
       accounts,
-    });
+    }, 200, rlHeaders);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return json({ ok: false, error: message || "Internal error" }, 500);

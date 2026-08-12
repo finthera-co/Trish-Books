@@ -130,7 +130,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const typed = email.trim();
+
+    // Supabase stores every account's email lowercased and folds case on lookup,
+    // so TESTING@… would otherwise sign in to testing@…. We require the address
+    // to be typed exactly as it is stored. Checking before the request means no
+    // session is ever issued for a mismatched form. Note this is a UX/consistency
+    // rule, not a security boundary — the lowercase form still works for anyone
+    // who knows the password.
+    if (typed !== typed.toLowerCase()) {
+      return { error: new Error("Invalid email or password") };
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({ email: typed, password });
     return { error: error ? new Error(error.message) : null };
   };
 

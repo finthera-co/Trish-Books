@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction } from "@/lib/edgeFunction";
 import { useAuth } from "@/contexts/AuthContext";
 import { post } from "@/lib/postingEngine";
 import { toast } from "sonner";
@@ -78,8 +79,9 @@ export function useApplyDeposit() {
       deposit: DepositRow; invoice_id: string; invoice_number: string; amount: number;
       ar_account_id: string; applied_date: string;
     }) => {
-      const { data, error } = await supabase.functions.invoke("post-payment-received", {
-        body: {
+      const data = await invokeEdgeFunction<{ ok?: boolean; error?: string }>(
+        "post-payment-received",
+        {
           action: "post",
           request_id: crypto.randomUUID(),
           customer_id: input.deposit.customer_id,
@@ -89,8 +91,7 @@ export function useApplyDeposit() {
           funded_by_deposit_id: input.deposit.id,
           allocations: [{ invoice_id: input.invoice_id, amount: input.amount }],
         },
-      });
-      if (error) throw new Error(error.message);
+      );
       if (!data?.ok) throw new Error(data?.error || "Failed to apply deposit");
       return data;
     },

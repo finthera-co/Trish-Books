@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction } from "@/lib/edgeFunction";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import {
@@ -102,18 +103,17 @@ export default function Tenants() {
 
     setLoading(true);
     try {
-      const res = await supabase.functions.invoke("provision-tenant", {
-        body: {
+      const data = await invokeEdgeFunction<{ success?: boolean; error?: string }>(
+        "provision-tenant",
+        {
           company_name: companyName, country, industry,
           subscription_plan_id: planId || undefined,
           admin_email: adminEmail, admin_password: adminPassword,
           admin_first_name: adminFirstName, admin_last_name: adminLastName,
         },
-      });
+      );
 
-      if (res.error || !res.data?.success) {
-        throw new Error(res.data?.error || res.error?.message || "Provisioning failed");
-      }
+      if (!data?.success) throw new Error(data?.error || "Provisioning failed");
 
       setResult({ email: adminEmail, password: adminPassword, companyName, firstName: adminFirstName, lastName: adminLastName });
       toast.success(`Tenant "${companyName}" provisioned successfully`);
@@ -181,15 +181,20 @@ export default function Tenants() {
     if (!purgeTenant || purgeConfirm !== purgeTenant.company_name) return;
     setPurgeLoading(true);
     try {
-      const res = await supabase.functions.invoke("delete-tenant", {
-        body: { tenant_id: purgeTenant.id, confirmation: purgeConfirm },
-      });
-      if (res.error || !res.data?.success) {
-        throw new Error(res.data?.error || res.error?.message || "Permanent deletion failed");
-      }
+      const data = await invokeEdgeFunction<{
+        success?: boolean;
+        error?: string;
+        purge?: { total_rows_deleted?: number };
+        cleanup?: {
+          auth_users_deleted?: number;
+          storage_objects_deleted?: number;
+          errors?: string[];
+        };
+      }>("delete-tenant", { tenant_id: purgeTenant.id, confirmation: purgeConfirm });
+      if (!data?.success) throw new Error(data?.error || "Permanent deletion failed");
 
-      const rows = res.data.purge?.total_rows_deleted ?? 0;
-      const cleanup = res.data.cleanup;
+      const rows = data.purge?.total_rows_deleted ?? 0;
+      const cleanup = data.cleanup;
       toast.success(
         `"${purgeTenant.company_name}" permanently deleted — ${rows.toLocaleString()} records, ` +
         `${cleanup?.auth_users_deleted ?? 0} login(s), ${cleanup?.storage_objects_deleted ?? 0} file(s) erased`

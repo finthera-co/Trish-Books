@@ -9,11 +9,8 @@
 //
 // Skips: derived components (GROSS_PAY) and any component with value=0 or no mapping.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
 const EPSILON = 0.01;
 // Components that are aggregations of others — never posted directly to GL.
@@ -45,6 +42,16 @@ Deno.serve(async (req) => {
       .eq("auth_user_id", user.id)
       .single();
     if (!appUser?.tenant_id) return json({ error: "User has no tenant" }, 403);
+
+    // After auth resolution and before any journal write, so a 429 cannot leave
+    // a partially posted entry. Applies to the dry_run preview too — it is the
+    // same expensive mapping work, just without the write.
+    const { blocked, headers: rlHeaders } = await enforceRateLimit(
+      admin,
+      "post-payroll-gl",
+      { userId: appUser.id, tenantId: appUser.tenant_id, ip: clientIp(req) },
+    );
+    if (blocked) return blocked;
 
     const body = await req.json().catch(() => ({}));
     const { run_id, dry_run = false } = body;
@@ -298,17 +305,17 @@ Deno.serve(async (req) => {
       total_debit: round2(totalDr),
       total_credit: round2(totalCr),
       line_count: lines.length,
-    });
+    }, 200, rlHeaders);
   } catch (e) {
     console.error("post-payroll-gl error", e);
     return json({ error: (e as Error).message }, 500);
   }
 });
 
-function json(data: unknown, status = 200) {
+function json(data: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json", ...extraHeaders },
   });
 }
 function round2(n: number) { return Math.round(n * 100) / 100; }

@@ -1,10 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
 function toCsv(rows: Record<string, unknown>[]): string {
   if (!rows.length) return "";
@@ -53,10 +49,16 @@ Deno.serve(async (req) => {
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY") || "";
 
   let authorized = false;
+  // Scheduled runs bypass the limiter entirely (see below); only the user-JWT
+  // path is limited, so we track which path authorized this request.
+  let viaCron = false;
+  let callerUserId: string | null = null;
+  let callerTenantId: string | null = null;
 
   // Option 1: CRON_SECRET bearer token (for scheduled jobs)
   if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
     authorized = true;
+    viaCron = true;
   }
 
   // Option 2: Valid authenticated user who is Super Admin
@@ -71,11 +73,13 @@ Deno.serve(async (req) => {
       const adminClient = createClient(supabaseUrl, serviceRoleKey);
       const { data: userData } = await adminClient
         .from("users")
-        .select("id, roles(role_name)")
+        .select("id, tenant_id, roles(role_name)")
         .eq("auth_user_id", user.id)
         .maybeSingle();
       if (userData && (userData.roles as any)?.role_name === "Super Admin") {
         authorized = true;
+        callerUserId = userData.id;
+        callerTenantId = userData.tenant_id;
       }
     }
   }
@@ -85,6 +89,20 @@ Deno.serve(async (req) => {
       JSON.stringify({ error: "Unauthorized" }),
       { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
+  }
+
+  // Scheduled jobs are not abuse: the CRON_SECRET path is never limited. Only
+  // the user-JWT path is. Runs after authorization and before any table read or
+  // CSV assembly, so a rejected call does no export work.
+  let rlHeaders: Record<string, string> = {};
+  if (!viaCron) {
+    const { blocked, headers } = await enforceRateLimit(
+      createClient(supabaseUrl, serviceRoleKey),
+      "weekly-csv-export",
+      { userId: callerUserId, tenantId: callerTenantId, ip: clientIp(req) },
+    );
+    if (blocked) return blocked;
+    rlHeaders = headers;
   }
 
   try {
@@ -208,7 +226,7 @@ Deno.serve(async (req) => {
 
     return new Response(
       JSON.stringify({ success: true, tenants_processed: results.length, tables_exported: results }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { headers: { ...corsHeaders, "Content-Type": "application/json", ...rlHeaders } }
     );
   } catch (err) {
     console.error("Export error:", err);

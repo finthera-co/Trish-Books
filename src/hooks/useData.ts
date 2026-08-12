@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction } from "@/lib/edgeFunction";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { sortAccounts } from "@/lib/accountSort";
@@ -100,15 +101,16 @@ export function useCreateUser() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Not authenticated");
 
-      const res = await supabase.functions.invoke("create-user", {
-        body: user,
-      });
+      const data = await invokeEdgeFunction<{
+        success?: boolean;
+        error?: string;
+        user?: { id?: string };
+      }>("create-user", user as unknown as Record<string, unknown>);
 
-      if (res.error) throw new Error(res.error.message);
-      if (!res.data.success) throw new Error(res.data.error || "Failed to create user");
+      if (!data.success) throw new Error(data.error || "Failed to create user");
 
-      writeAuditLog("User Created", "users", res.data.user?.id, { email: user.email });
-      return res.data.user;
+      writeAuditLog("User Created", "users", data.user?.id, { email: user.email });
+      return data.user;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
@@ -125,24 +127,28 @@ export function useUpdateUser() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Not authenticated");
 
-      const res = await supabase.functions.invoke("update-user", {
-        body: {
+      const data = await invokeEdgeFunction<{
+        success?: boolean;
+        error?: string;
+        email_changed?: boolean;
+      }>(
+        "update-user",
+        {
           user_id: user.user_id,
           email: user.email,
           first_name: user.first_name,
           last_name: user.last_name,
         },
-      });
+      );
 
-      if (res.error) throw new Error(res.error.message);
-      if (!res.data.success) throw new Error(res.data.error || "Failed to update user");
+      if (!data.success) throw new Error(data.error || "Failed to update user");
 
       writeAuditLog("User Updated", "users", user.user_id, {
         email: user.email,
         previous_email: user.previous_email,
-        email_changed: res.data.email_changed,
+        email_changed: data.email_changed,
       });
-      return res.data as { user: any; email_changed: boolean };
+      return data as unknown as { user: any; email_changed: boolean };
     },
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
@@ -1280,11 +1286,14 @@ export function useProvisionEmployee() {
     mutationFn: async (payload: Record<string, any>) => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Not authenticated");
-      const res = await supabase.functions.invoke("provision-employee", { body: payload });
-      if (res.error) throw new Error(res.error.message);
-      if (!res.data?.success) throw new Error(res.data?.error || "Failed to provision employee");
-      writeAuditLog("Employee Provisioned", "employees", res.data.employee?.id, { email: payload.email });
-      return res.data.employee;
+      const data = await invokeEdgeFunction<{
+        success?: boolean;
+        error?: string;
+        employee?: { id?: string };
+      }>("provision-employee", payload as unknown as Record<string, unknown>);
+      if (!data?.success) throw new Error(data?.error || "Failed to provision employee");
+      writeAuditLog("Employee Provisioned", "employees", data.employee?.id, { email: payload.email });
+      return data.employee;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["employees"] });

@@ -1,10 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
 const EPSILON = 0.005;
 
@@ -68,6 +64,20 @@ Deno.serve(async (req) => {
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // Runs after auth resolves and before ANY journal write. Every
+    // journal_entries / journal_lines mutation in this handler is downstream of
+    // this point, so a 429 cannot leave a partially posted entry.
+    const { blocked, headers: rlHeaders } = await enforceRateLimit(
+      adminClient,
+      "validate-journal-entry",
+      {
+        userId: appUser.id,
+        tenantId: appUser.tenant_id,
+        ip: clientIp(req),
+      },
+    );
+    if (blocked) return blocked;
 
     const body: RequestBody = await req.json();
     const { description, entry_date, reference, lines } = body;
@@ -277,7 +287,7 @@ Deno.serve(async (req) => {
 
     return new Response(
       JSON.stringify({ valid: true, entry_id: entry.id }),
-      { status: 201, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 201, headers: { ...corsHeaders, "Content-Type": "application/json", ...rlHeaders } }
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

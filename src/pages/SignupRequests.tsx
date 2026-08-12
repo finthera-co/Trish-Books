@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction } from "@/lib/edgeFunction";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -57,15 +58,17 @@ export default function SignupRequests() {
   const review = async (req: SignupRequest, action: "approve" | "reject", reviewNote?: string) => {
     setBusyId(req.id);
     try {
-      const { data, error } = await supabase.functions.invoke("review-signup-request", {
-        body: {
-          request_id: req.id,
-          action,
-          note: reviewNote ?? null,
-          site_url: window.location.origin,
-        },
+      const data = await invokeEdgeFunction<{
+        ok?: boolean;
+        error?: string;
+        emailed?: boolean;
+        action_link?: string | null;
+      }>("review-signup-request", {
+        request_id: req.id,
+        action,
+        note: reviewNote ?? null,
+        site_url: window.location.origin,
       });
-      if (error) throw error;
       if (!data?.ok) throw new Error(data?.error ?? "Review failed");
 
       if (action === "reject") {

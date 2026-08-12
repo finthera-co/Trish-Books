@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, FileText, RefreshCw, Wallet } from "lucide-react";
+import { Plus, FileText, RefreshCw, Wallet, Banknote } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,7 @@ import { useMyPermissions } from "@/hooks/usePermissions";
 import { formatCurrency } from "@/lib/currency";
 import { useNavigate } from "react-router-dom";
 import { PCTransferDialog } from "@/components/petty-cash/PCTransferDialog";
+import { PCFundDialog } from "@/components/petty-cash/PCFundDialog";
 
 const statusColor: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -58,6 +59,7 @@ export default function PettyCash() {
         <div className="flex gap-2">
           {canEdit("banking") && (
             <>
+              <PCFundDialog trigger={<Button variant="outline"><Banknote className="w-4 h-4 mr-1" /> Fund</Button>} />
               <PCTransferDialog />
               <Button variant="outline" onClick={() => navigate("/banking/petty-cash/replenishments")}>
                 <RefreshCw className="w-4 h-4 mr-1" /> Replenishments
@@ -162,6 +164,21 @@ function PCAccountCard({ account }: { account: any }) {
         <Badge variant={account.is_active ? "default" : "secondary"} className="mt-1">
           {account.is_active ? "Active" : "Inactive"}
         </Badge>
+        {Number(balance?.remaining || 0) <= 0 && (
+          <div onClick={(e) => e.stopPropagation()}>
+            <p className="text-xs text-warning mb-2">
+              This fund holds no cash yet — vouchers can't be approved until it's funded.
+            </p>
+            <PCFundDialog
+              defaultPcAccountId={account.id}
+              trigger={
+                <Button size="sm" variant="outline" className="w-full">
+                  <Banknote className="w-4 h-4 mr-1" /> Fund this account
+                </Button>
+              }
+            />
+          </div>
+        )}
       </CardContent>
     </Card>
   );

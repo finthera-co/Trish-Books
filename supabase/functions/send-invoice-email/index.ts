@@ -1,15 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
-
-function json(body: unknown, status = 200) {
+function json(body: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json", ...extraHeaders },
   });
 }
 
@@ -55,6 +51,15 @@ Deno.serve(async (req) => {
       .eq("auth_user_id", user.id)
       .single();
     if (!appUser?.tenant_id) return json({ ok: false, error: "User not in a tenant" }, 200);
+
+    // Outbound email is a spam / sender-reputation surface, so this runs before
+    // the invoice is loaded and before anything is handed to the mail provider.
+    const { blocked, headers: rlHeaders } = await enforceRateLimit(
+      admin,
+      "send-invoice-email",
+      { userId: appUser.id, tenantId: appUser.tenant_id, ip: clientIp(req) },
+    );
+    if (blocked) return blocked;
 
     const body = (await req.json()) as SendBody;
     const { invoice_id, recipient } = body;
@@ -180,7 +185,11 @@ Deno.serve(async (req) => {
       details: { invoice_number: invoice.invoice_number, recipient, provider_message_id: messageId },
     });
 
-    return json({ ok: true, message: "Invoice emailed", provider_message_id: messageId });
+    return json(
+      { ok: true, message: "Invoice emailed", provider_message_id: messageId },
+      200,
+      rlHeaders,
+    );
   } catch (err: any) {
     return json({ ok: false, error: err?.message || "Internal error" }, 200);
   }

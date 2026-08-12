@@ -675,6 +675,47 @@ const CONTROLS = [
   ["Two-factor sign-in", "TOTP step-up on every session, enforced before the app loads."],
 ];
 
+/* ── Questions ───────────────────────────────────────────────────────────────
+   The objections that actually stop a signup, answered with the same figures the
+   rest of the page publishes — plan limits from BASE_PLANS, the migration fee
+   from the services table, the tax treatment from the specimen invoice. Nothing
+   here introduces a claim the page hasn't already evidenced above, so the two can
+   never drift apart.                                                          */
+const FAQS: [string, string][] = [
+  [
+    "Do I need a credit card to start?",
+    "No. The free tier gives you one user, one company and up to 25 invoices a month on the full double-entry ledger, with no card and no trial clock. Paid plans carry a 30-day money-back guarantee if you move up and change your mind.",
+  ],
+  [
+    "Is this real double-entry, or a cashbook with reports on top?",
+    "Real double-entry. Every approved invoice, payment, payroll run and asset transaction writes a balanced journal entry, and nothing reaches the general ledger any other way — which is why the trial balance ties rather than being reconciled into agreement.",
+  ],
+  [
+    "Does it handle VAT, SSCL and WHT correctly?",
+    "Yes. SSCL is applied to the value of supply and VAT is then compounded on the SSCL-inclusive total, the way the IRD requires, and the tax invoice prints in the statutory format of Gazette Extraordinary No. 2481/22. Withholding tax on customer payments posts to its own control account.",
+  ],
+  [
+    "What about payroll — EPF, ETF and gratuity?",
+    "Payroll statutories are in the chart of accounts from day one. EPF and ETF, gratuity, staff loans and advances each map to their own accounts, and the payroll run posts the resulting journal entry rather than exporting a spreadsheet for someone to key in.",
+  ],
+  [
+    "Can I bring my existing data across?",
+    "Opening balances and master data you can enter yourself, and bank statements import straight from Excel — the rules engine categorises the lines and posts them, holding anything it cannot identify in suspense rather than guessing. Full historical migration is available as a service from LKR 90,000.",
+  ],
+  [
+    "How many users and companies do I get?",
+    "It depends on the plan: one user and one company on Free and Lite, three on Standard, six users across two companies on Pro, twenty across three on Scale, and no limit on Enterprise. Extra companies beyond your plan bill at 50% of the base plan.",
+  ],
+  [
+    "Who can see my books?",
+    "Only the people you invite, and only the parts their role allows — company admins, accountants and employees each see a different slice. Sessions are protected by TOTP two-factor sign-in, and every posting and approval is attributed to a named user in the audit trail.",
+  ],
+  [
+    "What happens if I cancel?",
+    "You can cancel at any time and your data exports with you — ledger, documents and reports. Nothing is held hostage, and a closed period stays exactly as you closed it.",
+  ],
+];
+
 /* ── Document specimens ──────────────────────────────────────────────────────
    Mockups of the two documents the system actually issues, laid out with the same
    field set the real generators use — the statutory tax invoice from
@@ -754,6 +795,7 @@ const FOOT_GROUPS: { code: string; title: string; links: [string, string][] }[] 
     links: [
       ["Packages & plans", "#pricing"],
       ["Getting started", "#getting-started"],
+      ["Questions", "#faq"],
     ],
   },
   {
@@ -1406,6 +1448,38 @@ function PromoPopup({
   );
 }
 
+/* The banner across the very top of the page — the offer stated once, at full
+   width, before anything else. It scrolls away rather than sticking: the
+   marquee and the star carry the same number further down, so this one gets to
+   be big and then get out of the way. Reads its figure from PROMO, so it can
+   never quote a discount the pricing cards don't honour. */
+function PromoHero({
+  best,
+  onPricing,
+}: {
+  best: number;
+  onPricing: (e: React.MouseEvent) => void;
+}) {
+  if (!PROMO.active) return null;
+
+  return (
+    <aside className="lp-hero-promo" aria-label={PROMO.label}>
+      <p className="lp-hero-promo-eyebrow">Ready. Set. Balance.</p>
+      <h2 className="lp-hero-promo-head">
+        <strong>{best}% OFF</strong> Finthera for 3 months
+      </h2>
+      <div className="lp-hero-promo-actions">
+        <Link to="/signup" className="lp-hero-promo-cta">
+          Claim this price
+        </Link>
+        <a href="#pricing" className="lp-hero-promo-alt" onClick={onPricing}>
+          See plans &amp; pricing
+        </a>
+      </div>
+    </aside>
+  );
+}
+
 /* The star. A sale sticker in the oldest sense — a spiked burst stamped on the
    corner of the page, carrying the single best number in the offer. It turns on
    its own axis in 3D, the way a card hung on a thread does, so it reads as an
@@ -1537,6 +1611,8 @@ export default function Landing() {
   const sRiseShots = useSectionRise<HTMLElement>();
   const sRiseStart = useSectionRise<HTMLElement>();
   const sRisePricing = useSectionRise<HTMLElement>();
+  const sRiseFaq = useSectionRise<HTMLElement>();
+  const faqRef = useReveal<HTMLDivElement>();
   const sRiseClosing = useSectionRise<HTMLElement>();
   const sRiseControls = useSectionRise<HTMLDivElement>();
   const sRiseFooter = useSectionRise<HTMLDivElement>();
@@ -1593,6 +1669,12 @@ export default function Landing() {
              rendered twice so the loop has no visible seam; the duplicate is
              aria-hidden so a screen reader hears the list once. Percentages come
              from PROMO, the same source the pricing cards read. ── */}
+      {discountedPlans.length > 0 && (
+        <PromoHero
+          best={Math.max(...discountedPlans.map((p) => p.percent))}
+          onPricing={scrollToPricing}
+        />
+      )}
       <PromoTicker plans={discountedPlans} onPricing={scrollToPricing} />
       <PromoPopup plans={discountedPlans} onPricing={scrollToPricing} />
       {discountedPlans.length > 0 && (
@@ -1608,7 +1690,7 @@ export default function Landing() {
       <header className="lp-header">
         <div className="lp-shell lp-header-row">
           <div className="lp-brand">
-            <BrandMark className="w-[1.65rem] h-[1.65rem] shrink-0 rounded-md" />
+            <BrandMark className="w-[2.1rem] h-[2.1rem] shrink-0 rounded-lg" />
             <span className="font-serif text-[1.35rem] leading-none tracking-tight">Trish Books</span>
           </div>
 
@@ -1668,6 +1750,9 @@ export default function Landing() {
           onClick={() => setMenuOpen(false)}
         >
           Getting started
+        </a>
+        <a href="#faq" className="lp-menu-link" onClick={() => setMenuOpen(false)}>
+          Questions
         </a>
         <Link to="/login" className="lp-menu-link" onClick={() => setMenuOpen(false)}>
           Log in
@@ -2271,6 +2356,54 @@ export default function Landing() {
           </div>
         </section>
 
+        {/* ── Questions ────────────────────────────────────────────
+               Sits between the controls and the close: by here the reader is
+               persuaded and is now looking for the reason not to sign up, so the
+               objections get answered immediately before the CTA rather than
+               being buried on a support page.
+
+               Built on native <details>/<summary>. That gives keyboard support,
+               correct screen-reader semantics and working in-page search (a
+               closed answer still isn't found by ⌘F, so the first question opens
+               by default to show the pattern) without a line of state — the same
+               choice the rest of the page makes: real elements, styling on top. ── */}
+        <section id="faq" className="lp-shell lp-section lp-faq-section" ref={sRiseFaq}>
+          <header className="lp-section-head">
+            <p className="lp-eyebrow">Questions</p>
+            <SplitHeading text="What people ask before they sign up" accent="before they sign up" />
+            <p className="lp-body lp-section-lede">
+              The short answers. If yours isn’t here, the free tier answers most of
+              them faster than we can — it takes a minute to start and costs nothing.
+            </p>
+          </header>
+
+          <div className="lp-faq" ref={faqRef}>
+            {FAQS.map(([q, a], i) => (
+              <details
+                key={q}
+                className="lp-faq-item"
+                open={i === 0}
+                style={{ transitionDelay: `${i * 70}ms` }}
+              >
+                <summary className="lp-faq-q">
+                  <span className="lp-mono lp-faq-no">{String(i + 1).padStart(2, "0")}</span>
+                  <span className="lp-faq-q-text">{q}</span>
+                  <span className="lp-faq-sign" aria-hidden="true" />
+                </summary>
+                <div className="lp-faq-a">
+                  <p className="lp-body">{a}</p>
+                </div>
+              </details>
+            ))}
+          </div>
+
+          <p className="lp-faq-foot">
+            Still deciding?{" "}
+            <Link to="/signup" className="lp-note-link">Start free</Link> — no card, and
+            you can see your own trial balance before you ask anyone else’s opinion.
+          </p>
+        </section>
+
         {/* ── Close ──────────────────────────────────────────────
                The last thing a visitor reads, so it has to do three jobs at once:
                make the next step concrete and small, remove the risk of taking it,
@@ -2580,6 +2713,86 @@ const css = `
   .lp .lp-pack-group.is-boxed, .lp .lp-report, .lp .lp-trust li, .lp .lp-menu-link { transition: none; }
   .lp .lp-pack-group.is-boxed:hover, .lp .lp-report:hover,
   .lp .lp-trust li:hover, .lp .lp-menu-link:hover { transform: none; }
+}
+
+/* ── Top promo banner ───────────────────────────────────────────────────
+   Full-bleed clay band above the nav. Type is the whole design here: one
+   enormous line, the number set solid against the rest. */
+.lp .lp-hero-promo { position: relative; z-index: 1; display: grid; justify-items: center; gap: 0.85rem;
+  padding: clamp(2.25rem, 5.5vw, 3.75rem) 1.5rem clamp(2.5rem, 5.5vw, 3.5rem); text-align: center;
+  background-image: radial-gradient(40rem 20rem at 50% -40%, rgba(255, 255, 255, 0.28), transparent 70%),
+    linear-gradient(180deg, #E08A66 0%, var(--bright) 55%, #CE6A48 100%);
+  perspective: var(--lp-persp); overflow: hidden; }
+
+/* Two half-ovals bleeding in from the sides — a blue and a green cut off by the
+   band's own edges, so the banner reads as a window onto something larger.
+   They drift on the shared camera rather than sitting flat. */
+.lp .lp-hero-promo::before, .lp .lp-hero-promo::after { content: ""; position: absolute; pointer-events: none; }
+/* Blue: flat edge glued to the left wall, bulging inward. */
+.lp .lp-hero-promo::before { left: 0; top: 50%; width: 9rem; height: 21rem; transform: translateY(-50%);
+  border-radius: 0 100% 100% 0 / 0 50% 50% 0;
+  background-image: linear-gradient(120deg, #2F6F9E 0%, #4C93C4 100%); opacity: 0.9;
+  animation: lp-bump-l 11s ease-in-out infinite; }
+/* Green: one enormous shallow arc rising off the bottom — the top of an ellipse
+   far wider than the band, so its ends run off both walls and the curve reads as
+   a gentle swell across the whole width rather than a blob in one corner. */
+.lp .lp-hero-promo::after { left: 50%; bottom: 0; width: 190%; height: 88%;
+  transform: translateX(-50%);
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+  background-image: linear-gradient(180deg, #6FB88C 0%, #4E9C74 100%);
+  animation: lp-bump-b 13s ease-in-out infinite; }
+/* Every child is width-capped to the band: a grid item sized from its content
+   would otherwise let the headline run past the viewport on a phone. */
+.lp .lp-hero-promo > * { position: relative; z-index: 1; max-width: 100%; min-width: 0; }
+
+/* The bumps swell rather than travel — their flat edges stay welded to the band. */
+@keyframes lp-bump-l {
+  0%, 100% { transform: translateY(-50%) scaleX(1) translateZ(0); }
+  50%      { transform: translateY(-50%) scaleX(1.18) translateZ(30px); }
+}
+@keyframes lp-bump-b {
+  0%, 100% { transform: translateX(-50%) scaleY(1) translateZ(0); }
+  50%      { transform: translateX(-50%) scaleY(1.09) translateZ(24px); }
+}
+.lp .lp-hero-promo::before { transform-origin: left center; }
+.lp .lp-hero-promo::after { transform-origin: center bottom; }
+@media (max-width: 46rem) {
+  .lp .lp-hero-promo::before { width: 4rem; height: 11rem; opacity: 0.8; }
+  .lp .lp-hero-promo::after { width: 260%; height: 80%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp .lp-hero-promo::before, .lp .lp-hero-promo::after { animation: none; }
+}
+.lp .lp-hero-promo-eyebrow { margin: 0; font-size: clamp(0.9rem, 1.6vw, 1.05rem); font-weight: 500; color: rgba(20, 20, 19, 0.72);
+  animation: lp-promo-in 700ms cubic-bezier(0.22, 1.1, 0.36, 1) both; }
+.lp .lp-hero-promo-head { margin: 0; width: 100%; max-width: min(24ch, 100%); margin-inline: auto; text-wrap: balance;
+  overflow-wrap: break-word; font-family: var(--font-sans); font-weight: 400;
+  font-size: clamp(1.45rem, 5.6vw, 4rem); line-height: 1.06; letter-spacing: -0.035em; color: var(--ink);
+  transform-style: preserve-3d; animation: lp-promo-in 820ms cubic-bezier(0.22, 1.1, 0.36, 1) 90ms both; }
+.lp .lp-hero-promo-head strong { font-weight: 800; }
+.lp .lp-hero-promo-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.85rem 1.5rem;
+  margin-top: 0.5rem; animation: lp-promo-in 860ms cubic-bezier(0.22, 1.1, 0.36, 1) 180ms both; }
+.lp .lp-hero-promo-cta { display: inline-flex; align-items: center; padding: 0.85rem 1.9rem; border-radius: 0.6rem;
+  font-size: 1rem; font-weight: 600; color: #F5F2EA; background: var(--ink); text-decoration: none;
+  transform-style: preserve-3d; box-shadow: 0 10px 24px -12px rgba(20, 20, 19, 0.9);
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms ease; }
+.lp .lp-hero-promo-cta:hover { transform: perspective(var(--lp-persp)) translate3d(0, -3px, var(--lp-lift)) rotateX(-6deg);
+  box-shadow: 0 22px 38px -16px rgba(20, 20, 19, 0.9); }
+.lp .lp-hero-promo-cta:focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+.lp .lp-hero-promo-alt { font-size: 0.95rem; font-weight: 600; color: var(--ink); text-decoration: underline;
+  text-underline-offset: 4px; text-decoration-thickness: 2px; }
+.lp .lp-hero-promo-alt:hover { color: #4A2E20; }
+.lp .lp-hero-promo-alt:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-radius: 4px; }
+
+/* Each line arrives turning on its own axis, from behind the band. */
+@keyframes lp-promo-in {
+  from { opacity: 0; transform: perspective(var(--lp-persp)) translate3d(0, 14px, -160px) rotateX(calc(var(--lp-hinge) * -1.6)); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp .lp-hero-promo-eyebrow, .lp .lp-hero-promo-head, .lp .lp-hero-promo-actions { animation: none; }
+  .lp .lp-hero-promo-cta { transition: none; }
+  .lp .lp-hero-promo-cta:hover { transform: none; }
 }
 
 /* ── Star ad ────────────────────────────────────────────────────────────
@@ -3534,6 +3747,65 @@ const css = `
 .lp .lp-control dt { padding-right: 5.5rem; font-size: 0.95rem; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
 .lp .lp-control dd { margin: 0.45rem 0 0; font-size: 0.875rem; line-height: 1.6; color: var(--body); }
 
+/* ── Questions ───────────────────────────────────────────────────────────────
+   Set as a schedule rather than as cards: hairline-ruled rows, numbered in the
+   mono face, the way a note to the accounts is laid out. Cards were the obvious
+   alternative and the wrong one — eight of them would out-weigh the pricing
+   table two sections above, and this section is meant to remove doubt quietly,
+   not compete for the eye.
+
+   The measure is capped and the block centred, because these are long-form
+   answers: full-width prose at this size runs past the point where the eye finds
+   the next line reliably.                                                     */
+.lp .lp-faq { max-width: 46rem; margin-inline: auto; border-top: 1px solid var(--rule); }
+.lp .lp-faq-item { border-bottom: 1px solid var(--rule); }
+
+/* The row. list-style:none plus the WebKit marker rule removes the native
+   disclosure triangle in every engine that ships one. */
+.lp .lp-faq-q { display: grid; grid-template-columns: 2.4rem 1fr 1.5rem; align-items: baseline; gap: 0.5rem;
+  padding: 1.15rem 0.75rem 1.15rem 0.25rem; cursor: pointer; list-style: none;
+  border-radius: 0.6rem; transition: background-color var(--lp-dur-ui) ease; }
+.lp .lp-faq-q::-webkit-details-marker { display: none; }
+.lp .lp-faq-q:hover { background: rgba(189, 93, 58, 0.045); }
+.lp .lp-faq-q:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.lp .lp-faq-no { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; color: var(--muted);
+  transition: color var(--lp-dur-ui) ease; }
+.lp .lp-faq-item[open] .lp-faq-no { color: var(--emerald); }
+.lp .lp-faq-q-text { font-size: 1.02rem; font-weight: 600; line-height: 1.45; letter-spacing: -0.012em; color: var(--ink); }
+
+/* The +/− sign, drawn rather than imported: two bars, the vertical one collapsing
+   to nothing when the row opens. Rotating the whole sign 45° would read as a
+   close button, which is not what closing an answer means. */
+.lp .lp-faq-sign { position: relative; align-self: center; justify-self: end; width: 0.85rem; height: 0.85rem; }
+.lp .lp-faq-sign::before, .lp .lp-faq-sign::after { content: ""; position: absolute; inset: 50% 0 auto 0;
+  height: 2px; border-radius: 2px; background: var(--emerald); transform: translateY(-50%);
+  transition: transform 280ms var(--lp-ease), opacity 200ms ease; }
+.lp .lp-faq-sign::after { transform: translateY(-50%) rotate(90deg); }
+.lp .lp-faq-item[open] .lp-faq-sign::after { transform: translateY(-50%) rotate(90deg) scaleX(0); opacity: 0; }
+
+.lp .lp-faq-a { padding: 0 3.9rem 1.35rem 2.9rem;
+  animation: lp-faq-open var(--lp-dur-ui) var(--lp-ease) both; }
+.lp .lp-faq-a .lp-body { font-size: 0.925rem; line-height: 1.7; max-width: none; }
+@keyframes lp-faq-open {
+  from { opacity: 0; transform: translate3d(0, -0.4rem, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+.lp .lp-faq-foot { max-width: 46rem; margin: 1.75rem auto 0; text-align: center;
+  font-size: 0.875rem; line-height: 1.65; color: var(--muted); }
+
+/* Same staggered entrance the controls use, so the two sections read as one system. */
+.lp .lp-armed.lp-faq .lp-faq-item { opacity: 0;
+  transform: translate3d(0, var(--lp-rise-sm), 0);
+  transition: opacity var(--lp-dur) var(--lp-ease), transform var(--lp-dur) var(--lp-ease); }
+.lp .lp-armed.lp-faq.is-visible .lp-faq-item { opacity: 1; transform: none; }
+
+@media (max-width: 30rem) {
+  .lp .lp-faq-q { grid-template-columns: 1.9rem 1fr 1.2rem; }
+  .lp .lp-faq-q-text { font-size: 0.95rem; }
+  .lp .lp-faq-a { padding: 0 1.5rem 1.25rem 2.4rem; }
+}
+
 /* Close — the page's green deepens into one last panel */
 /* ── Closing call to action ──────────────────────────────────────────────────
    Two columns on wide screens: the argument on the left, the payoff restated as a
@@ -3797,6 +4069,10 @@ const css = `
   .lp .lp-start-dot, .lp .lp-start-spin, .lp .lp-start-step.is-live { animation: none; transform: none; }
   .lp .lp-start-spin { opacity: 0; }
   .lp .lp-start-rail-fill, .lp .lp-start-dot, .lp .lp-start-dot > * { transition: none; }
+  /* An answer still appears the instant its row is opened — it just doesn't slide
+     in to do it. The sign keeps its state change, without the wipe. */
+  .lp .lp-faq-a { animation: none; }
+  .lp .lp-faq-sign::before, .lp .lp-faq-sign::after { transition: none; }
   /* DocumentShowcase never starts its cycle here, so the first sheet must still be
      shown rather than sitting at opacity 0 behind a stopped carousel. */
   .lp .lp-docs-slot { transition: none; transform: none; }

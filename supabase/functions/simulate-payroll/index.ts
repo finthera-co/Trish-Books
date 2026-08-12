@@ -2,11 +2,8 @@
 // Loads current rules + employee, optionally applies overrides, returns full breakdown with traces.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
 interface SimulateRequest {
   employee_id?: string;
@@ -154,6 +151,30 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_ANON_KEY")!,
       { global: { headers: { Authorization: authHeader } } }
     );
+
+    // consume_rate_limit is service_role-only, so the limiter needs its own
+    // admin client; `supabase` above is deliberately caller-scoped for RLS.
+    // Runs before the component/rule loads and the simulation itself.
+    {
+      const admin = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: appUser } = user
+        ? await admin
+            .from("users")
+            .select("id, tenant_id")
+            .eq("auth_user_id", user.id)
+            .maybeSingle()
+        : { data: null };
+      const { blocked } = await enforceRateLimit(admin, "simulate-payroll", {
+        userId: appUser?.id ?? null,
+        tenantId: appUser?.tenant_id ?? null,
+        ip: clientIp(req),
+      });
+      if (blocked) return blocked;
+    }
 
     const body: SimulateRequest = await req.json().catch(() => ({}));
 

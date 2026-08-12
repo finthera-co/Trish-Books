@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction } from "@/lib/edgeFunction";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
@@ -94,12 +95,7 @@ export function useAssetJournalEntries(assetId: string | undefined) {
 // ─── Edge Function calls ───
 
 async function callAssetEngine(body: Record<string, unknown>) {
-  const { data, error } = await supabase.functions.invoke("post-asset-transaction", {
-    body,
-  });
-  if (error) throw new Error(error.message || "Edge function call failed");
-  if (data?.error) throw new Error(data.error);
-  return data;
+  return invokeEdgeFunction("post-asset-transaction", body);
 }
 
 function invalidateAll(qc: ReturnType<typeof useQueryClient>) {

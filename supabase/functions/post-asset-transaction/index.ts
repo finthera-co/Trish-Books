@@ -1,15 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
-
-function jsonResponse(data: unknown, status = 200) {
+function jsonResponse(data: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json", ...extraHeaders },
   });
 }
 
@@ -45,25 +41,42 @@ Deno.serve(async (req) => {
     const tenantId = appUser.tenant_id;
     const internalUserId = appUser.id;
 
+    // After auth resolution and before any journal write, so a 429 cannot leave
+    // a partially posted entry.
+    const { blocked, headers: rlHeaders } = await enforceRateLimit(
+      db,
+      "post-asset-transaction",
+      { userId: internalUserId, tenantId, ip: clientIp(req) },
+    );
+    if (blocked) return blocked;
+
     const body = await req.json();
     const { event_type } = body;
 
-    switch (event_type) {
-      case "ASSET_CREATED":
-        return await handleAssetCreated(db, tenantId, body, internalUserId);
-      case "DEPRECIATION_POSTED":
-        return await handleDepreciationPosted(db, tenantId, body, internalUserId);
-      case "ASSET_DISPOSED":
-        return await handleAssetDisposed(db, tenantId, body, internalUserId);
-      case "ASSET_ADJUSTED":
-        return await handleAssetAdjusted(db, tenantId, body, internalUserId);
-      case "CATEGORY_TRANSFER":
-        return await handleCategoryTransfer(db, tenantId, body, internalUserId);
-      case "BULK_IMPORT":
-        return await handleBulkImport(db, tenantId, body, internalUserId);
-      default:
-        return errorResponse(`Unknown event_type: ${event_type}`);
-    }
+    const dispatch = async (): Promise<Response> => {
+      switch (event_type) {
+        case "ASSET_CREATED":
+          return await handleAssetCreated(db, tenantId, body, internalUserId);
+        case "DEPRECIATION_POSTED":
+          return await handleDepreciationPosted(db, tenantId, body, internalUserId);
+        case "ASSET_DISPOSED":
+          return await handleAssetDisposed(db, tenantId, body, internalUserId);
+        case "ASSET_ADJUSTED":
+          return await handleAssetAdjusted(db, tenantId, body, internalUserId);
+        case "CATEGORY_TRANSFER":
+          return await handleCategoryTransfer(db, tenantId, body, internalUserId);
+        case "BULK_IMPORT":
+          return await handleBulkImport(db, tenantId, body, internalUserId);
+        default:
+          return errorResponse(`Unknown event_type: ${event_type}`);
+      }
+    };
+
+    // Each handler builds its own Response, so the rate-limit headers are
+    // appended here rather than threaded through all six.
+    const res = await dispatch();
+    for (const [k, v] of Object.entries(rlHeaders)) res.headers.set(k, v);
+    return res;
   } catch (e) {
     console.error("post-asset-transaction error:", e);
     const message = e instanceof Error ? e.message : String(e);

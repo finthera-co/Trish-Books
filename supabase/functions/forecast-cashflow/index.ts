@@ -5,12 +5,8 @@
 //   -> Fallback substitution (parent category / global trend) for sparse series
 //   -> Incremental processing (skip if a fresh run exists; targeted delete window)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
 const MODEL_VERSION = "trend_seasonal_v3";
 const FORECAST_HORIZON_DAYS = 30;
@@ -342,6 +338,30 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+
+  // Resolved purely to key the limiter; this handler has no caller identity of
+  // its own. The scheduled caller (forecast-cashflow-daily) sends no user JWT,
+  // so appUser stays null, the user-scoped rule is skipped and the cron run is
+  // never limited — which is the intended behaviour for machine paths.
+  {
+    const token = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
+    const { data: authData } = token
+      ? await supabase.auth.getUser(token)
+      : { data: null };
+    const { data: appUser } = authData?.user
+      ? await supabase
+          .from("users")
+          .select("id, tenant_id")
+          .eq("auth_user_id", authData.user.id)
+          .maybeSingle()
+      : { data: null };
+    const { blocked } = await enforceRateLimit(supabase, "forecast-cashflow", {
+      userId: appUser?.id ?? null,
+      tenantId: appUser?.tenant_id ?? null,
+      ip: clientIp(req),
+    });
+    if (blocked) return blocked;
+  }
 
   // Allow callers to force a full rebuild via { force: true }
   let force = false;

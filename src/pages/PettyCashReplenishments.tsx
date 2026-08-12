@@ -15,6 +15,7 @@ import {
   usePostImprestReplenishment,
 } from "@/hooks/usePettyCash";
 import { useMyPermissions } from "@/hooks/usePermissions";
+import { PCFundDialog } from "@/components/petty-cash/PCFundDialog";
 import { formatCurrency } from "@/lib/currency";
 
 export default function PettyCashReplenishments() {
@@ -136,9 +137,13 @@ export default function PettyCashReplenishments() {
               <>
                 {/* Voucher batch */}
                 {!vouchers?.length ? (
-                  <p className="text-sm text-muted-foreground py-4 text-center border rounded-md">
-                    No approved, unreimbursed vouchers for this fund. Approve some vouchers first.
-                  </p>
+                  <div className="py-4 text-center border rounded-md space-y-2">
+                    <p className="text-sm text-muted-foreground">
+                      No approved, unreimbursed vouchers for this fund. Approve some vouchers first
+                      {currentBalance <= 0 && " — or put the opening float in below"}.
+                    </p>
+                    {currentBalance <= 0 && <PCFundDialog defaultPcAccountId={pcAccountId} />}
+                  </div>
                 ) : (
                   <div className="border rounded-md overflow-hidden">
                     <table className="data-table">

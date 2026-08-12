@@ -1,10 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -15,6 +11,35 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+    // This handler does no auth of its own and sweeps EVERY active tenant, so
+    // without resolving the caller the limiter would have no identity to key on
+    // and every rule would be skipped. verify_jwt is enabled for this function,
+    // so a bearer token is always present; we resolve it purely to key the
+    // limiter, not to change who may call this route.
+    const token = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
+    const { data: authData } = token
+      ? await supabase.auth.getUser(token)
+      : { data: null };
+    const { data: appUser } = authData?.user
+      ? await supabase
+          .from("users")
+          .select("id, tenant_id")
+          .eq("auth_user_id", authData.user.id)
+          .maybeSingle()
+      : { data: null };
+
+    // Before the cross-tenant sweep below — no scan happens on a rejected call.
+    const { blocked, headers: rlHeaders } = await enforceRateLimit(
+      supabase,
+      "detect-anomalies",
+      {
+        userId: appUser?.id ?? null,
+        tenantId: appUser?.tenant_id ?? null,
+        ip: clientIp(req),
+      },
+    );
+    if (blocked) return blocked;
 
     const { data: tenants } = await supabase
       .from("tenants")
@@ -79,7 +104,7 @@ Deno.serve(async (req) => {
     }
 
     return new Response(JSON.stringify({ success: true, results }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json", ...rlHeaders },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -7,8 +7,11 @@ import { toast } from "sonner";
 // to friendly toast messages.
 function humanizePcError(raw: string): string {
   const msg = raw || "";
-  if (msg.includes("INSUFFICIENT_FUNDS"))
-    return "Insufficient petty cash funds for this voucher. Replenish the fund first.";
+  if (msg.includes("INSUFFICIENT_FUNDS")) {
+    const nums = msg.match(/available\s+([\d.-]+),\s*required\s+([\d.-]+)/i);
+    const detail = nums ? ` The fund holds ${nums[1]}, this voucher needs ${nums[2]}.` : "";
+    return `Insufficient petty cash funds for this voucher.${detail} Fund or replenish the account first.`;
+  }
   if (msg.includes("EXCEEDS_FLOAT"))
     return "This top-up would push the fund above its defined float.";
   if (msg.includes("PERIOD_LOCKED"))
@@ -621,6 +624,67 @@ export function useApproveReplenishment() {
       qc.invalidateQueries({ queryKey: ["pc_replenishments"] });
       qc.invalidateQueries({ queryKey: ["pc_balance"] });
       toast.success("Replenishment approved & journal entry created");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ─── Direct Funding / Top-up (Dr Petty Cash / Cr Bank) ───
+// Used to put cash into a fund that has no vouchers to reimburse yet — the
+// initial float, or a straight top-up. Creates a draft replenishment and posts
+// it through post_pcr, which enforces the imprest ceiling (balance + amount
+// must not exceed the defined float).
+export function useFundPettyCash() {
+  const qc = useQueryClient();
+  const { appUser } = useAuth();
+  return useMutation({
+    mutationFn: async (input: {
+      pc_account_id: string;
+      bank_account_id: string;
+      amount: number;
+      date: string;
+    }) => {
+      if (!(input.amount > 0)) throw new Error("Amount must be greater than zero");
+
+      const { data: number, error: numErr } = await supabase.rpc("generate_pcr_number", {
+        p_tenant_id: appUser!.tenant_id,
+      });
+      if (numErr) throw numErr;
+
+      const { data: repl, error: insErr } = await supabase
+        .from("petty_cash_replenishments")
+        .insert({
+          tenant_id: appUser!.tenant_id,
+          replenishment_number: number as string,
+          date: input.date,
+          petty_cash_account_id: input.pc_account_id,
+          bank_account_id: input.bank_account_id,
+          amount: input.amount,
+          status: "draft",
+        })
+        .select()
+        .single();
+      if (insErr) throw insErr;
+
+      const { data: jeId, error: postErr } = await supabase.rpc("post_pcr", {
+        p_replenishment_id: repl.id,
+      });
+      if (postErr) {
+        // Drop the draft so a rejected funding doesn't linger in history
+        await supabase.from("petty_cash_replenishments").delete().eq("id", repl.id);
+        throw new Error(humanizePcError(postErr.message));
+      }
+
+      return { ...repl, journal_entry_id: jeId as unknown as string };
+    },
+    onSuccess: (repl) => {
+      qc.invalidateQueries({ queryKey: ["pc_replenishments"] });
+      qc.invalidateQueries({ queryKey: ["pcr_number"] });
+      qc.invalidateQueries({ queryKey: ["pc_balance"] });
+      qc.invalidateQueries({ queryKey: ["pc_ledger"] });
+      qc.invalidateQueries({ queryKey: ["journal_entries"] });
+      qc.invalidateQueries({ queryKey: ["period_account_movements"] });
+      toast.success(`Fund topped up — ${repl.replenishment_number} posted`);
     },
     onError: (e: Error) => toast.error(e.message),
   });

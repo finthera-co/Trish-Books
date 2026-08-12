@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction } from "@/lib/edgeFunction";
 
 export interface ScenarioModel {
   id: string;
@@ -85,9 +86,10 @@ export function useSimulateScenario() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: SimulateInput) => {
-      const { data, error } = await supabase.functions.invoke("simulate-scenario", { body: input });
-      if (error) throw error;
-      return data as SimulateResult;
+      return await invokeEdgeFunction<SimulateResult>(
+        "simulate-scenario",
+        input as unknown as Record<string, unknown>,
+      );
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["scenario_models"] }),
   });
@@ -124,11 +126,9 @@ export function useForecastInsights(tenantId?: string) {
   return useMutation({
     mutationFn: async () => {
       if (!tenantId) throw new Error("Tenant ID required");
-      const { data, error } = await supabase.functions.invoke("forecast-insights", {
-        body: { tenant_id: tenantId },
+      return await invokeEdgeFunction<StructuredInsights>("forecast-insights", {
+        tenant_id: tenantId,
       });
-      if (error) throw error;
-      return data as StructuredInsights;
     },
   });
 }

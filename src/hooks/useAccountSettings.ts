@@ -8,6 +8,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction } from "@/lib/edgeFunction";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
@@ -152,10 +153,12 @@ export function usePostInvoice() {
       invoice_id: string;
       action: "post" | "void";
     }) => {
-      const { data, error } = await supabase.functions.invoke("post-invoice", {
-        body: { invoice_id, action },
-      });
-      if (error) throw new Error(error.message);
+      const data = await invokeEdgeFunction<{ ok?: boolean; error?: string }>(
+        "post-invoice",
+        { invoice_id, action },
+      );
+      // post-invoice reports failure in a 200 body, and can return ok:false with
+      // no error string — so the ok flag is still checked here.
       if (!data?.ok) throw new Error(data?.error || "Posting failed");
       return data;
     },

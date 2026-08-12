@@ -1,9 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -53,6 +50,25 @@ Deno.serve(async (req) => {
     }
 
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
+
+    // The caller's users.id is not resolved anywhere else in this handler, but
+    // the rule is user-scoped, so without it every rule would be skipped and the
+    // limiter would be inert. Runs before any auth user or users row is created.
+    const { data: { user: callerAuthUser } } = await callerClient.auth.getUser();
+    const { data: callerRow } = callerAuthUser
+      ? await adminClient
+          .from("users")
+          .select("id")
+          .eq("auth_user_id", callerAuthUser.id)
+          .maybeSingle()
+      : { data: null };
+
+    const { blocked } = await enforceRateLimit(adminClient, "create-user", {
+      userId: callerRow?.id ?? null,
+      tenantId: targetTenantId,
+      ip: clientIp(req),
+    });
+    if (blocked) return blocked;
 
     // Prevent non-super-admins from creating super admin users
     const { data: targetRole } = await adminClient

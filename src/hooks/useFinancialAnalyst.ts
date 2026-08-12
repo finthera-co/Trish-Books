@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction } from "@/lib/edgeFunction";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { describeError } from "@/lib/errorMessage";
@@ -280,34 +281,9 @@ export function useAnalystIndexStatus() {
   });
 }
 
-/**
- * Pulls the real reason out of a functions.invoke() failure.
- *
- * supabase-js reports every non-2xx as the same sentence — "Edge Function
- * returned a non-2xx status code" — and hides the response on `error.context`.
- * The body is where the actionable text lives ("VOYAGE_API_KEY is not
- * configured"), so without this the user is told only that something failed.
- */
-async function functionErrorMessage(error: unknown): Promise<string> {
-  const context = (error as { context?: unknown }).context;
-
-  if (context instanceof Response) {
-    try {
-      // The body can only be read once, so work on a clone — supabase-js may
-      // have already consumed the original.
-      const body = await context.clone().json();
-      if (typeof body?.error === "string") return body.error;
-    } catch {
-      // Not JSON (a gateway HTML error page, say) — fall through.
-    }
-    if (context.status === 404) {
-      return "The analyst-reindex function isn't deployed to this project yet.";
-    }
-    return `The indexer returned ${context.status}.`;
-  }
-
-  return describeError(error);
-}
+// The non-2xx body extraction that used to live here now lives in
+// invokeEdgeFunction (src/lib/edgeFunction.ts) so every call site gets it,
+// along with 429 handling.
 
 export function useBuildAnalystIndex() {
   const { appUser } = useAuth();
@@ -318,12 +294,12 @@ export function useBuildAnalystIndex() {
     if (!appUser?.tenant_id || isBuilding) return;
     setIsBuilding(true);
     try {
-      const { data, error } = await supabase.functions.invoke("analyst-reindex", {
-        body: { mode: "full", tenant_id: appUser.tenant_id },
-      });
-      if (error) throw new Error(await functionErrorMessage(error));
+      const data = await invokeEdgeFunction<{ results?: ReindexResult[] } | null>(
+        "analyst-reindex",
+        { mode: "full", tenant_id: appUser.tenant_id },
+      );
 
-      const result = (data as { results?: ReindexResult[] } | null)?.results?.[0];
+      const result = data?.results?.[0];
       const pending = Number(result?.pending ?? 0);
       toast.success(
         pending > 0

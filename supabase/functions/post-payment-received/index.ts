@@ -13,20 +13,16 @@
 //    ar_transactions rows (restore invoice outstanding + customer balance),
 //    WHT sub-ledger reversal, deposit rollback, receipt marked voided.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
 const EPSILON = 0.005;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-function json(body: unknown, status = 200) {
+function json(body: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json", ...extraHeaders },
   });
 }
 
@@ -66,6 +62,15 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: `Role "${role || "unknown"}" cannot record customer payments` }, 200);
     }
     const appUser = { id: au.id, tenant_id: au.tenant_id };
+
+    // After auth/role resolution and before any journal or payment write, so a
+    // 429 cannot leave a partially posted entry.
+    const { blocked, headers: rlHeaders } = await enforceRateLimit(
+      admin,
+      "post-payment-received",
+      { userId: appUser.id, tenantId: appUser.tenant_id, ip: clientIp(req) },
+    );
+    if (blocked) return blocked;
 
     // ── Shared helpers ────────────────────────────────────────────────
     const closedPeriodError = async (isoDate: string): Promise<string | null> => {
@@ -825,7 +830,7 @@ Deno.serve(async (req) => {
       allocated: allocTotal,
       held_on_account: remainder > EPSILON ? remainder : 0,
       deposit_id: depositId,
-    });
+    }, 200, rlHeaders);
   } catch (err: any) {
     return json({ ok: false, error: err?.message || "Internal error" }, 200);
   }

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction } from "@/lib/edgeFunction";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import {
@@ -769,14 +770,13 @@ export function useProcessPayrollRun() {
       // Delegates to edge function which reads payroll_results, looks up
       // payroll_component_accounts mapping, builds a balanced double-entry
       // journal, and posts it. Returns 422 with `unmapped` array if mapping incomplete.
-      const { data, error } = await supabase.functions.invoke("post-payroll-gl", {
-        body: { run_id: runId },
-      });
-      if (error) throw error;
+      const data = await invokeEdgeFunction<{ ok?: boolean; error?: string }>(
+        "post-payroll-gl",
+        { run_id: runId },
+      );
       if (data && (data as any).ok === false) {
         throw new Error((data as any).error || "Failed to post payroll to GL");
       }
-      if ((data as any)?.error) throw new Error((data as any).error);
       // Now that the run is posted, reduce loan balances + record repayments
       // (idempotent per run via the loan_repayments unique constraint).
       await supabase.rpc("rpc_apply_loan_repayments", { p_run_id: runId });
@@ -799,14 +799,7 @@ export function usePayrollGLPreview(runId: string | undefined) {
     enabled: !!runId,
     staleTime: 0,
     queryFn: async () => {
-      const { data, error } = await supabase.functions.invoke("post-payroll-gl", {
-        body: { run_id: runId, dry_run: true },
-      });
-      if (error) throw error;
-      if (data && (data as any).ok === false) {
-        throw new Error((data as any).error || "Preview failed");
-      }
-      return data as {
+      const data = await invokeEdgeFunction<{
         ok: true;
         dry_run: true;
         lines: { account_id: string; debit: number; credit: number }[];
@@ -814,7 +807,11 @@ export function usePayrollGLPreview(runId: string | undefined) {
         total_credit: number;
         line_count: number;
         unmapped?: { component_code: string; amount: number }[];
-      };
+      }>("post-payroll-gl", { run_id: runId, dry_run: true });
+      if (data && (data as any).ok === false) {
+        throw new Error((data as any).error || "Preview failed");
+      }
+      return data;
     },
   });
 }
@@ -980,9 +977,10 @@ export interface SimulatePayrollInput {
 export function useSimulatePayroll() {
   return useMutation({
     mutationFn: async (input: SimulatePayrollInput) => {
-      const { data, error } = await supabase.functions.invoke("simulate-payroll", { body: input });
-      if (error) throw error;
-      return data;
+      return await invokeEdgeFunction(
+        "simulate-payroll",
+        input as unknown as Record<string, unknown>,
+      );
     },
     onError: (e: Error) => toast.error(`Simulation failed: ${e.message}`),
   });

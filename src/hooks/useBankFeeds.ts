@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction } from "@/lib/edgeFunction";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
@@ -276,12 +277,10 @@ export function useRunAIMatching() {
       reconciliationId: string;
       bankAccountId: string;
     }) => {
-      const { data, error } = await supabase.functions.invoke("match-transactions", {
-        body: { reconciliation_id: reconciliationId, bank_account_id: bankAccountId },
+      return await invokeEdgeFunction("match-transactions", {
+        reconciliation_id: reconciliationId,
+        bank_account_id: bankAccountId,
       });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      return data;
     },
     onSuccess: (result, vars) => {
       queryClient.invalidateQueries({ queryKey: ["bank_feed_transactions", vars.reconciliationId] });

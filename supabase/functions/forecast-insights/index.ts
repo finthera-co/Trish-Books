@@ -1,10 +1,11 @@
 // AI-generated structured forecast insights via Lovable AI Gateway.
 // Returns STRICT JSON: { risks, opportunities, recommended_actions }
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { corsHeaders as baseCors } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  ...baseCors,
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -22,6 +23,31 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+    // This handler runs as service role with no caller identity, so the caller
+    // is resolved here purely to key the limiter — without it the user-scoped
+    // rule would be skipped and the limiter would be inert. Body-supplied
+    // tenant_id is deliberately NOT used as the key: a caller could vary it to
+    // sidestep their own bucket.
+    {
+      const token = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
+      const { data: authData } = token
+        ? await supabase.auth.getUser(token)
+        : { data: null };
+      const { data: appUser } = authData?.user
+        ? await supabase
+            .from("users")
+            .select("id, tenant_id")
+            .eq("auth_user_id", authData.user.id)
+            .maybeSingle()
+        : { data: null };
+      const { blocked } = await enforceRateLimit(supabase, "forecast-insights", {
+        userId: appUser?.id ?? null,
+        tenantId: appUser?.tenant_id ?? null,
+        ip: clientIp(req),
+      });
+      if (blocked) return blocked;
+    }
+
 
     const { data: forecasts } = await supabase
       .from("financial_forecasts")

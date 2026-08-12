@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction } from "@/lib/edgeFunction";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
@@ -77,12 +78,19 @@ export function useReceiveCustomerPayment() {
       /** Settle from an existing customer deposit instead of bank (no cash movement). */
       funded_by_deposit_id?: string;
     }) => {
-      const { data, error } = await supabase.functions.invoke("post-payment-received", {
-        body: { action: "post", request_id: crypto.randomUUID(), ...params },
+      const data = await invokeEdgeFunction<{
+        ok?: boolean;
+        error?: string;
+        payment_id: string;
+        payment_number?: string;
+        held_on_account?: number;
+      }>("post-payment-received", {
+        action: "post",
+        request_id: crypto.randomUUID(),
+        ...params,
       });
-      if (error) throw new Error(error.message);
       if (!data?.ok) throw new Error(data?.error || "Failed to record payment");
-      return data as { payment_id: string; payment_number?: string; held_on_account?: number };
+      return data;
     },
     onSuccess: (data) => {
       invalidateARCaches(qc);
@@ -102,10 +110,10 @@ export function useVoidPaymentReceived() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (params: { payment_id: string; reason?: string }) => {
-      const { data, error } = await supabase.functions.invoke("post-payment-received", {
-        body: { action: "void", ...params },
-      });
-      if (error) throw new Error(error.message);
+      const data = await invokeEdgeFunction<{ ok?: boolean; error?: string }>(
+        "post-payment-received",
+        { action: "void", ...params },
+      );
       if (!data?.ok) throw new Error(data?.error || "Failed to void receipt");
       return data;
     },
@@ -222,10 +230,10 @@ export function usePostCreditNote() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (params: { credit_note_id: string }) => {
-      const { data, error } = await supabase.functions.invoke("post-credit-note", {
-        body: { action: "post", credit_note_id: params.credit_note_id },
-      });
-      if (error) throw new Error(error.message);
+      const data = await invokeEdgeFunction<{ ok?: boolean; error?: string }>(
+        "post-credit-note",
+        { action: "post", credit_note_id: params.credit_note_id },
+      );
       if (!data?.ok) throw new Error(data?.error || "Failed to post credit note");
       return data;
     },
@@ -278,10 +286,10 @@ export function useVoidCreditNote() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (params: { credit_note_id: string; reason?: string }) => {
-      const { data, error } = await supabase.functions.invoke("post-credit-note", {
-        body: { action: "void", credit_note_id: params.credit_note_id, reason: params.reason },
-      });
-      if (error) throw new Error(error.message);
+      const data = await invokeEdgeFunction<{ ok?: boolean; error?: string }>(
+        "post-credit-note",
+        { action: "void", credit_note_id: params.credit_note_id, reason: params.reason },
+      );
       if (!data?.ok) throw new Error(data?.error || "Failed to void credit note");
       return data;
     },

@@ -16,11 +16,17 @@ import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.116.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { TOOLS_BY_NAME, toolDefinitions, type ToolContext } from "../_shared/analystTools.ts";
 import { embedQuery } from "../_shared/embeddings.ts";
+import { corsHeaders as baseCors } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
+// Extends the shared CORS rather than replacing it: this route needs its own
+// Allow-Methods, and the client reads the conversation id off the response, so
+// that header has to be exposed alongside the shared rate-limit ones.
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  ...baseCors,
   "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Expose-Headers":
+    `${baseCors["Access-Control-Expose-Headers"]}, x-conversation-id`,
 };
 
 const MODEL = "claude-opus-5";
@@ -102,6 +108,23 @@ Deno.serve(async (req) => {
     if (!question) return json({ error: "message is required" }, 400);
     if (question.length > 4000) return json({ error: "Question is too long" }, 400);
 
+    // The tightest limit in the policy table: one request here drives up to
+    // MAX_TOOL_ROUNDS model calls, making this the most expensive route on the
+    // platform. Runs before the conversation row is created and before any
+    // Anthropic call, so a rejected request costs nothing but this check.
+    // consume_rate_limit is service_role-only, hence the separate admin client —
+    // `supabase` above is deliberately caller-scoped for RLS.
+    const admin = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+    const { blocked, headers: rlHeaders } = await enforceRateLimit(admin, "financial-analyst", {
+      userId: appUser.id,
+      tenantId: appUser.tenant_id,
+      ip: clientIp(req),
+    });
+    if (blocked) return blocked;
+
     // Conversation is created up front so the client has an ID to resume with
     // even if the stream dies mid-answer.
     const conversationId = await ensureConversation(
@@ -142,6 +165,7 @@ Deno.serve(async (req) => {
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
         "X-Conversation-Id": conversationId,
+        ...rlHeaders,
       },
     });
   } catch (e) {

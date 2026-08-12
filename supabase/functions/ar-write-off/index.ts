@@ -23,19 +23,15 @@
  * }
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
 const EPSILON = 0.005;
 
-function json(body: unknown, status = 200) {
+function json(body: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json", ...extraHeaders },
   });
 }
 
@@ -73,6 +69,15 @@ Deno.serve(async (req) => {
     if (!role || !allowed.includes(role)) {
       return json({ ok: false, error: `Role "${role}" cannot post write-offs` }, 200);
     }
+
+    // After auth/role resolution and before any journal write, so a 429 cannot
+    // leave a partially posted entry.
+    const { blocked, headers: rlHeaders } = await enforceRateLimit(
+      admin,
+      "ar-write-off",
+      { userId: appUser.id, tenantId: appUser.tenant_id, ip: clientIp(req) },
+    );
+    if (blocked) return blocked;
 
     const body = await req.json();
     const {
@@ -262,7 +267,11 @@ Deno.serve(async (req) => {
       details:    { customer_name: customer.name, amount: writeOffAmt, journal_id: je.id },
     });
 
-    return json({ ok: true, type: "WRITE_OFF", journal_id: je.id, amount: writeOffAmt });
+    return json(
+      { ok: true, type: "WRITE_OFF", journal_id: je.id, amount: writeOffAmt },
+      200,
+      rlHeaders,
+    );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return json({ ok: false, error: message || "Internal error" }, 500);

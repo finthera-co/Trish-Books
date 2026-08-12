@@ -1,9 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -29,6 +26,16 @@ Deno.serve(async (req) => {
 
     // Service role client for admin operations
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
+
+    // Runs AFTER the Super Admin check (never limit on an unresolved identity)
+    // but BEFORE any tenant/auth-user is created, so a rejected call provisions
+    // nothing. Only the `ip` rule applies here: no tenant exists yet to key on.
+    const { blocked, headers: rlHeaders } = await enforceRateLimit(
+      adminClient,
+      "provision-tenant",
+      { userId: null, tenantId: null, ip: clientIp(req) },
+    );
+    if (blocked) return blocked;
 
     const body = await req.json();
     const {
@@ -135,7 +142,7 @@ Deno.serve(async (req) => {
           last_name: admin_last_name,
         },
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { headers: { ...corsHeaders, "Content-Type": "application/json", ...rlHeaders } }
     );
   } catch (error: any) {
     return new Response(

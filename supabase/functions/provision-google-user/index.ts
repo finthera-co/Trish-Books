@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 import { z } from "https://esm.sh/zod@3.23.8";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -34,6 +35,17 @@ Deno.serve(async (req) => {
     }
 
     const authUser = userData.user;
+
+    // Runs after the JWT is validated but before any tenant/user row is created,
+    // so a rejected call provisions nothing. Only the `ip` rule applies: this is
+    // the pre-provisioning path, so there is no app user or tenant to key on yet.
+    const { blocked, headers: rlHeaders } = await enforceRateLimit(
+      admin,
+      "provision-google-user",
+      { userId: null, tenantId: null, ip: clientIp(req) },
+    );
+    if (blocked) return blocked;
+
     const body = await req.json().catch(() => ({}));
     const parsed = BodySchema.safeParse(body);
     if (!parsed.success) {
@@ -53,7 +65,7 @@ Deno.serve(async (req) => {
     if (existing) {
       return new Response(
         JSON.stringify({ ok: true, already_provisioned: true, user_id: existing.id, tenant_id: existing.tenant_id }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { headers: { ...corsHeaders, "Content-Type": "application/json", ...rlHeaders } },
       );
     }
 
@@ -125,7 +137,7 @@ Deno.serve(async (req) => {
 
     return new Response(
       JSON.stringify({ ok: true, user_id: user.id, tenant_id: tenant.id }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { headers: { ...corsHeaders, "Content-Type": "application/json", ...rlHeaders } },
     );
   } catch (e: any) {
     console.error("provision-google-user error", e);

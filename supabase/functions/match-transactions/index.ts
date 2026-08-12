@@ -1,11 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { executeRuleAction, ruleConditionMatches, ruleWillPost } from "../_shared/ruleActions.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
 // ─── Types ───
 interface BankFeed {
@@ -1064,6 +1061,16 @@ serve(async (req) => {
       });
     }
 
+    // Keyed on the reconciliation's own tenant — this handler runs as service
+    // role with no caller identity, so the loaded row is the only trustworthy
+    // scope. Placed before the matching passes below.
+    const { blocked, headers: rlHeaders } = await enforceRateLimit(
+      supabase,
+      "match-transactions",
+      { userId: null, tenantId: recon.tenant_id, ip: clientIp(req) },
+    );
+    if (blocked) return blocked;
+
     // ─── STEP 1: Period Lock Check ───
     const lockError = await checkPeriodLock(supabase, recon.tenant_id, recon.statement_ending_date);
     if (lockError) {
@@ -1237,7 +1244,7 @@ serve(async (req) => {
         reasons: m.reasons,
       })),
     }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json", ...rlHeaders },
     });
   } catch (e) {
     console.error("match-transactions error:", e);

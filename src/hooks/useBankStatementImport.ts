@@ -11,6 +11,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction } from "@/lib/edgeFunction";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
@@ -356,21 +357,17 @@ export function useImportBankStatement(onProgress?: (p: ImportProgress) => void)
 
         let d: any;
         try {
-          const { data, error } = await supabase.functions.invoke("import-bank-statement", {
-            body: {
-              storage_path,
-              extract_path,
-              bank_account_id: params.bank_account_id,
-              periods: chunk.map((p) => ({ year: p.year, month: p.month })),
-              // Rows with no usable date belong to the whole import, not to a
-              // chunk, so only the FIRST call adopts them. Sending this on
-              // every chunk re-imports them once per call.
-              include_undated: i === 0,
-              posting_mode: params.posting_mode,
-            },
+          d = await invokeEdgeFunction("import-bank-statement", {
+            storage_path,
+            extract_path,
+            bank_account_id: params.bank_account_id,
+            periods: chunk.map((p) => ({ year: p.year, month: p.month })),
+            // Rows with no usable date belong to the whole import, not to a
+            // chunk, so only the FIRST call adopts them. Sending this on
+            // every chunk re-imports them once per call.
+            include_undated: i === 0,
+            posting_mode: params.posting_mode,
           });
-          if (error) throw new Error(error.message);
-          d = data;
         } catch (e) {
           // A chunk that dies (worker killed => no response body) must not
           // abandon the rest; report its months and carry on.

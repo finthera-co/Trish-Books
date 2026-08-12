@@ -18,20 +18,16 @@ import {
   type TaxMemberInput,
   type CollectionMode,
 } from "../_shared/taxEngine.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
 const EPSILON = 0.005;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-function json(body: unknown, status = 200) {
+function json(body: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json", ...extraHeaders },
   });
 }
 
@@ -69,6 +65,15 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: `Role "${role || "unknown"}" cannot post credit notes` }, 200);
     }
     const appUser = { id: au.id, tenant_id: au.tenant_id };
+
+    // After auth/role resolution and before any journal write, so a 429 cannot
+    // leave a partially posted entry.
+    const { blocked, headers: rlHeaders } = await enforceRateLimit(
+      admin,
+      "post-credit-note",
+      { userId: appUser.id, tenantId: appUser.tenant_id, ip: clientIp(req) },
+    );
+    if (blocked) return blocked;
 
     // ── Fetch credit note + lines ─────────────────────────────────────
     const { data: cn } = await admin
@@ -774,7 +779,7 @@ Deno.serve(async (req) => {
       lines: journalLines.length,
       tax_transactions: taxTxnRows.length,
       warnings: warnings.length ? warnings : undefined,
-    });
+    }, 200, rlHeaders);
   } catch (err: any) {
     return json({ ok: false, error: err?.message || "Internal error" }, 200);
   }

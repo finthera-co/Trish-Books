@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction } from "@/lib/edgeFunction";
 import { Button } from "@/components/ui/button";
 import { Download, RefreshCw, FileArchive, Calendar } from "lucide-react";
 import { toast } from "sonner";
@@ -24,9 +25,7 @@ export default function DataExports() {
 
   const triggerExport = useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.functions.invoke("weekly-csv-export");
-      if (error) throw error;
-      return data;
+      return await invokeEdgeFunction("weekly-csv-export");
     },
     onSuccess: () => {
       toast.success("Export completed successfully");

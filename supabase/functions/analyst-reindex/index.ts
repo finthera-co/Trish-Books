@@ -15,10 +15,12 @@
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { embedDocuments, MAX_BATCH } from "../_shared/embeddings.ts";
+import { corsHeaders as baseCors } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
+// Extends the shared CORS: this route needs its own Allow-Methods.
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  ...baseCors,
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -60,6 +62,21 @@ Deno.serve(async (req) => {
 
     // A caller may target one tenant (the UI's build button); cron passes none
     // and every active tenant is swept.
+    // Only the targeted path is limited. A call with no tenant_id is the
+    // machine sweep, and limiting that would silently skip tenants mid-run —
+    // same reasoning as the cron exemptions elsewhere. Runs before any render
+    // or embedding work, which is the expensive part.
+    let rlHeaders: Record<string, string> = {};
+    if (body.tenant_id) {
+      const { blocked, headers } = await enforceRateLimit(admin, "analyst-reindex", {
+        userId: null,
+        tenantId: body.tenant_id,
+        ip: clientIp(req),
+      });
+      if (blocked) return blocked;
+      rlHeaders = headers;
+    }
+
     const tenantIds: string[] = body.tenant_id
       ? [body.tenant_id]
       : ((await admin.from("tenants").select("id").eq("status", "active")).data ?? [])
@@ -81,7 +98,7 @@ Deno.serve(async (req) => {
       results.push({ tenant_id: tenantId, ...result });
     }
 
-    return json({ mode, results });
+    return json({ mode, results }, 200, rlHeaders);
   } catch (e) {
     console.error("analyst-reindex error", e);
     return json({ error: (e as Error).message }, 500);
@@ -424,9 +441,9 @@ async function embedPending(
   return embedded;
 }
 
-function json(data: unknown, status = 200) {
+function json(data: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json", ...extraHeaders },
   });
 }

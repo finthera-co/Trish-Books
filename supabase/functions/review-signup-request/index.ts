@@ -12,16 +12,13 @@
 // accounts seed stay in one place.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-const json = (body: unknown, status = 200) =>
+const json = (body: unknown, status = 200, extraHeaders: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json", ...extraHeaders },
   });
 
 /** A password nobody needs to know: the applicant replaces it via the emailed link. */
@@ -38,12 +35,26 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) throw new Error("Missing authorization");
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+
+    const adminClient = createClient(supabaseUrl, serviceRoleKey);
+
+    // Deliberately BEFORE the auth check, unlike every other limited route here.
+    // This function is deployed with verify_jwt=false, so unauthenticated callers
+    // reach this handler and each one costs an is_super_admin() round trip. The
+    // rule is IP-scoped, and an IP is resolvable without auth, so limiting first
+    // does not key on an unresolved identity — it is what stops the amplification.
+    const { blocked, headers: rlHeaders } = await enforceRateLimit(
+      adminClient,
+      "review-signup-request",
+      { userId: null, tenantId: null, ip: clientIp(req) },
+    );
+    if (blocked) return blocked;
+
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) throw new Error("Missing authorization");
 
     const callerClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
@@ -51,8 +62,6 @@ Deno.serve(async (req) => {
 
     const { data: isSA } = await callerClient.rpc("is_super_admin");
     if (!isSA) throw new Error("Unauthorized: Super Admin only");
-
-    const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
     const { request_id, action, note, site_url } = await req.json();
     if (!request_id || !["approve", "reject"].includes(action)) {
@@ -95,7 +104,7 @@ Deno.serve(async (req) => {
         .eq("id", request_id)
         .eq("status", "pending");
       if (error) throw new Error(error.message);
-      return json({ ok: true, status: "rejected" });
+      return json({ ok: true, status: "rejected" }, 200, rlHeaders);
     }
 
     // ── Approve ──────────────────────────────────────────────────────────────
@@ -203,7 +212,7 @@ Deno.serve(async (req) => {
       emailed,
       email_error: emailError,
       action_link: emailed ? null : actionLink ?? null,
-    });
+    }, 200, rlHeaders);
   } catch (error) {
     return json({ ok: false, error: (error as Error).message }, 400);
   }

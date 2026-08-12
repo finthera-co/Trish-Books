@@ -1,9 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
 // A new tenant's Chart of Accounts starts EMPTY except for the single system
 // Opening Balance Equity account (code 3900). No default COA accounts and no
@@ -20,6 +17,18 @@ Deno.serve(async (req) => {
 
     const { tenant_id } = await req.json();
     if (!tenant_id) throw new Error("Missing tenant_id");
+
+    // Keyed per tenant. Provisioning calls this exactly once per new tenant, so
+    // a 10/hr tenant bucket cannot interfere with provision-tenant or
+    // provision-google-user; it only stops one tenant being seeded repeatedly.
+    {
+      const { blocked } = await enforceRateLimit(adminClient, "seed-chart-of-accounts", {
+        userId: null,
+        tenantId: tenant_id,
+        ip: clientIp(req),
+      });
+      if (blocked) return blocked;
+    }
 
     // Idempotent: skip if the system OBE account (code 3900) already exists.
     const { data: existingOBE } = await adminClient

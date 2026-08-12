@@ -2,11 +2,8 @@
 // Deterministic. Snapshot-based. Invariant-enforced. State-machine guarded.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { executeRuleAction, ruleConditionMatches } from "../_shared/ruleActions.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
 const EPS = 0.01;
 
@@ -302,6 +299,16 @@ Deno.serve(async (req) => {
     if (rErr) throw rErr;
     if (recon.locked_at) throw new Error("Reconciliation is locked");
 
+    // Keyed on the reconciliation's own tenant — this handler runs as service
+    // role with no caller identity, so the loaded row is the only trustworthy
+    // scope. Placed before the ledger scan and matching work below.
+    const { blocked, headers: rlHeaders } = await enforceRateLimit(
+      supabase,
+      "reconcile-engine",
+      { userId: null, tenantId: recon.tenant_id, ip: clientIp(req) },
+    );
+    if (blocked) return blocked;
+
     // Load ledger lines for this bank account up to statement date
     const { data: lines, error: lErr } = await supabase
       .from("journal_lines")
@@ -387,7 +394,7 @@ Deno.serve(async (req) => {
 
       if (action === "snapshot") {
         return new Response(JSON.stringify({ ok: true, snapshot: snapRow }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...corsHeaders, "Content-Type": "application/json" }, ...rlHeaders,
         });
       }
 
@@ -546,7 +553,7 @@ Deno.serve(async (req) => {
 
       if (action === "validate") {
         return new Response(JSON.stringify({ ok: allPassed, invariants: inv, snapshot: snapRow }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...corsHeaders, "Content-Type": "application/json" }, ...rlHeaders,
         });
       }
 
@@ -590,7 +597,7 @@ Deno.serve(async (req) => {
       });
 
       return new Response(JSON.stringify({ ok: true, finalized: true, invariants: inv, cleared: clearedSum }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, ...rlHeaders,
       });
     }
 

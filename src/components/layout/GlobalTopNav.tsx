@@ -30,7 +30,7 @@ export default function GlobalTopNav() {
       {/* Left: Logo + Search */}
       <div className="flex items-center gap-5">
         <button onClick={() => navigate("/home")} className="flex items-center gap-2.5 shrink-0 group">
-          <BrandMark className="w-8 h-8 shrink-0 rounded-lg shadow-sm transition-transform duration-200 group-hover:scale-105" />
+          <BrandMark className="w-10 h-10 shrink-0 rounded-xl shadow-sm transition-transform duration-200 group-hover:scale-105" />
           <span className="text-sm font-bold text-foreground hidden sm:inline tracking-tight">Trish Books</span>
         </button>
 

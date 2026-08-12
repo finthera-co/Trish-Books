@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction } from "@/lib/edgeFunction";
 import { Button } from "@/components/ui/button";
 import { BookOpen } from "lucide-react";
 import { toast } from "sonner";
@@ -22,11 +23,9 @@ export default function Onboarding() {
     if (!companyName.trim()) return;
     setSubmitting(true);
     try {
-      const { data, error } = await supabase.functions.invoke("provision-google-user", {
-        body: { company_name: companyName.trim() },
+      await invokeEdgeFunction("provision-google-user", {
+        company_name: companyName.trim(),
       });
-      if (error) throw error;
-      if (data?.error) throw new Error(typeof data.error === "string" ? data.error : "Provisioning failed");
       toast.success("Workspace created!");
       // Force refresh of auth user record
       window.location.href = "/";

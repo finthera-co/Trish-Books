@@ -11,6 +11,7 @@ import { useSearchParams } from "react-router-dom";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction, EdgeFunctionError } from "@/lib/edgeFunction";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMyPermissions } from "@/hooks/usePermissions";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
@@ -275,18 +276,29 @@ export default function JournalEntries() {
         (l) => l.account_id && (Number(l.debit) > 0 || Number(l.credit) > 0)
       );
 
-      const { data, error } = await supabase.functions.invoke("validate-journal-entry", {
-        body: {
+      let data: { valid?: boolean; errors?: { message: string }[] } | null = null;
+      try {
+        data = await invokeEdgeFunction<{
+          valid?: boolean;
+          errors?: { message: string }[];
+        }>("validate-journal-entry", {
           description: description.trim(),
           entry_date: entryDate,
           reference: reference.trim() || undefined,
           lines: activeLines,
-        },
-      });
+        });
+      } catch (e) {
+        // Validation failures come back as 422 with a structured `errors` array;
+        // surface those messages rather than the generic status text.
+        const rows = (e as EdgeFunctionError)?.payload as
+          | { errors?: { message: string }[] }
+          | undefined;
+        if (rows?.errors?.length) {
+          throw new Error(rows.errors.map((x) => x.message).join("; "));
+        }
+        throw e;
+      }
 
-      if (error) throw new Error(error.message || "Server validation failed");
-
-      // Edge function returns 422 for validation errors
       if (data && !data.valid && data.errors) {
         const msgs = data.errors.map((e: any) => e.message).join("; ");
         throw new Error(msgs);

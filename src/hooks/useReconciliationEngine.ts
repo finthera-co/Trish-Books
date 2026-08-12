@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction } from "@/lib/edgeFunction";
 import { toast } from "sonner";
 
 type EngineAction = "snapshot" | "match" | "validate" | "finalize";
@@ -8,12 +9,10 @@ export function useReconcileEngine() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ reconciliationId, action }: { reconciliationId: string; action: EngineAction }) => {
-      const { data, error } = await supabase.functions.invoke("reconcile-engine", {
-        body: { reconciliation_id: reconciliationId, action },
+      return await invokeEdgeFunction("reconcile-engine", {
+        reconciliation_id: reconciliationId,
+        action,
       });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      return data;
     },
     onSuccess: (data, vars) => {
       qc.invalidateQueries({ queryKey: ["bank_feed_transactions", vars.reconciliationId] });

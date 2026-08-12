@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction } from "@/lib/edgeFunction";
 import { getInvoiceVectorPdfFile } from "@/lib/invoicePdf";
 import { toast } from "sonner";
 
@@ -34,8 +35,9 @@ export function useSendInvoiceEmail() {
       const file = await getInvoiceVectorPdfFile(args.invoiceId, args.tenantId);
       const pdf_base64 = await fileToBase64(file);
 
-      const { data, error } = await supabase.functions.invoke("send-invoice-email", {
-        body: {
+      const data = await invokeEdgeFunction<{ ok?: boolean; error?: string }>(
+        "send-invoice-email",
+        {
           invoice_id: args.invoiceId,
           recipient: args.recipient,
           subject: args.subject,
@@ -43,8 +45,7 @@ export function useSendInvoiceEmail() {
           pdf_base64,
           pdf_filename: `Invoice-${args.invoiceNumber}.pdf`,
         },
-      });
-      if (error) throw new Error(error.message);
+      );
       if (!data?.ok) throw new Error(data?.error || "Failed to send invoice email");
       return data;
     },

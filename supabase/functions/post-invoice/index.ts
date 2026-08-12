@@ -4,19 +4,15 @@ import {
   type TaxMemberInput,
   type CollectionMode,
 } from "../_shared/taxEngine.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
 const EPSILON = 0.005;
 
-function json(body: unknown, status = 200) {
+function json(body: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json", ...extraHeaders },
   });
 }
 
@@ -76,6 +72,26 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: `Role "${role || "unknown"}" cannot post invoices` }, 200);
       }
       appUser = { id: au.id, tenant_id: au.tenant_id };
+    }
+
+    // ── Rate limit ────────────────────────────────────────────────────
+    // Runs after auth/role resolution and before the idempotency check and every
+    // journal_entries / journal_lines write below, so a 429 cannot leave a
+    // partially posted entry — nothing has been mutated at this point.
+    //
+    // The system path is exempt on purpose. generate-recurring-invoices (cron)
+    // calls this endpoint in a loop with system:true and a single actor_user_id;
+    // limiting that would silently stop posting mid-batch and leave invoices
+    // generated but unposted. Scheduled work is not abuse.
+    let rlHeaders: Record<string, string> = {};
+    if (!isSystem) {
+      const { blocked, headers } = await enforceRateLimit(admin, "post-invoice", {
+        userId: appUser.id,
+        tenantId: appUser.tenant_id,
+        ip: clientIp(req),
+      });
+      if (blocked) return blocked;
+      rlHeaders = headers;
     }
 
     // ── Fetch invoice + lines (with product inventory linkage) ────────
@@ -882,7 +898,7 @@ Deno.serve(async (req) => {
       lines: journalLines.length,
       tax_transactions: taxTxnRows.length,
       warnings: warnings.length ? warnings : undefined,
-    });
+    }, 200, rlHeaders);
   } catch (err: any) {
     return json({ ok: false, error: err?.message || "Internal error" }, 200);
   }
