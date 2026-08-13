@@ -359,71 +359,41 @@ export function useUpdateVoucherReceipts() {
 }
 
 // ─── Balance Helpers (LEDGER-DRIVEN: single source of truth) ───
-// Reads journal_lines on the underlying COA account. Petty cash balance
-// is derived as SUM(debit - credit) across all posted journal lines.
-async function getLedgerBalance(coaAccountId: string): Promise<number> {
-  const { data, error } = await supabase
-    .from("journal_lines")
-    .select("debit, credit, journal_entries!inner(status)")
-    .eq("account_id", coaAccountId)
-    .eq("journal_entries.status", "posted");
+// The balance lives in Postgres, not here. get_petty_cash_balance derives it as
+// SUM(debit - credit) over posted journal lines on the fund's GL account, which
+// is what the posting RPCs check against inside their own transaction. Doing
+// the same sum a second time in the browser would eventually disagree with it —
+// silently — so there is deliberately no client-side fallback.
+async function getRemainingCash(pcAccountId: string): Promise<number> {
+  const { data, error } = await supabase.rpc("get_petty_cash_balance", {
+    p_petty_cash_account_id: pcAccountId,
+  });
   if (error) throw error;
-  return (data || []).reduce(
-    (sum, line: any) => sum + Number(line.debit || 0) - Number(line.credit || 0),
-    0,
-  );
+  return Number(data ?? 0);
 }
 
-async function getRemainingCash(pcAccountId: string): Promise<number> {
-  const { data: account } = await supabase
-    .from("petty_cash_accounts")
-    .select("account_id")
-    .eq("id", pcAccountId)
-    .single();
-  if (!account?.account_id) return 0;
-  return getLedgerBalance(account.account_id);
-}
+export type PCBalanceSummary = {
+  float_amount: number;
+  total_spent: number;
+  total_replenished: number;
+  remaining: number;
+};
 
 export function usePCBalance(pcAccountId?: string) {
   return useQuery({
     queryKey: ["pc_balance", pcAccountId],
-    queryFn: async () => {
+    queryFn: async (): Promise<PCBalanceSummary | null> => {
       if (!pcAccountId) return null;
-
-      const { data: account } = await supabase
-        .from("petty_cash_accounts")
-        .select("float_amount, account_id")
-        .eq("id", pcAccountId)
-        .single();
-
-      if (!account?.account_id) {
-        return { float_amount: 0, total_spent: 0, total_replenished: 0, remaining: 0 };
-      }
-
-      // Pull all posted journal lines for this COA account
-      const { data: lines } = await supabase
-        .from("journal_lines")
-        .select("debit, credit, journal_entries!inner(status, entry_type)")
-        .eq("account_id", account.account_id)
-        .eq("journal_entries.status", "posted");
-
-      let totalSpent = 0;       // credits from voucher postings (Cr Petty Cash)
-      let totalReplenished = 0; // debits from replenishments / transfers in
-      let remaining = 0;
-
-      for (const l of (lines || []) as any[]) {
-        const debit = Number(l.debit || 0);
-        const credit = Number(l.credit || 0);
-        remaining += debit - credit;
-        if (credit > 0) totalSpent += credit;
-        if (debit > 0) totalReplenished += debit;
-      }
-
+      const { data, error } = await supabase.rpc("get_petty_cash_balance_summary", {
+        p_petty_cash_account_id: pcAccountId,
+      });
+      if (error) throw error;
+      const s = (data ?? {}) as Record<string, number>;
       return {
-        float_amount: Number(account.float_amount || 0),
-        total_spent: totalSpent,
-        total_replenished: totalReplenished,
-        remaining,
+        float_amount: Number(s.float_amount ?? 0),
+        total_spent: Number(s.total_spent ?? 0),
+        total_replenished: Number(s.total_replenished ?? 0),
+        remaining: Number(s.remaining ?? 0),
       };
     },
     enabled: !!pcAccountId,
@@ -509,7 +479,7 @@ export function useTransferPettyCash() {
       }
 
       // Insufficient-funds guard against ledger balance
-      const sourceBalance = await getLedgerBalance(fromPC.account_id);
+      const sourceBalance = await getRemainingCash(input.from_pc_account_id);
       if (sourceBalance < input.amount) {
         throw new Error(
           `Insufficient funds in ${fromPC.account_name}. Available: ${sourceBalance.toFixed(2)}`,

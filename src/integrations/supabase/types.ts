@@ -15123,6 +15123,14 @@ export type Database = {
           side: string
         }[]
       }
+      get_petty_cash_balance: {
+        Args: { p_as_of?: string; p_petty_cash_account_id: string }
+        Returns: number
+      }
+      get_petty_cash_balance_summary: {
+        Args: { p_as_of?: string; p_petty_cash_account_id: string }
+        Returns: Json
+      }
       get_tax_members: {
         Args: { p_as_of: string; p_tax_code_id: string; p_tax_group_id: string }
         Returns: {
