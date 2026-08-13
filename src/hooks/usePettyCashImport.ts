@@ -10,7 +10,15 @@ export type PCImportBatch = Database["public"]["Tables"]["petty_cash_import_batc
 export type PCImportLine = Database["public"]["Tables"]["petty_cash_import_lines"]["Row"];
 export type PCAccountMap = Database["public"]["Tables"]["petty_cash_account_map"]["Row"];
 
-export type PCImportLineFilter = "all" | "ok" | "suspense" | "blocked" | "excluded" | "duplicate";
+export type PCImportLineFilter =
+  | "all"
+  | "recognized"
+  | "unrecognized"
+  | "ok"
+  | "suspense"
+  | "blocked"
+  | "excluded"
+  | "duplicate";
 
 export type ResolveSummary = {
   batch_id: string;
@@ -125,18 +133,56 @@ export function usePCImportBatch(batchId?: string) {
 
       const { data: counts, error: cErr } = await supabase
         .from("petty_cash_import_lines")
-        .select("status, is_duplicate")
+        .select("status, is_duplicate, resolution_tier")
         .eq("batch_id", batchId!);
       if (cErr) throw cErr;
 
-      const tally = { ok: 0, suspense: 0, blocked: 0, excluded: 0, posted: 0, pending: 0, duplicates: 0 };
+      const tally = {
+        ok: 0, suspense: 0, blocked: 0, excluded: 0, posted: 0, pending: 0,
+        duplicates: 0, recognized: 0, unrecognized: 0,
+      };
       for (const l of counts ?? []) {
         if (l.status in tally) tally[l.status as keyof typeof tally] += 1;
         if (l.is_duplicate) tally.duplicates += 1;
+        // "Recognized" means the engine found a real home for the row. A line
+        // parked on suspense is posted but NOT recognized — that distinction
+        // is the whole point of the results grid.
+        if (l.resolution_tier === "suspense" || l.status === "blocked") tally.unrecognized += 1;
+        else if (l.status === "ok" || l.status === "posted") tally.recognized += 1;
       }
       return { ...data, counts: tally, total: counts?.length ?? 0 };
     },
   });
+}
+
+type LineQuery = ReturnType<typeof buildLineQuery>;
+
+function buildLineQuery(batchId: string, filter: PCImportLineFilter, withCount: boolean) {
+  let q = supabase
+    .from("petty_cash_import_lines")
+    .select("*, accounts:resolved_account_id(account_name, account_code, account_type)",
+      withCount ? { count: "exact" } : undefined)
+    .eq("batch_id", batchId)
+    .order("row_no");
+
+  switch (filter) {
+    case "all":
+      break;
+    case "duplicate":
+      q = q.eq("is_duplicate", true);
+      break;
+    case "recognized":
+      // Resolved to a real account and not parked on suspense.
+      q = q.in("status", ["ok", "posted"]).neq("resolution_tier", "suspense");
+      break;
+    case "unrecognized":
+      // Either the engine could not resolve it, or it only reached suspense.
+      q = q.or("status.eq.blocked,resolution_tier.eq.suspense");
+      break;
+    default:
+      q = q.eq("status", filter);
+  }
+  return q;
 }
 
 export function usePCImportLines(batchId?: string, filter: PCImportLineFilter = "all") {
@@ -144,16 +190,38 @@ export function usePCImportLines(batchId?: string, filter: PCImportLineFilter = 
     queryKey: ["pc_import_lines", batchId, filter],
     enabled: !!batchId,
     queryFn: async () => {
-      let q = supabase
-        .from("petty_cash_import_lines")
-        .select("*, accounts:resolved_account_id(account_name, account_code, account_type)")
-        .eq("batch_id", batchId!)
-        .order("row_no");
-      if (filter === "duplicate") q = q.eq("is_duplicate", true);
-      else if (filter !== "all") q = q.eq("status", filter);
-      const { data, error } = await q;
+      const { data, error } = await buildLineQuery(batchId!, filter, false);
       if (error) throw error;
       return data;
+    },
+  });
+}
+
+/**
+ * Paged variant for the results grid. A 2,000-line file is perfectly normal,
+ * and rendering it in one go is neither fast nor readable.
+ *
+ * Results are kept in cache between page and tab changes so switching back is
+ * instant; the grid's own view state lives in the URL, so a reload restores
+ * exactly what was on screen rather than resetting to the first tab.
+ */
+export function usePCImportLinesPaged(
+  batchId?: string,
+  filter: PCImportLineFilter = "all",
+  page = 0,
+  pageSize = 100,
+) {
+  return useQuery({
+    queryKey: ["pc_import_lines_paged", batchId, filter, page, pageSize],
+    enabled: !!batchId,
+    staleTime: 30_000,
+    placeholderData: (prev) => prev,
+    queryFn: async () => {
+      const from = page * pageSize;
+      const { data, error, count } = await (buildLineQuery(batchId!, filter, true) as LineQuery)
+        .range(from, from + pageSize - 1);
+      if (error) throw error;
+      return { rows: data ?? [], total: count ?? 0 };
     },
   });
 }

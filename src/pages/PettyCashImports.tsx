@@ -110,7 +110,12 @@ export default function PettyCashImports() {
                   {rows.map((b) => (
                     <TableRow key={b.id} className="text-xs">
                       <TableCell className="py-2">
-                        <div className="font-medium">{b.file_name}</div>
+                        <button
+                          className="font-medium text-left hover:underline"
+                          onClick={() => navigate(`/banking/petty-cash/imports/${b.id}`)}
+                        >
+                          {b.file_name}
+                        </button>
                         <div className="text-muted-foreground">
                           {b.sheet_name} · {b.date_format} · {b.amount_orientation}
                         </div>
@@ -152,6 +157,14 @@ export default function PettyCashImports() {
                               </Button>
                             </>
                           )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 text-xs"
+                            onClick={() => navigate(`/banking/petty-cash/imports/${b.id}`)}
+                          >
+                            Results
+                          </Button>
                           {b.status === "posted" && (
                             <>
                               <Button
