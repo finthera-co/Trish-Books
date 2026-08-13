@@ -109,7 +109,7 @@ function iso(y: number, m: number, d: number): string {
 
 /** Splits a d/m/y-shaped cell into its three numeric components, or null. */
 function splitDateParts(raw: string): [number, number, number] | null {
-  const m = raw.trim().match(/^(\d{1,4})[/.\-](\d{1,2})[/.\-](\d{1,4})$/);
+  const m = raw.trim().match(/^(\d{1,4})[/.-](\d{1,2})[/.-](\d{1,4})$/);
   if (!m) return null;
   return [Number(m[1]), Number(m[2]), Number(m[3])];
 }
