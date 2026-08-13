@@ -734,3 +734,42 @@ export function useCreatePCExpenseAccount() {
     onError: (e: Error) => toast.error(humanizeImportError(e.message)),
   });
 }
+
+/**
+ * Everything that must be in place before a workbook can be imported, checked
+ * up front so the wizard can say what is missing instead of dead-ending on an
+ * empty dropdown or failing several steps later.
+ */
+export function usePCImportReadiness() {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["pc_import_readiness", appUser?.tenant_id],
+    enabled: !!appUser?.tenant_id,
+    queryFn: async () => {
+      const [{ data: funds, error: fErr }, { data: settings, error: sErr }] = await Promise.all([
+        supabase
+          .from("petty_cash_accounts")
+          .select("id, account_name, is_active")
+          .eq("tenant_id", appUser!.tenant_id),
+        supabase
+          .from("account_settings")
+          .select("suspense_account_id")
+          .eq("tenant_id", appUser!.tenant_id)
+          .maybeSingle(),
+      ]);
+      if (fErr) throw fErr;
+      if (sErr) throw sErr;
+
+      const active = (funds ?? []).filter((f) => f.is_active);
+      return {
+        funds: funds ?? [],
+        activeFunds: active,
+        hasAnyFund: (funds ?? []).length > 0,
+        hasActiveFund: active.length > 0,
+        // Not a blocker on its own: it only bites when a row fails to resolve,
+        // and then it blocks the whole batch. Worth flagging before the upload.
+        hasSuspenseAccount: !!settings?.suspense_account_id,
+      };
+    },
+  });
+}

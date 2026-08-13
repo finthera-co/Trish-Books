@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, FileSpreadsheet, Loader2, RotateCw, Upload, X } from "lucide-react";
+import { AlertTriangle, FileSpreadsheet, Loader2, RotateCw, Upload, Wallet, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -26,6 +26,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import AccountSelector from "@/components/shared/AccountSelector";
+import { useNavigate } from "react-router-dom";
 import { usePettyCashAccounts } from "@/hooks/usePettyCash";
 import {
   useCreatePCImportBatch,
@@ -33,6 +34,7 @@ import {
   useExcludePCImportLines,
   usePCImportBatch,
   usePCImportLines,
+  usePCImportReadiness,
   usePostPCImportBatch,
   useResolvePCImportBatch,
   useRestorePCImportLines,
@@ -111,7 +113,9 @@ export function PCImportDialog({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const navigate = useNavigate();
   const { data: funds } = usePettyCashAccounts();
+  const { data: readiness, isLoading: readinessLoading } = usePCImportReadiness();
   const { data: batch } = usePCImportBatch(batchId ?? undefined);
   const { data: lines } = usePCImportLines(batchId ?? undefined, filter);
 
@@ -269,21 +273,77 @@ export function PCImportDialog({
           {/* ── Step 1: upload ─────────────────────────────────────────── */}
           {step === 1 && (
             <div className="space-y-4">
-              <div className="space-y-1.5">
-                <Label className="text-sm">Petty cash fund</Label>
-                <Select value={fundId} onValueChange={setFundId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select the fund to import into" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(funds ?? []).map((f) => (
-                      <SelectItem key={f.id} value={f.id}>
-                        {f.account_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* A tenant with no fund cannot import at all. Say so, and point
+                  at the one screen that fixes it, rather than presenting an
+                  empty dropdown with "Select a fund first" underneath. */}
+              {!readinessLoading && !readiness?.hasActiveFund ? (
+                <div className="rounded-md border border-warning/40 bg-warning/5 p-3 space-y-2">
+                  <div className="text-sm font-medium flex items-center gap-1.5">
+                    <Wallet className="w-4 h-4" />
+                    {readiness?.hasAnyFund
+                      ? "Every petty cash fund is inactive"
+                      : "No petty cash fund set up yet"}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {readiness?.hasAnyFund
+                      ? "An import posts into a fund, and an inactive fund cannot receive postings. Reactivate one first."
+                      : "An import posts vouchers into a petty cash fund — the cash box itself, linked to its GL account. Create one before importing."}
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={() => {
+                      setOpen(false);
+                      resetAll();
+                      navigate("/banking/petty-cash");
+                    }}
+                  >
+                    Go to Petty Cash
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Petty cash fund</Label>
+                  <Select value={fundId} onValueChange={setFundId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select the fund to import into" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(funds ?? [])
+                        .filter((f) => f.is_active)
+                        .map((f) => (
+                          <SelectItem key={f.id} value={f.id}>
+                            {f.account_name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Not a blocker on its own, but an unmapped account type turns
+                  it into one mid-wizard, so flag it before the upload. */}
+              {!readinessLoading && readiness?.hasActiveFund && !readiness?.hasSuspenseAccount && (
+                <div className="rounded-md border border-muted p-2.5 text-xs space-y-1">
+                  <span className="font-medium">No suspense account configured.</span>{" "}
+                  <span className="text-muted-foreground">
+                    Rows whose account type cannot be matched have nowhere to go, and will block the
+                    batch until one is set.
+                  </span>
+                  <Button
+                    variant="link"
+                    className="h-auto p-0 text-xs"
+                    onClick={() => {
+                      setOpen(false);
+                      resetAll();
+                      navigate("/settings/account-mapping");
+                    }}
+                  >
+                    Set it under Settings → Account Mapping
+                  </Button>
+                </div>
+              )}
 
               <div className="space-y-1.5">
                 <Label className="text-sm">What do the Debit and Credit columns mean?</Label>
