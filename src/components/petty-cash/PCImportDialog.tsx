@@ -35,6 +35,7 @@ import {
   usePCImportBatch,
   usePCImportLines,
   usePCImportReadiness,
+  useSetAllowNegativeBalance,
   usePostPCImportBatch,
   useResolvePCImportBatch,
   useRestorePCImportLines,
@@ -127,6 +128,7 @@ export function PCImportDialog({
   const excludeLines = useExcludePCImportLines();
   const restoreLines = useRestorePCImportLines();
   const upsertMap = useUpsertPCAccountMap();
+  const setAllowNegative = useSetAllowNegativeBalance();
 
   // Resuming a kept batch drops the user straight into step 3, with the edits
   // they already made still on the staged rows.
@@ -753,6 +755,32 @@ export function PCImportDialog({
                     Vouchers, totals and the closing balance are computed in the ledger as it posts — the figures
                     below are returned by the database, not estimated here.
                   </p>
+
+                  {/* A first historical import has no opening float in the
+                      system: the cash went into the box long before this
+                      ledger existed, so the very first payment overdraws a
+                      fund that reads zero. */}
+                  <label className="flex items-start gap-2 rounded-md border p-2.5 cursor-pointer mt-2">
+                    <Checkbox
+                      className="mt-0.5"
+                      checked={!!batch?.allow_negative_balance}
+                      onCheckedChange={(c) =>
+                        batchId &&
+                        setAllowNegative.mutate({ batchId, allow: c === true })
+                      }
+                    />
+                    <span className="space-y-0.5">
+                      <span className="block text-xs font-medium">
+                        The opening float isn't recorded yet — let the fund go negative
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        Tick this only for a first import of an older book. Until you post the opening
+                        float, the petty cash account carries a credit balance, which is wrong for an
+                        asset on the balance sheet. After posting, this screen tells you the exact
+                        amount to enter, dated before the earliest row.
+                      </span>
+                    </span>
+                  </label>
                 </div>
               ) : (
                 <div className="rounded-md border border-success/40 bg-success/5 p-3 space-y-1.5">
@@ -777,6 +805,23 @@ export function PCImportDialog({
                       {formatCurrency(Number(postResult.closing_balance))}
                     </dd>
                   </dl>
+
+                  {Number(postResult.opening_float_needed) > 0 && (
+                    <div className="rounded-md border border-warning/40 bg-warning/5 p-2.5 text-xs space-y-1 mt-2">
+                      <div className="font-medium flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-warning" />
+                        Post the opening float:{" "}
+                        {formatCurrency(Number(postResult.opening_float_needed))}
+                      </div>
+                      <p className="text-muted-foreground">
+                        The fund dipped to{" "}
+                        {formatCurrency(Number(postResult.lowest_balance))} during this batch, because
+                        the cash that was already in the box was never recorded here. Post that amount
+                        from Banking → Petty Cash → Fund, dated before the earliest row in this file,
+                        and the balance never goes below zero.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

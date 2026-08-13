@@ -9953,6 +9953,7 @@ export type Database = {
       }
       petty_cash_import_batches: {
         Row: {
+          allow_negative_balance: boolean
           amount_orientation: string
           created_at: string
           date_format: string
@@ -9971,6 +9972,7 @@ export type Database = {
           tenant_id: string
         }
         Insert: {
+          allow_negative_balance?: boolean
           amount_orientation?: string
           created_at?: string
           date_format: string
@@ -9989,6 +9991,7 @@ export type Database = {
           tenant_id: string
         }
         Update: {
+          allow_negative_balance?: boolean
           amount_orientation?: string
           created_at?: string
           date_format?: string

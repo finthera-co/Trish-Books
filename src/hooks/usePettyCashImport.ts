@@ -45,6 +45,11 @@ export type PostSummary = {
   net_movement: number;
   opening_balance: number;
   closing_balance: number;
+  /** Lowest point the fund reached during the batch; negative when the
+   *  opening float predates the system. */
+  lowest_balance: number;
+  /** Exactly the opening float still to be posted, dated before the first row. */
+  opening_float_needed: number;
 };
 
 /**
@@ -308,6 +313,30 @@ export function useCreatePCImportBatch() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pc_import_batches"] });
+    },
+    onError: (e: Error) => toast.error(humanizeImportError(e.message)),
+  });
+}
+
+/**
+ * Opt a batch into posting even though the running balance goes negative.
+ *
+ * Only sensible for a first historical import, where the opening float was put
+ * in the box long before this system existed. The posting result then reports
+ * exactly how much opening float to backdate.
+ */
+export function useSetAllowNegativeBalance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ batchId, allow }: { batchId: string; allow: boolean }) => {
+      const { error } = await supabase
+        .from("petty_cash_import_batches")
+        .update({ allow_negative_balance: allow })
+        .eq("id", batchId);
+      if (error) throw error;
+    },
+    onSuccess: (_, { batchId }) => {
+      qc.invalidateQueries({ queryKey: ["pc_import_batch", batchId] });
     },
     onError: (e: Error) => toast.error(humanizeImportError(e.message)),
   });
