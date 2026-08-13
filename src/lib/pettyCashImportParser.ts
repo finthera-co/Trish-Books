@@ -25,10 +25,20 @@ export type ParsedRow = {
   rawAccountType: string;
   rawDebit: string;
   rawCredit: string;
+  /** Single-amount sheets only; empty when the file has Debit/Credit. */
+  rawAmount: string;
   parsedDate: string | null; // ISO yyyy-mm-dd
   debit: number | null;
   credit: number | null;
+  amount: number | null;
 };
+
+/**
+ * Which amount shape the file carries. A sheet has either Debit and Credit, or
+ * a single Amount column — never both — and the direction of a single-amount
+ * row cannot be read off the data, so the caller must declare it.
+ */
+export type AmountShape = "debit_credit" | "single";
 
 export type DateFormatVerdict =
   | { kind: "resolved"; format: ImportDateFormat }
@@ -37,6 +47,8 @@ export type DateFormatVerdict =
 
 export type ParseResult = {
   headerMap: Record<string, number>;
+  /** debit_credit when both amount columns are present, single when only Amount is. */
+  amountShape: AmountShape;
   missingColumns: string[];
   rows: ParsedRow[];
   dateVerdict: DateFormatVerdict;
@@ -61,10 +73,8 @@ const HEADER_SYNONYMS: Record<string, string[]> = {
   account_type: ["account type", "account", "gl account", "expense type", "head"],
   debit: ["debit", "dr", "payment", "paid out"],
   credit: ["credit", "cr", "receipt", "received"],
+  amount: ["amount", "value", "total", "amount rs", "amount lkr"],
 };
-
-/** Columns without which the file cannot be staged at all. */
-const REQUIRED_COLUMNS = ["date", "debit", "credit"];
 
 /**
  * Mirrors fn_parse_import_amount in Postgres.
@@ -209,7 +219,8 @@ export async function parsePettyCashWorkbook(
 
   const empty: ParseResult = {
     headerMap: {},
-    missingColumns: [...REQUIRED_COLUMNS],
+    amountShape: "debit_credit",
+    missingColumns: ["date", "debit/credit or amount"],
     rows: [],
     dateVerdict: { kind: "resolved", format: "DD/MM/YYYY" },
     fileHash,
@@ -243,9 +254,17 @@ export async function parsePettyCashWorkbook(
 
   if (headerRowIdx === -1) return empty;
 
-  const missingColumns = REQUIRED_COLUMNS.filter((c) => headerMap[c] === undefined);
+  // A file needs a date, and one of the two amount shapes. Debit/Credit wins
+  // when both are present, since it carries direction in the data itself.
+  const hasDebitCredit = headerMap.debit !== undefined && headerMap.credit !== undefined;
+  const hasAmount = headerMap.amount !== undefined;
+  const amountShape: AmountShape = hasDebitCredit ? "debit_credit" : "single";
+
+  const missingColumns: string[] = [];
+  if (headerMap.date === undefined) missingColumns.push("date");
+  if (!hasDebitCredit && !hasAmount) missingColumns.push("debit/credit or amount");
   if (missingColumns.length > 0) {
-    return { ...empty, headerMap, missingColumns, sheetName };
+    return { ...empty, headerMap, amountShape, missingColumns, sheetName };
   }
 
   const at = (row: unknown[], key: string): string =>
@@ -264,6 +283,7 @@ export async function parsePettyCashWorkbook(
       account_type: at(row, "account_type"),
       debit: at(row, "debit"),
       credit: at(row, "credit"),
+      amount: at(row, "amount"),
     };
     // Skip only rows where every cell we care about is empty. A row that
     // merely lacks an account must still reach the resolver so the user sees
@@ -298,10 +318,21 @@ export async function parsePettyCashWorkbook(
     rawAccountType: s.cells.account_type,
     rawDebit: s.cells.debit,
     rawCredit: s.cells.credit,
+    rawAmount: s.cells.amount,
     parsedDate: detected.kind === "conflicting" ? null : parseDateCell(s.cells.date, effectiveFormat),
     debit: parseImportAmount(s.cells.debit),
     credit: parseImportAmount(s.cells.credit),
+    amount: parseImportAmount(s.cells.amount),
   }));
 
-  return { headerMap, missingColumns: [], rows, dateVerdict: detected, fileHash, sheetNames, sheetName };
+  return {
+    headerMap,
+    amountShape,
+    missingColumns: [],
+    rows,
+    dateVerdict: detected,
+    fileHash,
+    sheetNames,
+    sheetName,
+  };
 }

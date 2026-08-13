@@ -9954,11 +9954,13 @@ export type Database = {
       petty_cash_import_batches: {
         Row: {
           allow_negative_balance: boolean
+          amount_mode: string
           amount_orientation: string
           created_at: string
           date_format: string
           file_hash: string
           file_name: string
+          grouping_mode: string
           id: string
           imported_by: string | null
           notes: string | null
@@ -9973,11 +9975,13 @@ export type Database = {
         }
         Insert: {
           allow_negative_balance?: boolean
+          amount_mode?: string
           amount_orientation?: string
           created_at?: string
           date_format: string
           file_hash: string
           file_name: string
+          grouping_mode?: string
           id?: string
           imported_by?: string | null
           notes?: string | null
@@ -9992,11 +9996,13 @@ export type Database = {
         }
         Update: {
           allow_negative_balance?: boolean
+          amount_mode?: string
           amount_orientation?: string
           created_at?: string
           date_format?: string
           file_hash?: string
           file_name?: string
+          grouping_mode?: string
           id?: string
           imported_by?: string | null
           notes?: string | null
@@ -10101,6 +10107,7 @@ export type Database = {
           journal_entry_id: string | null
           parsed_date: string | null
           raw_account_type: string | null
+          raw_amount: string | null
           raw_credit: string | null
           raw_date: string | null
           raw_debit: string | null
@@ -10128,6 +10135,7 @@ export type Database = {
           journal_entry_id?: string | null
           parsed_date?: string | null
           raw_account_type?: string | null
+          raw_amount?: string | null
           raw_credit?: string | null
           raw_date?: string | null
           raw_debit?: string | null
@@ -10155,6 +10163,7 @@ export type Database = {
           journal_entry_id?: string | null
           parsed_date?: string | null
           raw_account_type?: string | null
+          raw_amount?: string | null
           raw_credit?: string | null
           raw_date?: string | null
           raw_debit?: string | null
@@ -15840,6 +15849,10 @@ export type Database = {
         }[]
       }
       sync_bank_batch_transactions: {
+        Args: { p_batch_id: string }
+        Returns: number
+      }
+      sync_pc_import_batch_transactions: {
         Args: { p_batch_id: string }
         Returns: number
       }

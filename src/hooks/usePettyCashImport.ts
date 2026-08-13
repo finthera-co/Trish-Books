@@ -236,6 +236,9 @@ export function usePCImportLinesPaged(
 }
 
 // ─── Staging ───
+export type PCAmountMode = "debit_credit" | "single_out" | "single_in" | "single_signed";
+export type PCGroupingMode = "voucher_no" | "row";
+
 export type CreateBatchInput = {
   pettyCashAccountId: string;
   fileName: string;
@@ -243,6 +246,8 @@ export type CreateBatchInput = {
   sheetName: string;
   dateFormat: ImportDateFormat;
   amountOrientation: "contra" | "fund";
+  amountMode: PCAmountMode;
+  groupingMode: PCGroupingMode;
   rows: ParsedRow[];
 };
 
@@ -269,6 +274,8 @@ export function useCreatePCImportBatch() {
           sheet_name: input.sheetName,
           date_format: input.dateFormat,
           amount_orientation: input.amountOrientation,
+          amount_mode: input.amountMode,
+          grouping_mode: input.groupingMode,
           row_count: input.rows.length,
           imported_by: user?.id ?? null,
         })
@@ -289,6 +296,7 @@ export function useCreatePCImportBatch() {
             raw_account_type: r.rawAccountType,
             raw_debit: r.rawDebit,
             raw_credit: r.rawCredit,
+            raw_amount: r.rawAmount,
             parsed_date: r.parsedDate,
           }));
           const { error: lineErr } = await supabase.from("petty_cash_import_lines").insert(chunk);

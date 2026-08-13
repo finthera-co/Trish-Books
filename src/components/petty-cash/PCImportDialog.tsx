@@ -42,6 +42,8 @@ import {
   useUpdatePCImportLine,
   useUpsertPCAccountMap,
   type PCImportLineFilter,
+  type PCAmountMode,
+  type PCGroupingMode,
   type PostSummary,
   type ResolveSummary,
 } from "@/hooks/usePettyCashImport";
@@ -97,6 +99,10 @@ export function PCImportDialog({
 
   const [fundId, setFundId] = useState("");
   const [orientation, setOrientation] = useState<"contra" | "fund">("contra");
+  // Only meaningful for a single-Amount sheet; a Debit/Credit file carries
+  // direction in the data and ignores both of these.
+  const [singleDirection, setSingleDirection] = useState<PCAmountMode>("single_out");
+  const [grouping, setGrouping] = useState<PCGroupingMode>("voucher_no");
   const [file, setFile] = useState<File | null>(null);
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [parsing, setParsing] = useState(false);
@@ -214,6 +220,9 @@ export function PCImportDialog({
         sheetName: source.sheetName,
         dateFormat: effectiveFormat,
         amountOrientation: orientation,
+        amountMode: source.amountShape === "single" ? singleDirection : "debit_credit",
+        // A file with no voucher number can only group by row or by day.
+        groupingMode: source.headerMap.voucher_no === undefined ? grouping : "voucher_no",
         rows: source.rows,
       },
       {
@@ -347,6 +356,79 @@ export function PCImportDialog({
                 </div>
               )}
 
+              {parseResult?.amountShape === "single" ? (
+                <div className="space-y-1.5">
+                  <Label className="text-sm">
+                    This sheet has one Amount column — what does an amount mean?
+                  </Label>
+                  <RadioGroup
+                    value={singleDirection}
+                    onValueChange={(v) => setSingleDirection(v as PCAmountMode)}
+                    className="gap-2"
+                  >
+                    <label className="flex items-start gap-2 rounded-md border p-2.5 cursor-pointer hover:bg-muted/40">
+                      <RadioGroupItem value="single_out" className="mt-0.5" />
+                      <div className="space-y-0.5">
+                        <div className="text-sm font-medium">Every row is money paid out</div>
+                        <div className="text-xs text-muted-foreground">
+                          A negative amount blocks that row rather than being read as money coming in.
+                        </div>
+                      </div>
+                    </label>
+                    <label className="flex items-start gap-2 rounded-md border p-2.5 cursor-pointer hover:bg-muted/40">
+                      <RadioGroupItem value="single_signed" className="mt-0.5" />
+                      <div className="space-y-0.5">
+                        <div className="text-sm font-medium">Positive is paid out, negative is received</div>
+                        <div className="text-xs text-muted-foreground">
+                          Use this if refunds and top-ups appear as (500) or -500.
+                        </div>
+                      </div>
+                    </label>
+                    <label className="flex items-start gap-2 rounded-md border p-2.5 cursor-pointer hover:bg-muted/40">
+                      <RadioGroupItem value="single_in" className="mt-0.5" />
+                      <div className="space-y-0.5">
+                        <div className="text-sm font-medium">Every row is money received</div>
+                        <div className="text-xs text-muted-foreground">
+                          A receipts-only book. A negative amount blocks that row.
+                        </div>
+                      </div>
+                    </label>
+                  </RadioGroup>
+
+                  {/* No Voucher No. column means rows cannot be grouped into
+                      the paper voucher they came from. */}
+                  {parseResult.headerMap.voucher_no === undefined && (
+                    <div className="pt-2 space-y-1.5">
+                      <Label className="text-sm">There is no Voucher No. column — build vouchers how?</Label>
+                      <RadioGroup
+                        value={grouping}
+                        onValueChange={(v) => setGrouping(v as PCGroupingMode)}
+                        className="gap-2"
+                      >
+                        <label className="flex items-start gap-2 rounded-md border p-2.5 cursor-pointer hover:bg-muted/40">
+                          <RadioGroupItem value="row" className="mt-0.5" />
+                          <div className="space-y-0.5">
+                            <div className="text-sm font-medium">One voucher per row</div>
+                            <div className="text-xs text-muted-foreground">
+                              Closest to a one-line-one-slip book. Produces many vouchers and is slower
+                              to post on very large files.
+                            </div>
+                          </div>
+                        </label>
+                        <label className="flex items-start gap-2 rounded-md border p-2.5 cursor-pointer hover:bg-muted/40">
+                          <RadioGroupItem value="voucher_no" className="mt-0.5" />
+                          <div className="space-y-0.5">
+                            <div className="text-sm font-medium">One voucher per day</div>
+                            <div className="text-xs text-muted-foreground">
+                              All of a day's payments become a single voucher with one line each.
+                            </div>
+                          </div>
+                        </label>
+                      </RadioGroup>
+                    </div>
+                  )}
+                </div>
+              ) : (
               <div className="space-y-1.5">
                 <Label className="text-sm">What do the Debit and Credit columns mean?</Label>
                 <RadioGroup
@@ -374,6 +456,7 @@ export function PCImportDialog({
                   </label>
                 </RadioGroup>
               </div>
+              )}
 
               {!parseResult && (
                 <div className="space-y-1.5">

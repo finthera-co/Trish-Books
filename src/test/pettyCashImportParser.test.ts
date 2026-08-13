@@ -143,7 +143,9 @@ describe("parsePettyCashWorkbook", () => {
         ["25/03/2026", "Nimal", "tea"],
       ]),
     );
-    expect(res.missingColumns).toEqual(["debit", "credit"]);
+    // Either amount shape satisfies the requirement, so the message names the
+    // choice rather than the two Debit/Credit columns specifically.
+    expect(res.missingColumns).toEqual(["debit/credit or amount"]);
     expect(res.rows).toEqual([]);
   });
 
@@ -200,5 +202,61 @@ describe("parsePettyCashWorkbook", () => {
     );
     expect(res.sheetName).toBe("March");
     expect(res.rows[0].rawVoucherNo).toBe("PV-77");
+  });
+});
+
+describe("four-column books (Date | Description | Account type | Amount)", () => {
+  const FOUR = ["Date", "Description", "Account type", "Amount"];
+
+  function fourColFile(rows: unknown[][]) {
+    return workbookFile([FOUR, ...rows]);
+  }
+
+  it("accepts a sheet with a single Amount column and no Debit/Credit", async () => {
+    const res = await parsePettyCashWorkbook(
+      fourColFile([
+        ["05/02/2026", "diesel", "Fuel Charges", "1,200"],
+        ["25/02/2026", "paper", "Printing & Stationery", "Rs. 450"],
+      ]),
+    );
+    expect(res.missingColumns).toEqual([]);
+    expect(res.amountShape).toBe("single");
+    expect(res.rows).toHaveLength(2);
+    expect(res.rows[0].rawAmount).toBe("1,200");
+    expect(res.rows[0].amount).toBe(1200);
+    expect(res.rows[1].amount).toBe(450);
+    // Debit/Credit stay empty — the resolver reads raw_amount for these files.
+    expect(res.rows[0].rawDebit).toBe("");
+    expect(res.rows[0].rawCredit).toBe("");
+  });
+
+  it("keeps a negative amount negative so the resolver can block it", async () => {
+    // The sheet declares every row a payment; a bracketed figure contradicts
+    // that, and must not be silently flipped to money in.
+    const res = await parsePettyCashWorkbook(fourColFile([["05/02/2026", "refund", "Fuel Charges", "(500)"]]));
+    expect(res.rows[0].amount).toBe(-500);
+  });
+
+  it("still reports Debit/Credit as the shape when the file has both", async () => {
+    const res = await parse([row("25/03/2026", "PV-1", "tea", "Electricity", "100")]);
+    expect(res.amountShape).toBe("debit_credit");
+    expect(res.rows[0].amount).toBe(0);
+  });
+
+  it("refuses a file with no amount column of either shape", async () => {
+    const res = await parsePettyCashWorkbook(
+      workbookFile([
+        ["Date", "Description", "Account type"],
+        ["05/02/2026", "diesel", "Fuel Charges"],
+      ]),
+    );
+    expect(res.missingColumns).toEqual(["debit/credit or amount"]);
+    expect(res.rows).toEqual([]);
+  });
+
+  it("has no voucher_no column, which is what drives the grouping choice", async () => {
+    const res = await parsePettyCashWorkbook(fourColFile([["05/02/2026", "diesel", "Fuel Charges", "1,200"]]));
+    expect(res.headerMap.voucher_no).toBeUndefined();
+    expect(res.rows[0].rawVoucherNo).toBe("");
   });
 });
