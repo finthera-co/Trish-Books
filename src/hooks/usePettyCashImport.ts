@@ -69,6 +69,9 @@ function humanizeImportError(raw: string): string {
   if (msg.includes("INSUFFICIENT_FUND")) {
     return msg.replace(/^INSUFFICIENT_FUND:\s*/, "").split("\n")[0];
   }
+  if (msg.includes("ACCOUNT_NOT_FOUND")) {
+    return "That account is not in your chart of accounts. Reload the page and pick it again — the list may be showing stale data from a previous session.";
+  }
   if (msg.includes("ACCOUNT_NOT_POSTABLE")) {
     return "That is a header account and cannot be posted to. Map to one of its children instead.";
   }
@@ -104,8 +107,9 @@ function humanizeImportError(raw: string): string {
 
 // ─── Batches ───
 export function usePCImportBatches(pettyCashAccountId?: string) {
+  const { appUser } = useAuth();
   return useQuery({
-    queryKey: ["pc_import_batches", pettyCashAccountId],
+    queryKey: ["pc_import_batches", appUser?.tenant_id, pettyCashAccountId],
     queryFn: async () => {
       let q = supabase
         .from("petty_cash_import_batches")
@@ -467,8 +471,9 @@ export function useRestorePCImportLines() {
 
 // ─── Learned mappings ───
 export function usePCAccountMap() {
+  const { appUser } = useAuth();
   return useQuery({
-    queryKey: ["pc_account_map"],
+    queryKey: ["pc_account_map", appUser?.tenant_id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("petty_cash_account_map")
@@ -624,8 +629,10 @@ export type PCAccountSuggestion = {
 };
 
 export function usePCAccountTypeRegistry() {
+  const { appUser } = useAuth();
   return useQuery({
-    queryKey: ["pc_account_type_registry"],
+    queryKey: ["pc_account_type_registry", appUser?.tenant_id],
+    enabled: !!appUser?.tenant_id,
     queryFn: async () => {
       const { data, error } = await supabase.rpc("petty_cash_account_type_registry");
       if (error) throw error;
@@ -655,10 +662,13 @@ export function usePCTypeTemplate() {
  * own — the caller renders them for a human to accept or override.
  */
 export function usePCAccountSuggestions(label: string, limit = 5) {
+  const { appUser } = useAuth();
   const key = label.trim();
   return useQuery({
-    queryKey: ["pc_account_suggestions", key, limit],
-    enabled: key.length > 0,
+    // Tenant belongs in the key: two tenants routinely share an account code
+    // AND name, so a key of just the label collides silently across logins.
+    queryKey: ["pc_account_suggestions", appUser?.tenant_id, key, limit],
+    enabled: key.length > 0 && !!appUser?.tenant_id,
     staleTime: 60_000,
     queryFn: async () => {
       const { data, error } = await supabase.rpc("suggest_petty_cash_account", {

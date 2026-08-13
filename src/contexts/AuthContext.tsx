@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { type User, type Session } from "@supabase/supabase-js";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { clearAllFintheraDrafts } from "@/hooks/useDraftPersistence";
 import { useIdleLogout } from "@/hooks/useIdleLogout";
@@ -87,6 +88,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // id, so repeat events for the same user are deduped instead of re-running it.
   const loadRef = useRef<{ id: string; promise: Promise<void> } | null>(null);
 
+  // Cached server state belongs to whoever was signed in when it was fetched.
+  const queryClient = useQueryClient();
+
   useEffect(() => {
     const syncSession = async (session: Session | null) => {
       setSession(session);
@@ -111,6 +115,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      // A DIFFERENT person is now signed in to this tab. React Query's cache
+      // still holds the previous user's rows, and most cache keys are not
+      // tenant-scoped, so any entry not yet refetched would be handed to the
+      // new session across the tenant boundary. Observed in the wild: tenant B
+      // was offered tenant A's "6420 Vehicle Repair" — both tenants have that
+      // exact code and name, so nothing looked wrong until the write was
+      // refused. Drop the cache before the new profile loads.
+      if (loadRef.current && loadRef.current.id !== authUserId) {
+        queryClient.clear();
+      }
+
       setLoading(true);
       const promise = fetchAppUser(authUserId).finally(() => setLoading(false));
       loadRef.current = { id: authUserId, promise };
@@ -126,7 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void supabase.auth.getSession().then(({ data: { session } }) => syncSession(session));
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [queryClient]);
 
 
   const signIn = async (email: string, password: string) => {
@@ -177,6 +192,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearAllFintheraDrafts();
     await supabase.auth.signOut();
     setAppUser(null);
+    // Never leave one user's ledger data cached for the next person to sign in
+    // on this machine.
+    queryClient.clear();
   };
 
   // Unattended machine: end the session rather than leave the ledgers open.
