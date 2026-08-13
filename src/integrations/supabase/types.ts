@@ -9719,6 +9719,7 @@ export type Database = {
           account_id: string
           created_at: string
           created_by: string | null
+          display_label: string | null
           hit_count: number
           id: string
           last_used_at: string | null
@@ -9731,6 +9732,7 @@ export type Database = {
           account_id: string
           created_at?: string
           created_by?: string | null
+          display_label?: string | null
           hit_count?: number
           id?: string
           last_used_at?: string | null
@@ -9743,6 +9745,7 @@ export type Database = {
           account_id?: string
           created_at?: string
           created_by?: string | null
+          display_label?: string | null
           hit_count?: number
           id?: string
           last_used_at?: string | null
@@ -10275,6 +10278,21 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      petty_cash_type_template: {
+        Row: {
+          label: string
+          sort_order: number
+        }
+        Insert: {
+          label: string
+          sort_order: number
+        }
+        Update: {
+          label?: string
+          sort_order?: number
+        }
+        Relationships: []
       }
       petty_cash_voucher_lines: {
         Row: {
@@ -14953,6 +14971,10 @@ export type Database = {
         }
         Returns: string
       }
+      create_petty_cash_expense_account: {
+        Args: { p_label: string; p_parent_code?: string }
+        Returns: string
+      }
       delete_invoice_number_row: { Args: { p_serial: string }; Returns: number }
       delete_invoice_number_series: {
         Args: { p_branch_code: string; p_period: string }
@@ -15394,6 +15416,22 @@ export type Database = {
         }[]
       }
       pending_signup_request_count: { Args: never; Returns: number }
+      petty_cash_account_type_registry: {
+        Args: never
+        Returns: {
+          account_code: string
+          account_id: string
+          account_name: string
+          account_type: string
+          display_label: string
+          hit_count: number
+          id: string
+          last_used_at: string
+          match_key: string
+          match_type: string
+          seen_in_imports: number
+        }[]
+      }
       post_assembly_order: { Args: { p_ao_id: string }; Returns: Json }
       post_delivery_note: { Args: { p_id: string }; Returns: Json }
       post_grn: { Args: { p_grn_id: string }; Returns: Json }
@@ -15786,6 +15824,17 @@ export type Database = {
       submit_stock_adjustment: {
         Args: { p_adjustment_id: string }
         Returns: Json
+      }
+      suggest_petty_cash_account: {
+        Args: { p_label: string; p_limit?: number }
+        Returns: {
+          account_code: string
+          account_id: string
+          account_name: string
+          account_type: string
+          confidence: number
+          reason: string
+        }[]
       }
       sync_bank_batch_transactions: {
         Args: { p_batch_id: string }
