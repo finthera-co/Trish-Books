@@ -10095,12 +10095,12 @@ export type Database = {
           journal_entry_id: string | null
           parsed_date: string | null
           raw_account_type: string | null
-          raw_cheque_no: string | null
           raw_credit: string | null
           raw_date: string | null
           raw_debit: string | null
           raw_description: string | null
           raw_name: string | null
+          raw_voucher_no: string | null
           resolution_key: string | null
           resolution_tier: string | null
           resolved_account_id: string | null
@@ -10122,12 +10122,12 @@ export type Database = {
           journal_entry_id?: string | null
           parsed_date?: string | null
           raw_account_type?: string | null
-          raw_cheque_no?: string | null
           raw_credit?: string | null
           raw_date?: string | null
           raw_debit?: string | null
           raw_description?: string | null
           raw_name?: string | null
+          raw_voucher_no?: string | null
           resolution_key?: string | null
           resolution_tier?: string | null
           resolved_account_id?: string | null
@@ -10149,12 +10149,12 @@ export type Database = {
           journal_entry_id?: string | null
           parsed_date?: string | null
           raw_account_type?: string | null
-          raw_cheque_no?: string | null
           raw_credit?: string | null
           raw_date?: string | null
           raw_debit?: string | null
           raw_description?: string | null
           raw_name?: string | null
+          raw_voucher_no?: string | null
           resolution_key?: string | null
           resolution_tier?: string | null
           resolved_account_id?: string | null
@@ -15078,6 +15078,7 @@ export type Database = {
         }[]
       }
       fn_normalize_import_key: { Args: { p_text: string }; Returns: string }
+      fn_parse_import_amount: { Args: { p_raw: string }; Returns: number }
       fx_rate: {
         Args: { p_currency: string; p_date: string; p_tenant_id: string }
         Returns: number
@@ -15470,6 +15471,10 @@ export type Database = {
       }
       reject_stock_adjustment: {
         Args: { p_adjustment_id: string; p_reason: string }
+        Returns: Json
+      }
+      resolve_petty_cash_import_lines: {
+        Args: { p_batch_id: string }
         Returns: Json
       }
       resolve_posting_profile: {
