@@ -119,6 +119,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "Petty Cash", path: "/banking/petty-cash", icon: Coins, group: "Payments" },
       { label: "Replenishments", path: "/banking/petty-cash/replenishments", icon: RefreshCw, group: "Payments" },
       { label: "Petty Cash Imports", path: "/banking/petty-cash/imports", icon: FileSpreadsheet, group: "Payments" },
+      { label: "PC Account Types", path: "/banking/petty-cash/account-types", icon: Wand2, group: "Payments" },
       { label: "Petty Cash Suspense", path: "/banking/petty-cash/suspense", icon: HelpCircle, group: "Exceptions" },
     ],
   },

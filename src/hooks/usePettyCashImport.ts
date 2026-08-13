@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
+import { normalizeKey } from "@/lib/pettyCashImportParser";
 import type { ParsedRow, ImportDateFormat } from "@/lib/pettyCashImportParser";
 
 export type PCImportBatch = Database["public"]["Tables"]["petty_cash_import_batches"]["Row"];
@@ -59,6 +60,21 @@ function humanizeImportError(raw: string): string {
   }
   if (msg.includes("INSUFFICIENT_FUND")) {
     return msg.replace(/^INSUFFICIENT_FUND:\s*/, "").split("\n")[0];
+  }
+  if (msg.includes("ACCOUNT_NOT_POSTABLE")) {
+    return "That is a header account and cannot be posted to. Map to one of its children instead.";
+  }
+  if (msg.includes("PETTY_CASH_GL_TARGET")) {
+    return "That account is registered as a petty cash fund, so it cannot be the contra side of a petty cash movement.";
+  }
+  if (msg.includes("ACCOUNT_INACTIVE")) {
+    return "That account is inactive. Reactivate it, or pick another.";
+  }
+  if (msg.includes("ACCOUNT_EXISTS")) {
+    return msg.replace(/^ACCOUNT_EXISTS:\s*/, "").split("\n")[0];
+  }
+  if (msg.includes("EMPTY_MATCH_KEY")) {
+    return "An account type needs at least one letter or digit.";
   }
   if (msg.includes("SUSPENSE_NOT_CONFIGURED")) {
     return "No suspense account is configured. Set one under Settings → Account Mapping before importing.";
@@ -403,8 +419,9 @@ export function useUpsertPCAccountMap() {
   return useMutation({
     mutationFn: async (input: {
       matchType: "account_type" | "description";
-      matchKey: string; // already normalized by the caller
+      matchKey: string; // canonicalized again by the DB trigger
       accountId: string;
+      displayLabel?: string;
     }) => {
       const { data: user } = await supabase
         .from("users")
@@ -417,6 +434,7 @@ export function useUpsertPCAccountMap() {
           tenant_id: appUser!.tenant_id,
           match_type: input.matchType,
           match_key: input.matchKey,
+          display_label: input.displayLabel ?? input.matchKey,
           account_id: input.accountId,
           created_by: user?.id ?? null,
           updated_at: new Date().toISOString(),
@@ -427,6 +445,8 @@ export function useUpsertPCAccountMap() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pc_account_map"] });
+      qc.invalidateQueries({ queryKey: ["pc_account_type_registry"] });
+      qc.invalidateQueries({ queryKey: ["pc_unmapped_types"] });
       toast.success("Mapping saved — the next import will resolve this automatically");
     },
     onError: (e: Error) => toast.error(humanizeImportError(e.message)),
@@ -442,6 +462,8 @@ export function useDeletePCAccountMap() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pc_account_map"] });
+      qc.invalidateQueries({ queryKey: ["pc_account_type_registry"] });
+      qc.invalidateQueries({ queryKey: ["pc_unmapped_types"] });
       toast.success("Mapping removed");
     },
     onError: (e: Error) => toast.error(humanizeImportError(e.message)),
@@ -504,6 +526,132 @@ export function useReclassifySuspenseLines() {
         `Reclassified ${res.lines_reclassified} line(s)` +
           (res.mappings_learned > 0 ? ` — ${res.mappings_learned} mapping(s) remembered` : ""),
       );
+    },
+    onError: (e: Error) => toast.error(humanizeImportError(e.message)),
+  });
+}
+
+// ─── Account type registry ───
+export type PCAccountTypeRow = {
+  id: string;
+  display_label: string;
+  match_key: string;
+  match_type: string;
+  account_id: string;
+  account_code: string | null;
+  account_name: string | null;
+  account_type: string | null;
+  hit_count: number;
+  last_used_at: string | null;
+  seen_in_imports: number;
+};
+
+export type PCAccountSuggestion = {
+  account_id: string;
+  account_code: string;
+  account_name: string;
+  account_type: string;
+  confidence: number;
+  reason: string;
+};
+
+export function usePCAccountTypeRegistry() {
+  return useQuery({
+    queryKey: ["pc_account_type_registry"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("petty_cash_account_type_registry");
+      if (error) throw error;
+      return (data ?? []) as unknown as PCAccountTypeRow[];
+    },
+  });
+}
+
+/** Common labels offered as a starting list. Reference data — never auto-applied. */
+export function usePCTypeTemplate() {
+  return useQuery({
+    queryKey: ["pc_type_template"],
+    staleTime: Infinity,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("petty_cash_type_template")
+        .select("label, sort_order")
+        .order("sort_order");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+}
+
+/**
+ * Advisory candidates for one label. Suggestions are never applied on their
+ * own — the caller renders them for a human to accept or override.
+ */
+export function usePCAccountSuggestions(label: string, limit = 5) {
+  const key = label.trim();
+  return useQuery({
+    queryKey: ["pc_account_suggestions", key, limit],
+    enabled: key.length > 0,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("suggest_petty_cash_account", {
+        p_label: key,
+        p_limit: limit,
+      });
+      if (error) throw error;
+      return (data ?? []) as unknown as PCAccountSuggestion[];
+    },
+  });
+}
+
+/** Labels seen in staged sheets that have no mapping yet. */
+export function useUnmappedAccountTypes() {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["pc_unmapped_types", appUser?.tenant_id],
+    enabled: !!appUser?.tenant_id,
+    queryFn: async () => {
+      const [{ data: lines, error: lErr }, { data: maps, error: mErr }] = await Promise.all([
+        supabase
+          .from("petty_cash_import_lines")
+          .select("raw_account_type")
+          .eq("tenant_id", appUser!.tenant_id)
+          .not("raw_account_type", "is", null),
+        supabase.from("petty_cash_account_map").select("match_key").eq("match_type", "account_type"),
+      ]);
+      if (lErr) throw lErr;
+      if (mErr) throw mErr;
+
+      const mapped = new Set((maps ?? []).map((m) => m.match_key));
+      const seen = new Map<string, { label: string; count: number }>();
+      for (const l of lines ?? []) {
+        const label = (l.raw_account_type ?? "").trim();
+        const key = normalizeKey(label);
+        if (!key || mapped.has(key)) continue;
+        const e = seen.get(key) ?? { label, count: 0 };
+        e.count += 1;
+        seen.set(key, e);
+      }
+      return [...seen.entries()]
+        .map(([key, v]) => ({ key, ...v }))
+        .sort((a, b) => b.count - a.count);
+    },
+  });
+}
+
+export function useCreatePCExpenseAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (label: string) => {
+      const { data, error } = await supabase.rpc("create_petty_cash_expense_account", {
+        p_label: label,
+      });
+      if (error) throw error;
+      return data as unknown as string;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["accounts"] });
+      qc.invalidateQueries({ queryKey: ["pc_account_suggestions"] });
+      toast.success("Account created");
     },
     onError: (e: Error) => toast.error(humanizeImportError(e.message)),
   });
