@@ -14962,6 +14962,10 @@ export type Database = {
         Args: { p_date: string; p_period_type: string }
         Returns: string
       }
+      discard_petty_cash_import_batch: {
+        Args: { p_batch_id: string; p_reason?: string }
+        Returns: Json
+      }
       eligible_invoice_approvers: {
         Args: { p_tenant_id: string }
         Returns: {
@@ -15410,6 +15414,10 @@ export type Database = {
       post_pc_count: { Args: { p_count_id: string }; Returns: string }
       post_pcr: { Args: { p_replenishment_id: string }; Returns: string }
       post_pcv: { Args: { p_voucher_id: string }; Returns: string }
+      post_petty_cash_import_batch: {
+        Args: { p_batch_id: string }
+        Returns: Json
+      }
       post_purchase_return: { Args: { p_id: string }; Returns: Json }
       post_sales_return: { Args: { p_id: string }; Returns: Json }
       post_stock_adjustment: {
@@ -15440,6 +15448,10 @@ export type Database = {
         Args: { p_batch_id: string }
         Returns: number
       }
+      recalc_budget_for_pc_import_batch: {
+        Args: { p_batch_id: string }
+        Returns: number
+      }
       recalc_daily_balances_from: {
         Args: { p_from: string; p_tenant_id: string }
         Returns: number
@@ -15457,6 +15469,14 @@ export type Database = {
           p_receipt_date?: string
           p_reference?: string
           p_unit_cost: number
+        }
+        Returns: Json
+      }
+      reclassify_petty_cash_suspense_lines: {
+        Args: {
+          p_account_id: string
+          p_line_ids: string[]
+          p_remember?: boolean
         }
         Returns: Json
       }
@@ -15500,6 +15520,10 @@ export type Database = {
           p_tenant_id: string
         }
         Returns: number
+      }
+      revert_petty_cash_import_batch: {
+        Args: { p_batch_id: string; p_reason: string }
+        Returns: Json
       }
       rpc_apply_loan_repayments: { Args: { p_run_id: string }; Returns: Json }
       rpc_final_settlement: { Args: { p_employee_id: string }; Returns: Json }
