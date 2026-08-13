@@ -544,6 +544,15 @@ export default function AccountMapping() {
                 quickType="Expense" quickSubtype="Suspense" quickName="Unrecognized Payments"
                 {...sharedProps} />
 
+              {/* Petty cash import routes both directions through one account,
+                  so it must be an Asset: an Income-typed suspense cannot absorb
+                  money out, and an Expense-typed one cannot absorb money in. */}
+              <FieldRow fieldKey="suspense_account_id" label="Petty Cash Import Suspense" badge={<DrCr />}
+                types={["Asset", "Other Current Assets"]}
+                hint="Holding account for import lines that cannot be automatically matched. Clear this to zero before closing a period."
+                quickType="Asset" quickSubtype="Other Current Assets" quickName="Suspense Account"
+                {...sharedProps} />
+
               <div className="flex items-start gap-3 py-3 border-b border-border/50">
                 <div className="flex-1 space-y-1.5">
                   <Label className="text-sm font-medium">Posting mode</Label>

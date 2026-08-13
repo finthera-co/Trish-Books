@@ -56,6 +56,8 @@ import PettyCashVoucherDetail from "./pages/PettyCashVoucherDetail";
 import PettyCashReplenishments from "./pages/PettyCashReplenishments";
 import PettyCashLedger from "./pages/PettyCashLedger";
 import PettyCashCounts from "./pages/PettyCashCounts";
+import PettyCashImports from "./pages/PettyCashImports";
+import PettyCashSuspenseClearing from "./pages/PettyCashSuspenseClearing";
 import PettyCashCount from "./pages/PettyCashCount";
 import Invoices from "./pages/Invoices";
 import CreateInvoice from "./pages/CreateInvoice";
@@ -245,6 +247,8 @@ const App = () => (
                   <Route path="/banking/petty-cash/counts/new" element={<PettyCashCount />} />
                   <Route path="/banking/petty-cash/counts/:id" element={<PettyCashCount />} />
                   <Route path="/banking/petty-cash/:id/ledger" element={<PettyCashLedger />} />
+                  <Route path="/banking/petty-cash/imports" element={<PettyCashImports />} />
+                  <Route path="/banking/petty-cash/suspense" element={<PettyCashSuspenseClearing />} />
                   </Route>
 
                   {/* Sales module */}

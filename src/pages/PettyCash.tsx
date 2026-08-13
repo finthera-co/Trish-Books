@@ -13,6 +13,7 @@ import { useMyPermissions } from "@/hooks/usePermissions";
 import { formatCurrency } from "@/lib/currency";
 import { useNavigate } from "react-router-dom";
 import { PCTransferDialog } from "@/components/petty-cash/PCTransferDialog";
+import { PCImportDialog } from "@/components/petty-cash/PCImportDialog";
 import { PCFundDialog } from "@/components/petty-cash/PCFundDialog";
 
 const statusColor: Record<string, string> = {
@@ -61,6 +62,7 @@ export default function PettyCash() {
             <>
               <PCFundDialog trigger={<Button variant="outline"><Banknote className="w-4 h-4 mr-1" /> Fund</Button>} />
               <PCTransferDialog />
+              <PCImportDialog />
               <Button variant="outline" onClick={() => navigate("/banking/petty-cash/replenishments")}>
                 <RefreshCw className="w-4 h-4 mr-1" /> Replenishments
               </Button>
