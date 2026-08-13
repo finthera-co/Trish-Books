@@ -9667,6 +9667,35 @@ export type Database = {
           },
         ]
       }
+      pcv_serial_sequences: {
+        Row: {
+          last_serial: number
+          tenant_id: string
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          last_serial?: number
+          tenant_id: string
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          last_serial?: number
+          tenant_id?: string
+          updated_at?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pcv_serial_sequences_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       permissions: {
         Row: {
           description: string | null
@@ -15312,6 +15341,10 @@ export type Database = {
       next_invoice_serial: {
         Args: { p_branch_code: string; p_issue_date: string }
         Returns: string
+      }
+      next_pcv_serial_block: {
+        Args: { p_count: number; p_tenant_id: string; p_year: number }
+        Returns: number
       }
       next_quote_number: { Args: { p_tenant_id: string }; Returns: string }
       next_receipt_number: { Args: { p_tenant_id: string }; Returns: string }
