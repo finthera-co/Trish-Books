@@ -3,12 +3,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Download, Printer, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import type { PaidStamp } from "@/lib/paidStamp";
 import type { DesignerComponent, TableSettings, InvoiceData, PageSettings } from "./types";
 import {
   renderInvoiceHtml,
   reflowTables,
   applyWatermarks,
   applyPageFooter,
+  applyPaidStamp,
   waitForImages,
   renderToPdf,
   PAGE_FOOTER_H,
@@ -22,6 +24,8 @@ interface Props {
   tableSettings: TableSettings;
   pageSettings: PageSettings;
   data: InvoiceData;
+  /** Set for a real invoice that has been receipted; the designer leaves it off. */
+  paidStamp?: PaidStamp | null;
 }
 
 /**
@@ -41,7 +45,9 @@ function PreviewSurface({ input, hostRef }: { input: RenderInput; hostRef: RefOb
     (async () => {
       await waitForImages(node);
       if (cancelled) return;
-      reflowTables(node, input.pageSettings.pageFooter?.enabled ? PAGE_FOOTER_H : 0);
+      const footerReserve = input.pageSettings.pageFooter?.enabled ? PAGE_FOOTER_H : 0;
+      reflowTables(node, footerReserve);
+      applyPaidStamp(node, input.paidStamp, footerReserve);
       applyWatermarks(node, input.pageSettings);
       applyPageFooter(node, input.pageSettings, input.data);
     })();
@@ -50,7 +56,7 @@ function PreviewSurface({ input, hostRef }: { input: RenderInput; hostRef: RefOb
       host.innerHTML = "";
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [input.components, input.tableSettings, input.pageSettings, input.data]);
+  }, [input.components, input.tableSettings, input.pageSettings, input.data, input.paidStamp]);
 
   return <div ref={hostRef} className="mx-auto shadow-lg" style={{ width: 595 }} />;
 }
@@ -60,10 +66,10 @@ function PreviewSurface({ input, hostRef }: { input: RenderInput; hostRef: RefOb
  * download (renderInvoice.ts), so what's shown here is exactly what a
  * customer-facing PDF will look like — including reflow and watermarks.
  */
-export default function InvoicePreview({ open, onOpenChange, components, tableSettings, pageSettings, data }: Props) {
+export default function InvoicePreview({ open, onOpenChange, components, tableSettings, pageSettings, data, paidStamp }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
-  const input: RenderInput = { components, tableSettings, pageSettings, data };
+  const input: RenderInput = { components, tableSettings, pageSettings, data, paidStamp };
 
   const exportPdf = async () => {
     setExporting(true);

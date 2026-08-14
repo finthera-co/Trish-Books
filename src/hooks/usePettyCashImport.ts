@@ -67,6 +67,12 @@ function humanizeImportError(raw: string): string {
   if (msg.includes("BATCH_POSTED")) {
     return "This import is posted to the ledger. Reverse it instead — reversing writes correcting entries and leaves an audit trail.";
   }
+  if (msg.includes("INCOMPLETE_LINES")) {
+    return "Some rows are marked ready but have no usable date, amount or account. Press Re-resolve to re-check them.";
+  }
+  if (msg.includes("DATE_OUT_OF_RANGE")) {
+    return "A date in this file reads as an implausible year — usually a missing digit. Correct it in the sheet and upload again.";
+  }
   if (msg.includes("BLOCKED_LINES")) {
     const n = msg.match(/BLOCKED_LINES:\s*(\d+)/);
     return `${n ? n[1] : "Some"} line(s) are still blocked. Fix the account, exclude the row, or discard the batch before posting.`;
@@ -441,25 +447,54 @@ export function useRevertPCImportBatch() {
 }
 
 // ─── Line-level edits ───
+/**
+ * Set the account on one line by hand.
+ *
+ * Deliberately does NOT mark the line 'ok'. Picking an account fixes an
+ * account problem and nothing else — a row blocked because its date is
+ * unreadable is still unreadable afterwards. Forcing 'ok' here is what let a
+ * grand-total row reach posting with a null date and fail against the
+ * entry_date not-null constraint mid-batch.
+ *
+ * Instead the line goes back to 'pending' and the resolver re-runs: it
+ * preserves manual overrides by design, and re-applies every structural and
+ * account-level check, so the row ends up ok, suspense or blocked on its
+ * actual merits.
+ */
 export function useUpdatePCImportLine() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ lineId, accountId }: { lineId: string; accountId: string }) => {
+    mutationFn: async ({
+      lineId,
+      accountId,
+      batchId,
+    }: {
+      lineId: string;
+      accountId: string;
+      batchId: string;
+    }) => {
       const { error } = await supabase
         .from("petty_cash_import_lines")
         .update({
           resolved_account_id: accountId,
           resolution_tier: "manual",
-          status: "ok",
+          status: "pending",
           error_code: null,
           error_message: null,
         })
         .eq("id", lineId);
       if (error) throw error;
+
+      const { data, error: rErr } = await supabase.rpc("resolve_petty_cash_import_lines", {
+        p_batch_id: batchId,
+      });
+      if (rErr) throw rErr;
+      return data as unknown as ResolveSummary;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pc_import_lines"] });
       qc.invalidateQueries({ queryKey: ["pc_import_batch"] });
+      qc.invalidateQueries({ queryKey: ["pc_import_lines_paged"] });
     },
     onError: (e: Error) => toast.error(humanizeImportError(e.message)),
   });

@@ -752,7 +752,10 @@ export function PCImportDialog({
                                   placeholder="Pick an account…"
                                   onChange={(accountId) => {
                                     if (!accountId) return;
-                                    updateLine.mutate({ lineId: l.id, accountId });
+                                    updateLine.mutate(
+                                      { lineId: l.id, accountId, batchId },
+                                      { onSuccess: (s) => setSummary(s) },
+                                    );
                                     if (remember[l.id] && key) {
                                       upsertMap.mutate({
                                         matchType: "account_type",

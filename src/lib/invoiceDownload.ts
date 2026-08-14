@@ -1,7 +1,12 @@
+import type { jsPDF } from "jspdf";
 import { supabase } from "@/integrations/supabase/client";
 import { DEFAULT_TABLE_SETTINGS, DEFAULT_PAGE_SETTINGS } from "@/components/invoice-designer/templateDefaults";
 import { renderToPdf, type RenderInput } from "@/components/invoice-designer/renderInvoice";
 import { currencyAmountInWords } from "@/lib/numberToWords";
+import { paidStampFromReceipt } from "@/lib/paidStamp";
+// Statically imported: invoicePdf is already in this bundle via invoiceShare et
+// al., so lazily loading it here bought nothing but an extra code path.
+import { loadInvoiceReceipt, loadInvoicePdfData, loadLogo, buildInvoicePdf } from "@/lib/invoicePdf";
 import type {
   DesignerComponent,
   TableSettings,
@@ -56,7 +61,7 @@ export async function loadInvoiceForDownload(invoiceId: string, tenantId: string
   const tableSettings = (template?.table_settings as TableSettings) || DEFAULT_TABLE_SETTINGS;
   const pageSettings = (template?.page_settings as PageSettings) || DEFAULT_PAGE_SETTINGS;
 
-  const [{ data: tenant }, { data: profile }] = await Promise.all([
+  const [{ data: tenant }, { data: profile }, receipt] = await Promise.all([
     supabase
       .from("tenants")
       .select("company_name, country, registration_number, logo_url, address, phone, tax_id")
@@ -67,6 +72,7 @@ export async function loadInvoiceForDownload(invoiceId: string, tenantId: string
       .select("*")
       .eq("tenant_id", tenantId)
       .maybeSingle(),
+    loadInvoiceReceipt(invoiceId),
   ]);
 
   const inv = invoice;
@@ -170,18 +176,34 @@ export async function loadInvoiceForDownload(invoiceId: string, tenantId: string
     currency,
   };
 
-  return { components, tableSettings, pageSettings, data };
+  // A receipt issued against this invoice is what puts the PAID stamp on it.
+  return { components, tableSettings, pageSettings, data, paidStamp: paidStampFromReceipt(receipt) };
 }
 
-export async function downloadInvoicePdf(invoiceId: string, tenantId: string) {
+export interface BuiltInvoicePdf {
+  pdf: jsPDF;
+  fileName: string;
+}
+
+/**
+ * The one place an invoice becomes a PDF. Both the on-screen viewer and the
+ * download button go through here, so what a user reads on screen is byte-for-
+ * byte the file they hand to the customer — PAID stamp included.
+ */
+export async function buildInvoicePdfDocument(invoiceId: string, tenantId: string): Promise<BuiltInvoicePdf> {
   const loaded = await loadInvoiceForDownload(invoiceId, tenantId);
+  const fileName = `Invoice-${sanitize(loaded.data.invoice_number || invoiceId)}.pdf`;
   // No custom template configured → the designer layout has no components and
   // would render a blank page. Fall back to the self-contained vector invoice.
   if (!loaded.components.length) {
-    const { downloadInvoiceVectorPdf } = await import("@/lib/invoicePdf");
-    await downloadInvoiceVectorPdf(invoiceId, tenantId);
-    return;
+    const data = await loadInvoicePdfData(invoiceId, tenantId);
+    const logo = await loadLogo(data.tenant?.logo_url);
+    return { pdf: await buildInvoicePdf(data, logo), fileName };
   }
-  const pdf = await renderToPdf(loaded);
-  pdf.save(`Invoice-${sanitize(loaded.data.invoice_number || invoiceId)}.pdf`);
+  return { pdf: await renderToPdf(loaded), fileName };
+}
+
+export async function downloadInvoicePdf(invoiceId: string, tenantId: string) {
+  const { pdf, fileName } = await buildInvoicePdfDocument(invoiceId, tenantId);
+  pdf.save(fileName);
 }

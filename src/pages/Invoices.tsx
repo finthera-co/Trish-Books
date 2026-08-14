@@ -16,6 +16,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useAccountById } from "@/hooks/useAccountSearch";
 import { formatCurrency } from "@/lib/currency";
 import InvoiceDetails from "@/components/invoices/InvoiceDetails";
+import InvoiceDocumentViewer from "@/components/invoices/InvoiceDocumentViewer";
+import { useReceiptedInvoiceIds } from "@/hooks/useInvoiceReceipts";
 import { useMyPermissions } from "@/hooks/usePermissions";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQueryClient } from "@tanstack/react-query";
@@ -76,6 +78,9 @@ export default function Invoices() {
   const [statusFilter, setStatusFilter] = useState<"all" | "due_soon" | "overdue" | "paid" | "draft">("all");
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  // The rendered invoice document (the customer's view), separate from the
+  // details dialog, which is the internal payment/approval workspace.
+  const [viewInvoice, setViewInvoice] = useState<any>(null);
   const [voidDialogInvoice, setVoidDialogInvoice] = useState<any>(null);
   const [voidReason, setVoidReason] = useState("");
   const [processing, setProcessing] = useState(false);
@@ -105,6 +110,9 @@ export default function Invoices() {
   const resubmit = useResubmitInvoice();
   const { data: approvalQueue } = useApprovalQueue();
   const { canEdit: canEditSales } = useMyPermissions();
+  // Which invoices already carry an issued receipt — one set read rather than a
+  // query per row. Drives both the row badge and the "only one receipt" guard.
+  const { data: receiptedIds } = useReceiptedInvoiceIds();
 
   // The queue RPC already answers "may this user act on this invoice, at its
   // current level?" — reuse that verdict rather than re-deriving it here.
@@ -524,10 +532,20 @@ export default function Invoices() {
                   const isVoided = inv.status === "voided";
                   // Anything not a draft and not voided has been posted to the GL.
                   const isPosted = !isDraft && !isVoided;
+                  const hasReceipt = !!receiptedIds?.has(inv.id);
                   return (
                     <tr key={inv.id} className={`border-t border-border hover:bg-muted/30 transition-colors ${isVoided ? "opacity-50" : ""} ${selected.has(inv.id) ? "bg-primary/5" : ""}`}>
                       <td className="px-4 py-3"><Checkbox checked={selected.has(inv.id)} onCheckedChange={() => toggleSelect(inv.id)} aria-label={`Select ${inv.invoice_number}`} /></td>
-                      <td className="px-4 py-3 font-medium text-foreground">{inv.invoice_number}</td>
+                      <td className="px-4 py-3 font-medium text-foreground">
+                        {/* The number is the handle on the document itself — click it to read the invoice. */}
+                        <button
+                          onClick={() => setViewInvoice(inv)}
+                          className="text-left font-medium text-foreground hover:text-primary hover:underline"
+                          title="View invoice"
+                        >
+                          {inv.invoice_number}
+                        </button>
+                      </td>
                       <td className="px-4 py-3 text-muted-foreground">{(inv.customers as any)?.name || "-"}</td>
                       <td className="px-4 py-3 text-muted-foreground">{inv.issue_date}</td>
                       <td className="px-4 py-3 text-muted-foreground">
@@ -549,6 +567,14 @@ export default function Invoices() {
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[status] || ""}`}>
                             {status}
                           </span>
+                          {hasReceipt && (
+                            <span
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                              title="A settlement receipt has been issued — the invoice document carries the PAID stamp"
+                            >
+                              <Receipt className="w-3 h-3" /> receipted
+                            </span>
+                          )}
                           {isDraft && (inv as any).approval_status === "pending" && (
                             <span
                               className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400"
@@ -580,8 +606,11 @@ export default function Invoices() {
                       </td>
                       <td className="px-4 py-3 text-center">
                         <div className="flex items-center justify-center gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => { setSelectedInvoice(inv); setDetailsOpen(true); }}>
+                          <Button variant="ghost" size="sm" title="View invoice" onClick={() => setViewInvoice(inv)}>
                             <Eye className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" title="Payments, approvals & attachments" onClick={() => { setSelectedInvoice(inv); setDetailsOpen(true); }}>
+                            <FileText className="w-4 h-4" />
                           </Button>
                           <Button variant="ghost" size="sm" title="Download PDF" onClick={() => handleDownload(inv)} disabled={processing}>
                             <Download className="w-4 h-4" />
@@ -608,6 +637,9 @@ export default function Invoices() {
                               <button className="p-1 rounded hover:bg-accent"><MoreHorizontal className="w-4 h-4 text-muted-foreground" /></button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent>
+                              <DropdownMenuItem onClick={() => setViewInvoice(inv)}>
+                                <Eye className="w-4 h-4 mr-2" /> View Invoice
+                              </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleDownload(inv)} disabled={processing}>
                                 <Download className="w-4 h-4 mr-2" /> Invoice (Template)
                               </DropdownMenuItem>
@@ -673,8 +705,19 @@ export default function Invoices() {
                                   <DropdownMenuItem onClick={() => navigate(`/accounting/receive-payment?invoice_id=${inv.id}`)}>
                                     Receive Payment
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => navigate(`/sales/receipts?invoice_id=${inv.id}`)}>
-                                    <Receipt className="w-4 h-4 mr-2" /> Generate Receipt
+                                  {/* One receipt per invoice, and only once it is settled in
+                                      full — the server enforces both; this just says so up front. */}
+                                  <DropdownMenuItem
+                                    onClick={() => navigate(`/sales/receipts?invoice_id=${inv.id}`)}
+                                    disabled={!hasReceipt && inv.balance_due > 0.005}
+                                    title={
+                                      hasReceipt ? "Receipt already issued — open it"
+                                        : inv.balance_due > 0.005 ? "A receipt can only be issued once the invoice is paid in full"
+                                        : "Issue the settlement receipt"
+                                    }
+                                  >
+                                    <Receipt className="w-4 h-4 mr-2" />
+                                    {hasReceipt ? "View Receipt" : "Issue Receipt"}
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem className="text-destructive" onClick={() => { setVoidDialogInvoice(inv); setVoidReason(""); }}>
@@ -696,6 +739,15 @@ export default function Invoices() {
       </div>
 
       <InvoiceDetails invoice={selectedInvoice} open={detailsOpen} onOpenChange={setDetailsOpen} />
+
+      {/* The invoice as the customer reads it */}
+      <InvoiceDocumentViewer
+        invoiceId={viewInvoice?.id}
+        tenantId={viewInvoice?.tenant_id ?? appUser?.tenant_id}
+        invoiceNumber={viewInvoice?.invoice_number}
+        open={!!viewInvoice}
+        onOpenChange={(v) => { if (!v) setViewInvoice(null); }}
+      />
 
       {/* Statutory VAT Tax Invoice preview (IRD Gazette 2481/22) */}
       <Dialog open={taxPreviewOpen} onOpenChange={setTaxPreviewOpen}>

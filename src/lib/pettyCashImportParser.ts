@@ -124,7 +124,17 @@ function splitDateParts(raw: string): [number, number, number] | null {
   return [Number(m[1]), Number(m[2]), Number(m[3])];
 }
 
+/**
+ * A year outside this range is a typing slip, not a date. Seen in the wild:
+ * "31/05/204" — one missing digit — which JavaScript accepts as the year 204
+ * and which would post as 0204-05-31, two millennia out and outside every
+ * fiscal period, so no period lock would ever catch it.
+ */
+const MIN_YEAR = 1900;
+const MAX_YEAR = 2200;
+
 function isRealDate(y: number, m: number, d: number): boolean {
+  if (y < MIN_YEAR || y > MAX_YEAR) return false;
   if (m < 1 || m > 12 || d < 1 || d > 31) return false;
   const dt = new Date(Date.UTC(y, m - 1, d));
   return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;

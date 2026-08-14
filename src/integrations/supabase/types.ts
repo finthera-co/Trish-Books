@@ -6982,6 +6982,79 @@ export type Database = {
           },
         ]
       }
+      invoice_receipts: {
+        Row: {
+          amount: number
+          created_at: string
+          currency: string
+          customer_address: string | null
+          id: string
+          invoice_id: string
+          issued_by: string | null
+          notes: string | null
+          payment_method: string | null
+          receipt_date: string
+          receipt_number: string
+          received_from: string | null
+          reference: string | null
+          tenant_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          currency?: string
+          customer_address?: string | null
+          id?: string
+          invoice_id: string
+          issued_by?: string | null
+          notes?: string | null
+          payment_method?: string | null
+          receipt_date?: string
+          receipt_number: string
+          received_from?: string | null
+          reference?: string | null
+          tenant_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          currency?: string
+          customer_address?: string | null
+          id?: string
+          invoice_id?: string
+          issued_by?: string | null
+          notes?: string | null
+          payment_method?: string | null
+          receipt_date?: string
+          receipt_number?: string
+          received_from?: string | null
+          reference?: string | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_receipts_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: true
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_receipts_issued_by_fkey"
+            columns: ["issued_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_receipts_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoice_serial_register: {
         Row: {
           branch_code: string
@@ -15324,6 +15397,33 @@ export type Database = {
       }
       is_primary_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
+      issue_invoice_receipt: {
+        Args: {
+          p_customer_address?: string | null
+          p_invoice_id: string
+          p_notes?: string | null
+          p_payment_method?: string | null
+          p_receipt_date?: string | null
+          p_received_from?: string | null
+          p_reference?: string | null
+        }
+        Returns: {
+          amount: number
+          created_at: string
+          currency: string
+          customer_address: string | null
+          id: string
+          invoice_id: string
+          issued_by: string | null
+          notes: string | null
+          payment_method: string | null
+          receipt_date: string
+          receipt_number: string
+          received_from: string | null
+          reference: string | null
+          tenant_id: string
+        }
+      }
       je_filter_sql: {
         Args: { p_search: string; p_source: string; p_status: string }
         Returns: string

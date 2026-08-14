@@ -12,9 +12,13 @@ import { downloadInvoicePdf } from "@/lib/invoiceDownload";
 import { shareInvoiceViaWhatsApp, shareInvoiceViaGmail, type ShareInvoiceArgs } from "@/lib/invoiceShare";
 import { useSendInvoiceEmail } from "@/hooks/useSendInvoiceEmail";
 import { toast } from "sonner";
-import { DollarSign, Plus, Clock, CheckCircle2, Download, Tag, Percent, MessageCircle, Mail, Send, MailCheck, Paperclip, Trash2, Upload } from "lucide-react";
+import { DollarSign, Plus, Clock, CheckCircle2, Download, Tag, Percent, MessageCircle, Mail, Send, MailCheck, Paperclip, Trash2, Upload, Eye, Receipt } from "lucide-react";
 import { useInvoiceAttachments, useUploadAttachment, useDeleteAttachment } from "@/hooks/useInvoiceAttachments";
 import InvoiceApprovalPanel from "@/components/invoices/InvoiceApprovalPanel";
+import InvoiceDocumentViewer from "@/components/invoices/InvoiceDocumentViewer";
+import { useInvoiceReceipt } from "@/hooks/useInvoiceReceipts";
+import { formatInvoiceDate } from "@/lib/format";
+import { useNavigate } from "react-router-dom";
 
 interface Props {
   invoice: any;
@@ -40,6 +44,8 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
   const [payBankAccountId, setPayBankAccountId] = useState("");
 
   const [downloading, setDownloading] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const navigate = useNavigate();
 
   const [showDiscountForm, setShowDiscountForm] = useState(false);
   const [discountAmount, setDiscountAmount] = useState("");
@@ -65,6 +71,7 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
   const { data: arAccounts } = useARAccounts();
   const createCreditNote = useCreateCreditNoteWithGL();
   const { data: settings } = useAccountSettings();
+  const { data: receipt } = useInvoiceReceipt(invoice?.id);
   const queryClient = useQueryClient();
 
   // Discounts/credits applied to this posted invoice (kept live so the dialog
@@ -313,7 +320,8 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
@@ -322,16 +330,15 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
             <Badge className={statusColors[effectiveStatus] || statusColors.draft}>
               {effectiveStatus.toUpperCase()}
             </Badge>
-            <Button
-              variant="outline"
-              size="sm"
-              className="ml-auto"
-              onClick={handleDownload}
-              disabled={downloading}
-            >
-              <Download className="w-4 h-4 mr-1.5" />
-              {downloading ? "Preparing…" : "Download PDF"}
-            </Button>
+            <div className="ml-auto flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setViewerOpen(true)}>
+                <Eye className="w-4 h-4 mr-1.5" /> View invoice
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleDownload} disabled={downloading}>
+                <Download className="w-4 h-4 mr-1.5" />
+                {downloading ? "Preparing…" : "Download PDF"}
+              </Button>
+            </div>
           </DialogTitle>
         </DialogHeader>
 
@@ -398,6 +405,33 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
             <span className="text-foreground">{invoice.currency || "LKR"}</span>
           </div>
         </div>
+
+        {/* Settlement receipt — one per invoice, issued only once nothing is owing */}
+        {isPosted && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
+            <div className="min-w-0">
+              <h4 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Receipt className="h-4 w-4" /> Settlement receipt
+              </h4>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {receipt
+                  ? `${receipt.receipt_number} issued ${formatInvoiceDate(receipt.receipt_date)} — the invoice document now carries the PAID stamp.`
+                  : balanceDue > 0.005
+                    ? "Available once the invoice is paid in full. Only one receipt can be issued per invoice."
+                    : "Nothing outstanding — issue the receipt that settles this invoice."}
+              </p>
+            </div>
+            <Button
+              variant={receipt ? "outline" : "default"}
+              size="sm"
+              disabled={!receipt && balanceDue > 0.005}
+              onClick={() => navigate(`/sales/receipts?invoice_id=${invoice.id}`)}
+            >
+              <Receipt className="mr-1.5 h-4 w-4" />
+              {receipt ? "View receipt" : "Issue receipt"}
+            </Button>
+          </div>
+        )}
 
         {/* Record Payment Button */}
         {balanceDue > 0 && (
@@ -736,6 +770,15 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
           )}
         </div>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+
+      <InvoiceDocumentViewer
+        invoiceId={invoice.id}
+        tenantId={invoice.tenant_id}
+        invoiceNumber={invoice.invoice_number}
+        open={viewerOpen}
+        onOpenChange={setViewerOpen}
+      />
+    </>
   );
 }

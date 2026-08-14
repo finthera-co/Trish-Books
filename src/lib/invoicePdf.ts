@@ -8,6 +8,7 @@ import {
   type RGB, setText, setDraw, setFill, num, sanitize, prettyDate, prettyTerms,
   buildItemCell, discountCellText, fitText,
 } from "@/lib/pdfTheme";
+import { drawPaidStamp, paidStampBounds, paidStampFromReceipt, type PaidStamp } from "@/lib/paidStamp";
 import type { Database } from "@/integrations/supabase/types";
 
 type CompanyProfileRow = Database["public"]["Tables"]["company_profiles"]["Row"];
@@ -37,6 +38,8 @@ interface InvoicePdfData {
   items: any[];
   tenant: TenantRow;
   profile: CompanyProfileRow | null;
+  /** Set once a settlement receipt has been issued — drives the PAID stamp. */
+  paidStamp: PaidStamp | null;
 }
 
 export interface LoadedLogo {
@@ -83,9 +86,26 @@ export async function loadLogo(url?: string | null): Promise<LoadedLogo | null> 
   });
 }
 
+/**
+ * The settlement receipt issued against an invoice, if any.
+ *
+ * Read on its own rather than embedded in the invoice select: an embed on a
+ * relation PostgREST hasn't cached yet fails the WHOLE query, which would take
+ * every invoice download down if the app ships ahead of the migration. A
+ * missing receipt and an unreachable table mean the same thing here — no stamp.
+ */
+export async function loadInvoiceReceipt(invoiceId: string) {
+  const { data, error } = await supabase
+    .from("invoice_receipts")
+    .select("receipt_number, receipt_date")
+    .eq("invoice_id", invoiceId)
+    .maybeSingle();
+  return error ? null : data;
+}
+
 /** Fetch everything the PDF needs for one invoice. */
 export async function loadInvoicePdfData(invoiceId: string, tenantId: string): Promise<InvoicePdfData> {
-  const [invoiceRes, tenantRes, profileRes] = await Promise.all([
+  const [invoiceRes, tenantRes, profileRes, receipt] = await Promise.all([
     supabase
       .from("invoices")
       .select("*, customers(*), invoice_items(*, products(name)), payments_received(amount), ar_credit_notes(amount, status)")
@@ -101,6 +121,7 @@ export async function loadInvoicePdfData(invoiceId: string, tenantId: string): P
       .select("*")
       .eq("tenant_id", tenantId)
       .maybeSingle(),
+    loadInvoiceReceipt(invoiceId),
   ]);
   const { data: invoice, error } = invoiceRes;
   if (error || !invoice) throw new Error(error?.message || "Invoice not found");
@@ -120,6 +141,7 @@ export async function loadInvoicePdfData(invoiceId: string, tenantId: string): P
     items: invoice.invoice_items || [],
     tenant: tenantRes.data || ({} as TenantRow),
     profile: profileRes.data,
+    paidStamp: paidStampFromReceipt(receipt),
   };
 }
 
@@ -137,7 +159,7 @@ function invoiceStatus(invoice: any): { label: string; color: RGB } {
 }
 
 /** Render an invoice to a jsPDF document (no save). */
-export async function buildInvoicePdf({ invoice, customer, items, tenant, profile }: InvoicePdfData, logo?: LoadedLogo | null): Promise<jsPDF> {
+export async function buildInvoicePdf({ invoice, customer, items, tenant, profile, paidStamp }: InvoicePdfData, logo?: LoadedLogo | null): Promise<jsPDF> {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
@@ -449,6 +471,16 @@ export async function buildInvoicePdf({ invoice, customer, items, tenant, profil
   doc.setFontSize(11);
   doc.text(fmt(balance), valX - 4, ty + 7.2, { align: "right" });
   ty += bH + 4;
+
+  // ── PAID stamp, struck under the Balance Due bar ─────────────────────
+  // Sized to the totals column and drawn inline, so `ty` carries its footprint
+  // forward and the payment panel below settles beneath it instead of into it.
+  if (paidStamp) {
+    const stampScale = 0.76;
+    const bounds = paidStampBounds(stampScale);
+    drawPaidStamp(doc, paidStamp, labelX + totalsW / 2, ty + bounds.h / 2, stampScale);
+    ty += bounds.h + 4;
+  }
 
   // ── Notes / terms / payment details (left column) ────────────────────
   // Fills the space left blank under the totals block and gives the customer

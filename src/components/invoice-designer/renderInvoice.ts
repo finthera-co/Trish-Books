@@ -2,6 +2,9 @@ import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { formatCurrency } from "@/lib/currency";
 import { formatInvoiceDate } from "@/lib/format";
+import {
+  STAMP_TILT, STAMP_W, STAMP_H, STAMP_CSS_COLOR, paidStampBounds, paidStampSublines, type PaidStamp,
+} from "@/lib/paidStamp";
 import type { DesignerComponent, TableSettings, PageSettings, InvoiceData } from "./types";
 
 /**
@@ -107,6 +110,8 @@ export interface RenderInput {
   tableSettings: TableSettings;
   pageSettings: PageSettings;
   data: InvoiceData;
+  /** Present once a settlement receipt has been issued against the invoice. */
+  paidStamp?: PaidStamp | null;
 }
 
 export interface TableCell {
@@ -277,6 +282,9 @@ export function renderInvoiceHtml({ components, tableSettings, pageSettings, dat
     const text = displayText(comp, data, pageSettings);
     const div = document.createElement("div");
     div.dataset.top = String(top);
+    // Bindings are tagged onto the node so later passes can find a field by
+    // meaning rather than by position — applyPaidStamp anchors to balance_due.
+    if (comp.binding) div.dataset.binding = comp.binding;
     div.style.cssText = `position:absolute;left:${left}px;top:${top}px;width:${width}px;min-height:${height}px;
       font-size:${s.fontSize || 12}px;font-weight:${s.fontWeight || "normal"};font-style:${s.fontStyle || "normal"};
       ${s.fontFamily ? `font-family:${FONT_STACKS[s.fontFamily] || s.fontFamily};` : ""}
@@ -316,9 +324,17 @@ export function reflowTables(root: HTMLElement, footerReserve = 0): void {
       }
     }
   }
-  // Grow the sheet to the content plus the bottom margin, in whole pages.
+  pageFit(root, footerReserve);
+}
+
+/**
+ * Grow the sheet to hold its content plus the bottom margin, in whole pages.
+ * `extraBottom` covers content whose real footprint offsetHeight can't report —
+ * a rotated stamp, for instance.
+ */
+function pageFit(root: HTMLElement, footerReserve: number, extraBottom = 0): void {
   const mBottom = Number(root.dataset.pageBottomMargin || 0);
-  let contentBottom = 0;
+  let contentBottom = extraBottom;
   for (const el of Array.from(root.children) as HTMLElement[]) {
     contentBottom = Math.max(contentBottom, el.offsetTop + el.offsetHeight);
   }
@@ -344,6 +360,90 @@ export function applyWatermarks(root: HTMLElement, pageSettings: PageSettings): 
     // Prepend so content paints on top of the watermark.
     root.insertBefore(el, root.firstChild);
   }
+}
+
+/**
+ * Rubber PAID stamp, matching drawPaidStamp in the vector PDF — same tilt, same
+ * red, same receipt reference — so a tenant with a custom template gets the same
+ * mark as one without.
+ *
+ * Anchored under the Balance Due figure rather than dropped at fixed
+ * coordinates: a designer template can put the totals anywhere, and the stamp
+ * only means anything sitting directly beneath the balance it settles. The last
+ * balance_due on the page is the totals ladder — the first is the summary chip
+ * up in the header.
+ */
+export function applyPaidStamp(root: HTMLElement, stamp?: PaidStamp | null, footerReserve = 0): void {
+  if (!stamp) return;
+  // Page geometry is A4 at 72dpi (CANVAS_W = 595px = 210mm), so 1mm ≈ 2.833px.
+  const MM = CANVAS_W / 210;
+  const SCALE = 0.76; // matches the vector PDF: sized to the totals column
+  const w = STAMP_W * SCALE * MM;
+  const h = STAMP_H * SCALE * MM;
+  // The frame is tilted, so it eats more of the page than w × h.
+  const bounds = paidStampBounds(SCALE);
+  const bw = bounds.w * MM;
+  const bh = bounds.h * MM;
+
+  const anchor = Array.from(root.querySelectorAll<HTMLElement>('[data-binding="balance_due"]'))
+    .sort((a, b) => Number(a.dataset.top) - Number(b.dataset.top))
+    .pop();
+
+  let cx = CANVAS_W * 0.72;
+  let boxTop = CANVAS_H * 0.56;
+  if (anchor) {
+    const aHeight = anchor.offsetHeight || parseFloat(anchor.style.minHeight) || 0;
+    cx = (parseFloat(anchor.style.left) || 0) + (parseFloat(anchor.style.width) || 0) / 2;
+    boxTop = (Number(anchor.dataset.top) || 0) + aHeight + 10;
+  }
+  // Keep the whole tilted footprint on the sheet.
+  cx = Math.min(Math.max(cx, bw / 2 + 4), CANVAS_W - bw / 2 - 4);
+  if (!anchor) boxTop = Math.min(boxTop, Number(root.dataset.pages || 1) * CANVAS_H - bh - 4);
+
+  // Reserve the band the stamp needs. A designer template can put anything
+  // below the totals — bank details commonly run full width right there — so
+  // push whatever the footprint would land on further down, exactly as a grown
+  // items table does, rather than printing the stamp over it.
+  if (anchor) {
+    const anchorTop = Number(anchor.dataset.top) || 0;
+    const shift = bh + 12;
+    for (const el of Array.from(root.querySelectorAll<HTMLElement>("[data-top]"))) {
+      const elTop = Number(el.dataset.top);
+      if (elTop <= anchorTop) continue;
+      const elLeft = parseFloat(el.style.left) || 0;
+      const elRight = elLeft + (parseFloat(el.style.width) || 0);
+      if (elRight < cx - bw / 2 || elLeft > cx + bw / 2) continue; // clear of the stamp
+      el.style.top = `${parseFloat(el.style.top) + shift}px`;
+      el.dataset.top = String(elTop + shift);
+    }
+  }
+
+  const color = STAMP_CSS_COLOR;
+  const el = document.createElement("div");
+  el.style.cssText = `position:absolute;left:${cx - w / 2}px;top:${boxTop + (bh - h) / 2}px;
+    width:${w}px;height:${h}px;box-sizing:border-box;pointer-events:none;
+    border:3px solid ${color};border-radius:3px;transform:rotate(${STAMP_TILT}deg);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;color:${color};
+    font-family:Helvetica, Arial, sans-serif;`;
+
+  const inner = document.createElement("div");
+  inner.style.cssText = `position:absolute;inset:3px;border:1px solid ${color};border-radius:2px;`;
+  el.appendChild(inner);
+
+  const title = document.createElement("div");
+  title.textContent = "PAID";
+  title.style.cssText = `font-size:${h * 0.31}px;font-weight:bold;letter-spacing:${h * 0.047}px;line-height:1.1;`;
+  el.appendChild(title);
+
+  for (const line of paidStampSublines(stamp)) {
+    const sub = document.createElement("div");
+    sub.textContent = line;
+    sub.style.cssText = `font-size:${h * 0.083}px;letter-spacing:1px;line-height:1.5;`;
+    el.appendChild(sub);
+  }
+  root.appendChild(el);
+  // offsetHeight can't see past the rotation, so hand the real footprint over.
+  pageFit(root, footerReserve, boxTop + bh);
 }
 
 /**
@@ -544,7 +644,11 @@ export async function renderToPdf(input: RenderInput): Promise<jsPDF> {
   document.body.appendChild(node);
   try {
     await waitForImages(node);
-    reflowTables(node, input.pageSettings.pageFooter?.enabled ? PAGE_FOOTER_H : 0);
+    const footerReserve = input.pageSettings.pageFooter?.enabled ? PAGE_FOOTER_H : 0;
+    reflowTables(node, footerReserve);
+    // Before the watermark and footer: the stamp can push content down and grow
+    // the page, and both of those are laid out per page.
+    applyPaidStamp(node, input.paidStamp, footerReserve);
     applyWatermarks(node, input.pageSettings);
     applyPageFooter(node, input.pageSettings, input.data);
     await waitForImages(node); // footer may add a logo <img>

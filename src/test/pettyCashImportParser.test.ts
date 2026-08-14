@@ -260,3 +260,27 @@ describe("four-column books (Date | Description | Account type | Amount)", () =>
     expect(res.rows[0].rawVoucherNo).toBe("");
   });
 });
+
+describe("implausible dates", () => {
+  it("refuses a year that is a missing-digit typo", async () => {
+    // Seen in a real 271-row book: "31/05/204". JavaScript accepts year 204
+    // quite happily, and 0204-05-31 sits outside every fiscal period, so no
+    // period lock would ever catch it.
+    const res = await parse([row("31/05/204", "PV-1", "diesel", "Fuel Charges", "920")]);
+    expect(res.rows[0].parsedDate).toBeNull();
+  });
+
+  it("still expands a genuine two-digit year", async () => {
+    const res = await parse([
+      row("31/05/24", "PV-1", "a", "Electricity", "10"),
+      row("28/02/99", "PV-2", "b", "Electricity", "10"),
+    ]);
+    expect(res.rows[0].parsedDate).toBe("2024-05-31");
+    expect(res.rows[1].parsedDate).toBe("1999-02-28");
+  });
+
+  it("accepts ordinary four-digit years either side of the range", async () => {
+    const res = await parse([row("01/01/2024", "PV-1", "a", "Electricity", "10")]);
+    expect(res.rows[0].parsedDate).toBe("2024-01-01");
+  });
+});
