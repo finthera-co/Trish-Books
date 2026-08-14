@@ -76,7 +76,7 @@ export default function PettyCashVoucherDocument({
     <div id="pcv-doc" className="bg-white text-neutral-900 w-full text-sm">
       <div className="h-[6px] bg-[#0b3b60]" />
 
-      <div className="p-8">
+      <div id="pcv-doc-body" className="p-8">
         {/* Company lockup · document type, number and standing */}
         <div className="flex items-start justify-between gap-6 pb-5 border-b border-neutral-200">
           <div className="flex items-start gap-4">

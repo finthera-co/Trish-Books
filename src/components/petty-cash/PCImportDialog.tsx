@@ -793,10 +793,13 @@ export function PCImportDialog({
                                 variant="ghost"
                                 className="h-6 text-xs"
                                 onClick={() =>
-                                  restoreLines.mutate([l.id], {
-                                    onSuccess: () =>
-                                      resolveBatch.mutate(batchId, { onSuccess: (s) => setSummary(s) }),
-                                  })
+                                  restoreLines.mutate(
+                                    { lineIds: [l.id], batchId },
+                                    {
+                                      onSuccess: () =>
+                                        resolveBatch.mutate(batchId, { onSuccess: (s) => setSummary(s) }),
+                                    },
+                                  )
                                 }
                               >
                                 Restore

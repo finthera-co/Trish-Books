@@ -354,6 +354,42 @@
   }
 }
 
+/* Petty cash voucher: isolate the document and let it keep its own layout.
+   Without this the generic print block above applies, and it is written for
+   report pages, not documents: `.grid { display: block }` stacks the three
+   signature columns on top of each other and splits the paid-to / meta row,
+   while `p, td, th, span { color: black }` turns the white text on the navy
+   amount band invisible. */
+@media print {
+  body:has(#pcv-doc) * { visibility: hidden !important; }
+  body:has(#pcv-doc) #pcv-doc,
+  body:has(#pcv-doc) #pcv-doc * { visibility: visible !important; }
+  body:has(#pcv-doc) #pcv-doc {
+    position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important;
+    padding: 1.2cm 1.4cm !important;
+  }
+  /* The wrapper's screen padding would double up on the page padding above. */
+  #pcv-doc #pcv-doc-body { padding: 0 !important; }
+
+  /* Restore the document's own grids. */
+  #pcv-doc .grid { display: grid !important; }
+  #pcv-doc .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  #pcv-doc .grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+  #pcv-doc .grid > * { margin-bottom: 0 !important; }
+
+  /* Keep light-on-dark readable where the document paints its own ground. */
+  #pcv-doc .bg-\[\#0b3b60\], #pcv-doc .bg-\[\#0b3b60\] * { color: #fff !important; }
+
+  /* A voucher that runs to a second page repeats its column headers and never
+     splits a particular across the break. */
+  #pcv-doc table { page-break-inside: auto; break-inside: auto; }
+  #pcv-doc thead { display: table-header-group; }
+  #pcv-doc tfoot { display: table-footer-group; }
+  #pcv-doc tr { page-break-inside: avoid; break-inside: avoid; }
+  /* Signatures belong with the total, not orphaned onto a page of their own. */
+  #pcv-doc .grid-cols-3 { page-break-inside: avoid; break-inside: avoid; }
+}
+
 /* ═══════════════════════════════════════════════════════════
    Shell v2 — neutral navigation surfaces, green as accent only.
    Scoped to .shell-v2 so the new shell can be previewed without

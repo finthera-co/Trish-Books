@@ -1,16 +1,24 @@
+import { useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, CircleSlash, FileSpreadsheet } from "lucide-react";
+import { ArrowLeft, CheckCircle2, CircleSlash, FileSpreadsheet, Loader2, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import AccountSelector from "@/components/shared/AccountSelector";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   usePCImportBatch,
   usePCImportBatches,
   usePCImportLinesPaged,
+  usePostPCImportBatch,
+  useRectifyPCImportLine,
+  useRestorePCImportLines,
   type PCImportLineFilter,
 } from "@/hooks/usePettyCashImport";
+import { useMyPermissions } from "@/hooks/usePermissions";
 import { formatCurrency } from "@/lib/currency";
 
 const PAGE_SIZE = 100;
@@ -54,6 +62,17 @@ export default function PettyCashImportResults() {
   const { data: batches } = usePCImportBatches();
   const { data: batch, isLoading: batchLoading } = usePCImportBatch(batchId);
   const { data: paged, isFetching } = usePCImportLinesPaged(batchId, view, page, PAGE_SIZE);
+  const { canEdit } = useMyPermissions();
+  const editable = canEdit("banking");
+
+  const rectify = useRectifyPCImportLine();
+  const restore = useRestorePCImportLines();
+  const postBatch = usePostPCImportBatch();
+
+  // Which row is open for correction, and the edits in flight for it.
+  const [fixing, setFixing] = useState<string | null>(null);
+  const [fixDate, setFixDate] = useState("");
+  const [fixAccount, setFixAccount] = useState("");
 
   const counts = batch?.counts;
   const rows = paged?.rows ?? [];
@@ -69,6 +88,9 @@ export default function PettyCashImportResults() {
   function setPage(next: number) {
     setParams({ view, page: String(next) }, { replace: true });
   }
+
+  // Ready but not yet in the ledger — what a second post would pick up.
+  const ready = (counts?.ok ?? 0) + (counts?.suspense ?? 0);
 
   function countFor(key: string): number {
     if (key === "total") return batch?.total ?? 0;
@@ -153,6 +175,36 @@ export default function PettyCashImportResults() {
               {batch.sheet_name} · {batch.date_format}
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* Rows held back at the last post are still owed to the ledger. Say so,
+          and offer the one action that settles them. */}
+      {editable && batchId && ready > 0 && (
+        <div className="rounded-md border border-warning/40 bg-warning/5 p-3 flex flex-wrap items-center gap-3">
+          <div className="flex-1 min-w-[240px]">
+            <p className="text-sm font-medium">
+              {ready} row{ready === 1 ? "" : "s"} ready and not yet posted
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {batch?.status === "posted"
+                ? "Corrected since this batch posted. Posting again adds only these rows — nothing already in the ledger is touched."
+                : "Post the batch to send these to the ledger."}
+            </p>
+          </div>
+          <Button
+            size="sm"
+            disabled={postBatch.isPending}
+            onClick={() => postBatch.mutate(batchId)}
+          >
+            {postBatch.isPending ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> Posting…
+              </>
+            ) : (
+              `Post ${ready} row${ready === 1 ? "" : "s"}`
+            )}
+          </Button>
         </div>
       )}
 
@@ -261,6 +313,21 @@ export default function PettyCashImportResults() {
                         {/* A posted row should reach what it became, rather
                             than leaving the reader to search for it. */}
                         <TableCell className="py-1.5 whitespace-nowrap text-right">
+                          {editable && l.status !== "posted" && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 text-xs"
+                              onClick={() => {
+                                setFixing(fixing === l.id ? null : l.id);
+                                setFixDate(l.parsed_date ?? "");
+                                setFixAccount(l.resolved_account_id ?? "");
+                              }}
+                            >
+                              <Wrench className="w-3 h-3 mr-1" />
+                              {l.status === "excluded" ? "Restore & fix" : "Fix"}
+                            </Button>
+                          )}
                           {l.voucher_id && (
                             <Button
                               size="sm"
@@ -285,6 +352,67 @@ export default function PettyCashImportResults() {
                       </TableRow>
                     );
                   })
+                )}
+                {/* Correction panel for the row being fixed. Date and account
+                    only: amount is re-derived from the sheet on every resolve,
+                    so an override here would be silently discarded. */}
+                {rows.map((l) =>
+                  fixing === l.id ? (
+                    <TableRow key={`fix-${l.id}`} className="bg-muted/30">
+                      <TableCell colSpan={10} className="py-3">
+                        <div className="flex flex-wrap items-end gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Date</Label>
+                            <Input
+                              type="date"
+                              value={fixDate}
+                              onChange={(e) => setFixDate(e.target.value)}
+                              className="h-8 text-xs w-40"
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              Sheet says “{l.raw_date}” — that stays on record.
+                            </p>
+                          </div>
+                          <div className="space-y-1 min-w-[240px] flex-1">
+                            <Label className="text-xs">Account</Label>
+                            <AccountSelector
+                              value={fixAccount}
+                              onChange={(id) => setFixAccount(id)}
+                              placeholder="Pick an account…"
+                            />
+                          </div>
+                          <div className="flex gap-2 pb-1">
+                            <Button
+                              size="sm"
+                              className="h-8"
+                              disabled={rectify.isPending || restore.isPending}
+                              onClick={async () => {
+                                if (!batchId) return;
+                                if (l.status === "excluded") {
+                                  await restore.mutateAsync({ lineIds: [l.id], batchId });
+                                }
+                                await rectify.mutateAsync({
+                                  lineId: l.id,
+                                  batchId,
+                                  parsedDate: fixDate || null,
+                                  accountId: fixAccount || null,
+                                });
+                                setFixing(null);
+                              }}
+                            >
+                              Save &amp; re-check
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-8" onClick={() => setFixing(null)}>
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                        {l.error_message && (
+                          <p className="text-xs text-destructive mt-2">{l.error_message}</p>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ) : null,
                 )}
               </TableBody>
             </Table>

@@ -67,6 +67,12 @@ function humanizeImportError(raw: string): string {
   if (msg.includes("BATCH_POSTED")) {
     return "This import is posted to the ledger. Reverse it instead — reversing writes correcting entries and leaves an audit trail.";
   }
+  if (msg.includes("NOTHING_TO_POST")) {
+    return "Every row here is already posted or excluded. Restore and correct a row before posting again.";
+  }
+  if (msg.includes("LINE_POSTED")) {
+    return "This row is already in the ledger. Reverse the import if it needs changing.";
+  }
   if (msg.includes("INCOMPLETE_LINES")) {
     return "Some rows are marked ready but have no usable date, amount or account. Press Re-resolve to re-check them.";
   }
@@ -526,15 +532,25 @@ export function useExcludePCImportLines() {
 export function useRestorePCImportLines() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (lineIds: string[]) => {
+    mutationFn: async ({ lineIds, batchId }: { lineIds: string[]; batchId?: string }) => {
       const { error } = await supabase
         .from("petty_cash_import_lines")
         .update({ status: "pending" })
         .in("id", lineIds);
       if (error) throw error;
+
+      // 'pending' is not postable. Re-resolve so the row lands on ok, suspense
+      // or blocked according to the rules, not left in limbo.
+      if (batchId) {
+        const { error: rErr } = await supabase.rpc("resolve_petty_cash_import_lines", {
+          p_batch_id: batchId,
+        });
+        if (rErr) throw rErr;
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pc_import_lines"] });
+      qc.invalidateQueries({ queryKey: ["pc_import_lines_paged"] });
       qc.invalidateQueries({ queryKey: ["pc_import_batch"] });
     },
     onError: (e: Error) => toast.error(humanizeImportError(e.message)),
@@ -843,5 +859,45 @@ export function usePCImportReadiness() {
         hasSuspenseAccount: !!settings?.suspense_account_id,
       };
     },
+  });
+}
+
+/**
+ * Correct a held row's date and/or account, then re-resolve.
+ *
+ * Raw cell text is never touched — the grid keeps showing what the sheet said
+ * beside the correction. Amount is deliberately not correctable: the resolver
+ * re-derives it from the raw cell on every run, so an override would be
+ * silently discarded. A wrong amount means a wrong sheet.
+ */
+export function useRectifyPCImportLine() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      lineId: string;
+      batchId: string;
+      parsedDate?: string | null;
+      accountId?: string | null;
+    }) => {
+      const { error } = await supabase.rpc("rectify_petty_cash_import_line", {
+        p_line_id: input.lineId,
+        p_parsed_date: input.parsedDate ?? null,
+        p_account_id: input.accountId ?? null,
+      });
+      if (error) throw error;
+
+      const { data, error: rErr } = await supabase.rpc("resolve_petty_cash_import_lines", {
+        p_batch_id: input.batchId,
+      });
+      if (rErr) throw rErr;
+      return data as unknown as ResolveSummary;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pc_import_lines"] });
+      qc.invalidateQueries({ queryKey: ["pc_import_lines_paged"] });
+      qc.invalidateQueries({ queryKey: ["pc_import_batch"] });
+      toast.success("Row corrected — re-checked against every rule");
+    },
+    onError: (e: Error) => toast.error(humanizeImportError(e.message)),
   });
 }
