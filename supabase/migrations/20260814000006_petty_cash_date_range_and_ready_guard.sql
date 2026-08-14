@@ -227,7 +227,14 @@ BEGIN
     AND l.status = 'pending' AND l.resolved_account_id IS NULL;
 
   -- ═══ Phase C — account-level validation (blocking) ═══
-  WITH checked AS (
+  -- MATERIALIZED here is a correctness-of-plan matter, not a style choice.
+  -- Inlined, this becomes a self-join of petty_cash_import_lines on id, and
+  -- because the tenant/RLS predicates make the planner estimate one row per
+  -- side it picks a nested loop: 2,000 x 1,000 = 2M comparisons, 34 s for a
+  -- 2,000-row batch. Materialising gives the CTE a real row count and the
+  -- join becomes a hash join. Phase A was only ever fast because its CTEs
+  -- happened to be materialised already.
+  WITH checked AS MATERIALIZED (
     SELECT l.id,
            CASE
              WHEN a.id IS NULL THEN 'ACCOUNT_NOT_FOUND'
@@ -267,7 +274,7 @@ BEGIN
   WHERE l.id = ch.id AND l.tenant_id = v_tenant AND ch.code IS NOT NULL;
 
   -- ═══ Phase D — duplicate flagging (non-blocking) ═══
-  WITH keyed AS (
+  WITH keyed AS MATERIALIZED (
     SELECT l.id, l.row_no,
            first_value(l.id) OVER w AS first_id,
            row_number()      OVER w AS rn
