@@ -167,11 +167,16 @@ export default function PettyCashImports() {
                           </Button>
                           {b.status === "posted" && (
                             <>
+                              {/* The batch's own posted rows, each linking to
+                                  the voucher it became — not the whole petty
+                                  cash page, which is where this used to land. */}
                               <Button
                                 size="sm"
                                 variant="outline"
                                 className="h-6 text-xs"
-                                onClick={() => navigate("/banking/petty-cash")}
+                                onClick={() =>
+                                  navigate(`/banking/petty-cash/imports/${b.id}?view=recognized&page=0`)
+                                }
                               >
                                 View vouchers
                               </Button>

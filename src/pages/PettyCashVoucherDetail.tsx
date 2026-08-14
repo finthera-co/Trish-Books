@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, CheckCircle, XCircle, Clock, Send, Printer, RotateCcw, Upload, FileImage, ExternalLink } from "lucide-react";
+import { ArrowLeft, CheckCircle, XCircle, Clock, Send, Printer, RotateCcw, Upload, FileImage, ExternalLink, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -140,8 +140,15 @@ export default function PettyCashVoucherDetail() {
 
       {voucher.journal_entry_id && (
         <div className="print:hidden">
-          <Button variant="outline" size="sm" onClick={() => navigate("/accounting/journals")}>
-            View journal entry
+          {/* Straight to the entry this voucher posted, matching how payroll
+              runs and vendor payments link to theirs. Landing on the unfiltered
+              journal list left the user to hunt for it. */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate(`/accounting/journals/${voucher.journal_entry_id}`)}
+          >
+            <FileText className="w-3.5 h-3.5 mr-1" /> View journal entry
           </Button>
         </div>
       )}

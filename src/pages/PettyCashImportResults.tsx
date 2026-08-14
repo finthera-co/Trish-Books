@@ -189,12 +189,13 @@ export default function PettyCashImportResults() {
                   <TableHead className="h-8 text-right">Amount</TableHead>
                   <TableHead className="h-8">Result</TableHead>
                   <TableHead className="h-8">Posted to</TableHead>
+                  <TableHead className="h-8" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {rows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-xs text-muted-foreground py-6">
+                    <TableCell colSpan={10} className="text-center text-xs text-muted-foreground py-6">
                       {isFetching ? "Loading…" : "No rows in this view."}
                     </TableCell>
                   </TableRow>
@@ -255,6 +256,30 @@ export default function PettyCashImportResults() {
                             </span>
                           ) : (
                             <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        {/* A posted row should reach what it became, rather
+                            than leaving the reader to search for it. */}
+                        <TableCell className="py-1.5 whitespace-nowrap text-right">
+                          {l.voucher_id && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 text-xs"
+                              onClick={() => navigate(`/banking/petty-cash/voucher/${l.voucher_id}`)}
+                            >
+                              Voucher
+                            </Button>
+                          )}
+                          {l.journal_entry_id && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 text-xs"
+                              onClick={() => navigate(`/accounting/journals/${l.journal_entry_id}`)}
+                            >
+                              Entry
+                            </Button>
                           )}
                         </TableCell>
                       </TableRow>
