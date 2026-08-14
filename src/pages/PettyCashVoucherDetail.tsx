@@ -4,8 +4,9 @@ import { ArrowLeft, CheckCircle, XCircle, Clock, Send, Printer, RotateCcw, Uploa
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { ReimbursementBadge } from "@/components/petty-cash/ReimbursementBadge";
+import PettyCashVoucherDocument from "@/components/petty-cash/PettyCashVoucherDocument";
+import { useCompanyProfile } from "@/hooks/useCompanyProfile";
 import {
   usePCVoucher,
   usePCVoucherLines,
@@ -16,7 +17,6 @@ import {
   getReceiptSignedUrl,
 } from "@/hooks/usePettyCash";
 import { useMyPermissions } from "@/hooks/usePermissions";
-import { formatCurrency } from "@/lib/currency";
 import { toast } from "sonner";
 
 const statusConfig: Record<string, { color: string; icon: any }> = {
@@ -37,6 +37,7 @@ export default function PettyCashVoucherDetail() {
   const uploadReceipt = useUploadReceipt();
   const updateReceipts = useUpdateVoucherReceipts();
   const { canEdit } = useMyPermissions();
+  const { data: company } = useCompanyProfile();
   const canManage = canEdit("banking");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -84,6 +85,12 @@ export default function PettyCashVoucherDetail() {
 
   const receiptUrls: string[] = (voucher as any).receipt_urls || [];
 
+  type NamedUser = { first_name?: string | null; last_name?: string | null } | null | undefined;
+  const fullName = (u: NamedUser) =>
+    u ? [u.first_name, u.last_name].filter(Boolean).join(" ").trim() || null : null;
+  const preparedName = fullName((voucher as any).prepared_user);
+  const authorizedName = fullName((voucher as any).authorized_user);
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       {/* Header — hidden in print */}
@@ -104,125 +111,40 @@ export default function PettyCashVoucherDetail() {
         <ReimbursementBadge status={voucher.status} replenishmentId={(voucher as any).replenishment_id} />
       </div>
 
-      {/* ─── PRINTABLE VOUCHER ─── */}
-      <div className="print:p-0" id="voucher-print">
-        {/* Print header */}
-        <div className="hidden print:block text-center mb-6">
-          <h1 className="text-2xl font-bold uppercase tracking-wider">Petty Cash Voucher</h1>
-          <p className="text-sm text-muted-foreground mt-1">Voucher No: {voucher.voucher_number}</p>
-        </div>
-
-        <Card className="print:shadow-none print:border">
-          <CardHeader className="print:pb-2">
-            <CardTitle className="text-base print:text-lg">Voucher Details</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <span className="text-muted-foreground">Date</span>
-                <p className="font-medium">{new Date(voucher.date).toLocaleDateString()}</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Paid To</span>
-                <p className="font-medium">{voucher.paid_to || "—"}</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Account</span>
-                <p className="font-medium">{voucher.petty_cash_accounts?.account_name}</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Total</span>
-                <p className="font-bold text-lg">{formatCurrency(voucher.total_amount)}</p>
-              </div>
-            </div>
-
-            <Separator className="my-4" />
-
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-muted-foreground">Prepared By</span>
-                <p className="font-medium">
-                  {(voucher as any).prepared_user
-                    ? `${(voucher as any).prepared_user.first_name} ${(voucher as any).prepared_user.last_name}`
-                    : "—"}
-                </p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Authorized By</span>
-                <p className="font-medium">
-                  {(voucher as any).authorized_user
-                    ? `${(voucher as any).authorized_user.first_name} ${(voucher as any).authorized_user.last_name}`
-                    : "—"}
-                </p>
-              </div>
-              {voucher.approved_at && (
-                <div>
-                  <span className="text-muted-foreground">Approved At</span>
-                  <p className="font-medium">{new Date(voucher.approved_at).toLocaleString()}</p>
-                </div>
-              )}
-              {voucher.journal_entry_id && (
-                <div className="print:hidden">
-                  <span className="text-muted-foreground">Journal Entry</span>
-                  <p className="font-medium text-primary cursor-pointer" onClick={() => navigate("/accounting/journals")}>
-                    View Entry →
-                  </p>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Lines */}
-        <Card className="print:shadow-none print:border mt-4">
-          <CardHeader className="print:pb-2">
-            <CardTitle className="text-base">Expense Lines</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <table className="w-full text-sm">
-              <thead className="bg-muted print:bg-gray-100">
-                <tr>
-                  <th className="px-3 py-2 text-left w-12">S.No</th>
-                  <th className="px-3 py-2 text-left">Date</th>
-                  <th className="px-3 py-2 text-left">Description</th>
-                  <th className="px-3 py-2 text-left">Account</th>
-                  <th className="px-3 py-2 text-right">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lines?.map((line: any, idx: number) => (
-                  <tr key={line.id} className="border-t">
-                    <td className="px-3 py-2 text-muted-foreground">{idx + 1}</td>
-                    <td className="px-3 py-2">{new Date(line.date).toLocaleDateString()}</td>
-                    <td className="px-3 py-2">{line.description || "—"}</td>
-                    <td className="px-3 py-2 text-muted-foreground">{line.accounts?.account_code} – {line.accounts?.account_name}</td>
-                    <td className="px-3 py-2 text-right font-medium">{formatCurrency(line.amount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t bg-muted/50 print:bg-gray-50">
-                  <td colSpan={4} className="px-3 py-2 text-right font-semibold">Total</td>
-                  <td className="px-3 py-2 text-right font-bold">{formatCurrency(voucher.total_amount)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </CardContent>
-        </Card>
-
-        {/* Signature block — visible in print */}
-        <div className="hidden print:grid grid-cols-3 gap-8 mt-12 text-sm">
-          <div className="text-center">
-            <div className="border-t border-foreground pt-2 mt-12">Prepared By</div>
-          </div>
-          <div className="text-center">
-            <div className="border-t border-foreground pt-2 mt-12">Authorized By</div>
-          </div>
-          <div className="text-center">
-            <div className="border-t border-foreground pt-2 mt-12">Received By</div>
-          </div>
-        </div>
+      {/* ─── The voucher itself ─── */}
+      <div className="rounded-lg border shadow-sm overflow-hidden print:border-0 print:shadow-none print:rounded-none">
+        <PettyCashVoucherDocument
+          model={{
+            voucherNumber: voucher.voucher_number,
+            date: voucher.date,
+            paidTo: voucher.paid_to,
+            fundName: voucher.petty_cash_accounts?.account_name,
+            status: voucher.status,
+            totalAmount: Number(voucher.total_amount) || 0,
+            preparedBy: preparedName,
+            authorizedBy: authorizedName,
+            approvedAt: voucher.approved_at,
+            reversedAt: (voucher as any).reversed_at,
+            lines: (lines ?? []).map((l) => ({
+              id: l.id,
+              date: l.date,
+              description: l.description,
+              amount: Number(l.amount) || 0,
+              accountCode: l.accounts?.account_code ?? null,
+              accountName: l.accounts?.account_name ?? null,
+            })),
+          }}
+          company={company}
+        />
       </div>
+
+      {voucher.journal_entry_id && (
+        <div className="print:hidden">
+          <Button variant="outline" size="sm" onClick={() => navigate("/accounting/journals")}>
+            View journal entry
+          </Button>
+        </div>
+      )}
 
       {/* ─── Receipts (not printed) ─── */}
       <Card className="print:hidden">
