@@ -17,6 +17,7 @@ import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supa
 import { embedDocuments, MAX_BATCH } from "../_shared/embeddings.ts";
 import { corsHeaders as baseCors } from "../_shared/cors.ts";
 import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
+import { assertCallerTenant, resolveCaller } from "../_shared/validate.ts";
 
 // Extends the shared CORS: this route needs its own Allow-Methods.
 const corsHeaders = {
@@ -75,6 +76,23 @@ Deno.serve(async (req) => {
       });
       if (blocked) return blocked;
       rlHeaders = headers;
+    }
+
+    // Both branches were reachable by any signed-in user: a targeted call could
+    // name another company, and the untargeted one swept every tenant on the
+    // platform. The sweep is a machine path, so it now requires the service key
+    // (which is what the cron job sends); a targeted call must be your own tenant.
+    const isMachineCaller =
+      (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "") ===
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+    if (!isMachineCaller) {
+      const caller = await resolveCaller(admin, req);
+      if (!body.tenant_id) {
+        return json({ error: "tenant_id is required" }, 400);
+      }
+      const tenantErr = assertCallerTenant(caller, body.tenant_id);
+      if (tenantErr) return json({ error: tenantErr }, tenantErr === "Unauthorized" ? 401 : 403);
     }
 
     const tenantIds: string[] = body.tenant_id

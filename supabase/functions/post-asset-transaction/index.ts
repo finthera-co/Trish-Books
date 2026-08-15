@@ -86,13 +86,18 @@ Deno.serve(async (req) => {
 
 // ─── VALIDATION HELPERS ───
 
-async function validateCategory(db: any, categoryId: string) {
+// Tenant-scoped for the same reason as validateAccountActive below: category_id
+// arrives in the request body and the lookup runs as service_role, so without the
+// filter another company's category (and the three GL accounts hanging off it)
+// could be pulled into this tenant's posting.
+async function validateCategory(db: any, tenantId: string, categoryId: string) {
   const { data: cat, error } = await db
     .from("asset_categories")
     .select("*")
     .eq("id", categoryId)
-    .single();
-  if (error || !cat) throw new Error("Asset category not found");
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (error || !cat) throw new Error("Asset category not found in this company");
   if (!cat.is_active) throw new Error("Asset category is inactive");
   if (!cat.asset_account_id) throw new Error("Category missing asset account configuration");
   if (!cat.accumulated_depreciation_account_id) throw new Error("Category missing accumulated depreciation account");
@@ -100,13 +105,20 @@ async function validateCategory(db: any, categoryId: string) {
   return cat;
 }
 
-async function validateAccountActive(db: any, accountId: string, label: string) {
+// `db` here is the service_role client, so this lookup does NOT apply the accounts
+// RLS policy — without the tenant filter, a cash_account_id taken from the request
+// body (see handleAssetDisposed) resolved another company's account and the
+// disposal posted against it. The tenant is now required, not optional.
+async function validateAccountActive(db: any, tenantId: string, accountId: string, label: string) {
   const { data: acct } = await db
     .from("accounts")
     .select("id, is_active")
     .eq("id", accountId)
-    .single();
-  if (!acct) throw new Error(`${label} account not found`);
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  // Deliberately the same message whether the account is absent or simply
+  // another tenant's — the difference is not the caller's business.
+  if (!acct) throw new Error(`${label} account not found in this company`);
   if (!acct.is_active) throw new Error(`${label} account is inactive`);
 }
 
@@ -394,7 +406,7 @@ async function handleAssetCreated(db: any, tenantId: string, body: any, userId: 
   let dispLoss: string | null;
 
   if (category_id) {
-    const cat = await validateCategory(db, category_id);
+    const cat = await validateCategory(db, tenantId, category_id);
     assetAcct = cat.asset_account_id;
     accumAcct = cat.accumulated_depreciation_account_id;
     exprAcct = cat.depreciation_expense_account_id;
@@ -414,12 +426,12 @@ async function handleAssetCreated(db: any, tenantId: string, body: any, userId: 
   }
 
   // Validate resolved accounts
-  await validateAccountActive(db, assetAcct, "Asset");
-  await validateAccountActive(db, accumAcct, "Accum. Depreciation");
-  await validateAccountActive(db, exprAcct, "Depreciation Expense");
-  await validateAccountActive(db, payment_account_id, "Payment");
-  if (dispGain) await validateAccountActive(db, dispGain, "Disposal Gain");
-  if (dispLoss) await validateAccountActive(db, dispLoss, "Disposal Loss");
+  await validateAccountActive(db, tenantId, assetAcct, "Asset");
+  await validateAccountActive(db, tenantId, accumAcct, "Accum. Depreciation");
+  await validateAccountActive(db, tenantId, exprAcct, "Depreciation Expense");
+  await validateAccountActive(db, tenantId, payment_account_id, "Payment");
+  if (dispGain) await validateAccountActive(db, tenantId, dispGain, "Disposal Gain");
+  if (dispLoss) await validateAccountActive(db, tenantId, dispLoss, "Disposal Loss");
   await validatePeriodOpen(db, tenantId, pDate);
 
   // 1. Create asset — snapshot the resolved accounts onto the asset row
@@ -633,8 +645,8 @@ async function handleDepreciationPosted(db: any, tenantId: string, body: any, us
       }
 
       // Validate both accounts are active
-      await validateAccountActive(db, expenseAccountId, "Depreciation Expense");
-      await validateAccountActive(db, accumAccountId, "Accumulated Depreciation");
+      await validateAccountActive(db, tenantId, expenseAccountId, "Depreciation Expense");
+      await validateAccountActive(db, tenantId, accumAccountId, "Accumulated Depreciation");
 
       // STEP 5: Build idempotency key
       const uniqueKey = `dep_${asset.id}_${period}`;
@@ -729,17 +741,21 @@ async function handleAssetDisposed(db: any, tenantId: string, body: any, userId:
     return errorResponse("Required: asset_id, sale_price, cash_account_id");
   }
 
+  // Tenant-scoped: asset_id comes from the request body and `db` is the
+  // service_role client, so an unscoped lookup would resolve — and then dispose
+  // of — another company's asset.
   const { data: asset, error: aErr } = await db
     .from("fixed_assets")
     .select("*")
     .eq("id", asset_id)
-    .single();
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
   if (aErr || !asset) return errorResponse("Asset not found", 404);
   if (asset.status === "disposed") return errorResponse("Asset is already disposed");
 
   const today = new Date().toISOString().split("T")[0];
   await validatePeriodOpen(db, tenantId, today);
-  await validateAccountActive(db, cash_account_id, "Cash/Bank");
+  await validateAccountActive(db, tenantId, cash_account_id, "Cash/Bank");
 
   // Fetch global account_settings fallbacks
   const { data: globalSettings } = await db
@@ -761,7 +777,7 @@ async function handleAssetDisposed(db: any, tenantId: string, body: any, userId:
     asset.disposal_loss_account_id ?? globalSettings?.loss_on_disposal_account_id ?? null;
 
   if (asset.category_id) {
-    const cat = await validateCategory(db, asset.category_id);
+    const cat = await validateCategory(db, tenantId, asset.category_id);
     // Category values override global settings but not asset-level snapshot
     assetAccountId = cat.asset_account_id ?? assetAccountId;
     accumAccountId = asset.depreciation_account_id
@@ -821,7 +837,8 @@ async function handleAssetDisposed(db: any, tenantId: string, body: any, userId:
     journal_entry_id: jeId,
   } as any);
 
-  await db.from("fixed_assets").update({ status: "disposed" }).eq("id", asset_id);
+  await db.from("fixed_assets").update({ status: "disposed" })
+    .eq("id", asset_id).eq("tenant_id", tenantId);
 
   // Cancel remaining pending depreciation
   await db.from("asset_depreciation")
@@ -871,7 +888,8 @@ async function handleAssetAdjusted(db: any, tenantId: string, body: any, userId:
     return errorResponse("Required: asset_id, adjustment_type, amount");
   }
 
-  const { data: asset } = await db.from("fixed_assets").select("*").eq("id", asset_id).single();
+  const { data: asset } = await db.from("fixed_assets").select("*")
+    .eq("id", asset_id).eq("tenant_id", tenantId).maybeSingle();
   if (!asset) return errorResponse("Asset not found", 404);
   if (asset.status === "disposed") return errorResponse("Cannot adjust a disposed asset");
 
@@ -879,7 +897,7 @@ async function handleAssetAdjusted(db: any, tenantId: string, body: any, userId:
   await validatePeriodOpen(db, tenantId, today);
 
   // Resolve accounts + method: from category when present, otherwise from asset snapshot.
-  const cat = asset.category_id ? await validateCategory(db, asset.category_id) : null;
+  const cat = asset.category_id ? await validateCategory(db, tenantId, asset.category_id) : null;
   const assetAcct = cat?.asset_account_id ?? asset.asset_account_id;
   const method = cat?.depreciation_method ?? asset.depreciation_method ?? "straight_line";
   if (!assetAcct) return errorResponse("Asset has no asset account configured");
@@ -900,7 +918,8 @@ async function handleAssetAdjusted(db: any, tenantId: string, body: any, userId:
 
     // For a proper revaluation, you'd credit a Revaluation Surplus equity account
     // For now, log the adjustment
-    await db.from("fixed_assets").update({ cost: amount } as any).eq("id", asset_id);
+    await db.from("fixed_assets").update({ cost: amount } as any)
+      .eq("id", asset_id).eq("tenant_id", tenantId);
 
     // Regenerate remaining depreciation schedule
     await db.from("asset_depreciation").delete().eq("asset_id", asset_id).eq("status", "pending");
@@ -935,12 +954,13 @@ async function handleCategoryTransfer(db: any, tenantId: string, body: any, user
   const { asset_id, new_category_id } = body;
   if (!asset_id || !new_category_id) return errorResponse("Required: asset_id, new_category_id");
 
-  const { data: asset } = await db.from("fixed_assets").select("*").eq("id", asset_id).single();
+  const { data: asset } = await db.from("fixed_assets").select("*")
+    .eq("id", asset_id).eq("tenant_id", tenantId).maybeSingle();
   if (!asset) return errorResponse("Asset not found", 404);
   if (asset.status === "disposed") return errorResponse("Cannot transfer a disposed asset");
 
   const oldCategoryId = asset.category_id;
-  const newCat = await validateCategory(db, new_category_id);
+  const newCat = await validateCategory(db, tenantId, new_category_id);
 
   // Update asset category + account mappings (no GL impact per spec)
   await db.from("fixed_assets").update({
@@ -949,7 +969,7 @@ async function handleCategoryTransfer(db: any, tenantId: string, body: any, user
     depreciation_account_id: newCat.accumulated_depreciation_account_id,
     depr_expense_account_id: newCat.depreciation_expense_account_id,
     depreciation_method: newCat.depreciation_method,
-  } as any).eq("id", asset_id);
+  } as any).eq("id", asset_id).eq("tenant_id", tenantId);
 
   // Regenerate pending depreciation schedule with new method
   await db.from("asset_depreciation").delete().eq("asset_id", asset_id).eq("status", "pending");

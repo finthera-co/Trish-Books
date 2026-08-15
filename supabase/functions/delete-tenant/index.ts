@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { str, uuid, validateBody } from "../_shared/validate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -68,9 +69,14 @@ Deno.serve(async (req) => {
     const { data: caller } = await callerClient.auth.getUser();
     if (!caller?.user) throw new Error("Unauthorized: could not resolve caller");
 
-    const { tenant_id, confirmation } = await req.json();
-    if (!tenant_id) throw new Error("tenant_id is required");
-    if (!confirmation) throw new Error("confirmation is required");
+    // tenant_id goes to hard_delete_tenant, which erases a whole company. A
+    // malformed value should fail here with a sentence, not inside the purge.
+    const v = await validateBody(req, {
+      tenant_id:    uuid(),
+      confirmation: str(200),
+    });
+    if (!v.ok) throw new Error(v.message);
+    const { tenant_id, confirmation } = v.value;
 
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 

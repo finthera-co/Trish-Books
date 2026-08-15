@@ -3,6 +3,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { corsHeaders as baseCors } from "../_shared/cors.ts";
 import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
+import { assertCallerTenant, resolveCaller } from "../_shared/validate.ts";
 
 const corsHeaders = {
   ...baseCors,
@@ -23,30 +24,23 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    // This handler runs as service role with no caller identity, so the caller
-    // is resolved here purely to key the limiter — without it the user-scoped
-    // rule would be skipped and the limiter would be inert. Body-supplied
-    // tenant_id is deliberately NOT used as the key: a caller could vary it to
-    // sidestep their own bucket.
-    {
-      const token = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
-      const { data: authData } = token
-        ? await supabase.auth.getUser(token)
-        : { data: null };
-      const { data: appUser } = authData?.user
-        ? await supabase
-            .from("users")
-            .select("id, tenant_id")
-            .eq("auth_user_id", authData.user.id)
-            .maybeSingle()
-        : { data: null };
-      const { blocked } = await enforceRateLimit(supabase, "forecast-insights", {
-        userId: appUser?.id ?? null,
-        tenantId: appUser?.tenant_id ?? null,
-        ip: clientIp(req),
-      });
-      if (blocked) return blocked;
-    }
+    // This handler runs as service role with no caller identity, so the caller is
+    // resolved by hand. It keys the limiter — body-supplied tenant_id is
+    // deliberately NOT used for that, since a caller could vary it to sidestep
+    // their own bucket — and it is what tenant_id is authorised against below.
+    const caller = await resolveCaller(supabase, req);
+    const { blocked } = await enforceRateLimit(supabase, "forecast-insights", {
+      userId: caller?.id ?? null,
+      tenantId: caller?.tenant_id ?? null,
+      ip: clientIp(req),
+    });
+    if (blocked) return blocked;
+
+    // Every read below filters on the body's tenant_id with the service_role
+    // client, which applies no RLS — so without this the route returned another
+    // company's figures to anyone who asked for them by id.
+    const tenantErr = assertCallerTenant(caller, tenant_id);
+    if (tenantErr) return json({ error: tenantErr }, tenantErr === "Unauthorized" ? 401 : 403);
 
 
     const { data: forecasts } = await supabase

@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
+import { email, optional, password, str, uuid, validateBody } from "../_shared/validate.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -37,7 +38,20 @@ Deno.serve(async (req) => {
     );
     if (blocked) return blocked;
 
-    const body = await req.json();
+    // Lengths match the columns these land in and the caps the public signup form
+    // is already held to by RLS (see 20260730000001_signup_requests.sql) — the two
+    // routes create the same kind of record and should not disagree on limits.
+    const v = await validateBody(req, {
+      company_name:         str(200),
+      country:              optional(str(100)),
+      industry:             optional(str(100)),
+      subscription_plan_id: optional(uuid()),
+      admin_email:          email(),
+      admin_password:       password(),
+      admin_first_name:     str(100),
+      admin_last_name:      str(100),
+    });
+    if (!v.ok) throw new Error(v.message);
     const {
       company_name,
       country,
@@ -47,15 +61,7 @@ Deno.serve(async (req) => {
       admin_password,
       admin_first_name,
       admin_last_name,
-    } = body;
-
-    if (!company_name || !admin_email || !admin_password || !admin_first_name || !admin_last_name) {
-      throw new Error("Missing required fields");
-    }
-
-    if (admin_password.length < 8) {
-      throw new Error("Password must be at least 8 characters");
-    }
+    } = v.value;
 
     // 1. Create the auth user (auto-confirm email)
     const { data: authData, error: authError } = await adminClient.auth.admin.createUser({

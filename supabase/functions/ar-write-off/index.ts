@@ -25,6 +25,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
+import {
+  assertTenantAccounts, enumOf, isoDate, money, optional, str, uuid, validateBody, withDefault,
+} from "../_shared/validate.ts";
 
 const EPSILON = 0.005;
 
@@ -79,7 +82,22 @@ Deno.serve(async (req) => {
     );
     if (blocked) return blocked;
 
-    const body = await req.json();
+    // Every id below is spent against the service_role client, which does not
+    // apply RLS — so shape is checked here and ownership just below. The previous
+    // `if (!amount || amount <= 0)` also let Infinity and numeric strings through.
+    const v = await validateBody(req, {
+      customer_id:          uuid(),
+      ar_transaction_id:    optional(uuid()),
+      amount:               money(),
+      bad_debt_account_id:  uuid(),
+      allowance_account_id: uuid(),
+      ar_account_id:        optional(uuid()),
+      write_off_type:       enumOf(["PROVISION", "WRITE_OFF"] as const),
+      write_off_date:       withDefault(isoDate(), today),
+      notes:                optional(str(1000)),
+    });
+    if (!v.ok) return json({ ok: false, error: v.message, fields: v.errors }, 200);
+
     const {
       customer_id,
       ar_transaction_id,
@@ -88,32 +106,24 @@ Deno.serve(async (req) => {
       allowance_account_id,
       ar_account_id: bodyArAccountId,
       write_off_type,
-      write_off_date = today(),
+      write_off_date,
       notes,
-    } = body as {
-      customer_id: string;
-      ar_transaction_id?: string;
-      amount: number;
-      bad_debt_account_id: string;
-      allowance_account_id: string;
-      ar_account_id?: string;
-      write_off_type: "PROVISION" | "WRITE_OFF";
-      write_off_date?: string;
-      notes?: string;
-    };
-
-    if (!customer_id)          return json({ ok: false, error: "customer_id is required" }, 200);
-    if (!amount || amount <= 0) return json({ ok: false, error: "amount must be positive" }, 200);
-    if (!bad_debt_account_id)  return json({ ok: false, error: "bad_debt_account_id is required" }, 200);
-    if (!allowance_account_id) return json({ ok: false, error: "allowance_account_id is required" }, 200);
-    if (!write_off_type || !["PROVISION", "WRITE_OFF"].includes(write_off_type)) {
-      return json({ ok: false, error: "write_off_type must be PROVISION or WRITE_OFF" }, 200);
-    }
+    } = v.value;
 
     const tid = appUser.tenant_id;
 
+    // Ownership, not just shape: without this a caller can name another tenant's
+    // account and have the line posted against it. The DB trigger refuses it too,
+    // but that surfaces as a raised exception rather than a usable message.
+    const acctErr = await assertTenantAccounts(admin, tid, [
+      bad_debt_account_id,
+      allowance_account_id,
+      bodyArAccountId,
+    ]);
+    if (acctErr) return json({ ok: false, error: acctErr }, 200);
+
     // Resolve AR control account
-    let arAccountId = bodyArAccountId;
+    let arAccountId: string | null | undefined = bodyArAccountId;
     if (!arAccountId) {
       const { data: settings } = await admin
         .from("account_settings")

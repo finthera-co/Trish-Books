@@ -1,8 +1,14 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { drawStatementHeading, type StatementHeadingMeta } from "@/lib/reportHeading";
 
 /**
  * Generic PDF table export utility.
+ *
+ * Two heading modes. By default it draws the compact left-aligned title used by
+ * operational list exports. Financial statements pass `heading` instead and get
+ * the centred statutory block — entity, title, period, basis — that a report
+ * leaving the building has to carry.
  */
 export function exportToPdf(
   filename: string,
@@ -17,6 +23,8 @@ export function exportToPdf(
     /** 0-based indices into `rows` to render bold (e.g. subtotal/total rows). */
     boldRows?: ReadonlySet<number>;
     columnStyles?: Record<number, { halign: "left" | "right" }>;
+    /** Centred statement heading. When set it replaces the left-aligned title. */
+    heading?: Omit<StatementHeadingMeta, "title">;
   }
 ) {
   const doc = new jsPDF({ orientation: opts?.orientation || "landscape", unit: "pt", format: "a4" });
@@ -24,21 +32,27 @@ export function exportToPdf(
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 40;
 
-  doc.setFontSize(14);
-  doc.text(title, margin, 40);
-  if (opts?.subtitle) {
-    doc.setFontSize(9);
-    doc.setTextColor(120);
-    doc.text(opts.subtitle, margin, 56);
-    doc.setTextColor(0);
+  let startY: number;
+  if (opts?.heading) {
+    startY = drawStatementHeading(doc, { ...opts.heading, title }, margin);
+  } else {
+    doc.setFontSize(14);
+    doc.text(title, margin, 40);
+    if (opts?.subtitle) {
+      doc.setFontSize(9);
+      doc.setTextColor(120);
+      doc.text(opts.subtitle, margin, 56);
+      doc.setTextColor(0);
+    }
+    doc.setFontSize(8);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, margin, opts?.subtitle ? 70 : 56);
+    startY = opts?.subtitle ? 84 : 70;
   }
-  doc.setFontSize(8);
-  doc.text(`Generated: ${new Date().toLocaleString()}`, margin, opts?.subtitle ? 70 : 56);
 
   autoTable(doc, {
     head: [headers],
     body: rows.map((r) => r.map((c) => (c == null ? "" : String(c)))),
-    startY: opts?.subtitle ? 84 : 70,
+    startY,
     margin: { left: margin, right: margin, bottom: margin },
     styles: { fontSize: 8, cellPadding: 4 },
     headStyles: { fillColor: [34, 197, 94], textColor: 255 },

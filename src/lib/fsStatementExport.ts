@@ -1,6 +1,7 @@
 import { exportToCsv } from "@/lib/csvExport";
 import { exportToPdf } from "@/lib/pdfExport";
 import { computeFingerprint } from "@/lib/reportFingerprint";
+import { generatedSentence, periodSentence, type StatementHeadingCompany } from "@/lib/reportHeading";
 import { supabase } from "@/integrations/supabase/client";
 import type { FsStatementLine } from "@/hooks/useFinancialStatements";
 
@@ -12,6 +13,9 @@ export interface FsExportMeta {
   periodCaption?: string;
   dateFrom: string;
   dateTo: string;
+  /** Entity identity for the PDF's statutory heading. */
+  company?: StatementHeadingCompany;
+  preparedBy?: string;
   /** Coverage warnings/errors in force — an export that drops these is how a
    * known-bad number reaches a board pack. */
   warnings: string[];
@@ -147,10 +151,19 @@ export function exportSociPdf(lines: FsStatementLine[], meta: FsExportMeta) {
     rows,
     {
       orientation: "portrait",
-      subtitle: `${meta.periodCaption ?? "For the Year Ended"} · ${meta.dateFrom} to ${meta.dateTo}`,
       footer,
       boldRows,
       columnStyles: { 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right" } },
+      heading: {
+        ...meta.company,
+        subtitle: "Profit or Loss and Other Comprehensive Income",
+        periodLine: meta.periodCaption
+          ? `${meta.periodCaption} ${new Date(meta.dateTo).getFullYear()}`
+          : periodSentence(meta.dateFrom, meta.dateTo),
+        basisLine: "Accrual basis  ·  All amounts in LKR",
+        scopeLine: `Reporting period ${periodSentence(meta.dateFrom, meta.dateTo).replace(/^For the period /, "")}`,
+        generatedLine: generatedSentence(meta.preparedBy),
+      },
     }
   );
   void logExport(meta, "pdf", fp.hash, lines);

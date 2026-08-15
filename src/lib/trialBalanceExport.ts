@@ -1,6 +1,7 @@
 import { exportToCsv } from "@/lib/csvExport";
 import { exportToPdf } from "@/lib/pdfExport";
 import { computeFingerprint } from "@/lib/reportFingerprint";
+import { generatedSentence, periodSentence, type StatementHeadingCompany } from "@/lib/reportHeading";
 import { supabase } from "@/integrations/supabase/client";
 import type { TrialBalanceGroupBy } from "@/hooks/useTrialBalance";
 import {
@@ -19,7 +20,17 @@ export interface TrialBalanceExportMeta {
   includeZero: boolean;
   includeInactive: boolean;
   rowCount: number;
+  /** Entity identity for the PDF's statutory heading. */
+  company?: StatementHeadingCompany;
+  preparedBy?: string;
 }
+
+/** Reader-facing names for the grouping — mirrors the on-screen masthead. */
+const GROUP_BY_LABELS: Record<TrialBalanceGroupBy, string> = {
+  parent: "Parent Account",
+  category: "Category",
+  type: "Account Type",
+};
 
 // Bare numbers so Excel parses them — no separators, no parentheses, minus sign preserved.
 function num(n: number): string {
@@ -172,9 +183,18 @@ export function exportTrialBalancePdf(groups: TrialBalanceGroupBlock[], grand: T
     rows,
     {
       orientation: "landscape",
-      subtitle: `${meta.dateFrom} to ${meta.dateTo} · All amounts in LKR`,
       footer: fp.line,
       boldRows,
+      heading: {
+        ...meta.company,
+        periodLine: periodSentence(meta.dateFrom, meta.dateTo),
+        basisLine: "Accrual basis  ·  All amounts in LKR",
+        scopeLine:
+          `Grouped by ${GROUP_BY_LABELS[meta.groupBy]}  ·  ` +
+          `Zero-balance accounts ${meta.includeZero ? "included" : "excluded"}  ·  ` +
+          `Inactive accounts ${meta.includeInactive ? "included" : "excluded"}`,
+        generatedLine: generatedSentence(meta.preparedBy),
+      },
       columnStyles: {
         1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" },
         4: { halign: "right" }, 5: { halign: "right" }, 6: { halign: "right" },

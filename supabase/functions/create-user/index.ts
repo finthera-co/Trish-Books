@@ -1,6 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
+import {
+  email as email_, optional, password as password_, str, uuid, validateBody,
+} from "../_shared/validate.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -29,16 +32,19 @@ Deno.serve(async (req) => {
     const { data: callerTenantId } = await callerClient.rpc("get_user_tenant_id");
     const { data: isSA } = await callerClient.rpc("is_super_admin");
 
-    const body = await req.json();
-    const { email, password, first_name, last_name, role_id, tenant_id } = body;
-
-    if (!email || !password || !first_name || !last_name || !role_id) {
-      throw new Error("Missing required fields");
-    }
-
-    if (password.length < 8) {
-      throw new Error("Password must be at least 8 characters");
-    }
+    // role_id and tenant_id are spent against the service_role client below, so
+    // they are checked for UUID shape here rather than handed to .eq() raw — a
+    // non-uuid gets a readable message instead of a Postgres 22P02.
+    const v = await validateBody(req, {
+      email:      email_(),
+      password:   password_(),
+      first_name: str(100),
+      last_name:  str(100),
+      role_id:    uuid(),
+      tenant_id:  optional(uuid()),
+    });
+    if (!v.ok) throw new Error(v.message);
+    const { email, password, first_name, last_name, role_id, tenant_id } = v.value;
 
     // Determine target tenant
     const targetTenantId = isSA && tenant_id ? tenant_id : callerTenantId;

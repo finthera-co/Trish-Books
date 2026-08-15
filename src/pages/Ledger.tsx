@@ -24,6 +24,7 @@ import { toast } from "sonner";
 import { isDebitNormal as checkDebitNormal, isPeriodBasedAccount, getTypeLabel, ACCOUNT_TYPES, typeColors } from "@/lib/accountTypes";
 import { formatCurrency } from "@/lib/currency";
 import GeneralLedgerReport from "@/components/ledger/GeneralLedgerReport";
+import { ReportMasthead } from "@/components/reports/ReportMasthead";
 import { ARSubledger, APSubledger } from "@/components/ledger/SubsidiaryLedger";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -691,15 +692,27 @@ export default function Ledger() {
 
             {/* ── Register Table ── */}
             <div className="stat-card print:shadow-none overflow-x-auto">
-              {/* Print header */}
-              <div className="hidden print:block text-center mb-4">
-                <h2 className="text-lg font-bold">Account Register</h2>
-                <p className="text-sm text-muted-foreground">
-                  {selectedAccount?.account_code} · {selectedAccount?.account_name}
-                  {effectiveDateFrom && ` | ${effectiveDateFrom} to ${effectiveDateTo || "present"}`}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">Generated: {format(new Date(), "PPpp")}</p>
-              </div>
+              <ReportMasthead
+                title="Account Register"
+                subtitle={selectedAccount ? `${selectedAccount.account_code} · ${selectedAccount.account_name}` : null}
+                dateFrom={effectiveDateFrom || undefined}
+                dateTo={effectiveDateTo || undefined}
+                periodCaption={
+                  !effectiveDateFrom && !effectiveDateTo ? "All periods to date" : undefined
+                }
+                currency="LKR"
+                scope={[
+                  selectedAccount && { label: "Account type", value: getTypeLabel(selectedAccount.account_type) },
+                  { label: "Normal balance", value: isDebitNormal ? "Debit" : "Credit" },
+                  typeFilter !== "all" && { label: "Transaction type", value: typeFilter },
+                  searchTerm && { label: "Search", value: `"${searchTerm}"` },
+                ]}
+                note={
+                  isPeriodBased
+                    ? "Income and expense accounts are period-based; no balance is carried forward into this window."
+                    : null
+                }
+              />
 
               {isLoading ? (
                 <div className="flex items-center justify-center py-16">
@@ -721,7 +734,7 @@ export default function Ledger() {
                 </div>
               ) : (
                 <>
-                  <table className="w-full text-sm">
+                  <table className="w-full text-sm report-table report-table--grid">
                     <thead>
                       <tr className="border-b-2 border-border bg-muted/30">
                         <th className="text-right px-3 py-2.5 w-12">

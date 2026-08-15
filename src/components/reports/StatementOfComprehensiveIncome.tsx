@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import { format as formatDate } from "date-fns";
 import { Download, FileText, Printer, AlertTriangle, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,9 +8,9 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
 import { useFiscalPeriods } from "@/hooks/useFiscalPeriodBalances";
 import { useFsStatement, useFsCoverage, useFsStatementMeta } from "@/hooks/useFinancialStatements";
+import { ReportMasthead, formatReportDate, useReportCompany } from "@/components/reports/ReportMasthead";
 import { exportSociCsv, exportSociPdf } from "@/lib/fsStatementExport";
 import { fmtStatement, fmtEps, fmtMargin, rowClasses } from "@/lib/fsStatementModel";
 
@@ -37,15 +36,9 @@ export default function StatementOfComprehensiveIncome() {
   const [acked, setAcked] = useState(false);
   const [pendingAction, setPendingAction] = useState<"csv" | "pdf" | "print" | null>(null);
 
-  const { data: company } = useQuery({
-    queryKey: ["tenant_company_for_soci", appUser?.tenant_id],
-    enabled: !!appUser?.tenant_id,
-    queryFn: async () => {
-      const { data, error } = await supabase.from("tenants").select("company_name").eq("id", appUser!.tenant_id).maybeSingle();
-      if (error) throw error;
-      return data;
-    },
-  });
+  // Same identity block the masthead renders, so the exported PDF and the
+  // printed page name the entity identically.
+  const { data: company } = useReportCompany();
 
   const { data: meta } = useFsStatementMeta(STATEMENT_CODE);
   const { data: lines, isLoading, error } = useFsStatement(STATEMENT_CODE, dateFrom, dateTo, cmpDateFrom, cmpDateTo);
@@ -91,6 +84,14 @@ export default function StatementOfComprehensiveIncome() {
       periodCaption: meta?.period_caption,
       dateFrom,
       dateTo,
+      company: {
+        companyName: company?.company_name,
+        address: company?.address,
+        phone: company?.phone,
+        taxId: company?.tax_id,
+        registrationNumber: company?.registration_number,
+      },
+      preparedBy: [appUser?.first_name, appUser?.last_name].filter(Boolean).join(" "),
       warnings: (coverage ?? []).map((c) => `[${c.severity.toUpperCase()}] ${c.issue_code}: ${c.detail}`),
       ackNote,
       footerNotes: meta?.footer_notes ?? [],
@@ -197,14 +198,23 @@ export default function StatementOfComprehensiveIncome() {
       )}
 
       <div className="stat-card print:shadow-none">
-        <div className="text-center mb-6 print:mb-4">
-          <p className="text-sm text-muted-foreground uppercase tracking-wide">{company?.company_name}</p>
-          <h2 className="text-lg font-bold text-foreground mt-1">{meta?.title ?? "Statement Of Comprehensive Income"}</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            {meta?.period_caption ?? "For the Year Ended 31st March"} {new Date(dateTo).getFullYear()}
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">Generated: {formatDate(new Date(), "PPpp")}</p>
-        </div>
+        <ReportMasthead
+          title={meta?.title ?? "Statement Of Comprehensive Income"}
+          subtitle="Profit or Loss and Other Comprehensive Income"
+          periodCaption={`${meta?.period_caption ?? "For the Year Ended 31st March"} ${new Date(dateTo).getFullYear()}`}
+          currency="LKR"
+          scope={[
+            { label: "Reporting period", value: `${formatReportDate(dateFrom)} to ${formatReportDate(dateTo)}` },
+            cmpDateFrom && cmpDateTo
+              ? { label: "Comparative", value: `${formatReportDate(cmpDateFrom)} to ${formatReportDate(cmpDateTo)}` }
+              : null,
+          ]}
+          note={
+            errors.length > 0
+              ? `${errors.length} unresolved coverage issue${errors.length !== 1 ? "s" : ""} — see the notices above.`
+              : null
+          }
+        />
 
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
@@ -218,7 +228,7 @@ export default function StatementOfComprehensiveIncome() {
         ) : !lines?.length ? (
           <div className="text-center py-16 text-muted-foreground">No statement lines defined. Seed the default SOCI and map accounts first.</div>
         ) : (
-          <table className="w-full text-sm max-w-3xl mx-auto">
+          <table className="w-full text-sm max-w-3xl mx-auto report-table">
             <thead>
               <tr className="border-b-2 border-foreground/30">
                 <th scope="col" className="text-left py-1.5 font-semibold text-xs uppercase tracking-wide text-muted-foreground"></th>

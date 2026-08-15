@@ -16,11 +16,15 @@ import { PCTransferDialog } from "@/components/petty-cash/PCTransferDialog";
 import { PCImportDialog } from "@/components/petty-cash/PCImportDialog";
 import { PCFundDialog } from "@/components/petty-cash/PCFundDialog";
 
+/** How many vouchers "Recent" means before you ask for the rest. */
+const RECENT_LIMIT = 15;
+
 const statusColor: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
   pending: "bg-warning/10 text-warning",
   approved: "bg-success/10 text-success",
   rejected: "bg-destructive/10 text-destructive",
+  reversed: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
 };
 
 export default function PettyCash() {
@@ -187,51 +191,105 @@ function PCAccountCard({ account }: { account: any }) {
 }
 
 function VouchersList() {
-  const { data: vouchers, isLoading } = usePCVouchers();
+  const [scope, setScope] = useState<PCVoucherScope>("live");
+  const [showAll, setShowAll] = useState(false);
+  const { data, isLoading } = usePCVouchers(undefined, {
+    scope,
+    limit: showAll ? undefined : RECENT_LIMIT,
+  });
   const navigate = useNavigate();
 
-  if (isLoading) return <p className="text-muted-foreground text-center py-4">Loading vouchers...</p>;
+  const vouchers = data?.rows ?? [];
+  const total = data?.total ?? 0;
+
+  const SCOPES: [PCVoucherScope, string][] = [
+    ["live", "Live"],
+    ["reversed", "Reversed"],
+    ["all", "All"],
+  ];
 
   return (
     <div className="space-y-3">
-      <h2 className="text-lg font-semibold">Recent Vouchers</h2>
-      {!vouchers?.length ? (
-        <p className="text-muted-foreground text-sm">No vouchers yet.</p>
-      ) : (
-        <div className="stat-card">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Voucher #</th>
-                <th>Date</th>
-                <th>Paid To</th>
-                <th>Account</th>
-                <th className="text-right">Amount</th>
-                <th>Status</th>
-                <th>Reimbursement</th>
-              </tr>
-            </thead>
-            <tbody>
-              {vouchers.map((v: any) => (
-                <tr key={v.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/banking/petty-cash/voucher/${v.id}`)}>
-                  <td className="font-mono text-sm">{v.voucher_number}</td>
-                  <td className="text-muted-foreground">{new Date(v.date).toLocaleDateString()}</td>
-                  <td>{v.paid_to || "—"}</td>
-                  <td className="text-muted-foreground">{v.petty_cash_accounts?.account_name}</td>
-                  <td className="text-right font-medium">{formatCurrency(v.total_amount)}</td>
-                  <td>
-                    <Badge className={statusColor[v.status] || ""}>{v.status}</Badge>
-                  </td>
-                  <td><ReimbursementBadge status={v.status} replenishmentId={v.replenishment_id} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-lg font-semibold">
+          {scope === "live" ? "Recent Vouchers" : scope === "reversed" ? "Reversed Vouchers" : "All Vouchers"}
+        </h2>
+        {/* A reversed voucher is history, not work in hand. Keeping it out of
+            the default view is what makes this list "recent" — a withdrawn
+            271-row import once filled it with 269 reversed rows. */}
+        <div className="flex gap-1 ml-auto">
+          {SCOPES.map(([key, label]) => (
+            <Button
+              key={key}
+              size="sm"
+              variant={scope === key ? "default" : "outline"}
+              className="h-7 text-xs"
+              onClick={() => {
+                setScope(key);
+                setShowAll(false);
+              }}
+            >
+              {label}
+            </Button>
+          ))}
         </div>
+      </div>
+
+      {isLoading ? (
+        <p className="text-muted-foreground text-center py-4">Loading vouchers...</p>
+      ) : !vouchers.length ? (
+        <p className="text-muted-foreground text-sm">
+          {scope === "live"
+            ? "No live vouchers. Reversed ones are under Reversed."
+            : scope === "reversed"
+              ? "Nothing has been reversed."
+              : "No vouchers yet."}
+        </p>
+      ) : (
+        <>
+          <div className="stat-card">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Voucher #</th>
+                  <th>Date</th>
+                  <th>Paid To</th>
+                  <th>Account</th>
+                  <th className="text-right">Amount</th>
+                  <th>Status</th>
+                  <th>Reimbursement</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vouchers.map((v: any) => (
+                  <tr key={v.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/banking/petty-cash/voucher/${v.id}`)}>
+                    <td className="font-mono text-sm">{v.voucher_number}</td>
+                    <td className="text-muted-foreground">{new Date(v.date).toLocaleDateString()}</td>
+                    <td>{v.paid_to || "—"}</td>
+                    <td className="text-muted-foreground">{v.petty_cash_accounts?.account_name}</td>
+                    <td className="text-right font-medium">{formatCurrency(v.total_amount)}</td>
+                    <td>
+                      <Badge className={statusColor[v.status] || ""}>{v.status}</Badge>
+                    </td>
+                    <td><ReimbursementBadge status={v.status} replenishmentId={v.replenishment_id} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Showing {vouchers.length} of {total}</span>
+            {!showAll && total > vouchers.length && (
+              <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => setShowAll(true)}>
+                Show all {total}
+              </Button>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
 }
 
 // Need to import this here since it's used in VouchersList
-import { usePCVouchers } from "@/hooks/usePettyCash";
+import { usePCVouchers, type PCVoucherScope } from "@/hooks/usePettyCash";

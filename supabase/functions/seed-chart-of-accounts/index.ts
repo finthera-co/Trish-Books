@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
+import { uuid, validateBody } from "../_shared/validate.ts";
 
 // A new tenant's Chart of Accounts starts EMPTY except for the single system
 // Opening Balance Equity account (code 3900). No default COA accounts and no
@@ -15,8 +16,28 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
-    const { tenant_id } = await req.json();
-    if (!tenant_id) throw new Error("Missing tenant_id");
+    const v = await validateBody(req, { tenant_id: uuid() });
+    if (!v.ok) throw new Error(v.message);
+    const { tenant_id } = v.value;
+
+    // The tenant to seed arrives in the body and is then written with the
+    // service_role client, so accepting it on the caller's word alone let any
+    // signed-in user create an account row inside another company. Two callers
+    // are legitimate: provision-tenant, which calls in with the service key, and
+    // a Super Admin re-seeding by hand. Anyone else is pinned to their own tenant.
+    const bearer = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+    if (bearer !== serviceRoleKey) {
+      const callerClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } },
+      });
+      const { data: isSA } = await callerClient.rpc("is_super_admin");
+      if (!isSA) {
+        const { data: callerTenantId } = await callerClient.rpc("get_user_tenant_id");
+        if (!callerTenantId || callerTenantId !== tenant_id) {
+          throw new Error("Unauthorized: cannot seed accounts for another company");
+        }
+      }
+    }
 
     // Keyed per tenant. Provisioning calls this exactly once per new tenant, so
     // a 10/hr tenant bucket cannot interfere with provision-tenant or

@@ -9,6 +9,7 @@ import {
   AlertTriangle, XCircle, Loader2, Rows3, Lock, Filter,
 } from "lucide-react";
 import { ACCOUNT_TYPES } from "@/lib/accountTypes";
+import { ReportMasthead, useReportCompany } from "@/components/reports/ReportMasthead";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMyPermissions } from "@/hooks/usePermissions";
 import { useFiscalPeriods } from "@/hooks/useFiscalPeriodBalances";
@@ -117,6 +118,7 @@ export default function GeneralLedgerReport({
   const { appUser } = useAuth();
   const { canView } = useMyPermissions();
   const { data: fiscalPeriods } = useFiscalPeriods();
+  const { data: company } = useReportCompany();
 
   const [dateFrom, setDateFrom] = useState(() => initialDateFrom || defaultDateFrom());
   const [dateTo, setDateTo] = useState(() => initialDateTo || new Date().toISOString().slice(0, 10));
@@ -348,7 +350,27 @@ export default function GeneralLedgerReport({
         if (kind === "csv") {
           exportGeneralLedgerCsv(full.rows, { dateFrom, dateTo, fingerprintLine: line, warnings: warningLines });
         } else {
-          await exportGeneralLedgerPdf(full.rows, { dateFrom, dateTo, fingerprintLine: line, currency: GL_REPORT_CURRENCY });
+          await exportGeneralLedgerPdf(full.rows, {
+            dateFrom,
+            dateTo,
+            fingerprintLine: line,
+            currency: GL_REPORT_CURRENCY,
+            company: {
+              companyName: company?.company_name,
+              address: company?.address,
+              phone: company?.phone,
+              taxId: company?.tax_id,
+              registrationNumber: company?.registration_number,
+            },
+            subtitle: focusAccountId ? focusAccountLabel : null,
+            // Mirrors the on-screen masthead's scope line — the export covers
+            // every in-scope account regardless of on-screen collapse.
+            scopeLine:
+              `Account type ${accountType === "all" ? "All types" : accountType}  ·  ` +
+              `Zero-activity accounts ${includeZeroActivity ? "included" : "excluded"}  ·  ` +
+              `Inactive accounts ${includeInactive ? "included" : "excluded"}`,
+            preparedBy: [appUser.first_name, appUser.last_name].filter(Boolean).join(" "),
+          });
         }
 
         await logGlExport({
@@ -371,7 +393,7 @@ export default function GeneralLedgerReport({
         setIsExporting(null);
       }
     },
-    [treeQuery.data, appUser, dateFrom, dateTo, accountType, includeZeroActivity, includeOtherRows, includeInactive, showAccountCodes, focusAccountId, warningLines]
+    [treeQuery.data, appUser, dateFrom, dateTo, accountType, includeZeroActivity, includeOtherRows, includeInactive, showAccountCodes, focusAccountId, focusAccountLabel, company, warningLines]
   );
 
   if (!canViewReport) {
@@ -513,13 +535,25 @@ export default function GeneralLedgerReport({
 
       {/* ── Report header ── */}
       <div className="stat-card print:shadow-none">
-        <div className="text-center mb-4 print:mb-3">
-          <h2 className="text-lg font-bold text-foreground">General Ledger</h2>
-          <p className="text-sm text-muted-foreground">{dateFrom} — {dateTo}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">All amounts in {GL_REPORT_CURRENCY}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">Generated: {formatDate(new Date(), "PPpp")}</p>
-          {fingerprint && <p className="text-[10px] font-mono text-muted-foreground/70 mt-1">{fingerprint.line}</p>}
-        </div>
+        <ReportMasthead
+          title="General Ledger"
+          subtitle={focusAccountId ? focusAccountLabel : null}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          currency={GL_REPORT_CURRENCY}
+          scope={[
+            { label: "Account type", value: accountType === "all" ? "All types" : accountType },
+            { label: "Zero-activity accounts", value: includeZeroActivity ? "Included" : "Excluded" },
+            { label: "Inactive accounts", value: includeInactive ? "Included" : "Excluded" },
+            focusAccountId && { label: "Scope", value: "Selected ledger and its sub-accounts" },
+          ]}
+          note={
+            Math.abs(reportImbalance) > 0.005
+              ? `Debits and credits do not agree — difference ${GL_REPORT_CURRENCY} ${Math.abs(reportImbalance).toFixed(2)}.`
+              : null
+          }
+          documentId={fingerprint?.line}
+        />
 
         {showRenderAllWarning && (
           <div className="print:hidden mb-3 flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs">
@@ -669,7 +703,7 @@ function FullTable({
 }: { rows: GLReportRow[]; collapsed: Set<string>; onToggle: (k: string) => void; colWidths: number[] }) {
   return (
     <div className="overflow-x-auto">
-      <table className="text-sm border-separate" style={{ borderSpacing: `${COL_GAP}px 0` }} aria-label="General Ledger transactions">
+      <table className="text-sm border-separate report-table report-table--grid" style={{ borderSpacing: `${COL_GAP}px 0` }} aria-label="General Ledger transactions">
         <colgroup>
           {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
         </colgroup>

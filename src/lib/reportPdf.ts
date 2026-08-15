@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { drawStatementHeading, generatedSentence } from "@/lib/reportHeading";
 
 /**
  * Generic financial-report PDF exporter for the Reports hub.
@@ -23,10 +24,13 @@ export interface ReportPdfMeta {
   address?: string | null;
   phone?: string | null;
   taxId?: string | null;
+  registrationNumber?: string | null;
   title: string;
   subtitle?: string;
   dateLine: string;
   fileName: string;
+  /** Named in the generated stamp, so a printed pack says who produced it. */
+  preparedBy?: string | null;
 }
 
 export function downloadReportPdf(container: HTMLElement, meta: ReportPdfMeta) {
@@ -44,43 +48,18 @@ export function downloadReportPdf(container: HTMLElement, meta: ReportPdfMeta) {
   const center = pageWidth / 2;
 
   // ── Statement heading (first page) ────────────────────────────────
-  let y = margin + 6;
-  if (meta.companyName) {
-    doc.setFont("helvetica", "bold").setFontSize(14).setTextColor(...INK);
-    doc.text(meta.companyName, center, y, { align: "center" });
-    y += 16;
-  }
-  doc.setFont("helvetica", "normal").setFontSize(8.5).setTextColor(...MUTED);
-  if (meta.address) {
-    for (const line of meta.address.split("\n").map(s => s.trim()).filter(Boolean)) {
-      doc.text(line, center, y, { align: "center" });
-      y += 11;
-    }
-  }
-  const contact = [meta.phone, meta.taxId ? `TIN: ${meta.taxId}` : null].filter(Boolean).join(" · ");
-  if (contact) {
-    doc.text(contact, center, y, { align: "center" });
-    y += 11;
-  }
-  y += 4;
-  doc.setDrawColor(...RULE).setLineWidth(0.75);
-  doc.line(margin, y, pageWidth - margin, y);
-  y += 18;
-
-  doc.setFont("helvetica", "bold").setFontSize(12).setTextColor(...INK);
-  doc.text(meta.title, center, y, { align: "center" });
-  y += 14;
-  doc.setFont("helvetica", "normal").setFontSize(9).setTextColor(...MUTED);
-  if (meta.subtitle) {
-    doc.text(meta.subtitle, center, y, { align: "center" });
-    y += 12;
-  }
-  doc.setTextColor(...INK);
-  doc.text(meta.dateLine, center, y, { align: "center" });
-  y += 11;
-  doc.setFontSize(7.5).setTextColor(...MUTED);
-  doc.text("All amounts in LKR", center, y, { align: "center" });
-  y += 16;
+  let y = drawStatementHeading(doc, {
+    companyName: meta.companyName,
+    address: meta.address,
+    phone: meta.phone,
+    taxId: meta.taxId,
+    registrationNumber: meta.registrationNumber,
+    title: meta.title,
+    subtitle: meta.subtitle,
+    periodLine: meta.dateLine,
+    basisLine: "Accrual basis  ·  All amounts in LKR",
+    generatedLine: generatedSentence(meta.preparedBy),
+  }, margin);
 
   // ── Statement table(s) ─────────────────────────────────────────────
   for (const table of tables) {

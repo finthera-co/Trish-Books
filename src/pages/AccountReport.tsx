@@ -43,6 +43,7 @@ import { formatCurrency } from "@/lib/currency";
 import { isDebitNormal, getNormalBalance, getTypeLabel, getStatementPlacement, isOpeningBalanceEquityAccount, isPeriodBasedAccount, typeColors } from "@/lib/accountTypes";
 import { netAccountBalance } from "@/lib/accountBalances";
 import { downloadDataExcel } from "@/lib/reportExcel";
+import { ReportMasthead } from "@/components/reports/ReportMasthead";
 import EditTransactionModal from "@/components/account-report/EditTransactionModal";
 
 interface TransactionRow {
@@ -394,7 +395,7 @@ export default function AccountReport() {
   return (
     <div className="space-y-6">
       {/* Top Bar */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex items-center justify-between flex-wrap gap-3 print:hidden">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
             <ArrowLeft className="w-4 h-4 mr-1" /> Back
@@ -416,6 +417,28 @@ export default function AccountReport() {
           </Button>
         </div>
       </div>
+
+      {/* Statement heading — the same block every other report carries, so a
+          printed account ledger stands on its own as a document. */}
+      <ReportMasthead
+        title="Account Ledger"
+        subtitle={`${account.account_code} · ${account.account_name}`}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        currency="LKR"
+        scope={[
+          { label: "Account type", value: getTypeLabel(account.account_type) },
+          { label: "Normal balance", value: getNormalBalance(account.account_type) },
+          { label: "Statement", value: getStatementPlacement(account.account_type) },
+          typeFilter !== "all" && { label: "Transaction type", value: typeFilter.replace(/_/g, " ") },
+          debouncedSearch && { label: "Search", value: `"${debouncedSearch}"` },
+        ]}
+        note={
+          isPeriodBased
+            ? "Income and expense accounts are period-based; no opening balance is carried into this window."
+            : null
+        }
+      />
 
       {/* Account Details Header */}
       <Card>
@@ -580,7 +603,7 @@ export default function AccountReport() {
       <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm report-table report-table--grid">
               <thead>
                 <tr className="border-b bg-muted/30">
                   <th className="text-right px-4 py-2.5 text-xs font-medium text-muted-foreground w-12">#</th>

@@ -78,18 +78,40 @@ export function useCreatePCAccount() {
 }
 
 // ─── Vouchers ───
-export function usePCVouchers(pcAccountId?: string) {
+export type PCVoucherScope = "live" | "reversed" | "all";
+
+/**
+ * Vouchers for the list, filtered and capped SERVER-side.
+ *
+ * It used to select every voucher a tenant had ever raised, unfiltered and
+ * unlimited, and render the lot in one table — a withdrawn 271-row import left
+ * "Recent Vouchers" showing 269 reversed rows and nothing recent at all. A
+ * reversed voucher is history, not work in hand, so it is out of the default
+ * view rather than deleted; the records stay for audit.
+ */
+export function usePCVouchers(
+  pcAccountId?: string,
+  opts: { scope?: PCVoucherScope; limit?: number } = {},
+) {
+  const { scope = "all", limit } = opts;
   return useQuery({
-    queryKey: ["pc_vouchers", pcAccountId],
+    queryKey: ["pc_vouchers", pcAccountId, scope, limit ?? null],
     queryFn: async () => {
       let query = supabase
         .from("petty_cash_vouchers")
-        .select("*, petty_cash_accounts(account_name), prepared_user:prepared_by(first_name, last_name), authorized_user:authorized_by(first_name, last_name)")
+        .select(
+          "*, petty_cash_accounts(account_name), prepared_user:prepared_by(first_name, last_name), authorized_user:authorized_by(first_name, last_name)",
+          { count: "exact" },
+        )
         .order("created_at", { ascending: false });
       if (pcAccountId) query = query.eq("petty_cash_account_id", pcAccountId);
-      const { data, error } = await query;
+      if (scope === "live") query = query.neq("status", "reversed");
+      else if (scope === "reversed") query = query.eq("status", "reversed");
+      if (limit) query = query.range(0, limit - 1);
+
+      const { data, error, count } = await query;
       if (error) throw error;
-      return data;
+      return { rows: data ?? [], total: count ?? 0 };
     },
   });
 }

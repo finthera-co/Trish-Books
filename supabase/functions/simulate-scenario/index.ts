@@ -36,33 +36,53 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // This handler runs as service role with no caller identity, so the caller
-    // is resolved here purely to key the limiter — without it the user-scoped
-    // rule would be skipped and the limiter would be inert. Body-supplied
-    // tenant_id is deliberately NOT used as the key: a caller could vary it to
-    // sidestep their own bucket.
-    {
-      const token = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
-      const { data: authData } = token
-        ? await supabase.auth.getUser(token)
-        : { data: null };
-      const { data: appUser } = authData?.user
-        ? await supabase
-            .from("users")
-            .select("id, tenant_id")
-            .eq("auth_user_id", authData.user.id)
-            .maybeSingle()
-        : { data: null };
-      const { blocked } = await enforceRateLimit(supabase, "simulate-scenario", {
-        userId: appUser?.id ?? null,
-        tenantId: appUser?.tenant_id ?? null,
-        ip: clientIp(req),
-      });
-      if (blocked) return blocked;
-    }
+    // This handler runs as service role, so nothing below applies RLS and the
+    // caller has to be resolved explicitly. It keys the limiter — body-supplied
+    // tenant_id is deliberately NOT used for that, since a caller could vary it
+    // to sidestep their own bucket — and, below, it is what body.tenant_id is
+    // checked against.
+    const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+    const { data: authData } = token
+      ? await supabase.auth.getUser(token)
+      : { data: null };
+    const { data: appUser } = authData?.user
+      ? await supabase
+          .from("users")
+          .select("id, tenant_id")
+          .eq("auth_user_id", authData.user.id)
+          .maybeSingle()
+      : { data: null };
+
+    const { blocked } = await enforceRateLimit(supabase, "simulate-scenario", {
+      userId: appUser?.id ?? null,
+      tenantId: appUser?.tenant_id ?? null,
+      ip: clientIp(req),
+    });
+    if (blocked) return blocked;
 
     const body: ScenarioInput = await req.json();
     if (!body.tenant_id) return json({ error: "tenant_id required" }, 400);
+
+    // The one check that was missing. Every read below filters on body.tenant_id
+    // with the service_role client, so accepting it unverified handed any
+    // signed-in user another company's forecast baseline — and let them write a
+    // scenario_models row into it.
+    // is_super_admin() reads auth.uid(), which is null under the service role, so
+    // the caller's role is read from the row instead. There is no cross-tenant
+    // path for this route today; a Super Admin gets one because they already
+    // read every tenant everywhere else in the product.
+    if (!appUser?.tenant_id) return json({ error: "No tenant context for this user" }, 403);
+    if (body.tenant_id !== appUser.tenant_id) {
+      const { data: callerRole } = await supabase
+        .from("users")
+        .select("roles(role_name)")
+        .eq("id", appUser.id)
+        .maybeSingle();
+      const roleName = (callerRole?.roles as { role_name?: string } | null)?.role_name;
+      if (roleName !== "Super Admin") {
+        return json({ error: "Cannot simulate for another company" }, 403);
+      }
+    }
 
     const yearsHorizon = [1, 3, 5].includes(body.time_horizon_years ?? 0)
       ? body.time_horizon_years!

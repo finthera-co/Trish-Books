@@ -15,6 +15,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
+import { assertTenantAccounts } from "../_shared/validate.ts";
 
 const EPSILON = 0.005;
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -493,6 +494,16 @@ Deno.serve(async (req) => {
     // ── Accounts ──────────────────────────────────────────────────────
     const arAccountId = (body.ar_account_id as string) || (invoices?.[0]?.ar_account_id as string) || settings?.ar_account_id;
     if (!arAccountId && allocations.length > 0) errors.push("Accounts Receivable not configured (Settings → Account Mapping)");
+
+    // bank_account_id and ar_account_id both arrive in the request body and both
+    // end up as the account on a journal line, written with `admin` (service_role,
+    // no RLS). Only the ones the caller supplied are checked — the fallbacks come
+    // from tenant-scoped reads and are already the right company's.
+    const bodyAccountErr = await assertTenantAccounts(admin, appUser.tenant_id, [
+      body.ar_account_id as string | undefined,
+      bank_account_id,
+    ]);
+    if (bodyAccountErr) errors.push(bodyAccountErr);
 
     // Deposit-funded application (no bank movement).
     let fundingDeposit: any = null;

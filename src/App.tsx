@@ -32,6 +32,7 @@ import ShellPreview from "./pages/ShellPreview";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
+import PlanRequest from "./pages/PlanRequest";
 import SignupRequests from "./pages/SignupRequests";
 import Onboarding from "./pages/Onboarding";
 import ChartOfAccounts from "./pages/ChartOfAccounts";
@@ -151,6 +152,8 @@ const App = () => (
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
+            {/* Pick a package on the landing page, configure add-ons, then apply */}
+            <Route path="/get-started" element={<PlanRequest />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route element={<ProtectedRoute />}>
               <Route path="/onboarding" element={<Onboarding />} />

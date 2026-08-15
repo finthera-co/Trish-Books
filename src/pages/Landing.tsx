@@ -431,7 +431,7 @@ const LOCAL = [
    whole price book lives in one place and is easy to refresh. */
 
 /* Every base tier ships the same core ledger; listed once, not per card. */
-const CORE_LEDGER = [
+export const CORE_LEDGER = [
   "Chart of accounts, journals & general ledger",
   "Trial balance, P&L and balance sheet",
   "Invoicing — IRD Gazette 2481/22 VAT/SSCL",
@@ -470,7 +470,7 @@ const discountFor = (plan: { name: string; monthly: number }) => {
   return { list, percent: Math.round(((list - plan.monthly) / list) * 100) };
 };
 
-const BASE_PLANS = [
+export const BASE_PLANS = [
   {
     name: "Free",
     users: "1",
@@ -537,7 +537,7 @@ const BASE_PLANS = [
 ];
 
 /* Module packs, grouped the way the app's modules are grouped. */
-const PACK_GROUPS = [
+export const PACK_GROUPS = [
   {
     title: "Sales & Receivables",
     packs: [
@@ -612,7 +612,7 @@ const PACK_GROUPS = [
 ];
 
 /* Payroll scales by headcount; add-ons layer on top. */
-const PAYROLL_CORE = [
+export const PAYROLL_CORE = [
   ["Up to 5 employees", "1,500"],
   ["Up to 15", "3,400"],
   ["Up to 30", "5,900"],
@@ -620,7 +620,7 @@ const PAYROLL_CORE = [
   ["Up to 100", "14,900"],
   ["100+", "150 / employee"],
 ];
-const PAYROLL_ADDONS = [
+export const PAYROLL_ADDONS = [
   ["Attendance & Biometric Import — ZKTeco AttLog", "1,400"],
   ["Leave Management & No-Pay Proration", "1,200"],
   ["Loans & Salary Advances", "1,200"],
@@ -630,7 +630,7 @@ const PAYROLL_ADDONS = [
 ];
 
 /* Discounted bundles — list is the à-la-carte sum, price is the bundle. */
-const BUNDLES = [
+export const BUNDLES = [
   ["Finance Essentials", "Receivables, Payables, Bank Rec, Petty Cash", 6100, 4900],
   ["Trading", "Inventory Core, Multi-Warehouse, PO/GRN, Reorder", 7100, 5400],
   ["Compliance", "Period Close, Audit, IFRS Pack, Tax Engine, Approvals", 8300, 5900],
@@ -649,7 +649,7 @@ const INDUSTRY_BUNDLES = [
   ["NGO / Donor-Funded", "Standard + Cost Centres + Budgeting + Multi-Currency + Audit", 10900],
 ];
 
-const MICRO_ADDONS = [
+export const MICRO_ADDONS = [
   ["Extra user", "LKR 1,200 / user / mo"],
   ["Extra company", "50% of base"],
   ["Custom invoice templates", "LKR 600 / mo"],
@@ -2138,10 +2138,11 @@ export default function Landing() {
                   );
                 })()}
 
-                {/* Every tier routes to signup — a visitor convinced by a plan must
-                    be able to act on it here, not be sent to a login form. */}
+                {/* A paid tier carries its choice through to the configurator, so the
+                    plan the visitor clicked is the plan they land on. Free has no
+                    add-ons to pick, so it goes straight to the plain request form. */}
                 <Link
-                  to="/signup"
+                  to={plan.monthly === 0 ? "/signup" : `/get-started?plan=${encodeURIComponent(plan.name)}`}
                   className={`lp-btn lp-btn-lg lp-tier-cta${plan.popular ? "" : " lp-btn-ghost"}`}
                 >
                   {plan.monthly === 0 ? "Start free" : `Start on ${plan.name}`}
@@ -2493,78 +2494,6 @@ export default function Landing() {
         </section>
       </main>
 
-      {/* ── Footer: the closing entry ─────────────────────────────
-             Laid out as the last journal entry of the period. The link groups are
-             account ranges, mirroring the chart-of-accounts section above, and the
-             foot carries the same balance check as the hero card — same specimen
-             figure (ENTRY_TOTAL), so the page opens and closes on a ledger that
-             ties. It stays a plain <nav> of real links underneath the styling. ── */}
-      <footer className="lp-footer">
-        <div className="lp-shell" ref={sRiseFooter}>
-          <div className="lp-foot-head">
-            <span className="lp-mono lp-foot-jv">JV-2026-CLOSE</span>
-            <span className="lp-foot-posted">
-              <Check className="w-3 h-3" strokeWidth={3} />
-              Posted
-            </span>
-            <span className="lp-foot-rule" aria-hidden="true" />
-            <span className="lp-mono lp-foot-period">Period 03/2026 · locked</span>
-          </div>
-
-          <div className="lp-foot-ledger">
-            {FOOT_GROUPS.map((group) => (
-              <nav key={group.code} className="lp-foot-col" aria-label={group.title}>
-                <p className="lp-foot-key">
-                  <span className="lp-mono lp-foot-code">{group.code}</span>
-                  <span className="lp-mono lp-foot-class">{group.title}</span>
-                </p>
-                <ul className="lp-foot-links">
-                  {group.links.map(([label, href]) =>
-                    href.startsWith("#") ? (
-                      <li key={label}>
-                        <a href={href}>{label}</a>
-                      </li>
-                    ) : (
-                      <li key={label}>
-                        <Link to={href}>{label}</Link>
-                      </li>
-                    ),
-                  )}
-                </ul>
-              </nav>
-            ))}
-          </div>
-
-          {/* The closing check, echoing the hero's entry. */}
-          <div className="lp-foot-totals lp-mono" aria-hidden="true">
-            <span className="lp-foot-tot-lbl">Σ Debits</span>
-            <span className="lp-foot-tot-val">{money(ENTRY_TOTAL)}</span>
-            <span className="lp-foot-tot-lbl">Σ Credits</span>
-            <span className="lp-foot-tot-val">{money(ENTRY_TOTAL)}</span>
-            <span className="lp-foot-tot-diff">
-              <Check className="w-3.5 h-3.5" strokeWidth={3} />
-              Difference 0.00
-            </span>
-          </div>
-
-          <div className="lp-foot-base">
-            <div className="lp-foot-brand">
-              <BrandMark className="w-[1.3rem] h-[1.3rem] shrink-0 rounded" />
-              <span className="font-serif text-base">Trish Books</span>
-              <span className="lp-foot-tag">Double-entry accounting, built in Sri Lanka</span>
-            </div>
-            <div className="lp-foot-meta">
-              <Link to="/signup" className="lp-foot-cta">
-                Start free
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
-              <p className="lp-mono lp-foot-copy">
-                © {new Date().getFullYear()} Trish Books
-              </p>
-            </div>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

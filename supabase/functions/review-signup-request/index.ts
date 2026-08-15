@@ -13,6 +13,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { enumOf, httpUrl, optional, str, uuid, validateBody } from "../_shared/validate.ts";
 import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
 const json = (body: unknown, status = 200, extraHeaders: Record<string, string> = {}) =>
@@ -63,10 +64,16 @@ Deno.serve(async (req) => {
     const { data: isSA } = await callerClient.rpc("is_super_admin");
     if (!isSA) throw new Error("Unauthorized: Super Admin only");
 
-    const { request_id, action, note, site_url } = await req.json();
-    if (!request_id || !["approve", "reject"].includes(action)) {
-      throw new Error("request_id and action ('approve' | 'reject') are required");
-    }
+    const v = await validateBody(req, {
+      request_id: uuid(),
+      action:     enumOf(["approve", "reject"] as const),
+      note:       optional(str(2000)),
+      // Ends up as the redirectTo of an emailed password-set link, so it is
+      // checked as a real http(s) URL rather than pasted into a template string.
+      site_url:   optional(httpUrl()),
+    });
+    if (!v.ok) throw new Error(v.message);
+    const { request_id, action, note, site_url } = v.value;
 
     // Resolve the reviewer's users.id. auth.uid() is the auth user id, which is a
     // different key — writing it into reviewed_by would violate the FK.
@@ -146,7 +153,20 @@ Deno.serve(async (req) => {
     // A set-password link rather than a password in the body of an email: mail is
     // not a confidential channel and it is retained indefinitely. The applicant's
     // username is their email; the link lets them choose the secret.
-    const site = (site_url as string) ?? Deno.env.get("SITE_URL") ?? "";
+    // SITE_URL is the deployment's own address, so when it is configured it is
+    // also the allow-list: a caller-supplied origin that disagrees with it would
+    // send the applicant's password link somewhere we do not control.
+    const configuredSite = Deno.env.get("SITE_URL") ?? "";
+    if (site_url && configuredSite) {
+      let configuredOrigin = "";
+      try {
+        configuredOrigin = new URL(configuredSite).origin;
+      } catch { /* SITE_URL misconfigured — fall back to it wholesale below */ }
+      if (configuredOrigin && new URL(site_url).origin !== configuredOrigin) {
+        throw new Error("site_url is not an address of this deployment");
+      }
+    }
+    const site = site_url ?? configuredSite;
     const { data: linkData, error: linkErr } = await adminClient.auth.admin.generateLink({
       type: "recovery",
       email: reqRow.email,

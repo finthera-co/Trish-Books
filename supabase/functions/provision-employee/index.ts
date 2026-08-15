@@ -1,6 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
+import {
+  email as email_, optional, password as password_, str, uuid, validateBody,
+} from "../_shared/validate.ts";
 
 // Fields that belong to the employees table. Anything else in the payload is ignored.
 const EMPLOYEE_FIELDS = [
@@ -40,18 +43,19 @@ Deno.serve(async (req) => {
     const { data: callerTenantId } = await callerClient.rpc("get_user_tenant_id");
     const { data: isSA } = await callerClient.rpc("is_super_admin");
 
-    const body = await req.json();
-    const { email, password, first_name, last_name } = body;
-
-    if (!email || !password || !first_name) {
-      throw new Error("Email, password and first name are required");
-    }
-    if (password.length < 8) {
-      throw new Error("Password must be at least 8 characters");
-    }
+    const v = await validateBody(req, {
+      email:      email_(),
+      password:   password_(),
+      first_name: str(100),
+      // Optional to match the original check, which required only a first name.
+      last_name:  optional(str(100)),
+      tenant_id:  optional(uuid()),
+    });
+    if (!v.ok) throw new Error(v.message);
+    const { email, password, first_name, last_name, tenant_id } = v.value;
 
     // Super admin may target another tenant; everyone else is pinned to their own.
-    const targetTenantId = isSA && body.tenant_id ? body.tenant_id : callerTenantId;
+    const targetTenantId = isSA && tenant_id ? tenant_id : callerTenantId;
     if (!targetTenantId) throw new Error("No tenant context");
 
     const adminClient = createClient(supabaseUrl, serviceRoleKey);

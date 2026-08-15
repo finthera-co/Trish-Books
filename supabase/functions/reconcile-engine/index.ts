@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { executeRuleAction, ruleConditionMatches } from "../_shared/ruleActions.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
+import { enumOf, uuid, validateBody } from "../_shared/validate.ts";
 
 const EPS = 0.01;
 
@@ -277,35 +278,61 @@ Deno.serve(async (req) => {
       { auth: { persistSession: false } },
     );
 
-    const body = await req.json().catch(() => ({}));
-    const { reconciliation_id, action } = body as {
-      reconciliation_id: string;
-      action: "snapshot" | "match" | "validate" | "finalize";
-    };
-
-    if (!reconciliation_id || !action) {
-      return new Response(JSON.stringify({ error: "reconciliation_id and action are required" }), {
+    const v = await validateBody(req, {
+      reconciliation_id: uuid(),
+      action:            enumOf(["snapshot", "match", "validate", "finalize"] as const),
+    });
+    if (!v.ok) {
+      return new Response(JSON.stringify({ error: v.message, fields: v.errors }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    const { reconciliation_id, action } = v.value;
 
-    // Load reconciliation
+    // Resolve the caller before loading anything. This handler runs entirely as
+    // service_role, so nothing below applies RLS — and reconciliation_id arrives
+    // in the request body. Without this, any signed-in user could name another
+    // company's reconciliation and drive it, `finalize` included.
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const token = authHeader.replace(/^Bearer\s+/i, "");
+    const { data: authData } = token ? await supabase.auth.getUser(token) : { data: null };
+    if (!authData?.user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { data: appUser } = await supabase
+      .from("users")
+      .select("id, tenant_id")
+      .eq("auth_user_id", authData.user.id)
+      .maybeSingle();
+    if (!appUser?.tenant_id) {
+      return new Response(JSON.stringify({ error: "No tenant context for this user" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Load reconciliation — scoped to the caller's tenant, so a foreign id is
+    // "not found" rather than a working handle on someone else's books.
     const { data: recon, error: rErr } = await supabase
       .from("bank_reconciliations")
       .select("*")
       .eq("id", reconciliation_id)
-      .single();
+      .eq("tenant_id", appUser.tenant_id)
+      .maybeSingle();
     if (rErr) throw rErr;
+    if (!recon) throw new Error("Reconciliation not found");
     if (recon.locked_at) throw new Error("Reconciliation is locked");
 
-    // Keyed on the reconciliation's own tenant — this handler runs as service
-    // role with no caller identity, so the loaded row is the only trustworthy
-    // scope. Placed before the ledger scan and matching work below.
+    // Now keyed on the caller as well as the tenant — previously the tenant came
+    // off the loaded row, which a caller could vary by choosing a different id.
     const { blocked, headers: rlHeaders } = await enforceRateLimit(
       supabase,
       "reconcile-engine",
-      { userId: null, tenantId: recon.tenant_id, ip: clientIp(req) },
+      { userId: appUser.id, tenantId: appUser.tenant_id, ip: clientIp(req) },
     );
     if (blocked) return blocked;
 

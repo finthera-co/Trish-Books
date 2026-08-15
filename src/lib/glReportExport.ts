@@ -5,6 +5,9 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { exportToCsv } from "@/lib/csvExport";
 import { fmtAmt, fmtBal, GL_DATE_FORMAT, type GLReportRow } from "@/lib/glReportModel";
+import {
+  drawStatementHeading, generatedSentence, periodSentence, type StatementHeadingCompany,
+} from "@/lib/reportHeading";
 
 // djb2 — a reproducibility label, not a security control, so a small synchronous
 // hash is the right tool: no reason to reach for crypto.subtle and make this async.
@@ -139,19 +142,33 @@ const BOLD_ROW_KINDS = new Set(["account-header", "account-total", "grand-total"
  */
 export async function exportGeneralLedgerPdf(
   rows: readonly GLReportRow[],
-  meta: { dateFrom: string; dateTo: string; fingerprintLine: string; currency: string }
+  meta: {
+    dateFrom: string;
+    dateTo: string;
+    fingerprintLine: string;
+    currency: string;
+    /** Entity identity for the statutory heading. */
+    company?: StatementHeadingCompany;
+    /** What the export was narrowed to, so the figures can be reproduced. */
+    scopeLine?: string;
+    subtitle?: string | null;
+    preparedBy?: string;
+  }
 ): Promise<void> {
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 40;
 
-  doc.setFontSize(13);
-  doc.text("General Ledger", margin, 40);
-  doc.setFontSize(9);
-  doc.setTextColor(120);
-  doc.text(`${meta.dateFrom} to ${meta.dateTo} · All amounts in ${meta.currency}`, margin, 56);
-  doc.setTextColor(0);
+  const headingBottom = drawStatementHeading(doc, {
+    ...meta.company,
+    title: "General Ledger",
+    subtitle: meta.subtitle,
+    periodLine: periodSentence(meta.dateFrom, meta.dateTo),
+    basisLine: `Accrual basis  ·  All amounts in ${meta.currency}`,
+    scopeLine: meta.scopeLine,
+    generatedLine: generatedSentence(meta.preparedBy),
+  }, margin);
 
   const headers = ["Account", "Type", "Date", "Num", "Adj", "Name", "Memo", "Split", "Debit", "Credit", "Balance"];
   const columnStyles = {
@@ -188,7 +205,7 @@ export async function exportGeneralLedgerPdf(
   const showProgress = rows.length > PDF_PROGRESS_TOAST_THRESHOLD;
   const toastId = showProgress ? toast.loading(`Building PDF… 0 / ${rows.length.toLocaleString()} rows`) : undefined;
 
-  let startY = 70;
+  let startY = headingBottom;
   for (let i = 0; i < totalChunks; i++) {
     const chunk = rows.slice(i * PDF_CHUNK_SIZE, (i + 1) * PDF_CHUNK_SIZE);
     autoTable(doc, {

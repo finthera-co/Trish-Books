@@ -1,13 +1,11 @@
 import { useState, useMemo, Fragment, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { format as formatDate } from "date-fns";
 import { toast } from "sonner";
 import { Download, FileText, Printer, ChevronDown, ChevronRight, AlertTriangle, FileSpreadsheet, Loader2, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { supabase } from "@/integrations/supabase/client";
+import { ReportMasthead, useReportCompany } from "@/components/reports/ReportMasthead";
 import { useAuth } from "@/contexts/AuthContext";
 import { useFiscalPeriods } from "@/hooks/useFiscalPeriodBalances";
 import { useTrialBalance, type TrialBalanceGroupBy, type TrialBalanceRow } from "@/hooks/useTrialBalance";
@@ -32,6 +30,13 @@ function defaultDateFrom(): string {
 
 type GroupBlock = TrialBalanceGroupBlock;
 
+/** Reader-facing names for the grouping, for the masthead's scope line. */
+const GROUP_BY_LABELS: Record<TrialBalanceGroupBy, string> = {
+  parent: "Parent Account",
+  category: "Category",
+  type: "Account Type",
+};
+
 export default function TrialBalance() {
   const { appUser } = useAuth();
   const navigate = useNavigate();
@@ -49,20 +54,9 @@ export default function TrialBalance() {
 
   const { data: rows, isLoading, error } = useTrialBalance(dateFrom, dateTo, { groupBy, includeZero, includeInactive });
 
-  // Company identity for the workbook's heading block.
-  const { data: company } = useQuery({
-    queryKey: ["tenant_company_for_trial_balance", appUser?.tenant_id],
-    enabled: !!appUser?.tenant_id,
-    queryFn: async () => {
-      const { data, error: e } = await supabase
-        .from("tenants")
-        .select("company_name, address, phone, tax_id")
-        .eq("id", appUser!.tenant_id)
-        .maybeSingle();
-      if (e) throw e;
-      return data;
-    },
-  });
+  // Company identity — the same block the on-screen masthead renders, so the
+  // workbook heading and the printed page can never disagree.
+  const { data: company } = useReportCompany();
 
   const exportMeta = useMemo(
     () => ({
@@ -74,8 +68,16 @@ export default function TrialBalance() {
       includeZero,
       includeInactive,
       rowCount: rows?.length ?? 0,
+      company: {
+        companyName: company?.company_name,
+        address: company?.address,
+        phone: company?.phone,
+        taxId: company?.tax_id,
+        registrationNumber: company?.registration_number,
+      },
+      preparedBy: [appUser?.first_name, appUser?.last_name].filter(Boolean).join(" "),
     }),
-    [appUser?.tenant_id, appUser?.id, dateFrom, dateTo, groupBy, includeZero, includeInactive, rows?.length]
+    [appUser?.tenant_id, appUser?.id, appUser?.first_name, appUser?.last_name, dateFrom, dateTo, groupBy, includeZero, includeInactive, rows?.length, company]
   );
 
   const onPeriodPresetChange = (val: string) => {
@@ -275,12 +277,23 @@ export default function TrialBalance() {
       </div>
 
       <div className="stat-card print:shadow-none overflow-x-auto">
-        <div className="text-center mb-4 print:mb-3">
-          <h2 className="text-lg font-bold text-foreground">Trial Balance</h2>
-          <p className="text-sm text-muted-foreground">{dateFrom} — {dateTo}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">All amounts in LKR</p>
-          <p className="text-xs text-muted-foreground mt-0.5">Generated: {formatDate(new Date(), "PPpp")}</p>
-        </div>
+        <ReportMasthead
+          title="Trial Balance"
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          currency="LKR"
+          scope={[
+            { label: "Grouped by", value: GROUP_BY_LABELS[groupBy] },
+            { label: "Zero-balance accounts", value: includeZero ? "Included" : "Excluded" },
+            { label: "Inactive accounts", value: includeInactive ? "Included" : "Excluded" },
+            varianceOnly && { label: "Filter", value: "Audit variances only" },
+          ]}
+          note={
+            isUnbalanced
+              ? `Debits and credits do not agree — difference ${fmtBal(closingDiff)}.`
+              : null
+          }
+        />
 
         {!isLoading && !error && rows?.length ? <OpeningBasisNote basis={basis} dateFrom={dateFrom} /> : null}
 
@@ -305,7 +318,7 @@ export default function TrialBalance() {
             <p className="text-muted-foreground font-medium">No accounts match the current filters</p>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full text-sm report-table report-table--grid">
             <thead>
               <tr className="border-b border-border">
                 <th rowSpan={2} scope="col" className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground align-bottom w-16">No</th>

@@ -330,6 +330,41 @@
   #financial-report-doc .data-table thead { display: table-header-group; }
   #financial-report-doc .data-table tr { page-break-inside: avoid; break-inside: avoid; }
   #financial-report-doc .overflow-x-auto { overflow: visible !important; }
+
+  /* Ledger-style reports (Trial Balance, General Ledger, account registers)
+     print as multi-page documents rather than as cards.
+
+     `.stat-card` above sets `page-break-inside: avoid`, which is right for a
+     summary tile and wrong for a 400-row trial balance — the browser tries to
+     keep the whole card on one page and overflows the rest off the sheet. Any
+     card holding a report table opts back into normal pagination, and the
+     table then repeats its column headers on every page so page 4 is still
+     readable on its own. */
+  .report-masthead { break-inside: avoid; page-break-inside: avoid; }
+  .report-masthead img { max-height: 1.6cm; }
+  .stat-card:has(.report-table),
+  .card:has(.report-table) {
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+    border: none !important;
+    padding: 0 !important;
+  }
+  .report-table { width: 100% !important; border-collapse: collapse !important; }
+  .report-table thead { display: table-header-group; }
+  .report-table tfoot { display: table-footer-group; }
+  .report-table tr { page-break-inside: avoid; break-inside: avoid; }
+  /* Ruled grid for transaction listings. Statement faces (SOCI, Balance Sheet)
+     deliberately opt out — their convention is rules under totals, not a grid. */
+  .report-table--grid th,
+  .report-table--grid td {
+    border: 1px solid #ddd !important;
+    padding: 4px 6px !important;
+    font-size: 8.5pt !important;
+  }
+  .report-table--grid th { background: #f5f5f5 !important; font-weight: 600 !important; }
+  /* Horizontal scrollers must spill their full width onto the sheet, not clip. */
+  .overflow-x-auto:has(.report-table),
+  .overflow-auto:has(.report-table) { overflow: visible !important; }
 }
 
 /* Estimate preview prints from inside its modal: isolate the document only. */

@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
+import { email as email_, str, uuid, validateBody } from "../_shared/validate.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -29,18 +30,17 @@ Deno.serve(async (req) => {
     const { data: callerTenantId } = await callerClient.rpc("get_user_tenant_id");
     const { data: isSA } = await callerClient.rpc("is_super_admin");
 
-    const body = await req.json();
-    const { user_id, email, first_name, last_name } = body;
-
-    if (!user_id) throw new Error("Missing user_id");
-    if (!email || !first_name || !last_name) {
-      throw new Error("Missing required fields");
-    }
-
-    const newEmail = String(email).trim().toLowerCase();
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail)) {
-      throw new Error("Invalid email address");
-    }
+    // The email rule here was already sound; it moves into the shared schema so
+    // user_id gets the same treatment (it is spent on .eq() against service_role)
+    // and the names pick up length caps they never had.
+    const v = await validateBody(req, {
+      user_id:    uuid(),
+      email:      email_(),
+      first_name: str(100),
+      last_name:  str(100),
+    });
+    if (!v.ok) throw new Error(v.message);
+    const { user_id, email: newEmail, first_name, last_name } = v.value;
 
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
@@ -120,8 +120,8 @@ Deno.serve(async (req) => {
       .from("users")
       .update({
         email: newEmail,
-        first_name: String(first_name).trim(),
-        last_name: String(last_name).trim(),
+        first_name,
+        last_name,
         updated_at: new Date().toISOString(),
       })
       .eq("id", user_id)

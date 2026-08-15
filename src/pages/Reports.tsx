@@ -15,6 +15,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { buildScheduleBlocks, deriveFYWindow, fyLabel, type AssetMeta } from "@/lib/ppeSchedule";
 import TrialBalance from "@/pages/TrialBalance";
 import StatementOfComprehensiveIncome from "@/components/reports/StatementOfComprehensiveIncome";
+import { ReportMasthead, useReportCompany } from "@/components/reports/ReportMasthead";
 
 type ReportType = "trial-balance" | "pnl" | "balance-sheet" | "cash-flow" | "expense-summary" | "aged-receivables" | "fixed-asset-schedule" | "ppe-schedule" | null;
 
@@ -74,20 +75,9 @@ export default function Reports() {
     },
   });
 
-  // Company identity for printed statement headers
-  const { data: company } = useQuery({
-    queryKey: ["tenant_company_for_reports", appUser?.tenant_id],
-    enabled: !!appUser?.tenant_id,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("tenants")
-        .select("company_name, address, phone, tax_id")
-        .eq("id", appUser!.tenant_id)
-        .maybeSingle();
-      if (error) throw error;
-      return data;
-    },
-  });
+  // Company identity for the masthead and the export headings — shared with
+  // every other report so they cannot disagree.
+  const { data: company } = useReportCompany();
 
   // Fixed Asset Schedule data
   const { data: assetScheduleData } = useQuery({
@@ -411,30 +401,18 @@ export default function Reports() {
     return n < 0 ? `(LKR ${str})` : `LKR ${str}`;
   };
 
-  // Standard financial-statement heading: company identity (print only —
-  // the app chrome already shows it on screen), report title, basis line.
+  // Every statement on this page uses the shared masthead, so the Balance Sheet,
+  // Cash Flow and the schedules carry the same heading as the Trial Balance,
+  // General Ledger and account registers.
   const StatementHeader = ({ title, subtitle, asAt }: { title: string; subtitle?: string; asAt?: boolean }) => (
-    <div className="text-center mb-6 print:mb-4">
-      <div className="hidden print:block mb-3 pb-3 border-b border-border">
-        <p className="text-xl font-bold text-foreground">{company?.company_name || ""}</p>
-        {company?.address && <p className="text-xs text-muted-foreground whitespace-pre-line">{company.address}</p>}
-        {(company?.phone || company?.tax_id) && (
-          <p className="text-xs text-muted-foreground">
-            {company?.phone}{company?.phone && company?.tax_id ? " · " : ""}{company?.tax_id ? `TIN: ${company.tax_id}` : ""}
-          </p>
-        )}
-      </div>
-      <h2 className="text-lg font-bold text-foreground">{title}</h2>
-      {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
-      <p className="text-xs text-muted-foreground mt-1">
-        {asAt
-          ? <>As at {format(new Date(periodTo), "MMM d, yyyy")}</>
-          : <>For the period {format(new Date(periodFrom), "MMM d, yyyy")} — {format(new Date(periodTo), "MMM d, yyyy")}</>}
-      </p>
-      <p className="hidden print:block text-[10px] text-muted-foreground mt-1">
-        All amounts in LKR · Generated on {format(new Date(), "MMM d, yyyy h:mm a")}
-      </p>
-    </div>
+    <ReportMasthead
+      title={title}
+      subtitle={subtitle}
+      asAt={asAt ? periodTo : undefined}
+      dateFrom={asAt ? undefined : periodFrom}
+      dateTo={asAt ? undefined : periodTo}
+      currency="LKR"
+    />
   );
 
   const renderBalanceSheet = () => {
@@ -1289,9 +1267,11 @@ export default function Reports() {
       address: company?.address,
       phone: company?.phone,
       taxId: company?.tax_id,
+      registrationNumber: company?.registration_number,
       title: reportName,
       subtitle: REPORT_SUBTITLES[activeReport],
       dateLine,
+      preparedBy: [appUser?.first_name, appUser?.last_name].filter(Boolean).join(" "),
       fileName: `${company?.company_name ? `${company.company_name} — ` : ""}${reportName} ${periodTo}.${extension}`,
     };
   };

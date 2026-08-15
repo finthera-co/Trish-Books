@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { BookOpen, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { fieldErrors, signupRequestSchema, MESSAGE_MAX } from "@/lib/validation";
 
 /**
  * Request access.
@@ -30,23 +31,39 @@ export default function Signup() {
   });
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setForm((f) => ({ ...f, [k]: e.target.value }));
+    // Clear the field's error as soon as it is edited, rather than leaving a
+    // stale complaint under an input the user has already fixed.
+    setErrors((prev) => (k in prev ? { ...prev, [k]: "" } : prev));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // The database enforces these same limits in the INSERT policy; checking here
+    // means an over-long company name is a message under the field instead of a
+    // Postgres constraint violation in a toast.
+    const parsed = fieldErrors(signupRequestSchema, form);
+    if (!parsed.ok) {
+      setErrors(parsed.errors);
+      return;
+    }
+    setErrors({});
+    const values = parsed.data;
     setLoading(true);
 
     try {
       const { error } = await supabase.from("signup_requests").insert({
-        company_name: form.companyName.trim(),
-        first_name: form.firstName.trim(),
-        last_name: form.lastName.trim(),
-        email: form.email.trim().toLowerCase(),
-        phone: form.phone.trim() || null,
-        team_size: form.teamSize || null,
-        message: form.message.trim() || null,
+        company_name: values.companyName,
+        first_name: values.firstName,
+        last_name: values.lastName,
+        email: values.email,
+        phone: values.phone || null,
+        team_size: values.teamSize || null,
+        message: values.message || null,
         country: "Sri Lanka",
       });
 
@@ -67,6 +84,9 @@ export default function Signup() {
 
     setLoading(false);
   };
+
+  const Err = ({ field }: { field: string }) =>
+    errors[field] ? <p className="text-xs text-destructive mt-1">{errors[field]}</p> : null;
 
   const inputClass =
     "mt-1.5 w-full text-sm border border-input rounded-xl px-4 py-3 bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200";
@@ -112,29 +132,34 @@ export default function Signup() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-sm font-medium text-foreground">First name</label>
-              <input type="text" value={form.firstName} onChange={set("firstName")} className={inputClass} required />
+              <input type="text" value={form.firstName} onChange={set("firstName")} className={inputClass} maxLength={100} required />
+              <Err field="firstName" />
             </div>
             <div>
               <label className="text-sm font-medium text-foreground">Last name</label>
-              <input type="text" value={form.lastName} onChange={set("lastName")} className={inputClass} required />
+              <input type="text" value={form.lastName} onChange={set("lastName")} className={inputClass} maxLength={100} required />
+              <Err field="lastName" />
             </div>
           </div>
 
           <div>
             <label className="text-sm font-medium text-foreground">Company name</label>
-            <input type="text" value={form.companyName} onChange={set("companyName")} className={inputClass} placeholder="Ceylon Robotics (Pvt) Ltd" required />
+            <input type="text" value={form.companyName} onChange={set("companyName")} className={inputClass} maxLength={200} placeholder="Ceylon Robotics (Pvt) Ltd" required />
+            <Err field="companyName" />
           </div>
 
           <div>
             <label className="text-sm font-medium text-foreground">Work email</label>
-            <input type="email" value={form.email} onChange={set("email")} className={inputClass} placeholder="you@company.lk" required />
+            <input type="email" value={form.email} onChange={set("email")} className={inputClass} maxLength={320} placeholder="you@company.lk" required />
+            <Err field="email" />
             <p className="text-xs text-muted-foreground mt-1">Your sign-in details are sent here.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-sm font-medium text-foreground">Phone</label>
-              <input type="tel" value={form.phone} onChange={set("phone")} className={inputClass} placeholder="+94 77 000 0000" />
+              <input type="tel" value={form.phone} onChange={set("phone")} className={inputClass} maxLength={32} placeholder="+94 77 000 0000" />
+              <Err field="phone" />
             </div>
             <div>
               <label className="text-sm font-medium text-foreground">Team size</label>
@@ -157,9 +182,10 @@ export default function Signup() {
               value={form.message}
               onChange={set("message")}
               className={`${inputClass} min-h-[80px]`}
-              maxLength={2000}
+              maxLength={MESSAGE_MAX}
               placeholder="Existing books to migrate, modules you need, when you want to start…"
             />
+            <Err field="message" />
           </div>
 
           <Button type="submit" className="w-full h-12 rounded-xl font-semibold shadow-sm transition-all duration-200 hover:shadow-md" disabled={loading}>
