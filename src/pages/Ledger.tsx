@@ -23,6 +23,7 @@ import { format } from "date-fns";
 import { toast } from "sonner";
 import { isDebitNormal as checkDebitNormal, isPeriodBasedAccount, getTypeLabel, ACCOUNT_TYPES, typeColors } from "@/lib/accountTypes";
 import { formatCurrency } from "@/lib/currency";
+import { resolveLineMemo } from "@/lib/journalValidation";
 import GeneralLedgerReport from "@/components/ledger/GeneralLedgerReport";
 import { ReportMasthead } from "@/components/reports/ReportMasthead";
 import { ARSubledger, APSubledger } from "@/components/ledger/SubsidiaryLedger";
@@ -304,7 +305,9 @@ export default function Ledger() {
         chequeNo: cheque,
         entityName: payee || entityName,
         contraAccount,
-        memo: desc,
+        // The line's own narration when it has one, else the entry's — same
+        // rule the General Ledger and the Account Report apply.
+        memo: resolveLineMemo(line.line_memo, desc),
         debit: Number(line.debit) || 0,
         credit: Number(line.credit) || 0,
         // opening + this row's cumulative movement through the window, in

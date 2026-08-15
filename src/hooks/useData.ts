@@ -430,6 +430,14 @@ export interface AccountLedgerPageRow extends AccountLedgerLine {
   txn_type: string;
   cum_debit: number;
   cum_credit: number;
+  /**
+   * The line's own narration (journal_lines.memo), null when it has none —
+   * every system-generated line, and every manual line posted before the entry
+   * forms started collecting one per line. Read it through `resolveLineMemo`,
+   * which falls back to `description`. Only account_ledger_page returns this,
+   * which is why it lives here rather than on AccountLedgerLine.
+   */
+  line_memo: string | null;
 }
 
 export interface AccountLedgerPageResult {

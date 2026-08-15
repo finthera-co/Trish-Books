@@ -6,10 +6,37 @@ import { detectSubledgerType } from "./accountMappingEngine";
 
 export const EPSILON = 0.005;
 
+/**
+ * Cap on a single line's narration. journal_lines.memo is unbounded `text`, so
+ * this is a product decision, not a schema one: the General Ledger and Account
+ * Register render the memo in a fixed-width column, and a 4 KB paste there makes
+ * the report unreadable long before it makes the database unhappy. Enforced on
+ * both sides — this constant is mirrored in supabase/functions/validate-journal-entry.
+ */
+export const LINE_MEMO_MAX = 200;
+
+/** Same floor the entry-level description has always had. */
+export const LINE_MEMO_MIN = 3;
+
 export interface JournalLine {
   account_id: string;
   debit: number;
   credit: number;
+  /**
+   * Per-line narration, stored in journal_lines.memo.
+   *
+   * Manual entries require one on every line — the create/edit forms have no
+   * single entry-level description field, because one sentence stretched across
+   * a five-line entry tells a reader nothing about any individual line. The
+   * entry-level journal_entries.description is derived from the lines
+   * (`deriveEntryDescription`) so the entry list, exports and the GL fallback
+   * keep working unchanged.
+   *
+   * It stays optional on this type because system-generated lines (invoice and
+   * payment postings, imports, depreciation) legitimately have none; those are
+   * read through `resolveLineMemo`, which falls back to the entry description.
+   */
+  memo?: string | null;
 }
 
 export interface AccountInfo {
@@ -210,6 +237,103 @@ export function validateDate(
   return null;
 }
 
+/**
+ * The description a line actually shows: its own memo, else the entry's.
+ * Read paths must go through this so the UI, the exports and the SQL reports
+ * agree on what a blank memo means — the same COALESCE the GL report RPC does.
+ */
+export function resolveLineMemo(
+  lineMemo: string | null | undefined,
+  entryDescription: string | null | undefined
+): string {
+  const own = (lineMemo ?? "").trim();
+  if (own) return own;
+  return (entryDescription ?? "").trim();
+}
+
+/** True when the line is showing the entry description rather than its own memo. */
+export function isMemoInherited(lineMemo: string | null | undefined): boolean {
+  return !(lineMemo ?? "").trim();
+}
+
+/**
+ * Comparator for journal_lines.seq — the sole deterministic intra-entry line
+ * order (see the column comment in 20260803000000_gl_report_foundation.sql).
+ * An embedded PostgREST select returns lines in no guaranteed order, which was
+ * invisible while every line shared one description and obvious once each line
+ * has its own.
+ */
+export function bySeq(a: { seq?: number | null }, b: { seq?: number | null }): number {
+  return Number(a.seq ?? 0) - Number(b.seq ?? 0);
+}
+
+/** Trim to storage form: blank becomes null, never an empty string. */
+export function normalizeLineMemo(memo: string | null | undefined): string | null {
+  const t = (memo ?? "").trim();
+  return t.length > 0 ? t : null;
+}
+
+/**
+ * journal_entries.description for an entry whose descriptions live on the lines.
+ *
+ * The column is NOT NULL and is what the entry list, search and every export
+ * show, so it cannot simply be dropped. The first line's description is the
+ * honest summary: it is the line the user wrote first, and the per-line detail
+ * is still one click away in the expanded row and in the General Ledger.
+ */
+export function deriveEntryDescription(lines: JournalLine[]): string {
+  const active = lines.filter(
+    (l) => l.account_id && (Number(l.debit) > 0 || Number(l.credit) > 0)
+  );
+  for (const l of active) {
+    const memo = (l.memo ?? "").trim();
+    if (memo) return memo;
+  }
+  // Fall back to any line with text at all, so a half-filled form still gets a
+  // meaningful validation message rather than "Description is required".
+  for (const l of lines) {
+    const memo = (l.memo ?? "").trim();
+    if (memo) return memo;
+  }
+  return "";
+}
+
+/**
+ * Every posting line must say what it is. Applied to lines that carry an amount:
+ * an empty spare row at the bottom of the grid is not an error.
+ */
+export function validateLineDescriptions(lines: JournalLine[]): ValidationError[] {
+  return lines
+    .map((l, i) => {
+      const isActive = !!l.account_id || Number(l.debit) > 0 || Number(l.credit) > 0;
+      if (!isActive) return null;
+      const memo = (l.memo ?? "").trim();
+      if (!memo) {
+        return {
+          field: `lines[${i}].memo`,
+          message: `Line ${i + 1}: Description is required`,
+          severity: "error" as const,
+        };
+      }
+      if (memo.length < LINE_MEMO_MIN) {
+        return {
+          field: `lines[${i}].memo`,
+          message: `Line ${i + 1}: Description must be at least ${LINE_MEMO_MIN} characters`,
+          severity: "error" as const,
+        };
+      }
+      if (memo.length > LINE_MEMO_MAX) {
+        return {
+          field: `lines[${i}].memo`,
+          message: `Line ${i + 1}: Description must be ${LINE_MEMO_MAX} characters or fewer (currently ${memo.length})`,
+          severity: "error" as const,
+        };
+      }
+      return null;
+    })
+    .filter(Boolean) as ValidationError[];
+}
+
 /** Validate description is not empty */
 export function validateDescription(description: string): ValidationError | null {
   if (!description.trim()) {
@@ -224,6 +348,10 @@ export function validateDescription(description: string): ValidationError | null
 // ── Full Validation Runner ──────────────────────────────────────────
 
 export function validateJournalEntry(params: {
+  /**
+   * Entry-level description. Manual-entry callers derive this from the lines
+   * (`deriveEntryDescription`) rather than collecting it separately.
+   */
   description: string;
   entryDate: string;
   lines: JournalLine[];
@@ -235,9 +363,18 @@ export function validateJournalEntry(params: {
   const errors: ValidationError[] = [];
   const warnings: ValidationError[] = [];
 
-  // Description
-  const descErr = validateDescription(description);
-  if (descErr) errors.push(descErr);
+  // Per-line descriptions — the only place a manual entry's narration is typed
+  const lineDescErrors = validateLineDescriptions(lines);
+  errors.push(...lineDescErrors);
+
+  // Entry-level description. For manual entries this is derived from the lines,
+  // so a failure here is the same fact the line errors already reported — raise
+  // it only when the lines are fine and the caller still passed nothing, which
+  // means a non-form caller built the entry itself.
+  if (lineDescErrors.length === 0) {
+    const descErr = validateDescription(description);
+    if (descErr) errors.push(descErr);
+  }
 
   // Date
   const dateErr = validateDate(entryDate, closedPeriods);

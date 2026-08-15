@@ -15,6 +15,14 @@ import { Badge } from "@/components/ui/badge";
 import { Save, Plus, Trash2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/currency";
+import {
+  validateLineDescriptions,
+  deriveEntryDescription,
+  normalizeLineMemo,
+  resolveLineMemo,
+  bySeq,
+  LINE_MEMO_MAX,
+} from "@/lib/journalValidation";
 
 interface EditTransactionModalProps {
   open: boolean;
@@ -29,6 +37,15 @@ interface JournalLine {
   account_id: string;
   debit: number;
   credit: number;
+  /** Per-line narration -> journal_lines.memo. */
+  memo: string;
+  /** Account the line was loaded with; the dimensions below only hold while it is unchanged. */
+  original_account_id?: string;
+  customer_id?: string | null;
+  vendor_id?: string | null;
+  item_id?: string | null;
+  asset_id?: string | null;
+  cost_center_id?: string | null;
 }
 
 export default function EditTransactionModal({
@@ -55,25 +72,47 @@ export default function EditTransactionModal({
     enabled: open,
   });
 
+  // No entry-level description field: narration is per line, and
+  // journal_entries.description is derived from the lines on save.
   const [entryDate, setEntryDate] = useState("");
-  const [description, setDescription] = useState("");
   const [reference, setReference] = useState("");
   const [lines, setLines] = useState<JournalLine[]>([]);
 
   useEffect(() => {
     if (!entry) return;
     setEntryDate(entry.entry_date);
-    setDescription(entry.description);
     setReference(entry.reference || "");
     setLines(
-      ((entry.journal_lines as any[]) || []).map((l: any) => ({
-        id: l.id,
-        account_id: l.account_id,
-        debit: Number(l.debit) || 0,
-        credit: Number(l.credit) || 0,
-      }))
+      ((entry.journal_lines as any[]) || [])
+        .slice()
+        .sort(bySeq)
+        .map((l: any) => ({
+          id: l.id,
+          account_id: l.account_id,
+          original_account_id: l.account_id,
+          debit: Number(l.debit) || 0,
+          credit: Number(l.credit) || 0,
+          // Lines posted before per-line descriptions existed inherit the one
+          // they have been displaying, so an unrelated edit here does not
+          // require retyping every line.
+          memo: resolveLineMemo(l.memo, entry.description),
+          customer_id: l.customer_id ?? null,
+          vendor_id: l.vendor_id ?? null,
+          item_id: l.item_id ?? null,
+          asset_id: l.asset_id ?? null,
+          cost_center_id: l.cost_center_id ?? null,
+        }))
     );
   }, [entry]);
+
+  const derivedDescription = deriveEntryDescription(lines);
+  const lineDescriptionErrors = validateLineDescriptions(lines);
+  const lineMemoErrorByIndex = new Map<number, string>(
+    lineDescriptionErrors.flatMap((e) => {
+      const m = /^lines\[(\d+)\]\.memo$/.exec(e.field);
+      return m ? [[Number(m[1]), e.message] as [number, string]] : [];
+    })
+  );
 
   const totalDebits = lines.reduce((s, l) => s + l.debit, 0);
   const totalCredits = lines.reduce((s, l) => s + l.credit, 0);
@@ -102,7 +141,7 @@ export default function EditTransactionModal({
   const addLine = () => {
     setLines((prev) => [
       ...prev,
-      { id: `new-${crypto.randomUUID()}`, account_id: "", debit: 0, credit: 0 },
+      { id: `new-${crypto.randomUUID()}`, account_id: "", debit: 0, credit: 0, memo: "" },
     ]);
   };
 
@@ -110,13 +149,14 @@ export default function EditTransactionModal({
     mutationFn: async () => {
       if (!isBalanced) throw new Error("Entry must be balanced");
       if (lines.some((l) => !l.account_id)) throw new Error("All lines must have an account");
+      if (lineDescriptionErrors.length > 0) throw new Error(lineDescriptionErrors[0].message);
 
       // Update journal entry header
       const { error: headerError } = await supabase
         .from("journal_entries")
         .update({
           entry_date: entryDate,
-          description,
+          description: derivedDescription,
           reference: reference || null,
         })
         .eq("id", journalEntryId);
@@ -129,12 +169,24 @@ export default function EditTransactionModal({
         .eq("journal_entry_id", journalEntryId);
       if (deleteError) throw deleteError;
 
-      const newLines = lines.map((l) => ({
-        journal_entry_id: journalEntryId,
-        account_id: l.account_id,
-        debit: l.debit,
-        credit: l.credit,
-      }));
+      // The lines are replaced wholesale, so everything that must survive the
+      // save is restated here. Sub-ledger dimensions travel with their account
+      // and are dropped if the line was re-pointed elsewhere.
+      const newLines = lines.map((l) => {
+        const sameAccount = l.original_account_id === l.account_id;
+        return {
+          journal_entry_id: journalEntryId,
+          account_id: l.account_id,
+          debit: l.debit,
+          credit: l.credit,
+          memo: normalizeLineMemo(l.memo),
+          customer_id: sameAccount ? l.customer_id ?? null : null,
+          vendor_id: sameAccount ? l.vendor_id ?? null : null,
+          item_id: sameAccount ? l.item_id ?? null : null,
+          asset_id: sameAccount ? l.asset_id ?? null : null,
+          cost_center_id: sameAccount ? l.cost_center_id ?? null : null,
+        };
+      });
 
       const { error: insertError } = await supabase
         .from("journal_lines")
@@ -211,23 +263,13 @@ export default function EditTransactionModal({
               </div>
             </div>
 
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Memo / Description</label>
-              <input
-                type="text"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className={`w-full ${inputClass}`}
-                disabled={isReadOnly}
-              />
-            </div>
-
             {/* Journal Lines */}
             <div className="border border-border rounded-lg overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-muted/30 border-b">
                     <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Account</th>
+                    <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Description</th>
                     <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-28">Debit</th>
                     <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-28">Credit</th>
                     {!isReadOnly && (
@@ -258,6 +300,20 @@ export default function EditTransactionModal({
                               </option>
                             ))}
                         </select>
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <input
+                          type="text"
+                          value={line.memo}
+                          maxLength={LINE_MEMO_MAX}
+                          onChange={(e) => updateLine(i, "memo", e.target.value)}
+                          className={`w-full ${inputClass} !py-1.5 ${
+                            lineMemoErrorByIndex.has(i) ? "!border-destructive" : ""
+                          }`}
+                          placeholder="What this line is for"
+                          aria-label={`Line ${i + 1} description`}
+                          disabled={isReadOnly}
+                        />
                       </td>
                       <td className="px-3 py-1.5">
                         <input
@@ -299,7 +355,7 @@ export default function EditTransactionModal({
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-foreground/20">
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2" colSpan={2}>
                       {!isReadOnly && (
                         <Button variant="ghost" size="sm" onClick={addLine}>
                           <Plus className="w-3.5 h-3.5 mr-1" /> Add Line
@@ -316,10 +372,20 @@ export default function EditTransactionModal({
                   </tr>
                   {!isBalanced && (
                     <tr>
-                      <td colSpan={4} className="px-3 py-2">
+                      <td colSpan={5} className="px-3 py-2">
                         <div className="flex items-center gap-2 text-warning text-xs">
                           <AlertTriangle className="w-3.5 h-3.5" />
                           Out of balance by {formatCurrency(difference)}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  {!isReadOnly && lineDescriptionErrors.length > 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-2">
+                        <div className="flex items-center gap-2 text-destructive text-xs">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          {lineDescriptionErrors[0].message}
                         </div>
                       </td>
                     </tr>
@@ -332,7 +398,12 @@ export default function EditTransactionModal({
             {!isReadOnly && (
               <Button
                 onClick={() => saveMutation.mutate()}
-                disabled={!isBalanced || saveMutation.isPending || lines.some((l) => !l.account_id)}
+                disabled={
+                  !isBalanced ||
+                  saveMutation.isPending ||
+                  lines.some((l) => !l.account_id) ||
+                  lineDescriptionErrors.length > 0
+                }
                 className="w-full"
               >
                 <Save className="w-4 h-4 mr-1" />

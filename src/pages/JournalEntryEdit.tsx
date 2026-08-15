@@ -12,6 +12,11 @@ import {
   validateJournalEntry,
   getManualEntryAccounts,
   isSubledgerAccount,
+  deriveEntryDescription,
+  normalizeLineMemo,
+  resolveLineMemo,
+  bySeq,
+  LINE_MEMO_MAX,
   type AccountInfo,
   type ValidationResult,
   EPSILON,
@@ -26,6 +31,20 @@ interface EditLine {
   account_id: string;
   debit: number;
   credit: number;
+  /** Per-line narration. Blank lines inherit the entry description on load. */
+  memo: string;
+  /**
+   * The account this line was loaded with. Saving replaces every line, and the
+   * sub-ledger dimensions below only stay meaningful while the account is
+   * unchanged — re-pointing a line from A/R to Bank must not carry the customer
+   * across with it.
+   */
+  original_account_id?: string;
+  customer_id?: string | null;
+  vendor_id?: string | null;
+  item_id?: string | null;
+  asset_id?: string | null;
+  cost_center_id?: string | null;
 }
 
 export default function JournalEntryEdit() {
@@ -62,8 +81,8 @@ export default function JournalEntryEdit() {
     },
   });
 
-  // Form state
-  const [description, setDescription] = useState("");
+  // Form state. The entry description is derived from the lines (see
+  // `derivedDescription`), so there is no field for it.
   const [entryDate, setEntryDate] = useState("");
   const [reference, setReference] = useState("");
   const [lines, setLines] = useState<EditLine[]>([]);
@@ -72,16 +91,30 @@ export default function JournalEntryEdit() {
   // Pre-fill form when entry loads
   useEffect(() => {
     if (entry && !initialized) {
-      setDescription(entry.description);
       setEntryDate(entry.entry_date);
       setReference(entry.reference || "");
-      const entryLines = (entry.journal_lines as any[]) || [];
+      const entryLines = ((entry.journal_lines as any[]) || [])
+        // Match the order the lines post and report in, not whatever order the
+        // embedded select happened to return.
+        .slice()
+        .sort(bySeq);
       setLines(
         entryLines.map((l: any) => ({
           id: l.id,
           account_id: l.account_id,
+          original_account_id: l.account_id,
           debit: Number(l.debit),
           credit: Number(l.credit),
+          // Entries posted before line descriptions existed, and every
+          // system-generated entry, have no memo. Seed each line with the
+          // description it has been displaying all along rather than making the
+          // user retype it to get past validation.
+          memo: resolveLineMemo(l.memo, entry.description),
+          customer_id: l.customer_id ?? null,
+          vendor_id: l.vendor_id ?? null,
+          item_id: l.item_id ?? null,
+          asset_id: l.asset_id ?? null,
+          cost_center_id: l.cost_center_id ?? null,
         }))
       );
       setInitialized(true);
@@ -126,22 +159,35 @@ export default function JournalEntryEdit() {
     return groups;
   }, [manualEntryAccounts]);
 
+  // The entry-level description this save will write, taken from the lines.
+  const derivedDescription = useMemo(() => deriveEntryDescription(lines), [lines]);
+
   // Validation
   const validation: ValidationResult = useMemo(() => {
     return validateJournalEntry({
-      description,
+      description: derivedDescription,
       entryDate,
       lines,
       accountsMap,
       closedPeriods: closedPeriods || undefined,
     });
-  }, [description, entryDate, lines, accountsMap, closedPeriods]);
+  }, [derivedDescription, entryDate, lines, accountsMap, closedPeriods]);
+
+  // Line-level errors render on the line itself rather than in the summary panel.
+  const lineMemoErrors = useMemo(() => {
+    const map = new Map<number, string>();
+    validation.errors.forEach((e) => {
+      const m = /^lines\[(\d+)\]\.memo$/.exec(e.field);
+      if (m) map.set(Number(m[1]), e.message);
+    });
+    return map;
+  }, [validation.errors]);
 
   const totalDebit = lines.reduce((sum, l) => sum + Number(l.debit || 0), 0);
   const totalCredit = lines.reduce((sum, l) => sum + Number(l.credit || 0), 0);
   const isBalanced = Math.abs(totalDebit - totalCredit) < EPSILON && totalDebit > 0;
 
-  const addLine = () => setLines([...lines, { account_id: "", debit: 0, credit: 0 }]);
+  const addLine = () => setLines([...lines, { account_id: "", debit: 0, credit: 0, memo: "" }]);
   const removeLine = (index: number) => {
     if (lines.length > 2) setLines(lines.filter((_, i) => i !== index));
   };
@@ -176,11 +222,13 @@ export default function JournalEntryEdit() {
     mutationFn: async () => {
       if (!id) throw new Error("No entry ID");
 
-      // 1. Update journal entry header
+      // 1. Update journal entry header. The description is the first line's —
+      // journal_entries.description is what the entry list and every export
+      // show, so it is derived rather than dropped.
       const { error: headerError } = await supabase
         .from("journal_entries")
         .update({
-          description: description.trim(),
+          description: derivedDescription,
           entry_date: entryDate,
           // reference stays the same (not editable in edit mode)
         })
@@ -198,12 +246,25 @@ export default function JournalEntryEdit() {
       const activeLines = lines.filter(
         (l) => l.account_id && (Number(l.debit) > 0 || Number(l.credit) > 0)
       );
-      const newLines = activeLines.map((l) => ({
-        journal_entry_id: id,
-        account_id: l.account_id,
-        debit: Number(l.debit),
-        credit: Number(l.credit),
-      }));
+      // Saving replaces the lines wholesale, so anything not restated here is
+      // lost. The sub-ledger dimensions are carried across for lines whose
+      // account did not change; on a re-pointed line they would be wrong, so
+      // they are dropped with the account they described.
+      const newLines = activeLines.map((l) => {
+        const sameAccount = l.original_account_id === l.account_id;
+        return {
+          journal_entry_id: id,
+          account_id: l.account_id,
+          debit: Number(l.debit),
+          credit: Number(l.credit),
+          memo: normalizeLineMemo(l.memo),
+          customer_id: sameAccount ? l.customer_id ?? null : null,
+          vendor_id: sameAccount ? l.vendor_id ?? null : null,
+          item_id: sameAccount ? l.item_id ?? null : null,
+          asset_id: sameAccount ? l.asset_id ?? null : null,
+          cost_center_id: sameAccount ? l.cost_center_id ?? null : null,
+        };
+      });
 
       const { error: linesError } = await supabase.from("journal_lines").insert(newLines);
       if (linesError) throw linesError;
@@ -224,7 +285,7 @@ export default function JournalEntryEdit() {
           record_id: id,
           user_id: userId.data?.id,
           tenant_id: tenantId.data,
-          details: { description, entry_date: entryDate, lines_count: activeLines.length },
+          details: { description: derivedDescription, entry_date: entryDate, lines_count: activeLines.length },
         });
       } catch {
         // Silently fail audit log
@@ -322,8 +383,8 @@ export default function JournalEntryEdit() {
         </div>
 
         <div className="space-y-4">
-          {/* Header fields */}
-          <div className="grid grid-cols-3 gap-4">
+          {/* Header fields. No entry-level description: each line carries its own. */}
+          <div className="grid grid-cols-2 gap-4 max-w-md">
             <div>
               <label className="text-sm font-medium text-foreground">
                 Date <span className="text-destructive">*</span>
@@ -351,32 +412,15 @@ export default function JournalEntryEdit() {
               />
               <p className="text-[10px] text-muted-foreground mt-0.5">Reference cannot be changed</p>
             </div>
-            <div>
-              <label className="text-sm font-medium text-foreground">
-                Description <span className="text-destructive">*</span>
-              </label>
-              <input
-                type="text"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
-                placeholder="Office supplies purchase"
-              />
-              {validation.errors.find((e) => e.field === "description") && (
-                <p className="text-xs text-destructive mt-1 flex items-center gap-1">
-                  <XCircle className="w-3 h-3" />
-                  {validation.errors.find((e) => e.field === "description")!.message}
-                </p>
-              )}
-            </div>
           </div>
 
           {/* Journal Lines */}
           <div>
             <label className="text-sm font-medium text-foreground mb-2 block">Journal Lines</label>
             <div className="border border-border rounded-lg overflow-hidden">
-              <div className="grid grid-cols-[1fr_7rem_7rem_2.5rem] gap-0 bg-muted/50 px-3 py-2 text-xs font-semibold text-muted-foreground border-b border-border">
+              <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_6.75rem_6.75rem_2rem] gap-2 bg-muted/50 px-3 py-2 text-xs font-semibold text-muted-foreground border-b border-border">
                 <span>Account</span>
+                <span>Description</span>
                 <span className="text-right">Debit (LKR)</span>
                 <span className="text-right">Credit (LKR)</span>
                 <span />
@@ -385,9 +429,10 @@ export default function JournalEntryEdit() {
                 {lines.map((line, i) => {
                   const lineWarning = getLineWarning(line.account_id);
                   const acc = line.account_id ? accountsMap.get(line.account_id) : null;
+                  const memoError = lineMemoErrors.get(i);
                   return (
                     <div key={i} className="px-3 py-2 space-y-1">
-                      <div className="grid grid-cols-[1fr_7rem_7rem_2.5rem] gap-2 items-center">
+                      <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_6.75rem_6.75rem_2rem] gap-2 items-center">
                         <select
                           value={line.account_id}
                           onChange={(e) => updateLine(i, "account_id", e.target.value)}
@@ -406,6 +451,17 @@ export default function JournalEntryEdit() {
                             </optgroup>
                           ))}
                         </select>
+                        <input
+                          type="text"
+                          value={line.memo}
+                          maxLength={LINE_MEMO_MAX}
+                          onChange={(e) => updateLine(i, "memo", e.target.value)}
+                          className={`text-sm border rounded-md px-2.5 py-1.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors ${
+                            memoError ? "border-destructive" : "border-input"
+                          }`}
+                          placeholder="What this line is for"
+                          aria-label={`Line ${i + 1} description`}
+                        />
                         <input
                           type="number"
                           min="0"
@@ -440,6 +496,12 @@ export default function JournalEntryEdit() {
                           {acc.account_subtype && (
                             <span className="text-[10px] text-muted-foreground">{acc.account_subtype}</span>
                           )}
+                        </div>
+                      )}
+                      {memoError && (
+                        <div className="flex items-center gap-1.5 text-xs text-destructive pl-1">
+                          <XCircle className="w-3 h-3 shrink-0" />
+                          {memoError}
                         </div>
                       )}
                       {lineWarning && (
@@ -477,7 +539,7 @@ export default function JournalEntryEdit() {
           {/* Validation Panel */}
           {(validation.errors.length > 0 || validation.warnings.length > 0) && (
             <div className="space-y-2">
-              {validation.errors.filter(e => !["entry_date", "description"].includes(e.field)).map((err, i) => (
+              {validation.errors.filter(e => !["entry_date", "description"].includes(e.field) && !/^lines\[\d+\]\.memo$/.test(e.field)).map((err, i) => (
                 <div key={`err-${i}`} className="flex items-start gap-2 text-xs text-destructive bg-destructive/5 rounded-md px-3 py-2 border border-destructive/20">
                   <XCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
                   <span>{err.message}</span>
@@ -514,7 +576,8 @@ export default function JournalEntryEdit() {
             <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
             <span>
               Saving will update this journal entry in place. The same transaction ID and reference will be preserved.
-              All affected account balances will be recalculated automatically.
+              All affected account balances will be recalculated automatically. Each line's description is what the
+              General Ledger and Account Register show against that account; the entry is filed under the first line's.
             </span>
           </div>
 

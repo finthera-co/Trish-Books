@@ -14841,6 +14841,7 @@ export type Database = {
           filtered_rows: number
           is_system_generated: boolean
           line_id: string
+          line_memo: string
           payee: string
           reference: string
           reversal_of: string

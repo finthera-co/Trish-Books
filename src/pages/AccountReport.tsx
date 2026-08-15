@@ -43,6 +43,7 @@ import { formatCurrency } from "@/lib/currency";
 import { isDebitNormal, getNormalBalance, getTypeLabel, getStatementPlacement, isOpeningBalanceEquityAccount, isPeriodBasedAccount, typeColors } from "@/lib/accountTypes";
 import { netAccountBalance } from "@/lib/accountBalances";
 import { downloadDataExcel } from "@/lib/reportExcel";
+import { resolveLineMemo } from "@/lib/journalValidation";
 import { ReportMasthead } from "@/components/reports/ReportMasthead";
 import EditTransactionModal from "@/components/account-report/EditTransactionModal";
 
@@ -92,7 +93,9 @@ function toTransactionRow(
     chequeNo: cheque,
     name: contraAccount ? (contraAccount.account_name || "") : (contraLines.length > 1 ? "— Split —" : ""),
     payee: (line.payee || "").trim(),
-    memo: line.description || "",
+    // The line's own narration when it has one, else the entry's — the same
+    // rule the General Ledger applies.
+    memo: resolveLineMemo(line.line_memo, line.description),
     debit: Number(line.debit) || 0,
     credit: Number(line.credit) || 0,
     balance: toSigned({

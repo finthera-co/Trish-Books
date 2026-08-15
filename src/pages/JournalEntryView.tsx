@@ -7,6 +7,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip
 import { ArrowLeft, Copy, Edit, FileText, RotateCcw, Ban, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { typeColors, getTypeLabel } from "@/lib/accountTypes";
+import { resolveLineMemo, isMemoInherited, bySeq } from "@/lib/journalValidation";
 
 const fmt = (n: number) =>
   n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -75,7 +76,9 @@ export default function JournalEntryView() {
   const isOBEEntry = entry?.entry_type === "opening_balance" && entry?.is_system_generated === true;
   const isLocked = isInClosedPeriod || isReconciled || isVoided || isOBEEntry;
 
-  const entryLines = (entry?.journal_lines as any[]) || [];
+  const entryLines = ((entry?.journal_lines as any[]) || [])
+    .slice()
+    .sort(bySeq);
   const totalDebit = entryLines.reduce((sum, l) => sum + Number(l.debit), 0);
   const totalCredit = entryLines.reduce((sum, l) => sum + Number(l.credit), 0);
 
@@ -199,17 +202,13 @@ export default function JournalEntryView() {
           </div>
         </div>
 
-        <div className="mb-4">
-          <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Memo / Description</p>
-          <p className="text-sm text-foreground bg-muted/30 rounded-lg px-3 py-2">{entry.description}</p>
-        </div>
-
         {/* Journal Lines */}
         <div className="border border-border rounded-lg overflow-hidden mb-4">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-muted/50 border-b border-border">
                 <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Account</th>
+                <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Description</th>
                 <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground w-24">Type</th>
                 <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground w-36">Debit (LKR)</th>
                 <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground w-36">Credit (LKR)</th>
@@ -221,6 +220,9 @@ export default function JournalEntryView() {
                   <td className="px-3 py-2 text-foreground">
                     <span className="font-mono text-xs text-muted-foreground mr-2">{line.accounts?.account_code}</span>
                     {line.accounts?.account_name || line.account_id}
+                  </td>
+                  <td className={`px-3 py-2 ${isMemoInherited(line.memo) ? "text-muted-foreground italic" : "text-foreground"}`}>
+                    {resolveLineMemo(line.memo, entry.description) || "—"}
                   </td>
                   <td className="px-3 py-2">
                     {line.accounts?.account_type && (
@@ -240,7 +242,7 @@ export default function JournalEntryView() {
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-border font-semibold text-foreground bg-muted/30">
-                <td className="px-3 py-2" colSpan={2}>Totals</td>
+                <td className="px-3 py-2" colSpan={3}>Totals</td>
                 <td className="text-right px-3 py-2 tabular-nums font-mono">LKR {fmt(totalDebit)}</td>
                 <td className="text-right px-3 py-2 tabular-nums font-mono">LKR {fmt(totalCredit)}</td>
               </tr>

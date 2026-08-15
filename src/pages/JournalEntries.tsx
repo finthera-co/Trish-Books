@@ -21,6 +21,11 @@ import {
   getManualEntryAccounts,
   isSubledgerAccount,
   requiresSubledgerBreakdown,
+  deriveEntryDescription,
+  normalizeLineMemo,
+  resolveLineMemo,
+  isMemoInherited,
+  LINE_MEMO_MAX,
   type AccountInfo,
   type ValidationError,
   type ValidationResult,
@@ -63,13 +68,13 @@ export default function JournalEntries() {
   // Reverse dialog
   const [reverseDialogId, setReverseDialogId] = useState<string | null>(null);
 
-  // Form
-  const [description, setDescription] = useState("");
+  // Form. There is no entry-level description field: narration is typed per line
+  // and the header description is derived from it on submit.
   const [entryDate, setEntryDate] = useState(new Date().toISOString().split("T")[0]);
   const [reference, setReference] = useState("");
   const [lines, setLines] = useState([
-    { account_id: "", debit: 0, credit: 0 },
-    { account_id: "", debit: 0, credit: 0 },
+    { account_id: "", debit: 0, credit: 0, memo: "" },
+    { account_id: "", debit: 0, credit: 0, memo: "" },
   ]);
 
   // Keystrokes shouldn't each fire a query against a 35k-row table.
@@ -213,16 +218,30 @@ export default function JournalEntries() {
     return groups;
   }, [manualEntryAccounts]);
 
+  // The entry-level description the header row will carry, taken from the lines.
+  const derivedDescription = useMemo(() => deriveEntryDescription(lines), [lines]);
+
   // Real-time validation
   const validation: ValidationResult = useMemo(() => {
     return validateJournalEntry({
-      description,
+      description: derivedDescription,
       entryDate,
       lines,
       accountsMap,
       closedPeriods: closedPeriods || undefined,
     });
-  }, [description, entryDate, lines, accountsMap, closedPeriods]);
+  }, [derivedDescription, entryDate, lines, accountsMap, closedPeriods]);
+
+  // Line-level errors render on the line itself, so they are keyed by index and
+  // excluded from the summary panel below rather than reported twice.
+  const lineMemoErrors = useMemo(() => {
+    const map = new Map<number, string>();
+    validation.errors.forEach((e) => {
+      const m = /^lines\[(\d+)\]\.memo$/.exec(e.field);
+      if (m) map.set(Number(m[1]), e.message);
+    });
+    return map;
+  }, [validation.errors]);
 
   const totalDebit = lines.reduce((sum, l) => sum + Number(l.debit || 0), 0);
   const totalCredit = lines.reduce((sum, l) => sum + Number(l.credit || 0), 0);
@@ -236,7 +255,7 @@ export default function JournalEntries() {
   const totalPosted = stats?.posted ?? 0;
   const totalVoided = stats?.voided ?? 0;
 
-  const addLine = () => setLines([...lines, { account_id: "", debit: 0, credit: 0 }]);
+  const addLine = () => setLines([...lines, { account_id: "", debit: 0, credit: 0, memo: "" }]);
   const removeLine = (index: number) => {
     if (lines.length > 2) setLines(lines.filter((_, i) => i !== index));
   };
@@ -272,9 +291,14 @@ export default function JournalEntries() {
   // Server-side validated create via edge function
   const createEntry = useMutation({
     mutationFn: async () => {
-      const activeLines = lines.filter(
-        (l) => l.account_id && (Number(l.debit) > 0 || Number(l.credit) > 0)
-      );
+      const activeLines = lines
+        .filter((l) => l.account_id && (Number(l.debit) > 0 || Number(l.credit) > 0))
+        .map((l) => ({
+          account_id: l.account_id,
+          debit: Number(l.debit) || 0,
+          credit: Number(l.credit) || 0,
+          memo: normalizeLineMemo(l.memo),
+        }));
 
       let data: { valid?: boolean; errors?: { message: string }[] } | null = null;
       try {
@@ -282,7 +306,7 @@ export default function JournalEntries() {
           valid?: boolean;
           errors?: { message: string }[];
         }>("validate-journal-entry", {
-          description: description.trim(),
+          description: derivedDescription,
           entry_date: entryDate,
           reference: reference.trim() || undefined,
           lines: activeLines,
@@ -317,12 +341,11 @@ export default function JournalEntries() {
   });
 
   const resetForm = () => {
-    setDescription("");
     setReference("");
     setEntryDate(new Date().toISOString().split("T")[0]);
     setLines([
-      { account_id: "", debit: 0, credit: 0 },
-      { account_id: "", debit: 0, credit: 0 },
+      { account_id: "", debit: 0, credit: 0, memo: "" },
+      { account_id: "", debit: 0, credit: 0, memo: "" },
     ]);
   };
 
@@ -381,11 +404,15 @@ export default function JournalEntries() {
         .single();
       if (error) throw error;
 
+      // Carry each line's own narration onto its mirror. Without this the
+      // reversal lands in the ledger with no description on any line, which is
+      // exactly the row an auditor asks about.
       const reversedLines = originalLines.map(line => ({
         journal_entry_id: newEntry.id,
         account_id: line.account_id,
         debit: Number(line.credit),
         credit: Number(line.debit),
+        memo: line.memo ? `Reversal of: ${line.memo}` : null,
       }));
 
       const { error: linesErr } = await supabase.from("journal_lines").insert(reversedLines);
@@ -406,7 +433,9 @@ export default function JournalEntries() {
   };
 
   // Check if form has been touched (for showing validation)
-  const formTouched = description.length > 0 || lines.some(l => l.account_id || Number(l.debit) > 0 || Number(l.credit) > 0);
+  const formTouched = lines.some(
+    l => l.account_id || Number(l.debit) > 0 || Number(l.credit) > 0 || (l.memo ?? "").trim().length > 0
+  );
 
   return (
     <div className="space-y-6">
@@ -423,12 +452,12 @@ export default function JournalEntries() {
             <DialogHeader>
               <DialogTitle>Create Journal Entry</DialogTitle>
               <DialogDescription>
-                Double-entry validated. Control accounts (AR/AP) are excluded — use Invoices or Bills for those.
+                Double-entry validated. Describe each line — control accounts (AR/AP) are excluded, use Invoices or Bills for those.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 pt-4">
-              {/* Header fields */}
-              <div className="grid grid-cols-3 gap-4">
+              {/* Header fields. No entry-level description: each line carries its own. */}
+              <div className="grid grid-cols-2 gap-4 max-w-md">
                 <div>
                   <label className="text-sm font-medium text-foreground">
                     Date <span className="text-destructive">*</span>
@@ -456,18 +485,6 @@ export default function JournalEntries() {
                     placeholder="JV-00001"
                   />
                 </div>
-                <div>
-                  <label className="text-sm font-medium text-foreground">
-                    Description <span className="text-destructive">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
-                    placeholder="Office supplies purchase"
-                  />
-                </div>
               </div>
 
               {/* Journal Lines */}
@@ -475,8 +492,9 @@ export default function JournalEntries() {
                 <label className="text-sm font-medium text-foreground mb-2 block">Journal Lines</label>
                 <div className="border border-border rounded-lg overflow-hidden">
                   {/* Header */}
-                  <div className="grid grid-cols-[1fr_7rem_7rem_2.5rem] gap-0 bg-muted/50 px-3 py-2 text-xs font-semibold text-muted-foreground border-b border-border">
+                  <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_6.75rem_6.75rem_2rem] gap-2 bg-muted/50 px-3 py-2 text-xs font-semibold text-muted-foreground border-b border-border">
                     <span>Account</span>
+                    <span>Description</span>
                     <span className="text-right">Debit (LKR)</span>
                     <span className="text-right">Credit (LKR)</span>
                     <span />
@@ -486,14 +504,26 @@ export default function JournalEntries() {
                     {lines.map((line, i) => {
                       const lineWarning = getLineWarning(line.account_id);
                       const acc = line.account_id ? accountsMap.get(line.account_id) : null;
+                      const memoError = formTouched ? lineMemoErrors.get(i) : undefined;
                       return (
                         <div key={i} className="px-3 py-2 space-y-1">
-                          <div className="grid grid-cols-[1fr_7rem_7rem_2.5rem] gap-2 items-center">
+                          <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_6.75rem_6.75rem_2rem] gap-2 items-center">
                             <AccountSelector
                               value={line.account_id}
                               onChange={(v) => updateLine(i, "account_id", v)}
                               placeholder="Search account…"
                               className={lineWarning ? "border-warning" : ""}
+                            />
+                            <input
+                              type="text"
+                              value={line.memo}
+                              maxLength={LINE_MEMO_MAX}
+                              onChange={(e) => updateLine(i, "memo", e.target.value)}
+                              className={`text-sm border rounded-md px-2.5 py-1.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors ${
+                                memoError ? "border-destructive" : "border-input"
+                              }`}
+                              placeholder="What this line is for"
+                              aria-label={`Line ${i + 1} description`}
                             />
                             <input
                               type="number"
@@ -532,6 +562,12 @@ export default function JournalEntries() {
                               )}
                             </div>
                           )}
+                          {memoError && (
+                            <div className="flex items-center gap-1.5 text-xs text-destructive pl-1">
+                              <XCircle className="w-3 h-3 shrink-0" />
+                              {memoError}
+                            </div>
+                          )}
                           {lineWarning && (
                             <div className="flex items-center gap-1.5 text-xs text-warning pl-1">
                               <AlertTriangle className="w-3 h-3 shrink-0" />
@@ -568,7 +604,7 @@ export default function JournalEntries() {
               {/* Validation Panel */}
               {formTouched && (validation.errors.length > 0 || validation.warnings.length > 0) && (
                 <div className="space-y-2">
-                  {validation.errors.filter(e => !["entry_date", "description"].includes(e.field)).map((err, i) => (
+                  {validation.errors.filter(e => !["entry_date", "description"].includes(e.field) && !/^lines\[\d+\]\.memo$/.test(e.field)).map((err, i) => (
                     <div key={`err-${i}`} className="flex items-start gap-2 text-xs text-destructive bg-destructive/5 rounded-md px-3 py-2 border border-destructive/20">
                       <XCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
                       <span>{err.message}</span>
@@ -604,8 +640,10 @@ export default function JournalEntries() {
               <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/30 rounded-md px-3 py-2">
                 <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
                 <span>
-                  Entries are validated both client-side and server-side. Control accounts (A/R, A/P, Inventory) 
-                  are automatically excluded — post to those via Invoices, Bills, or Payments.
+                  Every line carries its own description, which is what the General Ledger and Account Register show
+                  against that account; the entry is filed under the first line's description. Entries are validated
+                  both client-side and server-side. Control accounts (A/R, A/P, Inventory) are automatically
+                  excluded — post to those via Invoices, Bills, or Payments.
                 </span>
               </div>
 
@@ -893,6 +931,7 @@ export default function JournalEntries() {
                             <thead>
                               <tr className="text-xs text-muted-foreground">
                                 <th className="text-left font-medium pb-1.5">Account</th>
+                                <th className="text-left font-medium pb-1.5">Description</th>
                                 <th className="text-left font-medium pb-1.5 w-24">Type</th>
                                 <th className="text-right font-medium pb-1.5 w-36">Debit</th>
                                 <th className="text-right font-medium pb-1.5 w-36">Credit</th>
@@ -906,6 +945,9 @@ export default function JournalEntries() {
                                     <td className="py-1.5 text-foreground">
                                       <span className="font-mono text-xs text-muted-foreground mr-2">{line.accounts?.account_code}</span>
                                       {line.accounts?.account_name || line.account_id}
+                                    </td>
+                                    <td className={`py-1.5 pr-3 ${isMemoInherited(line.memo) ? "text-muted-foreground italic" : "text-foreground"}`}>
+                                      {resolveLineMemo(line.memo, entry.description) || "—"}
                                     </td>
                                     <td className="py-1.5">
                                       {lineAcc && (
@@ -926,7 +968,7 @@ export default function JournalEntries() {
                             </tbody>
                             <tfoot>
                               <tr className="border-t border-border font-semibold text-foreground">
-                                <td className="pt-1.5" colSpan={2}>Totals</td>
+                                <td className="pt-1.5" colSpan={3}>Totals</td>
                                 <td className="text-right tabular-nums pt-1.5">LKR {fmt(entryTotalDebit)}</td>
                                 <td className="text-right tabular-nums pt-1.5">LKR {fmt(entryTotalCredit)}</td>
                               </tr>

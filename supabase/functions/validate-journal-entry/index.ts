@@ -4,10 +4,18 @@ import { clientIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 
 const EPSILON = 0.005;
 
+// Mirrors LINE_MEMO_MIN / LINE_MEMO_MAX in src/lib/journalValidation.ts. The
+// client enforces these for the error message; this side enforces them because
+// the client is not the only thing that can call this function.
+const LINE_MEMO_MIN = 3;
+const LINE_MEMO_MAX = 200;
+
 interface JournalLine {
   account_id: string;
   debit: number;
   credit: number;
+  /** Per-line narration -> journal_lines.memo. Required on manual entries. */
+  memo?: string | null;
 }
 
 interface RequestBody {
@@ -130,7 +138,7 @@ Deno.serve(async (req) => {
       errors.push({ field: "lines", message: "Must have at least one debit and one credit line" });
     }
 
-    // Single-side check
+    // Single-side, sign and narration checks
     for (let i = 0; i < (lines || []).length; i++) {
       const l = lines[i];
       if (Number(l.debit) > 0 && Number(l.credit) > 0) {
@@ -138,6 +146,23 @@ Deno.serve(async (req) => {
       }
       if (Number(l.debit) < 0 || Number(l.credit) < 0) {
         errors.push({ field: `lines[${i}]`, message: `Line ${i + 1}: Amounts must be positive` });
+      }
+      // Only lines that will actually post need narration; a blank spare row is
+      // filtered out below and never reaches journal_lines.
+      const isActive = l.account_id && (Number(l.debit) > 0 || Number(l.credit) > 0);
+      if (isActive) {
+        const memo = (l.memo ?? "").trim();
+        if (memo.length < LINE_MEMO_MIN) {
+          errors.push({
+            field: `lines[${i}].memo`,
+            message: `Line ${i + 1}: Description is required (min ${LINE_MEMO_MIN} characters)`,
+          });
+        } else if (memo.length > LINE_MEMO_MAX) {
+          errors.push({
+            field: `lines[${i}].memo`,
+            message: `Line ${i + 1}: Description must be ${LINE_MEMO_MAX} characters or fewer`,
+          });
+        }
       }
     }
 
@@ -237,11 +262,14 @@ Deno.serve(async (req) => {
       );
     }
 
+    // One multi-row insert, so journal_lines.seq is assigned in this order — the
+    // order the user typed the lines, which is the order every report reads them in.
     const journalLines = activeLines.map((l) => ({
       journal_entry_id: entry.id,
       account_id: l.account_id,
       debit: Number(l.debit) || 0,
       credit: Number(l.credit) || 0,
+      memo: (l.memo ?? "").trim() || null,
     }));
 
     const { error: linesErr } = await adminClient.from("journal_lines").insert(journalLines);
