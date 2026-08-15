@@ -208,10 +208,10 @@ export default function JournalEntryView() {
             <thead>
               <tr className="bg-muted/50 border-b border-border">
                 <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Account</th>
-                <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Description</th>
                 <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground w-24">Type</th>
                 <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground w-36">Debit (LKR)</th>
                 <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground w-36">Credit (LKR)</th>
+                <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Description</th>
               </tr>
             </thead>
             <tbody>
@@ -220,9 +220,6 @@ export default function JournalEntryView() {
                   <td className="px-3 py-2 text-foreground">
                     <span className="font-mono text-xs text-muted-foreground mr-2">{line.accounts?.account_code}</span>
                     {line.accounts?.account_name || line.account_id}
-                  </td>
-                  <td className={`px-3 py-2 ${isMemoInherited(line.memo) ? "text-muted-foreground italic" : "text-foreground"}`}>
-                    {resolveLineMemo(line.memo, entry.description) || "—"}
                   </td>
                   <td className="px-3 py-2">
                     {line.accounts?.account_type && (
@@ -237,14 +234,18 @@ export default function JournalEntryView() {
                   <td className="text-right px-3 py-2 tabular-nums font-mono">
                     {Number(line.credit) > 0 ? fmt(Number(line.credit)) : "—"}
                   </td>
+                  <td className={`px-3 py-2 ${isMemoInherited(line.memo) ? "text-muted-foreground italic" : "text-foreground"}`}>
+                    {resolveLineMemo(line.memo, entry.description) || "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-border font-semibold text-foreground bg-muted/30">
-                <td className="px-3 py-2" colSpan={3}>Totals</td>
+                <td className="px-3 py-2" colSpan={2}>Totals</td>
                 <td className="text-right px-3 py-2 tabular-nums font-mono">LKR {fmt(totalDebit)}</td>
                 <td className="text-right px-3 py-2 tabular-nums font-mono">LKR {fmt(totalCredit)}</td>
+                <td />
               </tr>
             </tfoot>
           </table>

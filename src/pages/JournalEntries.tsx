@@ -492,11 +492,11 @@ export default function JournalEntries() {
                 <label className="text-sm font-medium text-foreground mb-2 block">Journal Lines</label>
                 <div className="border border-border rounded-lg overflow-hidden">
                   {/* Header */}
-                  <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_6.75rem_6.75rem_2rem] gap-2 bg-muted/50 px-3 py-2 text-xs font-semibold text-muted-foreground border-b border-border">
+                  <div className="grid grid-cols-[minmax(0,1.2fr)_6.75rem_6.75rem_minmax(0,1fr)_2rem] gap-2 bg-muted/50 px-3 py-2 text-xs font-semibold text-muted-foreground border-b border-border">
                     <span>Account</span>
-                    <span>Description</span>
                     <span className="text-right">Debit (LKR)</span>
                     <span className="text-right">Credit (LKR)</span>
+                    <span>Description</span>
                     <span />
                   </div>
                   {/* Lines */}
@@ -507,23 +507,12 @@ export default function JournalEntries() {
                       const memoError = formTouched ? lineMemoErrors.get(i) : undefined;
                       return (
                         <div key={i} className="px-3 py-2 space-y-1">
-                          <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_6.75rem_6.75rem_2rem] gap-2 items-center">
+                          <div className="grid grid-cols-[minmax(0,1.2fr)_6.75rem_6.75rem_minmax(0,1fr)_2rem] gap-2 items-center">
                             <AccountSelector
                               value={line.account_id}
                               onChange={(v) => updateLine(i, "account_id", v)}
                               placeholder="Search account…"
                               className={lineWarning ? "border-warning" : ""}
-                            />
-                            <input
-                              type="text"
-                              value={line.memo}
-                              maxLength={LINE_MEMO_MAX}
-                              onChange={(e) => updateLine(i, "memo", e.target.value)}
-                              className={`text-sm border rounded-md px-2.5 py-1.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors ${
-                                memoError ? "border-destructive" : "border-input"
-                              }`}
-                              placeholder="What this line is for"
-                              aria-label={`Line ${i + 1} description`}
                             />
                             <input
                               type="number"
@@ -542,6 +531,17 @@ export default function JournalEntries() {
                               onChange={(e) => updateLine(i, "credit", Number(e.target.value))}
                               className="text-sm border border-input rounded-md px-2.5 py-1.5 bg-background text-foreground text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
                               placeholder="0.00"
+                            />
+                            <input
+                              type="text"
+                              value={line.memo}
+                              maxLength={LINE_MEMO_MAX}
+                              onChange={(e) => updateLine(i, "memo", e.target.value)}
+                              className={`text-sm border rounded-md px-2.5 py-1.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors ${
+                                memoError ? "border-destructive" : "border-input"
+                              }`}
+                              placeholder="What this line is for"
+                              aria-label={`Line ${i + 1} description`}
                             />
                             <button
                               onClick={() => removeLine(i)}
@@ -931,10 +931,10 @@ export default function JournalEntries() {
                             <thead>
                               <tr className="text-xs text-muted-foreground">
                                 <th className="text-left font-medium pb-1.5">Account</th>
-                                <th className="text-left font-medium pb-1.5">Description</th>
                                 <th className="text-left font-medium pb-1.5 w-24">Type</th>
                                 <th className="text-right font-medium pb-1.5 w-36">Debit</th>
                                 <th className="text-right font-medium pb-1.5 w-36">Credit</th>
+                                <th className="text-left font-medium pb-1.5">Description</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -945,9 +945,6 @@ export default function JournalEntries() {
                                     <td className="py-1.5 text-foreground">
                                       <span className="font-mono text-xs text-muted-foreground mr-2">{line.accounts?.account_code}</span>
                                       {line.accounts?.account_name || line.account_id}
-                                    </td>
-                                    <td className={`py-1.5 pr-3 ${isMemoInherited(line.memo) ? "text-muted-foreground italic" : "text-foreground"}`}>
-                                      {resolveLineMemo(line.memo, entry.description) || "—"}
                                     </td>
                                     <td className="py-1.5">
                                       {lineAcc && (
@@ -962,15 +959,19 @@ export default function JournalEntries() {
                                     <td className="text-right tabular-nums py-1.5">
                                       {Number(line.credit) > 0 ? `LKR ${fmt(Number(line.credit))}` : "—"}
                                     </td>
+                                    <td className={`py-1.5 pl-3 ${isMemoInherited(line.memo) ? "text-muted-foreground italic" : "text-foreground"}`}>
+                                      {resolveLineMemo(line.memo, entry.description) || "—"}
+                                    </td>
                                   </tr>
                                 );
                               })}
                             </tbody>
                             <tfoot>
                               <tr className="border-t border-border font-semibold text-foreground">
-                                <td className="pt-1.5" colSpan={3}>Totals</td>
+                                <td className="pt-1.5" colSpan={2}>Totals</td>
                                 <td className="text-right tabular-nums pt-1.5">LKR {fmt(entryTotalDebit)}</td>
                                 <td className="text-right tabular-nums pt-1.5">LKR {fmt(entryTotalCredit)}</td>
+                                <td />
                               </tr>
                             </tfoot>
                           </table>

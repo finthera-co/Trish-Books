@@ -418,11 +418,11 @@ export default function JournalEntryEdit() {
           <div>
             <label className="text-sm font-medium text-foreground mb-2 block">Journal Lines</label>
             <div className="border border-border rounded-lg overflow-hidden">
-              <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_6.75rem_6.75rem_2rem] gap-2 bg-muted/50 px-3 py-2 text-xs font-semibold text-muted-foreground border-b border-border">
+              <div className="grid grid-cols-[minmax(0,1.2fr)_6.75rem_6.75rem_minmax(0,1fr)_2rem] gap-2 bg-muted/50 px-3 py-2 text-xs font-semibold text-muted-foreground border-b border-border">
                 <span>Account</span>
-                <span>Description</span>
                 <span className="text-right">Debit (LKR)</span>
                 <span className="text-right">Credit (LKR)</span>
+                <span>Description</span>
                 <span />
               </div>
               <div className="divide-y divide-border/50">
@@ -432,7 +432,7 @@ export default function JournalEntryEdit() {
                   const memoError = lineMemoErrors.get(i);
                   return (
                     <div key={i} className="px-3 py-2 space-y-1">
-                      <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_6.75rem_6.75rem_2rem] gap-2 items-center">
+                      <div className="grid grid-cols-[minmax(0,1.2fr)_6.75rem_6.75rem_minmax(0,1fr)_2rem] gap-2 items-center">
                         <select
                           value={line.account_id}
                           onChange={(e) => updateLine(i, "account_id", e.target.value)}
@@ -452,17 +452,6 @@ export default function JournalEntryEdit() {
                           ))}
                         </select>
                         <input
-                          type="text"
-                          value={line.memo}
-                          maxLength={LINE_MEMO_MAX}
-                          onChange={(e) => updateLine(i, "memo", e.target.value)}
-                          className={`text-sm border rounded-md px-2.5 py-1.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors ${
-                            memoError ? "border-destructive" : "border-input"
-                          }`}
-                          placeholder="What this line is for"
-                          aria-label={`Line ${i + 1} description`}
-                        />
-                        <input
                           type="number"
                           min="0"
                           step="0.01"
@@ -479,6 +468,17 @@ export default function JournalEntryEdit() {
                           onChange={(e) => updateLine(i, "credit", Number(e.target.value))}
                           className="text-sm border border-input rounded-md px-2.5 py-1.5 bg-background text-foreground text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
                           placeholder="0.00"
+                        />
+                        <input
+                          type="text"
+                          value={line.memo}
+                          maxLength={LINE_MEMO_MAX}
+                          onChange={(e) => updateLine(i, "memo", e.target.value)}
+                          className={`text-sm border rounded-md px-2.5 py-1.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors ${
+                            memoError ? "border-destructive" : "border-input"
+                          }`}
+                          placeholder="What this line is for"
+                          aria-label={`Line ${i + 1} description`}
                         />
                         <button
                           onClick={() => removeLine(i)}

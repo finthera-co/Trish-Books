@@ -269,9 +269,9 @@ export default function EditTransactionModal({
                 <thead>
                   <tr className="bg-muted/30 border-b">
                     <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Account</th>
-                    <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Description</th>
                     <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-28">Debit</th>
                     <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-28">Credit</th>
+                    <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Description</th>
                     {!isReadOnly && (
                       <th className="text-center px-3 py-2 text-xs font-medium text-muted-foreground w-12" />
                     )}
@@ -303,20 +303,6 @@ export default function EditTransactionModal({
                       </td>
                       <td className="px-3 py-1.5">
                         <input
-                          type="text"
-                          value={line.memo}
-                          maxLength={LINE_MEMO_MAX}
-                          onChange={(e) => updateLine(i, "memo", e.target.value)}
-                          className={`w-full ${inputClass} !py-1.5 ${
-                            lineMemoErrorByIndex.has(i) ? "!border-destructive" : ""
-                          }`}
-                          placeholder="What this line is for"
-                          aria-label={`Line ${i + 1} description`}
-                          disabled={isReadOnly}
-                        />
-                      </td>
-                      <td className="px-3 py-1.5">
-                        <input
                           type="number"
                           min="0"
                           step="0.01"
@@ -339,6 +325,20 @@ export default function EditTransactionModal({
                           disabled={isReadOnly}
                         />
                       </td>
+                      <td className="px-3 py-1.5">
+                        <input
+                          type="text"
+                          value={line.memo}
+                          maxLength={LINE_MEMO_MAX}
+                          onChange={(e) => updateLine(i, "memo", e.target.value)}
+                          className={`w-full ${inputClass} !py-1.5 ${
+                            lineMemoErrorByIndex.has(i) ? "!border-destructive" : ""
+                          }`}
+                          placeholder="What this line is for"
+                          aria-label={`Line ${i + 1} description`}
+                          disabled={isReadOnly}
+                        />
+                      </td>
                       {!isReadOnly && (
                         <td className="px-3 py-1.5 text-center">
                           <button
@@ -355,7 +355,7 @@ export default function EditTransactionModal({
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-foreground/20">
-                    <td className="px-3 py-2" colSpan={2}>
+                    <td className="px-3 py-2">
                       {!isReadOnly && (
                         <Button variant="ghost" size="sm" onClick={addLine}>
                           <Plus className="w-3.5 h-3.5 mr-1" /> Add Line
@@ -368,6 +368,7 @@ export default function EditTransactionModal({
                     <td className="text-right px-3 py-2 font-mono font-semibold text-sm">
                       {formatCurrency(totalCredits)}
                     </td>
+                    <td />
                     {!isReadOnly && <td />}
                   </tr>
                   {!isBalanced && (
