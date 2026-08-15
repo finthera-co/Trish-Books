@@ -8,8 +8,8 @@ import { useFiscalPeriods } from "@/hooks/useFiscalPeriodBalances";
 import {
   useFsMapping, useMapAccountToLine, useUnmapAccount, useMoveAccountToLine,
   useFsLineDetails, useUpdateFsLine, useFsLineTerms, useSetFsLineTerms,
-  useFsParameters, useSetFsParameter,
-  type FsLineDetail,
+  useFsParameters, useSetFsParameter, isFsPnlAccountType,
+  type FsLineDetail, type FsUnmappedAccount,
 } from "@/hooks/useFinancialStatements";
 
 const STATEMENT_CODE = "SOCI";
@@ -40,7 +40,7 @@ export default function FinancialStatementMapping() {
   const [editingLine, setEditingLine] = useState<FsLineDetail | null>(null);
 
   const { data: fiscalPeriods } = useFiscalPeriods();
-  const { statementId, mapped, unmapped, isLoading } = useFsMapping(STATEMENT_CODE, dateFrom, dateTo);
+  const { statementId, mapped, unmapped, assets, isLoading } = useFsMapping(STATEMENT_CODE, dateFrom, dateTo);
   const { data: lineDetails } = useFsLineDetails(statementId);
   const mapAccount = useMapAccountToLine();
   const unmapAccount = useUnmapAccount();
@@ -61,10 +61,28 @@ export default function FinancialStatementMapping() {
     return map;
   }, [mapped]);
 
-  const mappedTotal = mapped.reduce((s, m) => s + m.balance, 0);
+  // Balance-sheet accounts parked on a statement line are presentational; the
+  // tie-out is a P&L coverage check and must ignore them on both sides.
+  const mappedTotal = mapped
+    .filter((m) => isFsPnlAccountType(m.account_type))
+    .reduce((s, m) => s + m.balance, 0);
   const unmappedTotal = unmapped.reduce((s, a) => s + a.balance, 0);
   const fullTotal = mappedTotal + unmappedTotal;
   const isClean = Math.abs(unmappedTotal) < 0.005;
+
+  const detailLines = useMemo(() => (lineDetails ?? []).filter((l) => l.line_type === "detail"), [lineDetails]);
+
+  const [assetFilter, setAssetFilter] = useState("");
+  const visibleAssets = useMemo(() => {
+    const q = assetFilter.trim().toLowerCase();
+    if (!q) return assets;
+    return assets.filter((a) => `${a.account_code} ${a.account_name}`.toLowerCase().includes(q));
+  }, [assets, assetFilter]);
+
+  const assign = (lineId: string, account: FsUnmappedAccount) => {
+    const line = linesByLabel.get(lineId);
+    mapAccount.mutate({ lineId, accountId: account.account_id, lineLabel: line?.label ?? "", accountName: account.account_name });
+  };
 
   const weightedShares = parameters?.find((p) => p.key === "weighted_average_shares");
   const [sharesInput, setSharesInput] = useState("");
@@ -145,37 +163,46 @@ export default function FinancialStatementMapping() {
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left: unmapped accounts */}
-          <div className="stat-card">
-            <h3 className="text-sm font-semibold text-foreground mb-3">Unmapped accounts ({unmapped.length})</h3>
-            <div className="space-y-1.5 max-h-[70vh] overflow-y-auto">
-              {unmapped.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-8 text-center">Every account with activity is mapped.</p>
-              ) : (
-                unmapped.map((a) => (
-                  <div key={a.account_id} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border hover:bg-muted/20">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs text-muted-foreground">{a.account_code}</span>
-                        <span className="text-sm font-medium text-foreground truncate">{a.account_name}</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">{a.account_type}</p>
-                    </div>
-                    <span className="font-mono text-sm tabular-nums">{fmt(a.balance)}</span>
-                    <Select onValueChange={(lineId) => {
-                      const line = linesByLabel.get(lineId);
-                      mapAccount.mutate({ lineId, accountId: a.account_id, lineLabel: line?.label ?? "", accountName: a.account_name });
-                    }}>
-                      <SelectTrigger className="w-32 text-xs"><SelectValue placeholder="Assign to…" /></SelectTrigger>
-                      <SelectContent>
-                        {(lineDetails ?? []).filter((l) => l.line_type === "detail").map((l) => (
-                          <SelectItem key={l.id} value={l.id}>{l.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ))
-              )}
+          {/* Left: unmapped P&L accounts, then the optional asset ledgers */}
+          <div className="space-y-6">
+            <div className="stat-card">
+              <h3 className="text-sm font-semibold text-foreground mb-3">Unmapped accounts ({unmapped.length})</h3>
+              <div className="space-y-1.5 max-h-[45vh] overflow-y-auto">
+                {unmapped.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-8 text-center">Every account with activity is mapped.</p>
+                ) : (
+                  unmapped.map((a) => (
+                    <AccountPickerRow key={a.account_id} account={a} lines={detailLines} onAssign={assign} />
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="stat-card">
+              <div className="flex items-center justify-between gap-3 mb-1">
+                <h3 className="text-sm font-semibold text-foreground">Asset ledgers ({assets.length})</h3>
+                <input
+                  type="search"
+                  value={assetFilter}
+                  onChange={(e) => setAssetFilter(e.target.value)}
+                  placeholder="Filter…"
+                  className="text-xs border border-input rounded-lg px-2.5 py-1.5 bg-background w-36 focus:outline-none focus:ring-2 focus:ring-ring/20"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">
+                Every asset account, movement or not. Assigning one to a line is optional — it does not change profit and is not counted in the tie-out above.
+              </p>
+              <div className="space-y-1.5 max-h-[45vh] overflow-y-auto">
+                {visibleAssets.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-8 text-center">
+                    {assets.length === 0 ? "Every asset account is already assigned to a line." : "No asset account matches that filter."}
+                  </p>
+                ) : (
+                  visibleAssets.map((a) => (
+                    <AccountPickerRow key={a.account_id} account={a} lines={detailLines} onAssign={assign} />
+                  ))
+                )}
+              </div>
             </div>
           </div>
 
@@ -254,6 +281,33 @@ export default function FinancialStatementMapping() {
       {editingLine && (
         <LineEditorDialog line={editingLine} allLines={lineDetails ?? []} onClose={() => setEditingLine(null)} />
       )}
+    </div>
+  );
+}
+
+function AccountPickerRow({
+  account, lines, onAssign,
+}: {
+  account: FsUnmappedAccount;
+  lines: FsLineDetail[];
+  onAssign: (lineId: string, account: FsUnmappedAccount) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border hover:bg-muted/20">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-xs text-muted-foreground">{account.account_code}</span>
+          <span className="text-sm font-medium text-foreground truncate">{account.account_name}</span>
+        </div>
+        <p className="text-xs text-muted-foreground">{account.account_type}</p>
+      </div>
+      <span className="font-mono text-sm tabular-nums">{fmt(account.balance)}</span>
+      <Select onValueChange={(lineId) => onAssign(lineId, account)}>
+        <SelectTrigger className="w-32 text-xs"><SelectValue placeholder="Assign to…" /></SelectTrigger>
+        <SelectContent>
+          {lines.map((l) => <SelectItem key={l.id} value={l.id}>{l.label}</SelectItem>)}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

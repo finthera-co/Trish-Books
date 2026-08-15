@@ -150,6 +150,7 @@ export interface FsMappedAccount {
   account_id: string;
   account_code: string;
   account_name: string;
+  account_type: string;
   period_debit: number;
   period_credit: number;
   balance: number;
@@ -166,10 +167,33 @@ export interface FsUnmappedAccount {
 }
 
 /**
+ * Account types that make up the income statement. Only these drive the
+ * mapping screen's tie-out — a balance-sheet account mapped onto a parking
+ * line ("Assets", "Amount Due From Related Parties") is presentational and
+ * must not move Mapped/Unmapped/Statement total.
+ */
+export const FS_PNL_ACCOUNT_TYPES = [
+  "Income",
+  "Cost of Goods Sold",
+  "Expense",
+  "Other Income",
+  "Other Expense",
+] as const;
+
+export function isFsPnlAccountType(t: string | null | undefined): boolean {
+  return (FS_PNL_ACCOUNT_TYPES as readonly string[]).includes(t ?? "");
+}
+
+/**
  * Mapping-UI data: for the given statement + period, every account already
  * mapped (grouped per line) and every P&L account with movement that isn't
  * mapped to any line — sorted by absolute balance descending, largest
  * omissions first, per the mapping UI's spec.
+ *
+ * `assets` is a separate, optional bucket: EVERY asset ledger, movement or
+ * not, so a balance-sheet account can be parked on a statement line. Assets
+ * are never "unmapped" — leaving them off the statement is the norm — so they
+ * are kept out of `unmapped` and out of the tie-out entirely.
  */
 export function useFsMapping(statementCode: string, dateFrom: string, dateTo: string) {
   const { appUser } = useAuth();
@@ -222,9 +246,10 @@ export function useFsMapping(statementCode: string, dateFrom: string, dateTo: st
     queryFn: async () => {
       const { data, error } = await supabase
         .from("accounts")
-        .select("id, account_code, account_name, account_type")
+        .select("id, account_code, account_name, account_type, is_active")
         .eq("tenant_id", tenantId!)
-        .in("account_type", ["Income", "Cost of Goods Sold", "Expense", "Other Income", "Other Expense"]);
+        .in("account_type", [...FS_PNL_ACCOUNT_TYPES, "Asset"])
+        .order("account_code");
       if (error) throw error;
       return data ?? [];
     },
@@ -237,7 +262,7 @@ export function useFsMapping(statementCode: string, dateFrom: string, dateTo: st
     queryFn: async () => {
       const { data, error } = await supabase
         .from("fs_line_accounts")
-        .select("id, line_id, account_id, accounts(account_code, account_name), fs_lines!inner(statement_id)")
+        .select("id, line_id, account_id, accounts(account_code, account_name, account_type), fs_lines!inner(statement_id)")
         .eq("fs_lines.statement_id", statementId!);
       if (error) throw error;
       return (data ?? []) as any[];
@@ -259,30 +284,45 @@ export function useFsMapping(statementCode: string, dateFrom: string, dateTo: st
       account_id: r.account_id,
       account_code: r.accounts?.account_code ?? "",
       account_name: r.accounts?.account_name ?? "",
+      account_type: r.accounts?.account_type ?? "",
       period_debit: mv.debit,
       period_credit: mv.credit,
       balance: mv.credit - mv.debit,
     };
   });
 
-  const unmapped: FsUnmappedAccount[] = (accountsQuery.data ?? [])
-    .filter((a) => !mappedAccountIds.has(a.id))
-    .map((a) => {
-      const mv = movement.get(a.id) ?? { debit: 0, credit: 0 };
-      return {
-        account_id: a.id,
-        account_code: a.account_code,
-        account_name: a.account_name,
-        account_type: a.account_type,
-        period_debit: mv.debit,
-        period_credit: mv.credit,
-        balance: mv.credit - mv.debit,
-      };
-    })
+  type AccountRow = { id: string; account_code: string; account_name: string; account_type: string; is_active: boolean | null };
+  const toRow = (a: AccountRow): FsUnmappedAccount => {
+    const mv = movement.get(a.id) ?? { debit: 0, credit: 0 };
+    return {
+      account_id: a.id,
+      account_code: a.account_code,
+      account_name: a.account_name,
+      account_type: a.account_type,
+      period_debit: mv.debit,
+      period_credit: mv.credit,
+      balance: mv.credit - mv.debit,
+    };
+  };
+
+  const available = (accountsQuery.data ?? []).filter((a) => !mappedAccountIds.has(a.id));
+
+  const unmapped: FsUnmappedAccount[] = available
+    .filter((a) => isFsPnlAccountType(a.account_type))
+    .map(toRow)
     .filter((a) => Math.abs(a.balance) > 0.005)
     .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
 
-  return { statementId, mapped, unmapped, isLoading, error };
+  // Every asset ledger, whether or not it moved this period — an account with
+  // no movement is exactly the one an accountant needs to find here. Archived
+  // accounts stay hidden unless they actually have movement in the range.
+  const assets: FsUnmappedAccount[] = available
+    .filter((a) => a.account_type === "Asset")
+    .filter((a) => a.is_active !== false || movement.has(a.id))
+    .map(toRow)
+    .sort((a, b) => a.account_code.localeCompare(b.account_code, undefined, { numeric: true }));
+
+  return { statementId, mapped, unmapped, assets, isLoading, error };
 }
 
 async function logMappingChange(tenantId: string, userId: string | undefined, detail: Record<string, unknown>) {
