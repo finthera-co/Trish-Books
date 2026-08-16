@@ -3,7 +3,7 @@ import { exportToPdf } from "@/lib/pdfExport";
 import { computeFingerprint } from "@/lib/reportFingerprint";
 import { generatedSentence, periodSentence, type StatementHeadingCompany } from "@/lib/reportHeading";
 import { supabase } from "@/integrations/supabase/client";
-import type { FsStatementLine } from "@/hooks/useFinancialStatements";
+import type { FsStatementLine, FsStatementAccount } from "@/hooks/useFinancialStatements";
 
 export interface FsExportMeta {
   tenantId: string;
@@ -76,21 +76,40 @@ export const SOCI_CSV_HEADERS = ["Label", "Note", "Current", "Comparative", "Cur
 /** Label, Note, Current, Comparative, Current Margin %, Comparative Margin %.
  * Pure — split out from exportSociCsv so it's testable without Blob/URL
  * download side effects (see the golden-file snapshot test). */
+/** Ledgers under a line, indented one level, in the same order the report shows
+ * them. Omitted entirely when `accounts` is not supplied, so the statutory face
+ * of the statement stays exportable on its own. */
+function childRows(line: FsStatementLine, accounts: Map<string, FsStatementAccount[]> | undefined): (string | number)[][] {
+  const kids = accounts?.get(line.line_id) ?? [];
+  return kids.map((a) => [
+    `    ${a.account_code} ${a.account_name}`,
+    "",
+    csvAmt(a.current_value, false),
+    csvAmt(a.compare_value, false),
+    "",
+    "",
+  ]);
+}
+
 export function buildSociCsvRows(
   lines: FsStatementLine[],
   fingerprintLine: string,
   ackNote: string | undefined,
-  warnings: readonly string[]
+  warnings: readonly string[],
+  accounts?: Map<string, FsStatementAccount[]>
 ): (string | number)[][] {
   const rows: (string | number)[][] = lines
     .filter((l) => l.line_type !== "spacer")
-    .map((l) => [
-      l.label,
-      l.note_ref ?? "",
-      csvAmt(l.current_value, l.line_type === "detail"),
-      csvAmt(l.compare_value, l.line_type === "detail"),
-      l.show_margin ? csvAmt(l.current_margin, false) : "",
-      l.show_margin ? csvAmt(l.compare_margin, false) : "",
+    .flatMap((l) => [
+      [
+        l.label,
+        l.note_ref ?? "",
+        csvAmt(l.current_value, l.line_type === "detail"),
+        csvAmt(l.compare_value, l.line_type === "detail"),
+        l.show_margin ? csvAmt(l.current_margin, false) : "",
+        l.show_margin ? csvAmt(l.compare_margin, false) : "",
+      ],
+      ...childRows(l, accounts),
     ]);
 
   rows.push([]);
@@ -100,12 +119,16 @@ export function buildSociCsvRows(
   return rows;
 }
 
-export function exportSociCsv(lines: FsStatementLine[], meta: FsExportMeta) {
+export function exportSociCsv(
+  lines: FsStatementLine[],
+  meta: FsExportMeta,
+  accounts?: Map<string, FsStatementAccount[]>
+) {
   const fp = fingerprintFor(meta, lines);
   exportToCsv(
     `statement-of-comprehensive-income-${meta.dateFrom}-to-${meta.dateTo}.csv`,
     SOCI_CSV_HEADERS,
-    buildSociCsvRows(lines, fp.line, meta.ackNote, meta.warnings)
+    buildSociCsvRows(lines, fp.line, meta.ackNote, meta.warnings, accounts)
   );
   void logExport(meta, "csv", fp.hash, lines);
 }
@@ -124,22 +147,40 @@ function pdfEps(n: number | null | undefined): string {
 }
 
 /** Portrait A4, centred to match the reference's statutory face. Vector text only. */
-export function exportSociPdf(lines: FsStatementLine[], meta: FsExportMeta) {
+export function exportSociPdf(
+  lines: FsStatementLine[],
+  meta: FsExportMeta,
+  accounts?: Map<string, FsStatementAccount[]>
+) {
   const headers = ["", "Note", "Current", "Comparative", "Margin %", "Cmp Margin %"];
   const boldRows = new Set<number>();
   const bodyLines = lines.filter((l) => l.line_type !== "spacer");
-  const rows = bodyLines.map((l, i) => {
-    if (l.emphasis === "bold_rule" || l.emphasis === "total_rule" || l.emphasis === "bold") boldRows.add(i);
+  // Emphasis is tracked by OUTPUT row index, not source index — child rows
+  // shift every subsequent line down, and bolding the wrong row is how a
+  // subtotal stops looking like a subtotal.
+  const rows: string[][] = [];
+  for (const l of bodyLines) {
+    if (l.emphasis === "bold_rule" || l.emphasis === "total_rule" || l.emphasis === "bold") boldRows.add(rows.length);
     const isEps = l.line_type === "per_share";
-    return [
+    rows.push([
       l.label,
       l.note_ref ?? "",
       isEps ? pdfEps(l.current_value) : pdfAmt(l.current_value, l.line_type === "detail"),
       isEps ? pdfEps(l.compare_value) : pdfAmt(l.compare_value, l.line_type === "detail"),
       l.show_margin ? (l.current_margin?.toFixed(2) ?? "") : "",
       l.show_margin ? (l.compare_margin?.toFixed(2) ?? "") : "",
-    ];
-  });
+    ]);
+    for (const a of accounts?.get(l.line_id) ?? []) {
+      rows.push([
+        `    ${a.account_code} ${a.account_name}`,
+        "",
+        pdfAmt(a.current_value, false),
+        pdfAmt(a.compare_value, false),
+        "",
+        "",
+      ]);
+    }
+  }
 
   const fp = fingerprintFor(meta, lines);
   const footer = [fp.line, meta.ackNote, ...meta.warnings, ...meta.footerNotes].filter(Boolean).join(" · ");

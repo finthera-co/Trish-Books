@@ -40,7 +40,7 @@ export default function FinancialStatementMapping() {
   const [editingLine, setEditingLine] = useState<FsLineDetail | null>(null);
 
   const { data: fiscalPeriods } = useFiscalPeriods();
-  const { statementId, mapped, unmapped, assets, isLoading } = useFsMapping(STATEMENT_CODE, dateFrom, dateTo);
+  const { statementId, mapped, unmapped, others, isLoading, error } = useFsMapping(STATEMENT_CODE, dateFrom, dateTo);
   const { data: lineDetails } = useFsLineDetails(statementId);
   const mapAccount = useMapAccountToLine();
   const unmapAccount = useUnmapAccount();
@@ -72,12 +72,12 @@ export default function FinancialStatementMapping() {
 
   const detailLines = useMemo(() => (lineDetails ?? []).filter((l) => l.line_type === "detail"), [lineDetails]);
 
-  const [assetFilter, setAssetFilter] = useState("");
-  const visibleAssets = useMemo(() => {
-    const q = assetFilter.trim().toLowerCase();
-    if (!q) return assets;
-    return assets.filter((a) => `${a.account_code} ${a.account_name}`.toLowerCase().includes(q));
-  }, [assets, assetFilter]);
+  const [otherFilter, setOtherFilter] = useState("");
+  const visibleOthers = useMemo(() => {
+    const q = otherFilter.trim().toLowerCase();
+    if (!q) return others;
+    return others.filter((a) => `${a.account_code} ${a.account_name} ${a.account_type}`.toLowerCase().includes(q));
+  }, [others, otherFilter]);
 
   const assign = (lineId: string, account: FsUnmappedAccount) => {
     const line = linesByLabel.get(lineId);
@@ -127,6 +127,7 @@ export default function FinancialStatementMapping() {
           <span>Unmapped {fmt(unmappedTotal)}</span>
           <span className="opacity-50">·</span>
           <span>Statement total {fmt(fullTotal)}</span>
+          <span className="opacity-60 font-normal">profit &amp; loss accounts only</span>
         </div>
 
         {fiscalPeriodId && (
@@ -161,6 +162,16 @@ export default function FinancialStatementMapping() {
         <div className="flex items-center justify-center py-16">
           <span className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
         </div>
+      ) : error ? (
+        // Never render empty panels on a failed load: "no unmapped accounts"
+        // and "the query died" look identical, and one of them is a clean bill
+        // of health the user would act on.
+        <div className="stat-card text-center py-16">
+          <AlertTriangle className="w-6 h-6 mx-auto mb-2 text-destructive" />
+          <p className="font-medium text-destructive">Could not load accounts for this period.</p>
+          <p className="text-sm text-muted-foreground mt-1">{(error as Error).message}</p>
+          <p className="text-xs text-muted-foreground mt-3">The lists below would be misleading, so they are hidden. Narrow the date range and try again.</p>
+        </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left: unmapped P&L accounts, then the optional asset ledgers */}
@@ -180,25 +191,25 @@ export default function FinancialStatementMapping() {
 
             <div className="stat-card">
               <div className="flex items-center justify-between gap-3 mb-1">
-                <h3 className="text-sm font-semibold text-foreground">Asset ledgers ({assets.length})</h3>
+                <h3 className="text-sm font-semibold text-foreground">Other ledgers ({others.length})</h3>
                 <input
                   type="search"
-                  value={assetFilter}
-                  onChange={(e) => setAssetFilter(e.target.value)}
+                  value={otherFilter}
+                  onChange={(e) => setOtherFilter(e.target.value)}
                   placeholder="Filter…"
                   className="text-xs border border-input rounded-lg px-2.5 py-1.5 bg-background w-36 focus:outline-none focus:ring-2 focus:ring-ring/20"
                 />
               </div>
               <p className="text-xs text-muted-foreground mb-3">
-                Every asset account, movement or not. Assigning one to a line is optional — it does not change profit and is not counted in the tie-out above.
+                Every asset, liability and equity account, balance or not, shown at its <strong>closing balance</strong> as at the To date. Assigning one is optional: it lands in the statement's memorandum section, below earnings per share, and changes no subtotal.
               </p>
               <div className="space-y-1.5 max-h-[45vh] overflow-y-auto">
-                {visibleAssets.length === 0 ? (
+                {visibleOthers.length === 0 ? (
                   <p className="text-sm text-muted-foreground py-8 text-center">
-                    {assets.length === 0 ? "Every asset account is already assigned to a line." : "No asset account matches that filter."}
+                    {others.length === 0 ? "Every other account is already assigned to a line." : "No account matches that filter."}
                   </p>
                 ) : (
-                  visibleAssets.map((a) => (
+                  visibleOthers.map((a) => (
                     <AccountPickerRow key={a.account_id} account={a} lines={detailLines} onAssign={assign} />
                   ))
                 )}
@@ -322,6 +333,7 @@ function LineEditorDialog({ line, allLines, onClose }: { line: FsLineDetail; all
   const [emphasis, setEmphasis] = useState(line.emphasis);
   const [showMargin, setShowMargin] = useState(line.show_margin);
   const [isMarginBase, setIsMarginBase] = useState(line.is_margin_base);
+  const [valueBasis, setValueBasis] = useState<"period" | "cumulative">(line.value_basis ?? "period");
 
   const termFactors = useMemo(() => {
     const map = new Map<string, 1 | -1>();
@@ -372,6 +384,20 @@ function LineEditorDialog({ line, allLines, onClose }: { line: FsLineDetail; all
             <label className="flex items-center gap-1.5"><input type="checkbox" checked={isMarginBase} onChange={(e) => setIsMarginBase(e.target.checked)} /> Is margin base</label>
           </div>
 
+          {line.line_type === "detail" && (
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">Basis</label>
+              <select value={valueBasis} onChange={(e) => setValueBasis(e.target.value as "period" | "cumulative")}
+                className="w-full text-sm border border-input rounded-lg px-3 py-2 bg-background">
+                <option value="period">Period movement — income and expense</option>
+                <option value="cumulative">Closing balance — asset, liability, equity</option>
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Closing balance matches the Trial Balance's Closing column. A line that feeds profit for the year cannot use it — the database refuses, because a balance is not an earning.
+              </p>
+            </div>
+          )}
+
           {line.line_type === "computed" && (
             <div>
               <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">Formula (click to cycle: off → + → − → off)</label>
@@ -399,7 +425,14 @@ function LineEditorDialog({ line, allLines, onClose }: { line: FsLineDetail; all
           <Button
             size="sm"
             onClick={() => {
-              updateLine.mutate({ lineId: line.id, patch: { label, note_ref: noteRef || null, emphasis, show_margin: showMargin, is_margin_base: isMarginBase } });
+              updateLine.mutate({
+                lineId: line.id,
+                patch: {
+                  label, note_ref: noteRef || null, emphasis,
+                  show_margin: showMargin, is_margin_base: isMarginBase,
+                  ...(line.line_type === "detail" ? { value_basis: valueBasis } : {}),
+                },
+              });
               if (line.line_type === "computed" && pendingFactors) {
                 const termsToSave = Array.from(pendingFactors.entries())
                   .filter(([, f]) => f !== 0)

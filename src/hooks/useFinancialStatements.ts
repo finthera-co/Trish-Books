@@ -20,8 +20,21 @@ export interface FsStatementLine {
   account_count: number;
 }
 
+/** One mapped ledger under a statement line — the tree's leaf rows. Values come
+ * from fn_fs_eval_accounts, the same computation the line totals are defined as
+ * the sum of, so leaves always add up to their branch. */
+export interface FsStatementAccount {
+  line_id: string;
+  account_id: string;
+  account_code: string;
+  account_name: string;
+  account_type: string;
+  current_value: number | null;
+  compare_value: number | null;
+}
+
 export interface FsCoverageIssue {
-  issue_code: "UNMAPPED_ACCOUNT" | "CYCLE" | "MISSING_PARAM" | "TIE_OUT_VARIANCE";
+  issue_code: "UNMAPPED_ACCOUNT" | "UNMAPPED_BS_ACCOUNT" | "CYCLE" | "MISSING_PARAM" | "TIE_OUT_VARIANCE";
   severity: "error" | "warning";
   account_id: string | null;
   account_code: string | null;
@@ -85,6 +98,45 @@ export function useFsStatement(
     staleTime: 60_000,
     gcTime: 5 * 60_000,
     retry: 1,
+  });
+}
+
+export function useFsStatementAccounts(
+  statementCode: string,
+  dateFrom: string,
+  dateTo: string,
+  cmpDateFrom?: string | null,
+  cmpDateTo?: string | null
+) {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["fs_statement_accounts", appUser?.tenant_id, statementCode, dateFrom, dateTo, cmpDateFrom ?? null, cmpDateTo ?? null],
+    enabled: Boolean(appUser?.tenant_id && dateFrom && dateTo),
+    queryFn: async (): Promise<FsStatementAccount[]> => {
+      const { data, error } = await supabase.rpc("rpc_fs_statement_accounts", {
+        p_statement_code: statementCode,
+        p_date_from: dateFrom,
+        p_date_to: dateTo,
+        p_cmp_date_from: cmpDateFrom ?? null,
+        p_cmp_date_to: cmpDateTo ?? null,
+      });
+      if (error) throw error;
+      type Row = {
+        line_id: string; account_id: string; account_code: string | null;
+        account_name: string | null; account_type: string | null;
+        current_value: unknown; compare_value: unknown;
+      };
+      return ((data ?? []) as Row[]).map((r) => ({
+        line_id: r.line_id,
+        account_id: r.account_id,
+        account_code: r.account_code ?? "",
+        account_name: r.account_name ?? "",
+        account_type: r.account_type ?? "",
+        current_value: r.current_value == null ? null : toNum(r.current_value),
+        compare_value: r.compare_value == null ? null : toNum(r.compare_value),
+      }));
+    },
+    staleTime: 30_000,
   });
 }
 
@@ -172,6 +224,17 @@ export interface FsUnmappedAccount {
  * line ("Assets", "Amount Due From Related Parties") is presentational and
  * must not move Mapped/Unmapped/Statement total.
  */
+export interface FsAccountBalance {
+  account_id: string;
+  account_code: string;
+  account_name: string;
+  account_type: string;
+  period_debit: number;
+  period_credit: number;
+  /** Audit opening + period Dr - Cr, i.e. rpc_trial_balance's Closing column. */
+  closing: number;
+}
+
 export const FS_PNL_ACCOUNT_TYPES = [
   "Income",
   "Cost of Goods Sold",
@@ -190,10 +253,11 @@ export function isFsPnlAccountType(t: string | null | undefined): boolean {
  * mapped to any line — sorted by absolute balance descending, largest
  * omissions first, per the mapping UI's spec.
  *
- * `assets` is a separate, optional bucket: EVERY asset ledger, movement or
- * not, so a balance-sheet account can be parked on a statement line. Assets
- * are never "unmapped" — leaving them off the statement is the norm — so they
- * are kept out of `unmapped` and out of the tie-out entirely.
+ * `others` is a separate, optional bucket: EVERY remaining ledger — asset,
+ * liability, equity — movement or not, so any account can be parked on a
+ * statement line. These are never "unmapped" (leaving a balance-sheet account
+ * off the income statement is the norm), so they stay out of `unmapped` and
+ * out of the tie-out entirely.
  */
 export function useFsMapping(statementCode: string, dateFrom: string, dateTo: string) {
   const { appUser } = useAuth();
@@ -202,58 +266,43 @@ export function useFsMapping(statementCode: string, dateFrom: string, dateTo: st
   const metaQuery = useFsStatementMeta(statementCode);
   const statementId = metaQuery.data?.id;
 
-  const movementQuery = useQuery({
-    queryKey: ["fs_mapping_movement", tenantId, dateFrom, dateTo],
+  // One rpc_trial_balance call replaces the old client-side paging over
+  // journal_lines. Two reasons, both correctness rather than tidiness:
+  // it returns EVERY account (p_include_zero) rather than only those whose
+  // rows happened to land in a page, and its Closing column is the same
+  // figure the statement's cumulative lines report, so this screen and the
+  // statement can no longer disagree about what an account is worth.
+  const balancesQuery = useQuery({
+    queryKey: ["fs_mapping_balances", tenantId, dateFrom, dateTo],
     enabled: Boolean(tenantId && dateFrom && dateTo),
     queryFn: async () => {
-      // PostgREST caps every response at 1000 rows. A full fiscal year easily
-      // has more journal lines than that, so a plain select silently drops
-      // whichever accounts' rows fall outside the first page — those accounts
-      // then compute a zero balance and vanish from the unmapped list even
-      // though they have real activity. Page through with .range() so EVERY
-      // line is counted.
-      const PAGE = 1000;
-      const rows: any[] = [];
-      for (let from = 0; ; from += PAGE) {
-        const { data, error } = await supabase
-          .from("journal_lines")
-          .select("account_id, debit, credit, journal_entries!inner(tenant_id, status, voided_at, entry_date)")
-          .eq("journal_entries.tenant_id", tenantId!)
-          .eq("journal_entries.status", "posted")
-          .is("journal_entries.voided_at", null)
-          .gte("journal_entries.entry_date", dateFrom)
-          .lte("journal_entries.entry_date", dateTo)
-          .range(from, from + PAGE - 1);
-        if (error) throw error;
-        rows.push(...(data ?? []));
-        if (!data || data.length < PAGE) break;
-      }
-      const map = new Map<string, { debit: number; credit: number }>();
-      for (const row of rows) {
-        const cur = map.get(row.account_id) ?? { debit: 0, credit: 0 };
-        cur.debit += toNum(row.debit);
-        cur.credit += toNum(row.credit);
-        map.set(row.account_id, cur);
+      const { data, error } = await supabase.rpc("rpc_trial_balance", {
+        p_date_from: dateFrom,
+        p_date_to: dateTo,
+        p_group_by: "type",
+        p_include_zero: true,
+        p_include_inactive: true,
+      });
+      if (error) throw error;
+      type TbRow = {
+        account_id: string; account_code: string | null; account_name: string | null;
+        account_type: string | null; period_debit: unknown; period_credit: unknown; closing: unknown;
+      };
+      const map = new Map<string, FsAccountBalance>();
+      for (const row of (data ?? []) as TbRow[]) {
+        map.set(row.account_id, {
+          account_id: row.account_id,
+          account_code: row.account_code ?? "",
+          account_name: row.account_name ?? "",
+          account_type: row.account_type ?? "",
+          period_debit: toNum(row.period_debit),
+          period_credit: toNum(row.period_credit),
+          closing: toNum(row.closing),
+        });
       }
       return map;
     },
     staleTime: 30_000,
-  });
-
-  const accountsQuery = useQuery({
-    queryKey: ["fs_mapping_accounts", tenantId],
-    enabled: Boolean(tenantId),
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("accounts")
-        .select("id, account_code, account_name, account_type, is_active")
-        .eq("tenant_id", tenantId!)
-        .in("account_type", [...FS_PNL_ACCOUNT_TYPES, "Asset"])
-        .order("account_code");
-      if (error) throw error;
-      return data ?? [];
-    },
-    staleTime: 5 * 60_000,
   });
 
   const mappedQuery = useQuery({
@@ -270,59 +319,61 @@ export function useFsMapping(statementCode: string, dateFrom: string, dateTo: st
     staleTime: 30_000,
   });
 
-  const isLoading = metaQuery.isLoading || movementQuery.isLoading || accountsQuery.isLoading || mappedQuery.isLoading;
-  const error = metaQuery.error || movementQuery.error || accountsQuery.error || mappedQuery.error;
+  const isLoading = metaQuery.isLoading || balancesQuery.isLoading || mappedQuery.isLoading;
+  const error = metaQuery.error || balancesQuery.error || mappedQuery.error;
 
   const mappedAccountIds = new Set((mappedQuery.data ?? []).map((r) => r.account_id));
-  const movement = movementQuery.data ?? new Map<string, { debit: number; credit: number }>();
+  const balances = balancesQuery.data ?? new Map<string, FsAccountBalance>();
+
+  // What a row is "worth" on this screen, matching how the statement values it:
+  // movement for P&L accounts, closing balance for everything else.
+  const displayValue = (b: FsAccountBalance | undefined, accountType: string): number => {
+    if (!b) return 0;
+    return isFsPnlAccountType(accountType) ? b.period_credit - b.period_debit : b.closing;
+  };
 
   const mapped: FsMappedAccount[] = (mappedQuery.data ?? []).map((r) => {
-    const mv = movement.get(r.account_id) ?? { debit: 0, credit: 0 };
+    const accountType = r.accounts?.account_type ?? "";
+    const b = balances.get(r.account_id);
     return {
       line_id: r.line_id,
       fs_line_account_id: r.id,
       account_id: r.account_id,
       account_code: r.accounts?.account_code ?? "",
       account_name: r.accounts?.account_name ?? "",
-      account_type: r.accounts?.account_type ?? "",
-      period_debit: mv.debit,
-      period_credit: mv.credit,
-      balance: mv.credit - mv.debit,
+      account_type: accountType,
+      period_debit: b?.period_debit ?? 0,
+      period_credit: b?.period_credit ?? 0,
+      balance: displayValue(b, accountType),
     };
   });
 
-  type AccountRow = { id: string; account_code: string; account_name: string; account_type: string; is_active: boolean | null };
-  const toRow = (a: AccountRow): FsUnmappedAccount => {
-    const mv = movement.get(a.id) ?? { debit: 0, credit: 0 };
-    return {
-      account_id: a.id,
-      account_code: a.account_code,
-      account_name: a.account_name,
-      account_type: a.account_type,
-      period_debit: mv.debit,
-      period_credit: mv.credit,
-      balance: mv.credit - mv.debit,
-    };
-  };
+  const toRow = (b: FsAccountBalance): FsUnmappedAccount => ({
+    account_id: b.account_id,
+    account_code: b.account_code,
+    account_name: b.account_name,
+    account_type: b.account_type,
+    period_debit: b.period_debit,
+    period_credit: b.period_credit,
+    balance: displayValue(b, b.account_type),
+  });
 
-  const available = (accountsQuery.data ?? []).filter((a) => !mappedAccountIds.has(a.id));
+  const available = Array.from(balances.values()).filter((b) => !mappedAccountIds.has(b.account_id));
 
   const unmapped: FsUnmappedAccount[] = available
-    .filter((a) => isFsPnlAccountType(a.account_type))
+    .filter((b) => isFsPnlAccountType(b.account_type))
     .map(toRow)
     .filter((a) => Math.abs(a.balance) > 0.005)
     .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
 
-  // Every asset ledger, whether or not it moved this period — an account with
-  // no movement is exactly the one an accountant needs to find here. Archived
-  // accounts stay hidden unless they actually have movement in the range.
-  const assets: FsUnmappedAccount[] = available
-    .filter((a) => a.account_type === "Asset")
-    .filter((a) => a.is_active !== false || movement.has(a.id))
+  // Every remaining ledger, balance or not — an account with nothing on it is
+  // exactly the one an accountant needs to find here.
+  const others: FsUnmappedAccount[] = available
+    .filter((b) => !isFsPnlAccountType(b.account_type))
     .map(toRow)
     .sort((a, b) => a.account_code.localeCompare(b.account_code, undefined, { numeric: true }));
 
-  return { statementId, mapped, unmapped, assets, isLoading, error };
+  return { statementId, mapped, unmapped, others, isLoading, error };
 }
 
 async function logMappingChange(tenantId: string, userId: string | undefined, detail: Record<string, unknown>) {
@@ -406,6 +457,7 @@ export interface FsLineDetail {
   show_margin: boolean;
   is_margin_base: boolean;
   param_key: string | null;
+  value_basis: "period" | "cumulative";
   sort_order: number;
 }
 
@@ -417,7 +469,7 @@ export function useFsLineDetails(statementId: string | undefined) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("fs_lines")
-        .select("id, statement_id, line_code, label, note_ref, line_type, sign, emphasis, show_margin, is_margin_base, param_key, sort_order")
+        .select("id, statement_id, line_code, label, note_ref, line_type, sign, emphasis, show_margin, is_margin_base, param_key, value_basis, sort_order")
         .eq("statement_id", statementId!)
         .order("sort_order");
       if (error) throw error;
@@ -430,7 +482,7 @@ export function useFsLineDetails(statementId: string | undefined) {
 export function useUpdateFsLine() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ lineId, patch }: { lineId: string; patch: Partial<Pick<FsLineDetail, "label" | "note_ref" | "emphasis" | "show_margin" | "is_margin_base" | "sort_order">> }) => {
+    mutationFn: async ({ lineId, patch }: { lineId: string; patch: Partial<Pick<FsLineDetail, "label" | "note_ref" | "emphasis" | "show_margin" | "is_margin_base" | "sort_order" | "value_basis">> }) => {
       const { error } = await supabase.from("fs_lines").update(patch).eq("id", lineId);
       if (error) throw error;
     },

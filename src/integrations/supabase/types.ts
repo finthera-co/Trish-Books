@@ -5954,6 +5954,7 @@ export type Database = {
           sort_order: number
           statement_id: string
           tenant_id: string
+          value_basis: string
         }
         Insert: {
           created_at?: string
@@ -5971,6 +5972,7 @@ export type Database = {
           sort_order: number
           statement_id: string
           tenant_id: string
+          value_basis?: string
         }
         Update: {
           created_at?: string
@@ -5988,6 +5990,7 @@ export type Database = {
           sort_order?: number
           statement_id?: string
           tenant_id?: string
+          value_basis?: string
         }
         Relationships: [
           {
@@ -15180,6 +15183,14 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      fn_fs_eval_accounts: {
+        Args: { p_date_from: string; p_date_to: string; p_statement_id: string }
+        Returns: {
+          out_account_id: string
+          out_line_id: string
+          out_value: number
+        }[]
+      }
       fn_fs_eval_statement: {
         Args: { p_date_from: string; p_date_to: string; p_statement_id: string }
         Returns: {
@@ -15400,13 +15411,13 @@ export type Database = {
       is_super_admin: { Args: never; Returns: boolean }
       issue_invoice_receipt: {
         Args: {
-          p_customer_address?: string | null
+          p_customer_address?: string
           p_invoice_id: string
-          p_notes?: string | null
-          p_payment_method?: string | null
-          p_receipt_date?: string | null
-          p_received_from?: string | null
-          p_reference?: string | null
+          p_notes?: string
+          p_payment_method?: string
+          p_receipt_date?: string
+          p_received_from?: string
+          p_reference?: string
         }
         Returns: {
           amount: number
@@ -15424,10 +15435,24 @@ export type Database = {
           reference: string | null
           tenant_id: string
         }
+        SetofOptions: {
+          from: "*"
+          to: "invoice_receipts"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       je_filter_sql: {
         Args: { p_search: string; p_source: string; p_status: string }
         Returns: string
+      }
+      je_lines_json: {
+        Args: { p_entry_id: string }
+        Returns: {
+          lines: Json
+          total_credit: number
+          total_debit: number
+        }[]
       }
       journal_entry_stats: {
         Args: never
@@ -15632,6 +15657,14 @@ export type Database = {
         Returns: Json
       }
       reconcile_inventory_qty: { Args: { p_item_id?: string }; Returns: Json }
+      rectify_petty_cash_import_line: {
+        Args: {
+          p_account_id?: string
+          p_line_id: string
+          p_parsed_date?: string
+        }
+        Returns: Json
+      }
       recurring_next_date: {
         Args: { p_frequency: string; p_from: string; p_interval: number }
         Returns: string
@@ -15717,6 +15750,24 @@ export type Database = {
           note_ref: string
           show_margin: boolean
           sort_order: number
+        }[]
+      }
+      rpc_fs_statement_accounts: {
+        Args: {
+          p_cmp_date_from?: string
+          p_cmp_date_to?: string
+          p_date_from: string
+          p_date_to: string
+          p_statement_code: string
+        }
+        Returns: {
+          account_code: string
+          account_id: string
+          account_name: string
+          account_type: string
+          compare_value: number
+          current_value: number
+          line_id: string
         }[]
       }
       rpc_gl_account_tree: {

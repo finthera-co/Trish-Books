@@ -1,7 +1,7 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, Fragment } from "react";
 import { useNavigate } from "react-router-dom";
 import { format as formatDate } from "date-fns";
-import { Download, FileText, Printer, AlertTriangle, XCircle } from "lucide-react";
+import { Download, FileText, Printer, AlertTriangle, XCircle, ChevronRight, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -9,10 +9,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { useFiscalPeriods } from "@/hooks/useFiscalPeriodBalances";
-import { useFsStatement, useFsCoverage, useFsStatementMeta } from "@/hooks/useFinancialStatements";
+import { useFsStatement, useFsCoverage, useFsStatementMeta, useFsStatementAccounts } from "@/hooks/useFinancialStatements";
 import { ReportMasthead, formatReportDate, useReportCompany } from "@/components/reports/ReportMasthead";
 import { exportSociCsv, exportSociPdf } from "@/lib/fsStatementExport";
 import { fmtStatement, fmtEps, fmtMargin, rowClasses } from "@/lib/fsStatementModel";
+import type { FsStatementAccount } from "@/hooks/useFinancialStatements";
 
 const STATEMENT_CODE = "SOCI";
 
@@ -43,6 +44,32 @@ export default function StatementOfComprehensiveIncome() {
   const { data: meta } = useFsStatementMeta(STATEMENT_CODE);
   const { data: lines, isLoading, error } = useFsStatement(STATEMENT_CODE, dateFrom, dateTo, cmpDateFrom, cmpDateTo);
   const { data: coverage } = useFsCoverage(STATEMENT_CODE, dateFrom, dateTo);
+  const { data: lineAccounts } = useFsStatementAccounts(STATEMENT_CODE, dateFrom, dateTo, cmpDateFrom, cmpDateTo);
+
+  // Ledgers behind each line, keyed by line. Expanded by default: an accountant
+  // opening this wants to see what the figure is made of, and the statutory
+  // face is one click away via Collapse all.
+  const accountsByLine = useMemo(() => {
+    const map = new Map<string, FsStatementAccount[]>();
+    for (const a of lineAccounts ?? []) {
+      const arr = map.get(a.line_id) ?? [];
+      arr.push(a);
+      map.set(a.line_id, arr);
+    }
+    return map;
+  }, [lineAccounts]);
+
+  const colCount = cmpDateTo ? 6 : 4;
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const allCollapsed = (lines ?? []).every((l) => accountsByLine.get(l.line_id)?.length ? collapsed.has(l.line_id) : true);
+  const toggleLine = (lineId: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(lineId)) next.delete(lineId); else next.add(lineId);
+      return next;
+    });
+  const toggleAll = () =>
+    setCollapsed(allCollapsed ? new Set() : new Set(accountsByLine.keys()));
 
   const errors = useMemo(() => (coverage ?? []).filter((c) => c.severity === "error"), [coverage]);
   const warnings = useMemo(() => (coverage ?? []).filter((c) => c.severity === "warning"), [coverage]);
@@ -97,9 +124,9 @@ export default function StatementOfComprehensiveIncome() {
       footerNotes: meta?.footer_notes ?? [],
     };
     if (action === "csv") {
-      exportSociCsv(lines, exportMeta);
+      exportSociCsv(lines, exportMeta, accountsByLine);
     } else if (action === "pdf") {
-      exportSociPdf(lines, exportMeta);
+      exportSociPdf(lines, exportMeta, accountsByLine);
     } else {
       window.print();
     }
@@ -147,6 +174,10 @@ export default function StatementOfComprehensiveIncome() {
             </select>
           </div>
           <div className="flex gap-2 ml-auto">
+            <Button variant="outline" size="sm" onClick={toggleAll} disabled={accountsByLine.size === 0}>
+              {allCollapsed ? <ChevronRight className="w-4 h-4 mr-1" /> : <ChevronDown className="w-4 h-4 mr-1" />}
+              {allCollapsed ? "Expand all" : "Collapse all"}
+            </Button>
             <Button variant="outline" size="sm" onClick={() => runExport("csv")} disabled={!lines?.length}>
               <Download className="w-4 h-4 mr-1" /> CSV
             </Button>
@@ -247,23 +278,56 @@ export default function StatementOfComprehensiveIncome() {
             </thead>
             <tbody>
               {lines.map((l) => {
-                if (l.line_type === "spacer") return <tr key={l.line_id}><td colSpan={6} className="py-1"></td></tr>;
+                if (l.line_type === "spacer") return <tr key={l.line_id}><td colSpan={colCount} className="py-1"></td></tr>;
                 const isEps = l.line_type === "per_share";
+                const kids = accountsByLine.get(l.line_id) ?? [];
+                const isOpen = kids.length > 0 && !collapsed.has(l.line_id);
                 return (
-                  <tr key={l.line_id} className={rowClasses(l.emphasis)}>
-                    <td className="py-1.5 pr-2 text-foreground">{l.label}</td>
-                    <td className="py-1.5 text-center font-mono text-xs text-muted-foreground">{l.note_ref ?? ""}</td>
-                    <td className="py-1.5 text-right font-mono tabular-nums">
-                      {isEps ? fmtEps(l.current_value) : fmtStatement(l.current_value, l.line_type === "detail")}
-                    </td>
-                    {cmpDateTo && (
-                      <td className="py-1.5 text-right font-mono tabular-nums">
-                        {isEps ? fmtEps(l.compare_value) : fmtStatement(l.compare_value, l.line_type === "detail")}
+                  <Fragment key={l.line_id}>
+                    <tr className={rowClasses(l.emphasis)}>
+                      <td className="py-1.5 pr-2 text-foreground">
+                        {kids.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleLine(l.line_id)}
+                            aria-expanded={isOpen}
+                            aria-label={`${isOpen ? "Hide" : "Show"} the ${kids.length} ledger${kids.length !== 1 ? "s" : ""} behind ${l.label}`}
+                            className="inline-flex items-center gap-1 text-left hover:text-primary print:pointer-events-none"
+                          >
+                            {isOpen
+                              ? <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 opacity-60 print:hidden" />
+                              : <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 opacity-60 print:hidden" />}
+                            <span>{l.label}</span>
+                          </button>
+                        ) : l.label}
                       </td>
-                    )}
-                    <td className="py-1.5 text-right font-mono tabular-nums text-xs">{l.show_margin ? fmtMargin(l.current_margin) : ""}</td>
-                    {cmpDateTo && <td className="py-1.5 text-right font-mono tabular-nums text-xs">{l.show_margin ? fmtMargin(l.compare_margin) : ""}</td>}
-                  </tr>
+                      <td className="py-1.5 text-center font-mono text-xs text-muted-foreground">{l.note_ref ?? ""}</td>
+                      <td className="py-1.5 text-right font-mono tabular-nums">
+                        {isEps ? fmtEps(l.current_value) : fmtStatement(l.current_value, l.line_type === "detail")}
+                      </td>
+                      {cmpDateTo && (
+                        <td className="py-1.5 text-right font-mono tabular-nums">
+                          {isEps ? fmtEps(l.compare_value) : fmtStatement(l.compare_value, l.line_type === "detail")}
+                        </td>
+                      )}
+                      <td className="py-1.5 text-right font-mono tabular-nums text-xs">{l.show_margin ? fmtMargin(l.current_margin) : ""}</td>
+                      {cmpDateTo && <td className="py-1.5 text-right font-mono tabular-nums text-xs">{l.show_margin ? fmtMargin(l.compare_margin) : ""}</td>}
+                    </tr>
+                    {isOpen && kids.map((a) => (
+                      <tr key={a.account_id} className="text-xs text-muted-foreground">
+                        <td className="py-1 pr-2 pl-6">
+                          <span className="inline-block w-3 border-t border-border/60 align-middle mr-2" />
+                          <span className="font-mono">{a.account_code}</span>
+                          <span className="ml-2">{a.account_name}</span>
+                        </td>
+                        <td></td>
+                        <td className="py-1 text-right font-mono tabular-nums">{fmtStatement(a.current_value, false)}</td>
+                        {cmpDateTo && <td className="py-1 text-right font-mono tabular-nums">{fmtStatement(a.compare_value, false)}</td>}
+                        <td></td>
+                        {cmpDateTo && <td></td>}
+                      </tr>
+                    ))}
+                  </Fragment>
                 );
               })}
             </tbody>
