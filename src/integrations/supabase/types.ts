@@ -16041,6 +16041,10 @@ export type Database = {
         }
         Returns: Json
       }
+      unvoid_journal_entry: {
+        Args: { p_entry_id: string }
+        Returns: Json
+      }
       verify_bank_import_batch: { Args: { p_batch_id: string }; Returns: Json }
       void_bank_statement_batch: {
         Args: { p_batch_id: string; p_reason: string }

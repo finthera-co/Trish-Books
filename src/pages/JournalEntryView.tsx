@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useMyPermissions } from "@/hooks/usePermissions";
 import { useState } from "react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { ArrowLeft, Copy, Edit, FileText, RotateCcw, Ban, Trash2, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Copy, Edit, FileText, RotateCcw, Ban, Undo2, Trash2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { typeColors, getTypeLabel } from "@/lib/accountTypes";
 import { resolveLineMemo, isMemoInherited, bySeq } from "@/lib/journalValidation";
@@ -20,8 +20,9 @@ export default function JournalEntryView() {
   const navigate = useNavigate();
   const { data: accounts } = useAccounts();
   const queryClient = useQueryClient();
-  const { canDelete } = useMyPermissions();
+  const { canEdit, canDelete } = useMyPermissions();
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [restoreOpen, setRestoreOpen] = useState(false);
 
   const { data: entry, isLoading, error } = useQuery({
     queryKey: ["journal_entry", id],
@@ -87,6 +88,23 @@ export default function JournalEntryView() {
   const entrySource = entry?.source_type || entry?.entry_type || "manual";
   const isSystemGenerated = entry?.is_system_generated === true || entrySource !== "manual";
   const canDeleteEntry = canDelete("journals") && !isSystemGenerated && !isInClosedPeriod && !isReconciled;
+
+  // Restoring is the reverse of a void, which triggers only handle one way — the
+  // RPC rebuilds the transactions feed and budget consumption.
+  const restoreEntry = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.rpc("unvoid_journal_entry", { p_entry_id: id! });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["journal_entry", id] });
+      queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
+      toast.success("Journal entry restored to posted");
+      setRestoreOpen(false);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const deleteEntry = useMutation({
     mutationFn: async () => {
@@ -310,6 +328,20 @@ export default function JournalEntryView() {
               )}
             </Tooltip>
           )}
+          {isVoided && canEdit("journals") && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex-1">
+                  <Button className="w-full" disabled={isInClosedPeriod} onClick={() => setRestoreOpen(true)}>
+                    <Undo2 className="w-4 h-4 mr-2" /> Restore Entry
+                  </Button>
+                </div>
+              </TooltipTrigger>
+              {isInClosedPeriod && (
+                <TooltipContent>This entry is in a closed accounting period.</TooltipContent>
+              )}
+            </Tooltip>
+          )}
           <Button variant="outline" onClick={() => navigate("/accounting/journals")}>
             Back to List
           </Button>
@@ -341,14 +373,48 @@ export default function JournalEntryView() {
         </div>
       </div>
 
+      {/* Restore confirmation */}
+      <Dialog open={restoreOpen} onOpenChange={setRestoreOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Restore Journal Entry</DialogTitle>
+            <DialogDescription>
+              This puts the entry back to posted, so its debits and credits affect account balances again.
+              The void reason will be cleared, and the restore is recorded in the audit log.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-1 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-foreground">{entry.description}</span>
+              <span className="font-mono text-xs text-muted-foreground">{entry.reference || "—"}</span>
+            </div>
+            <p className="text-xs text-muted-foreground">{entry.entry_date} · LKR {fmt(totalDebit)}</p>
+            {entry.void_reason && (
+              <p className="text-xs text-muted-foreground border-t border-border pt-2 mt-2">
+                <span className="font-medium text-foreground">Voided because:</span> {entry.void_reason}
+              </p>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setRestoreOpen(false)} className="flex-1">Cancel</Button>
+            <Button onClick={() => restoreEntry.mutate()} disabled={restoreEntry.isPending} className="flex-1">
+              {restoreEntry.isPending ? "Restoring…" : "Restore Entry"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Delete confirmation */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Delete Journal Entry</DialogTitle>
             <DialogDescription>
-              This permanently removes the entry and all {entryLines.length} of its debit and credit lines.
-              It cannot be undone — void or reverse the entry instead if you need to keep an audit trail.
+              This permanently removes the entry and all {entryLines.length} of its debit and credit lines
+              {isVoided ? ", including its void record" : ""}. It cannot be undone —{" "}
+              {isVoided
+                ? "a voided entry left in place keeps the audit trail intact."
+                : "void or reverse the entry instead if you need to keep an audit trail."}
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 space-y-1 text-sm">

@@ -1,4 +1,4 @@
-import { Plus, Search, RotateCcw, Ban, Trash2, ChevronDown, ChevronRight, Filter, AlertTriangle, CheckCircle2, XCircle, Info, FileText, Copy } from "lucide-react";
+import { Plus, Search, RotateCcw, Ban, Undo2, Trash2, ChevronDown, ChevronRight, Filter, AlertTriangle, CheckCircle2, XCircle, Info, FileText, Copy } from "lucide-react";
 import BudgetWarningBanner from "@/components/budgets/BudgetWarningBanner";
 import AccountSelector from "@/components/shared/AccountSelector";
 import AccountForm, { type Account as LedgerAccount } from "@/components/chart-of-accounts/AccountForm";
@@ -72,6 +72,9 @@ export default function JournalEntries() {
 
   // Delete dialog
   const [deleteDialogId, setDeleteDialogId] = useState<string | null>(null);
+
+  // Restore (un-void) dialog
+  const [restoreDialogId, setRestoreDialogId] = useState<string | null>(null);
 
   // Inline "create new ledger" — same AccountForm the Chart of Accounts page uses.
   // Remembers which line asked for it so the new account can be selected there.
@@ -445,6 +448,24 @@ export default function JournalEntries() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Restore (un-void) mutation. The void path is spread across triggers that only
+  // run one way, so the RPC rebuilds the transactions feed and budget consumption
+  // rather than the client just flipping the status column back.
+  const restoreEntry = useMutation({
+    mutationFn: async (entryId: string) => {
+      const { data, error } = await supabase.rpc("unvoid_journal_entry", { p_entry_id: entryId });
+      if (error) throw error;
+      return data as { reference: string | null };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
+      toast.success("Journal entry restored to posted");
+      setRestoreDialogId(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   // Delete mutation — removes the header and, by cascade, both sides of the
   // double entry. The RPC owns the guards (source-linked, reversed, closed
   // period, reconciled) so they cannot be bypassed from the client.
@@ -801,14 +822,59 @@ export default function JournalEntries() {
         </DialogContent>
       </Dialog>
 
+      {/* Restore Dialog */}
+      <Dialog open={!!restoreDialogId} onOpenChange={(v) => { if (!v) setRestoreDialogId(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Restore Journal Entry</DialogTitle>
+            <DialogDescription>
+              This puts the entry back to posted, so its debits and credits affect account balances again.
+              The void reason will be cleared, and the restore is recorded in the audit log.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {restoreDialogId && (() => {
+              const entry = entries?.find(e => e.id === restoreDialogId);
+              if (!entry) return null;
+              const lines = (entry.journal_lines as any[]) || [];
+              const debit = lines.reduce((sum, l) => sum + Number(l.debit), 0);
+              return (
+                <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-foreground">{entry.description}</span>
+                    <span className="font-mono text-xs text-muted-foreground">{entry.reference || "—"}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {entry.entry_date} · LKR {fmt(debit)} across {lines.length} line{lines.length === 1 ? "" : "s"}
+                  </p>
+                  {entry.void_reason && (
+                    <p className="text-xs text-muted-foreground border-t border-border pt-2">
+                      <span className="font-medium text-foreground">Voided because:</span> {entry.void_reason}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setRestoreDialogId(null)} className="flex-1">Cancel</Button>
+              <Button onClick={() => restoreDialogId && restoreEntry.mutate(restoreDialogId)}
+                disabled={restoreEntry.isPending} className="flex-1">
+                {restoreEntry.isPending ? "Restoring…" : "Restore Entry"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Delete Dialog */}
       <Dialog open={!!deleteDialogId} onOpenChange={(v) => { if (!v) setDeleteDialogId(null); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Delete Journal Entry</DialogTitle>
             <DialogDescription>
-              This permanently removes the entry and every debit and credit line on it. It cannot be undone —
-              void or reverse the entry instead if you need to keep an audit trail.
+              {entries?.find(e => e.id === deleteDialogId)?.status === "voided"
+                ? "This permanently removes the entry and every debit and credit line on it, including its void record. It cannot be undone — a voided entry left in place keeps the audit trail intact."
+                : "This permanently removes the entry and every debit and credit line on it. It cannot be undone — void or reverse the entry instead if you need to keep an audit trail."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -824,6 +890,7 @@ export default function JournalEntries() {
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {entry.entry_date} · {lines.length} line{lines.length === 1 ? "" : "s"} will be removed
+                    {entry.status === "voided" && " · currently voided"}
                   </p>
                   <div className="space-y-1">
                     {lines.map((line: any, i: number) => (
@@ -941,31 +1008,36 @@ export default function JournalEntries() {
                   : entrySource === "opening_balance" ? "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400"
                   : "bg-muted text-muted-foreground";
 
+                // Dim the data cells rather than the whole row: opacity on the <tr>
+                // would drag the action buttons down with it, and a child can never
+                // render more opaque than its parent.
+                const dim = isVoided ? "opacity-50" : "";
+
                 return (
                   <Fragment key={entry.id}>
                     <tr
                       ref={isHighlighted ? highlightRef : undefined}
-                      className={`cursor-pointer hover:bg-muted/50 ${isVoided ? "opacity-50" : ""} ${isHighlighted ? "ring-2 ring-primary ring-inset bg-primary/5" : ""}`}
+                      className={`cursor-pointer hover:bg-muted/50 ${isHighlighted ? "ring-2 ring-primary ring-inset bg-primary/5" : ""}`}
                       onClick={() => setExpandedId(isExpanded ? null : entry.id)}
                     >
-                      <td className="px-2">
+                      <td className={`px-2 ${dim}`}>
                         {isExpanded
                           ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
                           : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />}
                       </td>
-                      <td className="text-muted-foreground text-sm">{entry.entry_date}</td>
-                      <td className={`font-medium text-foreground ${isVoided ? "line-through" : ""}`}>
+                      <td className={`text-muted-foreground text-sm ${dim}`}>{entry.entry_date}</td>
+                      <td className={`font-medium text-foreground ${dim} ${isVoided ? "line-through" : ""}`}>
                         {entry.description}
                         {isReversal && <span className="ml-1.5 text-xs text-muted-foreground">(reversal)</span>}
                       </td>
-                      <td className="font-mono text-xs text-muted-foreground">{entry.reference || "—"}</td>
-                      <td>
+                      <td className={`font-mono text-xs text-muted-foreground ${dim}`}>{entry.reference || "—"}</td>
+                      <td className={dim}>
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${sourceColor}`}>
                           {sourceLabel}
                         </span>
                       </td>
-                      <td className="text-right tabular-nums font-medium text-foreground">LKR {fmt(entryTotalDebit)}</td>
-                      <td className="text-right tabular-nums font-medium text-foreground">LKR {fmt(entryTotalCredit)}</td>
+                      <td className={`text-right tabular-nums font-medium text-foreground ${dim}`}>LKR {fmt(entryTotalDebit)}</td>
+                      <td className={`text-right tabular-nums font-medium text-foreground ${dim}`}>LKR {fmt(entryTotalCredit)}</td>
                       <td>
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                           isVoided ? "bg-destructive/10 text-destructive" :
@@ -993,6 +1065,18 @@ export default function JournalEntries() {
                                 <Ban className="w-3.5 h-3.5" />
                               </Button>
                             </>
+                          )}
+                          {isVoided && canEditJournals("journals") && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button variant="ghost" size="sm" title="Restore" onClick={() => setRestoreDialogId(entry.id)}>
+                                  <Undo2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="text-xs">Restore this entry to posted</p>
+                              </TooltipContent>
+                            </Tooltip>
                           )}
                           {canDeleteJournals("journals") && (
                             <Tooltip>
