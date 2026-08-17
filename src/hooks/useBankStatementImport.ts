@@ -440,6 +440,7 @@ export function useImportBankStatement(onProgress?: (p: ImportProgress) => void)
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["bank_statement_batches"] });
       qc.invalidateQueries({ queryKey: ["suspense_lines"] });
+      qc.invalidateQueries({ queryKey: ["suspense_cleared_stats"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
       qc.invalidateQueries({ queryKey: ["period_account_movements"] });
     },
@@ -463,6 +464,9 @@ export interface SuspenseLine {
   suspense_reason: string | null;
   suggestions: { accountId: string; label: string; source: string }[];
   created_at: string;
+  /** Bank the line was imported against, carried from its batch. */
+  bank_account_id: string | null;
+  file_name: string | null;
 }
 
 export function useSuspenseLines() {
@@ -477,13 +481,19 @@ export function useSuspenseLines() {
     queryFn: async () => {
       // New tables are not yet in the generated Supabase types (regenerate with
       // `supabase gen types` after the migration lands); cast until then.
+      // The bank comes from the batch, so Suspense can be worked one bank at a
+      // time — that is how a clearing session actually runs.
       const { data, error } = await (supabase as any)
         .from("bank_statement_lines")
-        .select("id, batch_id, sheet_name, txn_date, description, name, canonical_category, raw_account_type, debit, credit, suspense_reason, suggestions, created_at")
+        .select("id, batch_id, sheet_name, txn_date, description, name, canonical_category, raw_account_type, debit, credit, suspense_reason, suggestions, created_at, bank_statement_batches(bank_account_id, file_name)")
         .eq("needs_reclassification", true)
         .order("txn_date", { ascending: true });
       if (error) throw error;
-      return (data ?? []) as SuspenseLine[];
+      return ((data ?? []) as any[]).map((r) => ({
+        ...r,
+        bank_account_id: r.bank_statement_batches?.bank_account_id ?? null,
+        file_name: r.bank_statement_batches?.file_name ?? null,
+      })) as SuspenseLine[];
     },
   });
 }
@@ -511,6 +521,7 @@ export function useClearSuspense() {
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["suspense_lines"] });
+      qc.invalidateQueries({ queryKey: ["suspense_cleared_stats"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
       qc.invalidateQueries({ queryKey: ["period_account_movements"] });
       qc.invalidateQueries({ queryKey: ["bank_category_account_map"] });
@@ -520,6 +531,86 @@ export function useClearSuspense() {
       );
     },
     onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+/** Every bank account that has ever been imported against.
+ *
+ * The suspense screen lists banks from this, not from the suspense lines
+ * themselves: a bank whose imports have never produced a single suspense item
+ * still has to appear, otherwise it silently goes missing from the screen and
+ * reads as "not imported yet".
+ */
+export function useImportedBankAccounts() {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["imported_bank_accounts", appUser?.tenant_id],
+    enabled: !!appUser?.tenant_id,
+    staleTime: 5 * 60_000,
+    queryFn: async (): Promise<string[]> => {
+      const PAGE = 1000;
+      const ids = new Set<string>();
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await (supabase as any)
+          .from("bank_statement_batches")
+          .select("bank_account_id")
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        const rows = (data ?? []) as { bank_account_id: string | null }[];
+        for (const r of rows) if (r.bank_account_id) ids.add(r.bank_account_id);
+        if (rows.length < PAGE) break;
+      }
+      return [...ids];
+    },
+  });
+}
+
+/** Per-bank tally of suspense lines that have already been reclassified, so the
+ * clearing screen can show progress ("18 of 25 cleared") next to what is left.
+ *
+ * A cleared line is one that carries a reclass journal — `needs_reclassification`
+ * alone cannot tell "never went to suspense" from "went and was cleared".
+ */
+export interface BankClearedStat {
+  bank_account_id: string | null;
+  cleared_count: number;
+  cleared_value: number;
+}
+
+export function useSuspenseClearedStats() {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["suspense_cleared_stats", appUser?.tenant_id],
+    enabled: !!appUser?.tenant_id,
+    staleTime: 5 * 60_000,
+    queryFn: async (): Promise<BankClearedStat[]> => {
+      // Only four narrow columns, but the row count grows with every clearing,
+      // so page explicitly rather than trusting the default row cap.
+      const PAGE = 1000;
+      const totals = new Map<string, { count: number; value: number }>();
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await (supabase as any)
+          .from("bank_statement_lines")
+          .select("id, debit, credit, bank_statement_batches(bank_account_id)")
+          .not("reclass_journal_entry_id", "is", null)
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        const rows = (data ?? []) as any[];
+        for (const r of rows) {
+          const key = r.bank_statement_batches?.bank_account_id ?? "";
+          const hit = totals.get(key) ?? { count: 0, value: 0 };
+          hit.count += 1;
+          hit.value += Number(r.debit || 0) + Number(r.credit || 0);
+          totals.set(key, hit);
+        }
+        if (rows.length < PAGE) break;
+      }
+      return [...totals.entries()].map(([bank, t]) => ({
+        bank_account_id: bank || null,
+        cleared_count: t.count,
+        cleared_value: t.value,
+      }));
+    },
   });
 }
 
@@ -892,6 +983,7 @@ export function useUndoBankImport() {
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["bank_statement_batches"] });
       qc.invalidateQueries({ queryKey: ["suspense_lines"] });
+      qc.invalidateQueries({ queryKey: ["suspense_cleared_stats"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
       qc.invalidateQueries({ queryKey: ["period_account_movements"] });
       toast.success(`Import undone — ${data?.journal_entries_deleted ?? 0} entr(ies) deleted`);
@@ -916,6 +1008,7 @@ export function useVoidBankImport() {
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["bank_statement_batches"] });
       qc.invalidateQueries({ queryKey: ["suspense_lines"] });
+      qc.invalidateQueries({ queryKey: ["suspense_cleared_stats"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
       qc.invalidateQueries({ queryKey: ["period_account_movements"] });
       toast.success(`Import reversed — ${data?.entries_reversed ?? 0} reversal entr(ies) posted`);

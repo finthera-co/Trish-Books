@@ -495,6 +495,25 @@ export function useUpdateFsLine() {
   });
 }
 
+/** Moves a line one slot, server-side and atomically. The browser used to swap
+ * two sort_order values with two independent mutations; a half-applied pair left
+ * duplicates behind and ORDER BY sort_order is then arbitrary — which is how a
+ * statement ended up printing GROSS PROFIT above Revenue. */
+export function useMoveFsLine() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ lineId, direction }: { lineId: string; direction: "up" | "down" }) => {
+      const { error } = await supabase.rpc("rpc_fs_move_line", { p_line_id: lineId, p_direction: direction });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["fs_line_details"] });
+      invalidateStatement(queryClient);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
 export function useFsLineTerms(lineId: string | undefined) {
   const { appUser } = useAuth();
   return useQuery({

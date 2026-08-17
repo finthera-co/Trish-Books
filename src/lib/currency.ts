@@ -33,9 +33,27 @@ export function formatCurrency(amount: number, currency = "LKR"): string {
 
 /**
  * Short format without decimals for KPI cards.
+ *
+ * Negatives keep the accounting parentheses used by `formatCurrency` — a loss
+ * must never render with the same glyphs as a profit of the same magnitude.
  */
 export function formatCurrencyShort(amount: number, currency = "LKR"): string {
-  return `${currencyPrefix(currency)} ${Math.abs(amount).toLocaleString()}`;
+  const prefix = currencyPrefix(currency);
+  const formatted = Math.abs(amount).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  return amount < 0 ? `(${prefix} ${formatted})` : `${prefix} ${formatted}`;
+}
+
+/**
+ * Compact magnitude for chart axis ticks — "1.2M", "-450k". No currency prefix:
+ * axis ticks are already scoped by the chart's own title and tooltip.
+ */
+export function formatCompactAmount(value: number): string {
+  const abs = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  if (abs >= 1e9) return `${sign}${(abs / 1e9).toFixed(abs >= 1e10 ? 0 : 1)}B`;
+  if (abs >= 1e6) return `${sign}${(abs / 1e6).toFixed(abs >= 1e7 ? 0 : 1)}M`;
+  if (abs >= 1e3) return `${sign}${(abs / 1e3).toFixed(abs >= 1e4 ? 0 : 1)}k`;
+  return `${sign}${Math.round(abs)}`;
 }
 
 export const CURRENCY_SYMBOL = "LKR";

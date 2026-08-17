@@ -15,8 +15,8 @@ export default function OBEBanner() {
   return (
     <div className="flex items-center justify-between gap-3 bg-warning/10 border border-warning/20 rounded-lg px-4 py-3">
       <div className="flex items-center gap-3">
-        <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0" />
-        <span className="text-sm font-medium text-warning">
+        <AlertTriangle className="w-5 h-5 text-[hsl(var(--warning-ink))] flex-shrink-0" />
+        <span className="text-sm font-medium text-[hsl(var(--warning-ink))]">
           Opening Balance Equity has a balance of {formatCurrency(obeBalance.balance)}
         </span>
       </div>

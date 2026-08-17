@@ -13,11 +13,14 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
-import { Loader2, TrendingUp } from "lucide-react";
-import { formatCurrency } from "@/lib/currency";
+import { AlertCircle, Loader2, RefreshCw, TrendingUp } from "lucide-react";
+import { formatCurrency, formatCompactAmount } from "@/lib/currency";
+import { useChartTheme } from "@/lib/chartTokens";
+import { Button } from "@/components/ui/button";
 
 export default function CashBalanceForecastChart() {
-  const { data = [], isLoading } = useFinancialForecasts("cash");
+  const { data = [], isLoading, isError, refetch } = useFinancialForecasts("cash");
+  const theme = useChartTheme();
 
   const chartData = useMemo(
     () =>
@@ -47,7 +50,15 @@ export default function CashBalanceForecastChart() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {isLoading ? (
+        {isError ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-14 text-center">
+            <AlertCircle className="w-6 h-6 text-destructive" />
+            <p className="text-sm font-medium text-foreground">Couldn’t load the forecast</p>
+            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => void refetch()}>
+              <RefreshCw className="w-3.5 h-3.5" /> Retry
+            </Button>
+          </div>
+        ) : isLoading ? (
           <div className="flex justify-center py-16">
             <Loader2 className="w-6 h-6 animate-spin text-primary" />
           </div>
@@ -60,32 +71,30 @@ export default function CashBalanceForecastChart() {
             <ComposedChart data={chartData}>
               <defs>
                 <linearGradient id="ciHome" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.25} />
-                  <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0.02} />
+                  <stop offset="0%" stopColor={theme.primary} stopOpacity={0.25} />
+                  <stop offset="100%" stopColor={theme.primary} stopOpacity={0.02} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-muted/30" />
-              <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+              <CartesianGrid strokeDasharray="3 3" stroke={theme.grid} vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: theme.axis }} stroke={theme.axis} interval="preserveStartEnd" />
               <YAxis
-                tick={{ fontSize: 10 }}
-                tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`)}
+                tick={{ fontSize: 10, fill: theme.axis }}
+                stroke={theme.axis}
+                tickFormatter={formatCompactAmount}
               />
               <Tooltip
-                contentStyle={{
-                  borderRadius: 8,
-                  fontSize: 12,
-                  backgroundColor: "hsl(var(--popover))",
-                  border: "1px solid hsl(var(--border))",
-                }}
+                contentStyle={theme.tooltip.contentStyle}
+                labelStyle={theme.tooltip.labelStyle}
+                itemStyle={theme.tooltip.itemStyle}
                 formatter={(v: number) => formatCurrency(v)}
               />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Legend wrapperStyle={theme.legendStyle} />
               <Area type="monotone" dataKey="lower" stroke="none" fill="url(#ciHome)" name="Lower bound" />
               <Area type="monotone" dataKey="upper" stroke="none" fill="url(#ciHome)" name="Upper bound" />
               <Line
                 type="monotone"
                 dataKey="forecast"
-                stroke="hsl(var(--primary))"
+                stroke={theme.primary}
                 strokeWidth={2.5}
                 dot={false}
                 name="Forecast"

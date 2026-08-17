@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   HelpCircle, CheckCircle2, Clock, Wand2, Loader2,
-  Search, ArrowUp, ArrowDown, ArrowUpDown, X, Download, Check, ChevronsUpDown,
+  Search, ArrowUp, ArrowDown, ArrowUpDown, X, Download, Check, ChevronsUpDown, Landmark,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,8 @@ import AccountForm from "@/components/chart-of-accounts/AccountForm";
 import {
   useSuspenseLines,
   useClearSuspense,
+  useSuspenseClearedStats,
+  useImportedBankAccounts,
   type SuspenseLine,
 } from "@/hooks/useBankStatementImport";
 
@@ -41,7 +43,22 @@ function reasonText(l: SuspenseLine): string {
 
 const PAGE_SIZE = 25;
 
-type SortKey = "date" | "description" | "reason" | "amount" | "age";
+/** Sentinel bank ids: the combined view, and lines whose batch lost its bank. */
+const ALL_BANKS = "__all__";
+const UNASSIGNED = "__unassigned__";
+
+type SortKey = "bank" | "date" | "description" | "reason" | "amount" | "age";
+
+interface BankGroup {
+  id: string;
+  name: string;
+  code: string;
+  openCount: number;
+  openValue: number;
+  oldest: number;
+  clearedCount: number;
+  clearedValue: number;
+}
 
 interface AccountOption {
   id: string;
@@ -171,6 +188,76 @@ function AccountCombobox({
   );
 }
 
+/**
+ * One bank's clearing scoreboard, and the control that scopes the table to it.
+ * Cleared counts are lifetime figures for the bank, so the ratio reads as
+ * "how much of everything that ever landed in Suspense has been dealt with".
+ */
+function BankCard({
+  active, onClick, name, code, openCount, openValue, clearedCount, clearedValue, oldest,
+}: {
+  active: boolean;
+  onClick: () => void;
+  name: string;
+  code: string;
+  openCount: number;
+  openValue: number;
+  clearedCount: number;
+  clearedValue: number;
+  oldest: number;
+}) {
+  const total = openCount + clearedCount;
+  const pct = total === 0 ? 0 : Math.round((clearedCount / total) * 100);
+  const done = openCount === 0;
+  // A bank that has never produced a suspense item is a different state from
+  // one that was worked down to zero — do not congratulate it for clearing 0.
+  const untouched = total === 0;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "text-left rounded-lg border p-3 transition-colors hover:border-primary/60 hover:bg-accent/40",
+        active ? "border-primary bg-accent/60 ring-1 ring-primary/30" : "border-border"
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-medium text-sm truncate">{name}</p>
+          {code && <p className="text-xs text-muted-foreground font-mono truncate">{code}</p>}
+        </div>
+        <Badge variant={done ? "outline" : "secondary"} className="shrink-0 text-xs">
+          {untouched ? (
+            <span className="text-muted-foreground">no suspense</span>
+          ) : done ? (
+            <span className="flex items-center gap-1 text-primary"><CheckCircle2 className="w-3 h-3" /> clear</span>
+          ) : (
+            `${openCount} open`
+          )}
+        </Badge>
+      </div>
+
+      <p className={cn("mt-2 text-lg font-bold tabular-nums", done ? "text-muted-foreground" : "text-amber-600")}>
+        {formatCurrency(openValue)}
+      </p>
+
+      <div className="mt-2 h-1.5 w-full rounded-full bg-muted overflow-hidden">
+        <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+      </div>
+      <div className="mt-1.5 flex items-center justify-between gap-2 text-xs text-muted-foreground tabular-nums">
+        <span>{untouched ? "nothing has gone to Suspense" : `${clearedCount} of ${total} cleared (${pct}%)`}</span>
+        {openCount > 0 && (
+          <span className={oldest > 30 ? "text-destructive" : undefined}>oldest {oldest}d</span>
+        )}
+      </div>
+      {clearedValue > 0 && (
+        <p className="mt-1 text-xs text-muted-foreground">{formatCurrency(clearedValue)} reclassified</p>
+      )}
+    </button>
+  );
+}
+
 /** Clickable column header: first click sorts, further clicks flip direction. */
 function SortHead({
   sortKey, label, align, activeKey, dir, onSort,
@@ -201,6 +288,8 @@ function SortHead({
 
 export default function SuspenseClearing() {
   const { data: lines, isLoading } = useSuspenseLines();
+  const { data: clearedStats } = useSuspenseClearedStats();
+  const { data: importedBanks } = useImportedBankAccounts();
   const { data: accounts } = useAccounts();
   const { data: categories } = useAccountCategories();
   const createAccount = useCreateAccount();
@@ -230,12 +319,95 @@ export default function SuspenseClearing() {
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [pageIndex, setPageIndex] = useState(0);
+  // Clearing is worked one bank at a time; ALL_BANKS keeps the combined view.
+  const [bank, setBank] = useState<string>(ALL_BANKS);
 
-  const open = lines ?? [];
+  const allOpen = useMemo(() => lines ?? [], [lines]);
+
+  const bankLabel = useMemo(() => {
+    const m = new Map<string, { name: string; code: string }>();
+    for (const a of (accounts as any[] | undefined) ?? []) {
+      m.set(a.id, { name: a.account_name, code: a.account_code });
+    }
+    return m;
+  }, [accounts]);
+
+  const bankNameOf = useCallback(
+    (id: string | null | undefined): string => {
+      if (!id) return "Unassigned bank";
+      return bankLabel.get(id)?.name ?? "Unknown bank";
+    },
+    [bankLabel]
+  );
+
+  // One row per bank: what is still open, how much has already been cleared,
+  // and the oldest item still sitting there.
+  const bankGroups = useMemo<BankGroup[]>(() => {
+    const byBank = new Map<string, BankGroup>();
+    const blank = (id: string): BankGroup => ({
+      id,
+      name: bankNameOf(id === UNASSIGNED ? null : id),
+      code: id === UNASSIGNED ? "" : bankLabel.get(id)?.code ?? "",
+      openCount: 0,
+      openValue: 0,
+      oldest: 0,
+      clearedCount: 0,
+      clearedValue: 0,
+    });
+
+    // Seed from every bank ever imported, so a bank that has never produced a
+    // suspense item still shows — as a bank with nothing to clear, not as a
+    // bank that is missing from the screen.
+    for (const id of importedBanks ?? []) byBank.set(id, blank(id));
+
+    for (const l of allOpen) {
+      const key = l.bank_account_id ?? UNASSIGNED;
+      const g = byBank.get(key) ?? blank(key);
+      g.openCount += 1;
+      g.openValue += Number(l.debit || 0) + Number(l.credit || 0);
+      g.oldest = Math.max(g.oldest, ageDays(l.created_at));
+      byBank.set(key, g);
+    }
+
+    // A bank whose suspense is fully cleared still deserves a card — it shows
+    // the work is done rather than silently disappearing from the screen.
+    for (const s of clearedStats ?? []) {
+      const key = s.bank_account_id ?? UNASSIGNED;
+      const g = byBank.get(key) ?? blank(key);
+      g.clearedCount += s.cleared_count;
+      g.clearedValue += s.cleared_value;
+      byBank.set(key, g);
+    }
+
+    return [...byBank.values()].sort(
+      (a, b) => b.openCount - a.openCount || b.openValue - a.openValue || a.name.localeCompare(b.name)
+    );
+  }, [allOpen, clearedStats, importedBanks, bankLabel, bankNameOf]);
+
+  // Everything below the bank picker is scoped to the chosen bank.
+  const open = useMemo(
+    () => (bank === ALL_BANKS ? allOpen : allOpen.filter((l) => (l.bank_account_id ?? UNASSIGNED) === bank)),
+    [allOpen, bank]
+  );
   const openValue = open.reduce((s, l) => s + Number(l.debit || 0) + Number(l.credit || 0), 0);
   const oldest = open.reduce((max, l) => Math.max(max, ageDays(l.created_at)), 0);
+  const scopeCleared = useMemo(() => {
+    const rows = bank === ALL_BANKS ? bankGroups : bankGroups.filter((g) => g.id === bank);
+    return rows.reduce(
+      (acc, g) => ({ count: acc.count + g.clearedCount, value: acc.value + g.clearedValue }),
+      { count: 0, value: 0 }
+    );
+  }, [bankGroups, bank]);
 
-  // Every visible column feeds the search box: date, description, reason,
+  // Switching bank drops the selection: clearing must never act on rows that
+  // are no longer on screen.
+  function pickBank(id: string) {
+    setBank(id);
+    setSelected(new Set());
+    setPageIndex(0);
+  }
+
+  // Every visible column feeds the search box: bank, date, description, reason,
   // amount and age, so a query like "rent 2026-03" narrows on any of them.
   const filtered = useMemo(() => {
     const terms = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -243,6 +415,7 @@ export default function SuspenseClearing() {
     return open.filter((l) => {
       const amount = lineAmount(l);
       const haystack = [
+        bankNameOf(l.bank_account_id),
         l.txn_date ?? "",
         l.description ?? "",
         l.name ?? "",
@@ -256,12 +429,14 @@ export default function SuspenseClearing() {
         .toLowerCase();
       return terms.every((t) => haystack.includes(t));
     });
-  }, [open, search]);
+  }, [open, search, bankNameOf]);
 
   const sorted = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
     return [...filtered].sort((a, b) => {
       switch (sortKey) {
+        case "bank":
+          return bankNameOf(a.bank_account_id).localeCompare(bankNameOf(b.bank_account_id)) * dir;
         case "date":
           // Undated lines sort last regardless of direction.
           if (!a.txn_date || !b.txn_date) return (a.txn_date ? 0 : 1) - (b.txn_date ? 0 : 1);
@@ -276,7 +451,7 @@ export default function SuspenseClearing() {
           return (ageDays(a.created_at) - ageDays(b.created_at)) * dir;
       }
     });
-  }, [filtered, sortKey, sortDir]);
+  }, [filtered, sortKey, sortDir, bankNameOf]);
 
   const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const page = Math.min(pageIndex, pageCount - 1); // stays valid when a filter shrinks the list
@@ -295,20 +470,22 @@ export default function SuspenseClearing() {
 
   // Exports every row in the current view — all pages, not just the one on
   // screen — in the active sort order. With the search box empty that is the
-  // whole open-suspense list.
+  // whole open-suspense list for the selected bank.
   function exportExcel() {
     const today = new Date().toISOString().slice(0, 10);
+    const scopeName = bank === ALL_BANKS ? "All banks" : bankNameOf(bank === UNASSIGNED ? null : bank);
     downloadDataExcel<SuspenseLine>(
       {
-        title: "Suspense Clearing — Open Items",
+        title: `Suspense Clearing — Open Items (${scopeName})`,
         subtitle: search
           ? `Filtered by “${search}” — ${sorted.length} of ${open.length} open items`
           : `${open.length} open items awaiting reclassification`,
         dateLine: `As of ${today}`,
         sheetName: "Suspense",
-        fileName: `Suspense Clearing ${today}.xlsx`,
+        fileName: `Suspense Clearing ${scopeName} ${today}.xlsx`,
       },
       [
+        { header: "Bank", value: (l) => bankNameOf(l.bank_account_id) },
         { header: "Date", value: (l) => l.txn_date ?? "" },
         { header: "Description", value: (l) => l.description || l.name || "" },
         { header: "Name", value: (l) => l.name ?? "" },
@@ -323,7 +500,7 @@ export default function SuspenseClearing() {
       ],
       sorted,
       [
-        "TOTAL", "", "", "", "", "",
+        "TOTAL", "", "", "", "", "", "",
         sorted.reduce((s, l) => s + Number(l.debit || 0), 0),
         sorted.reduce((s, l) => s + Number(l.credit || 0), 0),
       ],
@@ -331,7 +508,7 @@ export default function SuspenseClearing() {
   }
 
   // Lines sharing the selected line's unknown variant (for "apply to all N").
-  const selectedLines = open.filter((l) => selected.has(l.id));
+  const selectedLines = allOpen.filter((l) => selected.has(l.id));
   const commonVariant = useMemo(() => {
     if (selectedLines.length === 0) return null;
     const variants = new Set(selectedLines.map((l) => l.raw_account_type.trim().toLowerCase()).filter(Boolean));
@@ -375,6 +552,11 @@ export default function SuspenseClearing() {
     setTeachVariant(false);
   }
 
+  const totalOpen = allOpen.length;
+  const totalCleared = bankGroups.reduce((s, g) => s + g.clearedCount, 0);
+  const totalClearedValue = bankGroups.reduce((s, g) => s + g.clearedValue, 0);
+  const scopeName = bank === ALL_BANKS ? "All banks" : bankNameOf(bank === UNASSIGNED ? null : bank);
+
   return (
     <div className="space-y-6">
       <div>
@@ -383,19 +565,28 @@ export default function SuspenseClearing() {
         </h1>
         <p className="text-sm text-muted-foreground">
           Reclassify imported lines parked in <strong>Unrecognized Payments</strong> (money out) and{" "}
-          <strong>Unrecognized Deposits</strong> (money in) to their final ledger account. Each clearing generates
+          <strong>Unrecognized Deposits</strong> (money in) to their final ledger account. Items are grouped by the
+          bank they were imported against, so one account can be cleared to zero at a time. Each clearing generates
           a reclass journal out of the matching holding account; the original entry is never changed.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <Card><CardContent className="pt-4">
-          <p className="text-sm text-muted-foreground">Open items</p>
+          <p className="text-sm text-muted-foreground">Open items{bank !== ALL_BANKS && " (this bank)"}</p>
           <p className="text-2xl font-bold text-foreground">{open.length}</p>
+          {bank !== ALL_BANKS && (
+            <p className="text-xs text-muted-foreground mt-0.5">{totalOpen} across all banks</p>
+          )}
         </CardContent></Card>
         <Card><CardContent className="pt-4">
           <p className="text-sm text-muted-foreground">Open value</p>
           <p className="text-2xl font-bold text-amber-600">{formatCurrency(openValue)}</p>
+        </CardContent></Card>
+        <Card><CardContent className="pt-4">
+          <p className="text-sm text-muted-foreground flex items-center gap-1"><CheckCircle2 className="w-4 h-4" /> Cleared</p>
+          <p className="text-2xl font-bold text-primary">{scopeCleared.count}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{formatCurrency(scopeCleared.value)} reclassified</p>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
           <p className="text-sm text-muted-foreground flex items-center gap-1"><Clock className="w-4 h-4" /> Oldest</p>
@@ -409,16 +600,68 @@ export default function SuspenseClearing() {
         </div>
       )}
 
+      {/* Bank picker. Each card is the bank's own scoreboard: what is left,
+          what it is worth and how far the clearing has got. */}
+      {bankGroups.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Landmark className="w-4 h-4 text-muted-foreground" /> By bank account
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              <BankCard
+                active={bank === ALL_BANKS}
+                onClick={() => pickBank(ALL_BANKS)}
+                name="All banks"
+                code={`${bankGroups.length} account${bankGroups.length === 1 ? "" : "s"}`}
+                openCount={totalOpen}
+                openValue={allOpen.reduce((s, l) => s + Number(l.debit || 0) + Number(l.credit || 0), 0)}
+                clearedCount={totalCleared}
+                clearedValue={totalClearedValue}
+                oldest={allOpen.reduce((max, l) => Math.max(max, ageDays(l.created_at)), 0)}
+              />
+              {bankGroups.map((g) => (
+                <BankCard
+                  key={g.id}
+                  active={bank === g.id}
+                  onClick={() => pickBank(g.id)}
+                  name={g.name}
+                  code={g.code}
+                  openCount={g.openCount}
+                  openValue={g.openValue}
+                  clearedCount={g.clearedCount}
+                  clearedValue={g.clearedValue}
+                  oldest={g.oldest}
+                />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle className="text-base">Open Suspense items</CardTitle>
+          <div>
+            <CardTitle className="text-base">Open Suspense items</CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {scopeName} · {open.length} open
+              {scopeCleared.count > 0 && ` · ${scopeCleared.count} already cleared`}
+            </p>
+          </div>
           <div className="flex items-center gap-2">
+            {bank !== ALL_BANKS && (
+              <Button onClick={() => pickBank(ALL_BANKS)} size="sm" variant="ghost">
+                <X className="w-4 h-4 mr-1" /> All banks
+              </Button>
+            )}
             <Button
               onClick={exportExcel}
               size="sm"
               variant="outline"
               disabled={sorted.length === 0}
-              title={search ? `Export the ${sorted.length} matching items` : "Export all open suspense items"}
+              title={search ? `Export the ${sorted.length} matching items` : "Export all open suspense items in view"}
             >
               <Download className="w-4 h-4 mr-2" /> Export Excel
             </Button>
@@ -435,7 +678,11 @@ export default function SuspenseClearing() {
           ) : open.length === 0 ? (
             <div className="text-center py-10 text-muted-foreground">
               <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-primary" />
-              <p className="text-sm">Suspense is clear. Nothing to reclassify.</p>
+              <p className="text-sm">
+                {bank === ALL_BANKS
+                  ? "Suspense is clear. Nothing to reclassify."
+                  : `${scopeName} is fully cleared — nothing left in Suspense for this bank.`}
+              </p>
             </div>
           ) : (
             <>
@@ -470,6 +717,7 @@ export default function SuspenseClearing() {
                   <TableHead className="w-8">
                     <Checkbox checked={pageAllSelected} onCheckedChange={toggleAll} />
                   </TableHead>
+                  {bank === ALL_BANKS && <SortHead sortKey="bank" label="Bank" {...sortProps} />}
                   <SortHead sortKey="date" label="Date" {...sortProps} />
                   <SortHead sortKey="description" label="Description" {...sortProps} />
                   <SortHead sortKey="reason" label="Reason" {...sortProps} />
@@ -484,6 +732,9 @@ export default function SuspenseClearing() {
                   return (
                     <TableRow key={l.id} data-state={selected.has(l.id) ? "selected" : undefined}>
                       <TableCell><Checkbox checked={selected.has(l.id)} onCheckedChange={() => toggle(l.id)} /></TableCell>
+                      {bank === ALL_BANKS && (
+                        <TableCell className="text-sm">{bankNameOf(l.bank_account_id)}</TableCell>
+                      )}
                       <TableCell className="font-mono text-sm">{l.txn_date ?? "—"}</TableCell>
                       <TableCell>
                         <span className="font-medium">{l.description || l.name || "—"}</span>

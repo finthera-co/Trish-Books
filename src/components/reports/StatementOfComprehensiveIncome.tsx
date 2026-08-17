@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, Fragment } from "react";
 import { useNavigate } from "react-router-dom";
 import { format as formatDate } from "date-fns";
-import { Download, FileText, Printer, AlertTriangle, XCircle, ChevronRight, ChevronDown } from "lucide-react";
+import { Download, FileText, FileSpreadsheet, Printer, AlertTriangle, XCircle, ChevronRight, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -12,10 +12,13 @@ import { useFiscalPeriods } from "@/hooks/useFiscalPeriodBalances";
 import { useFsStatement, useFsCoverage, useFsStatementMeta, useFsStatementAccounts } from "@/hooks/useFinancialStatements";
 import { ReportMasthead, formatReportDate, useReportCompany } from "@/components/reports/ReportMasthead";
 import { exportSociCsv, exportSociPdf } from "@/lib/fsStatementExport";
+import { downloadSociWorkbook } from "@/lib/fsStatementWorkbook";
 import { fmtStatement, fmtEps, fmtMargin, rowClasses } from "@/lib/fsStatementModel";
 import type { FsStatementAccount } from "@/hooks/useFinancialStatements";
 
 const STATEMENT_CODE = "SOCI";
+
+type ExportAction = "csv" | "xlsx" | "pdf" | "print";
 
 function defaultDateFrom(): string {
   const d = new Date();
@@ -35,7 +38,7 @@ export default function StatementOfComprehensiveIncome() {
   const [cmpDateFrom, setCmpDateFrom] = useState<string | null>(null);
   const [cmpDateTo, setCmpDateTo] = useState<string | null>(null);
   const [acked, setAcked] = useState(false);
-  const [pendingAction, setPendingAction] = useState<"csv" | "pdf" | "print" | null>(null);
+  const [pendingAction, setPendingAction] = useState<ExportAction | null>(null);
 
   // Same identity block the masthead renders, so the exported PDF and the
   // printed page name the entity identically.
@@ -92,7 +95,7 @@ export default function StatementOfComprehensiveIncome() {
     }
   };
 
-  const runExport = (action: "csv" | "pdf" | "print") => {
+  const runExport = (action: ExportAction) => {
     if (errors.length > 0 && !acked) {
       setPendingAction(action);
       return;
@@ -100,7 +103,7 @@ export default function StatementOfComprehensiveIncome() {
     execute(action);
   };
 
-  const execute = (action: "csv" | "pdf" | "print") => {
+  const execute = (action: ExportAction) => {
     if (!lines) return;
     const ackNote = errors.length > 0 ? `Exported with ${errors.length} unresolved coverage error(s), acknowledged by ${appUser?.first_name ?? "user"} on ${formatDate(new Date(), "PPpp")}` : undefined;
     const exportMeta = {
@@ -111,6 +114,9 @@ export default function StatementOfComprehensiveIncome() {
       periodCaption: meta?.period_caption,
       dateFrom,
       dateTo,
+      cmpDateFrom,
+      cmpDateTo,
+      currencyCaption: meta?.currency_caption,
       company: {
         companyName: company?.company_name,
         address: company?.address,
@@ -125,6 +131,8 @@ export default function StatementOfComprehensiveIncome() {
     };
     if (action === "csv") {
       exportSociCsv(lines, exportMeta, accountsByLine);
+    } else if (action === "xlsx") {
+      downloadSociWorkbook({ lines, meta: exportMeta, accounts: accountsByLine });
     } else if (action === "pdf") {
       exportSociPdf(lines, exportMeta, accountsByLine);
     } else {
@@ -180,6 +188,9 @@ export default function StatementOfComprehensiveIncome() {
             </Button>
             <Button variant="outline" size="sm" onClick={() => runExport("csv")} disabled={!lines?.length}>
               <Download className="w-4 h-4 mr-1" /> CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => runExport("xlsx")} disabled={!lines?.length}>
+              <FileSpreadsheet className="w-4 h-4 mr-1" /> Excel
             </Button>
             <Button variant="outline" size="sm" onClick={() => runExport("pdf")} disabled={!lines?.length}>
               <FileText className="w-4 h-4 mr-1" /> PDF

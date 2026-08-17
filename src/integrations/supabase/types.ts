@@ -15727,6 +15727,10 @@ export type Database = {
           severity: string
         }[]
       }
+      rpc_fs_move_line: {
+        Args: { p_direction: string; p_line_id: string }
+        Returns: undefined
+      }
       rpc_fs_seed_soci: { Args: { p_force?: boolean }; Returns: string }
       rpc_fs_statement: {
         Args: {

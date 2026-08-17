@@ -8,7 +8,7 @@ import { useFiscalPeriods } from "@/hooks/useFiscalPeriodBalances";
 import {
   useFsMapping, useMapAccountToLine, useUnmapAccount, useMoveAccountToLine,
   useFsLineDetails, useUpdateFsLine, useFsLineTerms, useSetFsLineTerms,
-  useFsParameters, useSetFsParameter, isFsPnlAccountType,
+  useFsParameters, useSetFsParameter, isFsPnlAccountType, useMoveFsLine,
   type FsLineDetail, type FsUnmappedAccount,
 } from "@/hooks/useFinancialStatements";
 
@@ -45,7 +45,7 @@ export default function FinancialStatementMapping() {
   const mapAccount = useMapAccountToLine();
   const unmapAccount = useUnmapAccount();
   const moveAccount = useMoveAccountToLine();
-  const updateLine = useUpdateFsLine();
+  const moveLine = useMoveFsLine();
   const { data: parameters } = useFsParameters(fiscalPeriodId || null);
   const setParameter = useSetFsParameter();
 
@@ -229,16 +229,12 @@ export default function FinancialStatementMapping() {
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
                         <div className="flex flex-col">
-                          <button disabled={idx === 0} onClick={() => {
-                            const prev = lineDetails![idx - 1];
-                            updateLine.mutate({ lineId: line.id, patch: { sort_order: prev.sort_order } });
-                            updateLine.mutate({ lineId: prev.id, patch: { sort_order: line.sort_order } });
-                          }} className="disabled:opacity-20 hover:text-primary"><ChevronUp className="w-3.5 h-3.5" /></button>
-                          <button disabled={idx === (lineDetails?.length ?? 0) - 1} onClick={() => {
-                            const next = lineDetails![idx + 1];
-                            updateLine.mutate({ lineId: line.id, patch: { sort_order: next.sort_order } });
-                            updateLine.mutate({ lineId: next.id, patch: { sort_order: line.sort_order } });
-                          }} className="disabled:opacity-20 hover:text-primary"><ChevronDown className="w-3.5 h-3.5" /></button>
+                          <button disabled={idx === 0 || moveLine.isPending}
+                            onClick={() => moveLine.mutate({ lineId: line.id, direction: "up" })}
+                            className="disabled:opacity-20 hover:text-primary"><ChevronUp className="w-3.5 h-3.5" /></button>
+                          <button disabled={idx === (lineDetails?.length ?? 0) - 1 || moveLine.isPending}
+                            onClick={() => moveLine.mutate({ lineId: line.id, direction: "down" })}
+                            className="disabled:opacity-20 hover:text-primary"><ChevronDown className="w-3.5 h-3.5" /></button>
                         </div>
                         <div className="min-w-0">
                           <p className="text-sm font-semibold text-foreground truncate">{line.label}</p>

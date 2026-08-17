@@ -13,6 +13,11 @@ export interface FsExportMeta {
   periodCaption?: string;
   dateFrom: string;
   dateTo: string;
+  /** Comparative period, when one is being shown. */
+  cmpDateFrom?: string | null;
+  cmpDateTo?: string | null;
+  /** The statement's own amount-column caption, e.g. "Rs.         Cts.". */
+  currencyCaption?: string | null;
   /** Entity identity for the PDF's statutory heading. */
   company?: StatementHeadingCompany;
   preparedBy?: string;
@@ -33,7 +38,7 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-function fingerprintFor(meta: FsExportMeta, lines: FsStatementLine[]) {
+export function fingerprintFor(meta: FsExportMeta, lines: FsStatementLine[]) {
   const profitLine = lines.find((l) => l.line_code === "PROFIT_FOR_YEAR");
   const params = {
     tenantId: meta.tenantId,
@@ -50,7 +55,12 @@ function fingerprintFor(meta: FsExportMeta, lines: FsStatementLine[]) {
   };
 }
 
-async function logExport(meta: FsExportMeta, format: "csv" | "pdf", fingerprint: string, lines: FsStatementLine[]) {
+export async function logExport(
+  meta: FsExportMeta,
+  format: "csv" | "pdf" | "xlsx",
+  fingerprint: string,
+  lines: FsStatementLine[]
+) {
   const profitLine = lines.find((l) => l.line_code === "PROFIT_FOR_YEAR");
   await supabase.from("audit_logs").insert({
     action: "Financial Statement Exported",

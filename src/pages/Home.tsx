@@ -11,7 +11,7 @@ import AgingCharts from "@/components/dashboard/AgingCharts";
 import KPICards from "@/components/dashboard/KPICards";
 import SystemHealthCheck from "@/components/dashboard/SystemHealthCheck";
 import CashBalanceForecastChart from "@/components/dashboard/CashBalanceForecastChart";
-import { Loader2, Filter } from "lucide-react";
+import { Loader2, Filter, AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function Home() {
@@ -53,7 +53,7 @@ function TenantDashboard() {
     to: format(toDate, "yyyy-MM-dd"),
   }), [fromDate, toDate]);
 
-  const { metrics, isLoading } = useDashboardMetrics(period);
+  const { metrics, isLoading, isError, error, isFetching, refetch } = useDashboardMetrics(period);
 
   return (
     <div className="w-full px-4 sm:px-6 py-6 space-y-6 overflow-y-auto flex-1">
@@ -89,7 +89,27 @@ function TenantDashboard() {
       <ModuleCards />
 
 
-      {isLoading ? (
+      {isError ? (
+        /* Never render the derived figures on a failed fetch: every metric
+           defaults to zero, so a broken query is indistinguishable from a
+           company with no activity. */
+        <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-6 py-10 text-center animate-fade-in">
+          <AlertCircle className="w-8 h-8 text-destructive mx-auto" />
+          <h2 className="mt-3 text-base font-semibold text-foreground">Financial data couldn’t be loaded</h2>
+          <p className="mt-1 text-sm text-muted-foreground max-w-md mx-auto">
+            The figures for this period are unavailable, so nothing is shown rather than
+            showing zeros that look like real balances.
+          </p>
+          {error?.message && (
+            <p className="mt-2 text-xs text-muted-foreground/80 font-mono break-words max-w-md mx-auto">
+              {error.message}
+            </p>
+          )}
+          <Button variant="outline" size="sm" className="mt-4 h-9 text-xs gap-1.5" onClick={refetch} disabled={isFetching}>
+            <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`} /> Retry
+          </Button>
+        </div>
+      ) : isLoading ? (
         <div className="flex items-center justify-center py-20">
           <div className="flex flex-col items-center gap-3">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />

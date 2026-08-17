@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
-import { ArrowUpRight, ArrowDownLeft, FileText, Loader2 } from "lucide-react";
+import { ArrowUpRight, ArrowDownLeft, AlertCircle, FileText, Loader2, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/currency";
 
@@ -94,12 +95,12 @@ function useRecentTransactions() {
 
 const sourceBadge = {
   journal: { label: "Journal", className: "bg-primary/10 text-primary border-primary/20" },
-  pcv: { label: "PCV", className: "bg-amber-500/10 text-amber-600 border-amber-500/20" },
-  payment: { label: "Payment", className: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" },
+  pcv: { label: "PCV", className: "bg-[hsl(var(--warning))]/10 text-[hsl(var(--warning-ink))] border-[hsl(var(--warning))]/20" },
+  payment: { label: "Payment", className: "bg-[hsl(var(--success))]/10 text-[hsl(var(--success-ink))] border-[hsl(var(--success))]/20" },
 };
 
 export default function RecentTransactions() {
-  const { data: transactions, isLoading } = useRecentTransactions();
+  const { data: transactions, isLoading, isError, refetch } = useRecentTransactions();
 
   return (
     <Card className="animate-fade-in">
@@ -115,7 +116,15 @@ export default function RecentTransactions() {
         </div>
       </CardHeader>
       <CardContent className="pt-0">
-        {isLoading ? (
+        {isError ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-7 text-center">
+            <AlertCircle className="w-5 h-5 text-destructive" />
+            <p className="text-xs text-muted-foreground">Couldn’t load recent activity.</p>
+            <Button variant="outline" size="sm" className="h-7 text-[11px] gap-1.5" onClick={() => void refetch()}>
+              <RefreshCw className="w-3 h-3" /> Retry
+            </Button>
+          </div>
+        ) : isLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
@@ -131,12 +140,12 @@ export default function RecentTransactions() {
                 {/* Dr/Cr Icon */}
                 <div className={cn(
                   "w-7 h-7 rounded-full flex items-center justify-center shrink-0",
-                  tx.type === "debit" ? "bg-rose-500/10" : "bg-emerald-500/10"
+                  tx.type === "debit" ? "bg-destructive/10" : "bg-[hsl(var(--success))]/10"
                 )}>
                   {tx.type === "debit" ? (
-                    <ArrowUpRight className="w-3.5 h-3.5 text-rose-500" />
+                    <ArrowUpRight className="w-3.5 h-3.5 text-[hsl(var(--danger-ink))]" />
                   ) : (
-                    <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-500" />
+                    <ArrowDownLeft className="w-3.5 h-3.5 text-[hsl(var(--success-ink))]" />
                   )}
                 </div>
 
@@ -155,7 +164,7 @@ export default function RecentTransactions() {
                 <div className="text-right shrink-0 min-w-[80px]">
                   <p className={cn(
                     "text-xs font-semibold tabular-nums",
-                    tx.type === "debit" ? "text-rose-600" : "text-emerald-600"
+                    tx.type === "debit" ? "text-[hsl(var(--danger-ink))]" : "text-[hsl(var(--success-ink))]"
                   )}>
                     {tx.type === "debit" ? "Dr" : "Cr"} {formatCurrency(tx.amount)}
                   </p>

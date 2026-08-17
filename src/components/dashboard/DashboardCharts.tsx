@@ -6,26 +6,20 @@ import { ArrowDownRight, ArrowUpRight, Scale, TrendingUp, TrendingDown, Wallet, 
 import { useNavigate } from "react-router-dom";
 import type { DashboardMetrics } from "@/hooks/useDashboardMetrics";
 import RecentTransactions from "@/components/dashboard/RecentTransactions";
+import { useChartTheme, foldToPalette } from "@/lib/chartTokens";
+import { cn } from "@/lib/utils";
+import { formatCurrencyShort, formatCompactAmount } from "@/lib/currency";
 
-// Distinct, modern palette so every expense category gets its own colour.
-const EXPENSE_PALETTE = [
-  "hsl(217, 91%, 60%)", "hsl(160, 84%, 39%)", "hsl(38, 92%, 50%)",
-  "hsl(280, 65%, 60%)", "hsl(0, 84%, 60%)", "hsl(199, 89%, 48%)",
-  "hsl(330, 81%, 60%)", "hsl(24, 95%, 53%)", "hsl(142, 71%, 45%)",
-  "hsl(252, 83%, 67%)", "hsl(173, 80%, 40%)", "hsl(47, 96%, 53%)",
-];
+/** Tint a hex token for use as a background wash. */
+const soft = (hex: string, alpha = 0.1) =>
+  `${hex}${Math.round(alpha * 255).toString(16).padStart(2, "0")}`;
 
-const INFLOW = "hsl(160 84% 39%)";   // emerald
-const OUTFLOW = "hsl(0 84% 60%)";    // red
-const NET = "hsl(217 91% 60%)";      // blue
-const MARGIN = "hsl(38 92% 50%)";    // amber
-const soft = (c: string) => c.replace(")", " / 0.10)");
+/** Same, for colours that may arrive as `hsl(var(--token))` rather than hex. */
+const tint = (color: string, alpha = 0.16) =>
+  color.startsWith("#") ? soft(color, alpha) : `color-mix(in srgb, ${color} ${alpha * 100}%, transparent)`;
 
-const fmt = (v: number) => `LKR ${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-const kFmt = (v: number) => {
-  const a = Math.abs(v);
-  return `${v < 0 ? "-" : ""}${a >= 1000 ? `${(a / 1000).toFixed(0)}k` : a}`;
-};
+const fmt = (v: number) => formatCurrencyShort(v);
+const kFmt = formatCompactAmount;
 
 interface Props {
   metrics: DashboardMetrics;
@@ -33,6 +27,13 @@ interface Props {
 
 export default function DashboardCharts({ metrics }: Props) {
   const navigate = useNavigate();
+  const theme = useChartTheme();
+  const INFLOW = theme.series.inflow;
+  const OUTFLOW = theme.series.outflow;
+  const NET = theme.series.net;
+  const MARGIN = theme.series.margin;
+  const REVENUE = theme.series.revenue;
+  const EXPENSE = theme.series.expense;
   const {
     monthlyData, expenseDistribution, totalInflows, totalOutflows,
     invoiceCount, overdueInvoiceCount, accountsPayable, currentMonthOverdueAmount,
@@ -49,6 +50,11 @@ export default function DashboardCharts({ metrics }: Props) {
   }));
 
   const totalExpenseDist = expenseDistribution.reduce((s, d) => s + d.value, 0);
+  // Fixed-order slots, everything past slot 8 folded into one neutral "Other" —
+  // cycling the palette gave two unrelated categories the same colour.
+  const expenseSlices = foldToPalette(expenseDistribution, (d) => d.value, (d) => d.name);
+  const sliceColor = (slice: { slot: number; isOther: boolean }) =>
+    slice.isOther ? theme.categoricalOther : theme.categorical[slice.slot];
 
   const netCashFlow = totalInflows - totalOutflows;
   const monthsWithData = cashData.filter(d => d.inflow || d.outflowNeg);
@@ -72,34 +78,37 @@ export default function DashboardCharts({ metrics }: Props) {
           type="button"
           onClick={() => navigate("/sales/invoices")}
           className="text-left rounded-2xl border border-border/60 shadow-sm p-4 transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          style={{ backgroundImage: `linear-gradient(135deg, hsl(217 91% 60% / 0.18), hsl(var(--card)))` }}
+          style={{ backgroundImage: `linear-gradient(135deg, ${soft(NET, 0.14)}, hsl(var(--card)))` }}
         >
           <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             <FileText className="w-3.5 h-3.5" style={{ color: NET }} /> Invoices
           </div>
           <div className="mt-2 flex items-end gap-4">
             <div>
-              <p className="text-2xl font-bold tracking-tight leading-none" style={{ color: NET }}>{invoiceCount}</p>
+              <p className="text-2xl font-bold tracking-tight leading-none tabular-nums text-foreground">{invoiceCount}</p>
               <p className="text-[10px] text-muted-foreground mt-1">Total</p>
             </div>
             <div className="h-8 w-px bg-border/70" />
             <div>
-              <p className="text-2xl font-bold tracking-tight leading-none" style={{ color: OUTFLOW }}>{overdueInvoiceCount}</p>
+              <p className={cn(
+                "text-2xl font-bold tracking-tight leading-none tabular-nums",
+                overdueInvoiceCount > 0 ? "text-[hsl(var(--danger-ink))]" : "text-foreground"
+              )}>{overdueInvoiceCount}</p>
               <p className="text-[10px] text-muted-foreground mt-1">Overdue</p>
             </div>
           </div>
         </button>
-        <InvoiceStat label="Accounts Payable" value={fmt(accountsPayable)} icon={CreditCard} color="hsl(347 77% 50%)" />
+        <InvoiceStat label="Accounts Payable" value={fmt(accountsPayable)} icon={CreditCard} color={theme.categorical[1]} />
         <InvoiceStat label="Expense" value={fmt(totalExpenseDist)} icon={Receipt} color={OUTFLOW} />
         <BankBalanceCard accounts={bankAccounts} />
-        <InvoiceStat label="Current Month Overdue" value={fmt(currentMonthOverdueAmount)} icon={CalendarClock} color={MARGIN} />
+        <InvoiceStat label="Current Month Overdue" value={fmt(currentMonthOverdueAmount)} icon={CalendarClock} color="hsl(var(--warning))" />
       </div>
 
       {/* Cash Flow — full-width hero chart */}
       <div
         className="rounded-2xl border border-border/60 shadow-sm overflow-hidden"
         style={{
-          backgroundImage: `linear-gradient(135deg, hsl(217 91% 60% / 0.28) 0%, hsl(217 91% 60% / 0.12) 45%, hsl(var(--card)) 100%)`,
+          backgroundImage: `linear-gradient(135deg, ${soft(NET, 0.2)} 0%, ${soft(NET, 0.09)} 45%, hsl(var(--card)) 100%)`,
         }}
       >
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-5 sm:px-6 pt-5">
@@ -114,8 +123,8 @@ export default function DashboardCharts({ metrics }: Props) {
           <div
             className="inline-flex items-center gap-1.5 self-start sm:self-auto rounded-full px-3 py-1 text-xs font-semibold"
             style={{
-              backgroundColor: netCashFlow >= 0 ? "hsl(160 84% 39% / 0.12)" : "hsl(0 84% 60% / 0.12)",
-              color: netCashFlow >= 0 ? INFLOW : OUTFLOW,
+              backgroundColor: netCashFlow >= 0 ? soft(INFLOW, 0.14) : soft(OUTFLOW, 0.14),
+              color: netCashFlow >= 0 ? "hsl(var(--success-ink))" : "hsl(var(--danger-ink))",
             }}
           >
             {netCashFlow >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
@@ -152,17 +161,20 @@ export default function DashboardCharts({ metrics }: Props) {
                     <stop offset="100%" stopColor={OUTFLOW} stopOpacity={0.95} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(220, 13%, 91%)" vertical={false} />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="hsl(220, 9%, 46%)" />
-                <YAxis tick={{ fontSize: 11 }} stroke="hsl(220, 9%, 46%)" tickFormatter={kFmt} />
+                <CartesianGrid strokeDasharray="3 3" stroke={theme.grid} vertical={false} />
+                <XAxis dataKey="month" tick={{ fontSize: 11, fill: theme.axis }} stroke={theme.axis} />
+                <YAxis tick={{ fontSize: 11, fill: theme.axis }} stroke={theme.axis} tickFormatter={kFmt} />
                 <Tooltip
                   formatter={(v: number, name: string) => [fmt(v), name]}
-                  contentStyle={{ borderRadius: "10px", border: "1px solid hsl(220, 13%, 91%)", fontSize: "12px", boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }}
+                  contentStyle={theme.tooltip.contentStyle}
+                  labelStyle={theme.tooltip.labelStyle}
+                  itemStyle={theme.tooltip.itemStyle}
+                  cursor={{ fill: theme.cursorFill }}
                 />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <ReferenceLine y={0} stroke="hsl(220, 13%, 80%)" />
-                <Bar dataKey="inflow" name="Inflows" fill="url(#inflowBar)" radius={[6, 6, 0, 0]} maxBarSize={48} />
-                <Bar dataKey="outflowNeg" name="Outflows" fill="url(#outflowBar)" radius={[0, 0, 6, 6]} maxBarSize={48} />
+                <Legend wrapperStyle={theme.legendStyle} />
+                <ReferenceLine y={0} stroke={theme.baseline} />
+                <Bar dataKey="inflow" name="Inflows" fill="url(#inflowBar)" radius={[4, 4, 0, 0]} maxBarSize={48} />
+                <Bar dataKey="outflowNeg" name="Outflows" fill="url(#outflowBar)" radius={[0, 0, 4, 4]} maxBarSize={48} />
                 <Line type="monotone" dataKey="net" name="Net Cash Flow" stroke={NET} strokeWidth={2.5} dot={{ r: 3, fill: NET }} activeDot={{ r: 5 }} />
               </ComposedChart>
             </ResponsiveContainer>
@@ -174,7 +186,7 @@ export default function DashboardCharts({ metrics }: Props) {
       <div
         className="rounded-2xl border border-border/60 shadow-sm overflow-hidden"
         style={{
-          backgroundImage: `linear-gradient(135deg, hsl(38 92% 50% / 0.28) 0%, hsl(160 84% 39% / 0.12) 45%, hsl(var(--card)) 100%)`,
+          backgroundImage: `linear-gradient(135deg, ${soft(MARGIN, 0.2)} 0%, ${soft(INFLOW, 0.09)} 45%, hsl(var(--card)) 100%)`,
         }}
       >
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-5 sm:px-6 pt-5">
@@ -190,8 +202,8 @@ export default function DashboardCharts({ metrics }: Props) {
             <span
               className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold"
               style={{
-                backgroundColor: totalNetProfit >= 0 ? soft(INFLOW) : soft(OUTFLOW),
-                color: totalNetProfit >= 0 ? INFLOW : OUTFLOW,
+                backgroundColor: totalNetProfit >= 0 ? soft(INFLOW, 0.14) : soft(OUTFLOW, 0.14),
+                color: totalNetProfit >= 0 ? "hsl(var(--success-ink))" : "hsl(var(--danger-ink))",
               }}
             >
               {totalNetProfit >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
@@ -199,7 +211,7 @@ export default function DashboardCharts({ metrics }: Props) {
             </span>
             <span
               className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold"
-              style={{ backgroundColor: soft(MARGIN), color: MARGIN }}
+              style={{ backgroundColor: soft(MARGIN, 0.14), color: MARGIN }}
             >
               {avgMargin.toFixed(1)}% avg margin
             </span>
@@ -209,17 +221,20 @@ export default function DashboardCharts({ metrics }: Props) {
           {!hasMonthly ? <EmptyChart /> : (
             <ResponsiveContainer width="100%" height={320}>
               <ComposedChart data={profitData} margin={{ top: 10, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(220, 13%, 91%)" vertical={false} />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="hsl(220, 9%, 46%)" />
-                <YAxis yAxisId="amt" tick={{ fontSize: 11 }} stroke="hsl(220, 9%, 46%)" tickFormatter={kFmt} />
-                <YAxis yAxisId="pct" orientation="right" tick={{ fontSize: 11 }} stroke={MARGIN} tickFormatter={(v) => `${Math.round(v)}%`} />
+                <CartesianGrid strokeDasharray="3 3" stroke={theme.grid} vertical={false} />
+                <XAxis dataKey="month" tick={{ fontSize: 11, fill: theme.axis }} stroke={theme.axis} />
+                <YAxis yAxisId="amt" tick={{ fontSize: 11, fill: theme.axis }} stroke={theme.axis} tickFormatter={kFmt} />
+                <YAxis yAxisId="pct" orientation="right" tick={{ fontSize: 11, fill: theme.axis }} stroke={MARGIN} tickFormatter={(v) => `${Math.round(v)}%`} />
                 <Tooltip
                   formatter={(v: number, name: string) => [name === "Net Margin" ? `${v.toFixed(1)}%` : fmt(v), name]}
-                  contentStyle={{ borderRadius: "10px", border: "1px solid hsl(220, 13%, 91%)", fontSize: "12px", boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }}
+                  contentStyle={theme.tooltip.contentStyle}
+                  labelStyle={theme.tooltip.labelStyle}
+                  itemStyle={theme.tooltip.itemStyle}
+                  cursor={{ fill: theme.cursorFill }}
                 />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <ReferenceLine yAxisId="amt" y={0} stroke="hsl(220, 13%, 80%)" />
-                <Bar yAxisId="amt" dataKey="profit" name="Net Profit" radius={[6, 6, 0, 0]} maxBarSize={48}>
+                <Legend wrapperStyle={theme.legendStyle} />
+                <ReferenceLine yAxisId="amt" y={0} stroke={theme.baseline} />
+                <Bar yAxisId="amt" dataKey="profit" name="Net Profit" radius={[4, 4, 0, 0]} maxBarSize={48}>
                   {profitData.map((d, i) => <Cell key={i} fill={d.profit >= 0 ? INFLOW : OUTFLOW} />)}
                 </Bar>
                 <Line yAxisId="pct" type="monotone" dataKey="margin" name="Net Margin" stroke={MARGIN} strokeWidth={2.5} dot={{ r: 3, fill: MARGIN }} activeDot={{ r: 5 }} />
@@ -237,21 +252,21 @@ export default function DashboardCharts({ metrics }: Props) {
               <BarChart data={monthlyData} barGap={4}>
                 <defs>
                   <linearGradient id="revBar" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="hsl(217, 91%, 60%)" stopOpacity={0.95} />
-                    <stop offset="100%" stopColor="hsl(217, 91%, 60%)" stopOpacity={0.6} />
+                    <stop offset="0%" stopColor={REVENUE} stopOpacity={0.95} />
+                    <stop offset="100%" stopColor={REVENUE} stopOpacity={0.6} />
                   </linearGradient>
                   <linearGradient id="expBar" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="hsl(0, 84%, 60%)" stopOpacity={0.95} />
-                    <stop offset="100%" stopColor="hsl(0, 84%, 60%)" stopOpacity={0.6} />
+                    <stop offset="0%" stopColor={EXPENSE} stopOpacity={0.95} />
+                    <stop offset="100%" stopColor={EXPENSE} stopOpacity={0.6} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(220, 13%, 91%)" vertical={false} />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="hsl(220, 9%, 46%)" />
-                <YAxis tick={{ fontSize: 11 }} stroke="hsl(220, 9%, 46%)" tickFormatter={kFmt} />
-                <Tooltip formatter={(v: number) => [fmt(v), ""]} contentStyle={{ borderRadius: "8px", border: "1px solid hsl(220, 13%, 91%)", fontSize: "12px" }} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="revenue" fill="url(#revBar)" radius={[6, 6, 0, 0]} name="Revenue" />
-                <Bar dataKey="expenses" fill="url(#expBar)" radius={[6, 6, 0, 0]} name="Expenses" />
+                <CartesianGrid strokeDasharray="3 3" stroke={theme.grid} vertical={false} />
+                <XAxis dataKey="month" tick={{ fontSize: 11, fill: theme.axis }} stroke={theme.axis} />
+                <YAxis tick={{ fontSize: 11, fill: theme.axis }} stroke={theme.axis} tickFormatter={kFmt} />
+                <Tooltip formatter={(v: number) => [fmt(v), ""]} contentStyle={theme.tooltip.contentStyle} labelStyle={theme.tooltip.labelStyle} itemStyle={theme.tooltip.itemStyle} cursor={{ fill: theme.cursorFill }} />
+                <Legend wrapperStyle={theme.legendStyle} />
+                <Bar dataKey="revenue" fill="url(#revBar)" radius={[4, 4, 0, 0]} name="Revenue" />
+                <Bar dataKey="expenses" fill="url(#expBar)" radius={[4, 4, 0, 0]} name="Expenses" />
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -262,37 +277,32 @@ export default function DashboardCharts({ metrics }: Props) {
 
         {/* Expense Distribution */}
         <ChartCard title="Expense Distribution" subtitle="By category" className="lg:col-span-2">
-          {expenseDistribution.length === 0 ? <EmptyChart text="No categorized expenses found." /> : (
+          {expenseSlices.length === 0 ? <EmptyChart text="No categorized expenses found." /> : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
               {/* Donut */}
               <div className="relative">
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
-                    <defs>
-                      {EXPENSE_PALETTE.map((c, i) => (
-                        <linearGradient key={i} id={`expSlice${i}`} x1="0" y1="0" x2="1" y2="1">
-                          <stop offset="0%" stopColor={c} stopOpacity={1} />
-                          <stop offset="100%" stopColor={c} stopOpacity={0.72} />
-                        </linearGradient>
-                      ))}
-                    </defs>
                     <Pie
-                      data={expenseDistribution}
+                      data={expenseSlices}
                       cx="50%" cy="50%"
                       outerRadius={115} innerRadius={74}
-                      paddingAngle={3}
-                      cornerRadius={6}
+                      paddingAngle={2}
+                      cornerRadius={4}
                       dataKey="value"
-                      stroke="hsl(var(--card))"
-                      strokeWidth={3}
+                      nameKey="label"
+                      stroke={theme.surface}
+                      strokeWidth={2}
                     >
-                      {expenseDistribution.map((_, i) => (
-                        <Cell key={i} fill={`url(#expSlice${i % EXPENSE_PALETTE.length})`} />
+                      {expenseSlices.map((slice) => (
+                        <Cell key={slice.label} fill={sliceColor(slice)} />
                       ))}
                     </Pie>
                     <Tooltip
                       formatter={(v: number, n: string) => [fmt(v), n]}
-                      contentStyle={{ borderRadius: "10px", border: "1px solid hsl(220, 13%, 91%)", fontSize: "12px", boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }}
+                      contentStyle={theme.tooltip.contentStyle}
+                      labelStyle={theme.tooltip.labelStyle}
+                      itemStyle={theme.tooltip.itemStyle}
                     />
                   </PieChart>
                 </ResponsiveContainer>
@@ -305,15 +315,15 @@ export default function DashboardCharts({ metrics }: Props) {
 
               {/* Legend list with share bars */}
               <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
-                {expenseDistribution.map((d, i) => {
+                {expenseSlices.map((d) => {
                   const share = totalExpenseDist ? (d.value / totalExpenseDist) * 100 : 0;
-                  const color = EXPENSE_PALETTE[i % EXPENSE_PALETTE.length];
+                  const color = sliceColor(d);
                   return (
-                    <div key={d.name} className="flex items-center gap-3">
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-inset ring-white/40" style={{ backgroundColor: color }} />
+                    <div key={d.label} className="flex items-center gap-3">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color, boxShadow: `0 0 0 2px ${theme.surface}` }} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-medium text-foreground truncate">{d.name}</span>
+                          <span className="text-xs font-medium text-foreground truncate">{d.label}</span>
                           <span className="text-xs font-semibold tabular-nums text-foreground">{fmt(d.value)}</span>
                         </div>
                         <div className="mt-1.5 flex items-center gap-2">
@@ -335,19 +345,26 @@ export default function DashboardCharts({ metrics }: Props) {
   );
 }
 
+/**
+ * Values wear text ink, never the series colour — identity is carried by the
+ * icon beside them, so the figure stays legible on either surface.
+ */
 function StatTile({ label, value, sub, icon: Icon, color, signed }: {
   label: string; value: string; sub?: string; icon: React.ElementType; color: string; signed?: number;
 }) {
-  const valueColor = signed !== undefined ? (signed >= 0 ? INFLOW : OUTFLOW) : "hsl(var(--foreground))";
+  const isNegative = signed !== undefined && signed < 0;
   return (
     <div
       className="rounded-xl border border-border/60 p-3"
-      style={{ backgroundImage: `linear-gradient(135deg, ${soft(color)}, transparent)` }}
+      style={{ backgroundImage: `linear-gradient(135deg, ${soft(color, 0.1)}, transparent)` }}
     >
       <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         <Icon className="w-3.5 h-3.5" style={{ color }} /> {label}
       </div>
-      <p className="mt-1.5 text-lg font-bold tracking-tight truncate" style={{ color: valueColor }}>{value}</p>
+      <p className={cn(
+        "mt-1.5 text-lg font-bold tracking-tight truncate tabular-nums",
+        isNegative ? "text-[hsl(var(--danger-ink))]" : "text-foreground"
+      )}>{value}</p>
       {sub && <p className="text-[11px] text-muted-foreground">{sub}</p>}
     </div>
   );
@@ -359,12 +376,12 @@ function InvoiceStat({ label, value, icon: Icon, color }: {
   return (
     <div
       className="rounded-2xl border border-border/60 shadow-sm p-4"
-      style={{ backgroundImage: `linear-gradient(135deg, ${color.replace(")", " / 0.18)")}, hsl(var(--card)))` }}
+      style={{ backgroundImage: `linear-gradient(135deg, ${tint(color)}, hsl(var(--card)))` }}
     >
       <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         <Icon className="w-3.5 h-3.5" style={{ color }} /> {label}
       </div>
-      <p className="mt-3 text-2xl font-bold tracking-tight leading-none truncate" style={{ color }}>{value}</p>
+      <p className="mt-3 text-2xl font-bold tracking-tight leading-none truncate tabular-nums text-foreground">{value}</p>
     </div>
   );
 }
@@ -372,17 +389,21 @@ function InvoiceStat({ label, value, icon: Icon, color }: {
 // Bank Balance card: headline total + per-account breakdown for every COA
 // account whose detail type is "Bank", so multiple bank accounts show separately.
 function BankBalanceCard({ accounts }: { accounts: DashboardMetrics["bankAccounts"] }) {
-  const color = INFLOW;
+  const theme = useChartTheme();
+  const color = theme.series.inflow;
   const total = accounts.reduce((s, a) => s + a.balance, 0);
   return (
     <div
       className="rounded-2xl border border-border/60 shadow-sm p-4"
-      style={{ backgroundImage: `linear-gradient(135deg, ${color.replace(")", " / 0.18)")}, hsl(var(--card)))` }}
+      style={{ backgroundImage: `linear-gradient(135deg, ${tint(color)}, hsl(var(--card)))` }}
     >
       <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         <Landmark className="w-3.5 h-3.5" style={{ color }} /> Bank Balance
       </div>
-      <p className="mt-2 text-2xl font-bold tracking-tight leading-none truncate" style={{ color }}>{fmt(total)}</p>
+      <p className={cn(
+        "mt-2 text-2xl font-bold tracking-tight leading-none truncate tabular-nums",
+        total < 0 ? "text-[hsl(var(--danger-ink))]" : "text-foreground"
+      )}>{fmt(total)}</p>
       {accounts.length > 0 ? (
         <div className="mt-3 space-y-1.5 border-t border-border/50 pt-2">
           {accounts.map(a => (

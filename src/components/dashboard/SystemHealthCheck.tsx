@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { CheckCircle2, XCircle, AlertTriangle, Shield, Loader2, RefreshCw } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, AlertCircle, Shield, Loader2, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -102,13 +102,13 @@ function useSystemHealth() {
 }
 
 const statusIcon = {
-  pass: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
+  pass: <CheckCircle2 className="w-4 h-4 text-[hsl(var(--success-ink))]" />,
   fail: <XCircle className="w-4 h-4 text-destructive" />,
-  warn: <AlertTriangle className="w-4 h-4 text-amber-500" />,
+  warn: <AlertTriangle className="w-4 h-4 text-[hsl(var(--warning-ink))]" />,
 };
 
 export default function SystemHealthCheck() {
-  const { data: checks, isLoading, refetch, isFetching } = useSystemHealth();
+  const { data: checks, isLoading, isError, refetch, isFetching } = useSystemHealth();
 
   const allPass = checks?.every((c) => c.status === "pass");
 
@@ -119,9 +119,9 @@ export default function SystemHealthCheck() {
           <div className="flex items-center gap-2.5">
             <div className={cn(
               "w-8 h-8 rounded-lg flex items-center justify-center",
-              allPass ? "bg-emerald-500/10" : "bg-amber-500/10"
+              allPass ? "bg-[hsl(var(--success))]/10" : "bg-[hsl(var(--warning))]/10"
             )}>
-              <Shield className={cn("w-4 h-4", allPass ? "text-emerald-500" : "text-amber-500")} />
+              <Shield className={cn("w-4 h-4", allPass ? "text-[hsl(var(--success-ink))]" : "text-[hsl(var(--warning-ink))]")} />
             </div>
             <div>
               <CardTitle className="text-sm font-semibold">System Health</CardTitle>
@@ -140,7 +140,17 @@ export default function SystemHealthCheck() {
         </div>
       </CardHeader>
       <CardContent className="pt-0">
-        {isLoading ? (
+        {isError ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-6 text-center">
+            <AlertCircle className="w-5 h-5 text-destructive" />
+            <p className="text-xs text-muted-foreground">
+              Integrity checks could not run — this is not a clean bill of health.
+            </p>
+            <Button variant="outline" size="sm" className="h-7 text-[11px] gap-1.5" onClick={() => void refetch()}>
+              <RefreshCw className="w-3 h-3" /> Retry
+            </Button>
+          </div>
+        ) : isLoading ? (
           <div className="flex items-center justify-center py-6">
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
@@ -151,9 +161,9 @@ export default function SystemHealthCheck() {
                 key={i}
                 className={cn(
                   "flex items-start gap-2.5 rounded-lg px-3 py-2.5 text-xs transition-colors",
-                  check.status === "pass" && "bg-emerald-500/5",
+                  check.status === "pass" && "bg-[hsl(var(--success))]/5",
                   check.status === "fail" && "bg-destructive/5",
-                  check.status === "warn" && "bg-amber-500/5",
+                  check.status === "warn" && "bg-[hsl(var(--warning))]/5",
                 )}
               >
                 <div className="mt-0.5 shrink-0">{statusIcon[check.status]}</div>

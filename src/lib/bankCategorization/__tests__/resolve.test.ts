@@ -68,6 +68,19 @@ describe("classifyLine — Tier 1b direct account-name / code match", () => {
     const r = classifyLine(makeLine({ debit: 5000, rawAccountType: "Salary" }), makeCtx());
     expect(r).toMatchObject({ kind: "resolved", accountId: ACC.salary, tier: 1, ruleId: "map-salary" });
   });
+
+  it("a ledger literally named '... Suspenses' is NOT direct-matched — still routes to Suspense for review", () => {
+    // Regression: a real "HNB - Suspenses" account word-matched Tier 1b and
+    // posted there directly, skipping needs_reclassification entirely — the
+    // row was never visible for manual review even though it landed in an
+    // account named "Suspenses".
+    const c2 = makeCtx({
+      accountMap: makeAccountMap([]),
+      accounts: new Map([acct("a-hnbsusp", "HNB - Suspenses", "9010")]),
+    });
+    const r = classifyLine(makeLine({ debit: 18030, rawAccountType: "HNB - Suspenses" }), c2);
+    expect(r).toMatchObject({ kind: "suspense", reason: "source_marked_suspense" });
+  });
 });
 
 describe("classifyLine — Blocked gates (corrupt data posts nowhere)", () => {
@@ -122,6 +135,21 @@ describe("classifyLine — Tier 1 (account_type → canonical → mapping)", () 
   it("source-marked suspense → suspense source_marked_suspense", () => {
     const r = classifyLine(makeLine({ debit: 5000, rawAccountType: "Suspense" }), makeCtx());
     expect(r).toMatchObject({ kind: "suspense", reason: "source_marked_suspense" });
+  });
+
+  it("plural 'Suspenses' also routes to suspense (word-boundary regex must allow the trailing s)", () => {
+    for (const t of ["Suspenses", "HNB - Suspenses", "Suspense Peoples Saving"]) {
+      const r = classifyLine(makeLine({ debit: 5000, rawAccountType: t }), makeCtx());
+      expect(r, `account_type "${t}"`).toMatchObject({ kind: "suspense", reason: "source_marked_suspense" });
+    }
+  });
+
+  it("'Suspend'/'Suspension' do NOT trip the suspense gate (word boundary still holds)", () => {
+    const ctx = makeCtx({ accountMap: new Map() });
+    for (const t of ["Suspend", "Suspension"]) {
+      const r = classifyLine(makeLine({ debit: 5000, rawAccountType: t }), ctx);
+      expect(r.kind, `account_type "${t}"`).not.toBe("suspense");
+    }
   });
 
   it("known category but no tenant mapping → derive from the label", () => {

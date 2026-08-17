@@ -38,6 +38,10 @@ export interface ReportExcelMeta {
   fileName: string;
   /** Worksheet tab name — trimmed to Excel's 31-char limit. */
   sheetName?: string;
+  /** Overrides the default "All amounts in LKR" basis line under the title. */
+  basisLine?: string;
+  /** Overrides the default "Generated on …" line — e.g. to name the preparer. */
+  generatedLine?: string;
 }
 
 /** An in-workbook jump, e.g. `#'General Ledger'!A42`. */
@@ -46,7 +50,14 @@ export interface SheetLink {
   Tooltip?: string;
 }
 
-export type SheetCell = { v: string | number | null; z?: string; l?: SheetLink };
+export type SheetCell = {
+  v: string | number | null;
+  z?: string;
+  l?: SheetLink;
+  /** Excel formula without the leading "=". `v` stays the cached result, so the
+   * cell reads correctly before the reader's Excel recalculates. */
+  f?: string;
+};
 
 /**
  * Reference to a cell on another sheet, for a hyperlink Target. Sheet names
@@ -194,8 +205,8 @@ function buildHeading(meta: ReportExcelMeta): SheetCell[][] {
   lines.push(meta.title);
   if (meta.subtitle) lines.push(meta.subtitle);
   if (meta.dateLine) lines.push(meta.dateLine);
-  lines.push("All amounts in LKR");
-  lines.push(`Generated on ${new Date().toLocaleString()}`);
+  lines.push(meta.basisLine ?? "All amounts in LKR");
+  lines.push(meta.generatedLine ?? `Generated on ${new Date().toLocaleString()}`);
   lines.push("");
   return lines.map((text) => [{ v: text || null }]);
 }
@@ -221,7 +232,17 @@ function sheetNameOf(meta: ReportExcelMeta): string {
   return raw.replace(/[\\/*?:[\]]/g, " ").slice(0, 31) || "Report";
 }
 
-export type SheetSection = { grid: SheetCell[][]; merges: XLSX.Range[] };
+export type SheetSection = {
+  grid: SheetCell[][];
+  merges: XLSX.Range[];
+  /**
+   * Excel outline level per grid row — 0 for a top-level row, 1 for a row
+   * grouped under the one above it. Excel renders these as the +/- buttons in
+   * the row margin, so a reader can collapse the detail back to the summary.
+   * Rows past the end of the array are level 0.
+   */
+  levels?: number[];
+};
 
 /** One tab of a workbook: its own heading block and its own section grids. */
 export interface WorkbookSheet {
@@ -235,13 +256,20 @@ function buildSheet(meta: ReportExcelMeta, sections: SheetSection[]): XLSX.WorkS
   const grid: SheetCell[][] = [...heading];
   const merges: XLSX.Range[] = [];
 
+  // Outline level for every assembled row, heading rows included (level 0).
+  const rowLevels: number[] = heading.map(() => 0);
+
   sections.forEach((section, i) => {
-    if (i > 0) grid.push([{ v: null }]);
+    if (i > 0) {
+      grid.push([{ v: null }]);
+      rowLevels.push(0);
+    }
     const offset = grid.length;
     section.merges.forEach((m) =>
       merges.push({ s: { r: m.s.r + offset, c: m.s.c }, e: { r: m.e.r + offset, c: m.e.c } })
     );
     grid.push(...section.grid);
+    section.grid.forEach((_, r) => rowLevels.push(section.levels?.[r] ?? 0));
   });
 
   const width = grid.reduce((w, row) => Math.max(w, row.length), 1);
@@ -255,18 +283,32 @@ function buildSheet(meta: ReportExcelMeta, sections: SheetSection[]): XLSX.WorkS
 
   const ws = XLSX.utils.aoa_to_sheet(grid.map((row) => row.map((cell) => cell.v)));
 
-  // Re-apply number formats and hyperlinks — aoa_to_sheet only carries values.
+  // Re-apply number formats, formulas and hyperlinks — aoa_to_sheet only
+  // carries values.
   grid.forEach((row, r) => {
     row.forEach((cell, c) => {
-      if (!cell.z && !cell.l) return;
+      if (!cell.z && !cell.l && !cell.f) return;
       const ref = XLSX.utils.encode_cell({ r, c });
       if (!ws[ref]) return;
       if (cell.z) ws[ref].z = cell.z;
       if (cell.l) ws[ref].l = cell.l;
+      if (cell.f) ws[ref].f = cell.f;
     });
   });
 
   ws["!merges"] = merges;
+
+  // Row grouping. Only emitted when something is actually nested, so every
+  // existing report's sheet is written exactly as before.
+  if (rowLevels.some((l) => l > 0)) {
+    // Written expanded: the file shows everything on open, and the reader
+    // collapses with the outline buttons if they want the statutory face.
+    ws["!rows"] = rowLevels.map((level) => (level > 0 ? { level } : {}));
+    // Our summary row sits ABOVE its detail rows; Excel's default is below, and
+    // getting this wrong puts the +/- button against the wrong row.
+    ws["!outline"] = { above: true };
+  }
+
   ws["!cols"] = Array.from({ length: width }, (_, c) => {
     const longest = grid.reduce((max, row) => {
       const cell = row[c];

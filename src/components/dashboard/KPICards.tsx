@@ -3,9 +3,10 @@ import {
   TrendingUp, TrendingDown, DollarSign, Percent, BarChart3,
   Wallet, ShieldCheck, Activity, ArrowUpRight, ArrowDownRight,
   Layers, Gauge, Coins, Target, Clock, Zap,
-  Settings2, X, Pin, PinOff, Check,
+  Settings2, X, Pin, PinOff, Check, CheckCircle2, AlertTriangle,
   Users, Repeat, Package, RefreshCw, Banknote, Scale, PieChart, Receipt, Fuel,
 } from "lucide-react";
+import { formatCurrencyShort } from "@/lib/currency";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -15,7 +16,9 @@ import { useKpiPreferences } from "@/hooks/useKpiPreferences";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
-const fmt = (n: number) => `LKR ${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+// Accounting presentation: a negative amount is parenthesised, never stripped of
+// its sign — `formatCurrencyShort` is shared with the rest of the app.
+const fmt = (n: number) => formatCurrencyShort(n);
 const signedPct = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
 const pct = (n: number) => `${n.toFixed(1)}%`;
 const ratio = (n: number) => n.toFixed(2);
@@ -23,13 +26,27 @@ const days = (n: number) => `${Math.round(n)} days`;
 const months = (n: number) => (!isFinite(n) ? "∞" : `${n.toFixed(1)} mo`);
 const safeDiv = (n: number, d: number) => (d !== 0 ? n / d : 0);
 
+/**
+ * Whether the figure is measured against a target at all.
+ *
+ * "neutral" is the honest answer for descriptive magnitudes — total inflows,
+ * turnover ratios — where there is no such thing as a good or bad reading, so
+ * they get no success/danger cue rather than a decorative one.
+ */
+export type KpiStatus = "good" | "bad" | "neutral";
+
+const bySign = (n: number): KpiStatus => (n >= 0 ? "good" : "bad");
+const byTarget = (ok: boolean): KpiStatus => (ok ? "good" : "bad");
+
 export interface KPIItem {
   key: string;
   label: string;
   value: string;
   formula: string;
   icon: React.ElementType;
-  positive: boolean;
+  status: KpiStatus;
+  /** The target the status was judged against, shown next to the cue. */
+  benchmark?: string;
   category: string;
   color: string;
 }
@@ -53,40 +70,41 @@ function buildAllKPIs(m: DashboardMetrics): KPIItem[] {
   const debtToEquity = safeDiv(m.totalLiabilities, m.equity);
   const debtRatio = safeDiv(m.totalLiabilities, m.totalAssets);
   const equityRatio = safeDiv(m.equity, m.totalAssets);
+  const C = KPI_COLORS;
   return [
-    { key: "total_revenue", label: "Total Revenue", value: fmt(m.totalRevenue), formula: "Sum of revenue accounts", icon: Coins, positive: m.totalRevenue >= 0, category: "Profitability", color: KPI_COLORS["Profitability"] },
-    { key: "gross_profit", label: "Gross Profit", value: fmt(m.grossProfit), formula: "Revenue − COGS", icon: TrendingUp, positive: m.grossProfit >= 0, category: "Profitability", color: KPI_COLORS["Profitability"] },
-    { key: "gross_margin", label: "Gross Margin", value: pct(m.grossProfitMargin), formula: "(Gross Profit ÷ Revenue) × 100", icon: Percent, positive: m.grossProfitMargin >= 0, category: "Profitability", color: KPI_COLORS["Profitability"] },
-    { key: "operating_profit", label: "Operating Profit", value: fmt(m.operatingProfit), formula: "Gross Profit − Operating Expenses", icon: Activity, positive: m.operatingProfit >= 0, category: "Profitability", color: KPI_COLORS["Profitability"] },
-    { key: "operating_margin", label: "Operating Margin", value: pct(m.operatingMargin), formula: "(Operating Profit ÷ Revenue) × 100", icon: Percent, positive: m.operatingMargin >= 0, category: "Profitability", color: KPI_COLORS["Profitability"] },
-    { key: "net_profit", label: "Net Profit", value: fmt(m.netProfit), formula: "Revenue − COGS − Expenses", icon: DollarSign, positive: m.netProfit >= 0, category: "Profitability", color: KPI_COLORS["Profitability"] },
-    { key: "net_profit_margin", label: "Net Profit Margin", value: pct(m.netProfitMargin), formula: "(Net Profit ÷ Revenue) × 100", icon: Percent, positive: m.netProfitMargin >= 0, category: "Profitability", color: KPI_COLORS["Profitability"] },
-    { key: "revenue_growth", label: "Revenue Growth", value: signedPct(m.revenueGrowth), formula: "vs previous period of equal length", icon: TrendingUp, positive: m.revenueGrowth >= 0, category: "Profitability", color: KPI_COLORS["Profitability"] },
-    { key: "profit_per_employee", label: "Profit / Employee", value: fmt(m.profitPerEmployee), formula: "Net Profit ÷ active headcount", icon: Users, positive: m.profitPerEmployee >= 0, category: "Profitability", color: KPI_COLORS["Profitability"] },
-    { key: "current_ratio", label: "Current Ratio", value: ratio(m.currentRatio), formula: "Current Assets ÷ Current Liabilities", icon: Gauge, positive: m.currentRatio >= 1, category: "Liquidity", color: KPI_COLORS["Liquidity"] },
-    { key: "quick_ratio", label: "Quick Ratio", value: ratio(m.quickRatio), formula: "(Current Assets − Inventory) ÷ Current Liabilities", icon: Zap, positive: m.quickRatio >= 1, category: "Liquidity", color: KPI_COLORS["Liquidity"] },
-    { key: "cash_ratio", label: "Cash Ratio", value: ratio(m.cashRatio), formula: "Cash ÷ Current Liabilities", icon: Coins, positive: m.cashRatio >= 0.5, category: "Liquidity", color: KPI_COLORS["Liquidity"] },
-    { key: "working_capital", label: "Working Capital", value: fmt(m.workingCapital), formula: "Current Assets − Current Liabilities", icon: Wallet, positive: m.workingCapital >= 0, category: "Liquidity", color: KPI_COLORS["Liquidity"] },
-    { key: "net_cash", label: "Cash on Hand", value: fmt(m.cash), formula: "Balance of cash & bank accounts", icon: Banknote, positive: m.cash >= 0, category: "Liquidity", color: KPI_COLORS["Liquidity"] },
-    { key: "roa", label: "ROA", value: pct(m.roa), formula: "(Net Profit ÷ Total Assets) × 100", icon: BarChart3, positive: m.roa >= 0, category: "Investment", color: KPI_COLORS["Investment"] },
-    { key: "roe", label: "ROE", value: pct(m.roe), formula: "(Net Profit ÷ Equity) × 100", icon: ShieldCheck, positive: m.roe >= 0, category: "Investment", color: KPI_COLORS["Investment"] },
-    { key: "asset_turnover", label: "Asset Turnover", value: ratio(m.assetTurnover), formula: "Revenue ÷ Total Assets", icon: Layers, positive: m.assetTurnover > 0, category: "Efficiency", color: KPI_COLORS["Efficiency"] },
-    { key: "ar_turnover", label: "AR Turnover", value: ratio(m.arTurnover), formula: "Revenue ÷ Avg Accounts Receivable", icon: Target, positive: m.arTurnover > 0, category: "Efficiency", color: KPI_COLORS["Efficiency"] },
-    { key: "collection_period", label: "Collection Period", value: days(m.collectionPeriod), formula: "365 ÷ AR Turnover", icon: Clock, positive: m.collectionPeriod < 60, category: "Efficiency", color: KPI_COLORS["Efficiency"] },
-    { key: "ap_turnover", label: "AP Turnover", value: ratio(m.apTurnover), formula: "COGS ÷ Avg Accounts Payable", icon: Repeat, positive: m.apTurnover > 0, category: "Efficiency", color: KPI_COLORS["Efficiency"] },
-    { key: "payable_period", label: "Payable Period", value: days(payablePeriod), formula: "365 ÷ AP Turnover", icon: Clock, positive: payablePeriod > 0, category: "Efficiency", color: KPI_COLORS["Efficiency"] },
-    { key: "inventory_turnover", label: "Inventory Turnover", value: ratio(inventoryTurnover), formula: "COGS ÷ Avg Inventory (annualized)", icon: Package, positive: inventoryTurnover > 0, category: "Efficiency", color: KPI_COLORS["Efficiency"] },
-    { key: "days_inventory", label: "Days Inventory", value: days(daysInventory), formula: "365 ÷ Inventory Turnover", icon: Clock, positive: daysInventory > 0 && daysInventory < 90, category: "Efficiency", color: KPI_COLORS["Efficiency"] },
-    { key: "cash_conversion_cycle", label: "Cash Conversion Cycle", value: days(cashConversionCycle), formula: "Collection + Days Inventory − Payable Period", icon: RefreshCw, positive: cashConversionCycle < 60, category: "Efficiency", color: KPI_COLORS["Efficiency"] },
-    { key: "total_inflows", label: "Total Inflows", value: fmt(m.totalInflows), formula: "Sum of cash debits", icon: ArrowUpRight, positive: true, category: "Cash Flow", color: KPI_COLORS["Cash Flow"] },
-    { key: "total_outflows", label: "Total Outflows", value: fmt(m.totalOutflows), formula: "Sum of cash credits", icon: ArrowDownRight, positive: false, category: "Cash Flow", color: KPI_COLORS["Cash Flow"] },
-    { key: "net_cash_flow", label: "Net Cash Flow", value: fmt(m.totalInflows - m.totalOutflows), formula: "Inflows − Outflows", icon: DollarSign, positive: m.totalInflows - m.totalOutflows >= 0, category: "Cash Flow", color: KPI_COLORS["Cash Flow"] },
-    { key: "cash_runway", label: "Cash Runway", value: months(m.cashRunwayMonths), formula: "Cash on Hand ÷ avg monthly net burn", icon: Fuel, positive: !isFinite(m.cashRunwayMonths) || m.cashRunwayMonths >= 6, category: "Cash Flow", color: KPI_COLORS["Cash Flow"] },
-    { key: "debt_to_equity", label: "Debt-to-Equity", value: ratio(debtToEquity), formula: "Total Liabilities ÷ Equity", icon: Scale, positive: debtToEquity < 2, category: "Solvency", color: KPI_COLORS["Solvency"] },
-    { key: "debt_ratio", label: "Debt Ratio", value: ratio(debtRatio), formula: "Total Liabilities ÷ Total Assets", icon: Scale, positive: debtRatio < 0.6, category: "Solvency", color: KPI_COLORS["Solvency"] },
-    { key: "equity_ratio", label: "Equity Ratio", value: ratio(equityRatio), formula: "Equity ÷ Total Assets", icon: PieChart, positive: equityRatio > 0.4, category: "Solvency", color: KPI_COLORS["Solvency"] },
-    { key: "budget_variance", label: "Budget Variance", value: fmt(m.budgetVariance), formula: "Actual Spend − Budget", icon: Receipt, positive: m.budgetVariance <= 0, category: "Budget", color: KPI_COLORS["Budget"] },
-    { key: "budget_variance_pct", label: "Budget Variance %", value: signedPct(m.budgetVariancePct), formula: "(Variance ÷ Budget) × 100", icon: Percent, positive: m.budgetVariancePct <= 0, category: "Budget", color: KPI_COLORS["Budget"] },
+    { key: "total_revenue", label: "Total Revenue", value: fmt(m.totalRevenue), formula: "Sum of revenue accounts", icon: Coins, status: "neutral", category: "Profitability", color: C["Profitability"] },
+    { key: "gross_profit", label: "Gross Profit", value: fmt(m.grossProfit), formula: "Revenue \u2212 COGS", icon: TrendingUp, status: bySign(m.grossProfit), benchmark: "positive", category: "Profitability", color: C["Profitability"] },
+    { key: "gross_margin", label: "Gross Margin", value: pct(m.grossProfitMargin), formula: "(Gross Profit \u00f7 Revenue) \u00d7 100", icon: Percent, status: bySign(m.grossProfitMargin), benchmark: "positive", category: "Profitability", color: C["Profitability"] },
+    { key: "operating_profit", label: "Operating Profit", value: fmt(m.operatingProfit), formula: "Gross Profit \u2212 Operating Expenses", icon: Activity, status: bySign(m.operatingProfit), benchmark: "positive", category: "Profitability", color: C["Profitability"] },
+    { key: "operating_margin", label: "Operating Margin", value: pct(m.operatingMargin), formula: "(Operating Profit \u00f7 Revenue) \u00d7 100", icon: Percent, status: bySign(m.operatingMargin), benchmark: "positive", category: "Profitability", color: C["Profitability"] },
+    { key: "net_profit", label: "Net Profit", value: fmt(m.netProfit), formula: "Revenue \u2212 COGS \u2212 Expenses", icon: DollarSign, status: bySign(m.netProfit), benchmark: "positive", category: "Profitability", color: C["Profitability"] },
+    { key: "net_profit_margin", label: "Net Profit Margin", value: pct(m.netProfitMargin), formula: "(Net Profit \u00f7 Revenue) \u00d7 100", icon: Percent, status: bySign(m.netProfitMargin), benchmark: "positive", category: "Profitability", color: C["Profitability"] },
+    { key: "revenue_growth", label: "Revenue Growth", value: signedPct(m.revenueGrowth), formula: "vs previous period of equal length", icon: TrendingUp, status: bySign(m.revenueGrowth), benchmark: "vs. prior period", category: "Profitability", color: C["Profitability"] },
+    { key: "profit_per_employee", label: "Profit / Employee", value: fmt(m.profitPerEmployee), formula: "Net Profit \u00f7 active headcount", icon: Users, status: bySign(m.profitPerEmployee), benchmark: "positive", category: "Profitability", color: C["Profitability"] },
+    { key: "current_ratio", label: "Current Ratio", value: ratio(m.currentRatio), formula: "Current Assets \u00f7 Current Liabilities", icon: Gauge, status: byTarget(m.currentRatio >= 1), benchmark: "\u2265 1.00", category: "Liquidity", color: C["Liquidity"] },
+    { key: "quick_ratio", label: "Quick Ratio", value: ratio(m.quickRatio), formula: "(Current Assets \u2212 Inventory) \u00f7 Current Liabilities", icon: Zap, status: byTarget(m.quickRatio >= 1), benchmark: "\u2265 1.00", category: "Liquidity", color: C["Liquidity"] },
+    { key: "cash_ratio", label: "Cash Ratio", value: ratio(m.cashRatio), formula: "Cash \u00f7 Current Liabilities", icon: Coins, status: byTarget(m.cashRatio >= 0.5), benchmark: "\u2265 0.50", category: "Liquidity", color: C["Liquidity"] },
+    { key: "working_capital", label: "Working Capital", value: fmt(m.workingCapital), formula: "Current Assets \u2212 Current Liabilities", icon: Wallet, status: bySign(m.workingCapital), benchmark: "positive", category: "Liquidity", color: C["Liquidity"] },
+    { key: "net_cash", label: "Cash on Hand", value: fmt(m.cash), formula: "Balance of cash & bank accounts", icon: Banknote, status: bySign(m.cash), benchmark: "positive", category: "Liquidity", color: C["Liquidity"] },
+    { key: "roa", label: "ROA", value: pct(m.roa), formula: "(Net Profit \u00f7 Total Assets) \u00d7 100", icon: BarChart3, status: bySign(m.roa), benchmark: "positive", category: "Investment", color: C["Investment"] },
+    { key: "roe", label: "ROE", value: pct(m.roe), formula: "(Net Profit \u00f7 Equity) \u00d7 100", icon: ShieldCheck, status: bySign(m.roe), benchmark: "positive", category: "Investment", color: C["Investment"] },
+    { key: "asset_turnover", label: "Asset Turnover", value: ratio(m.assetTurnover), formula: "Revenue \u00f7 Total Assets", icon: Layers, status: "neutral", category: "Efficiency", color: C["Efficiency"] },
+    { key: "ar_turnover", label: "AR Turnover", value: ratio(m.arTurnover), formula: "Revenue \u00f7 Avg Accounts Receivable", icon: Target, status: "neutral", category: "Efficiency", color: C["Efficiency"] },
+    { key: "collection_period", label: "Collection Period", value: days(m.collectionPeriod), formula: "365 \u00f7 AR Turnover", icon: Clock, status: m.collectionPeriod > 0 ? byTarget(m.collectionPeriod < 60) : "neutral", benchmark: "< 60 days", category: "Efficiency", color: C["Efficiency"] },
+    { key: "ap_turnover", label: "AP Turnover", value: ratio(m.apTurnover), formula: "COGS \u00f7 Avg Accounts Payable", icon: Repeat, status: "neutral", category: "Efficiency", color: C["Efficiency"] },
+    { key: "payable_period", label: "Payable Period", value: days(payablePeriod), formula: "365 \u00f7 AP Turnover", icon: Clock, status: "neutral", category: "Efficiency", color: C["Efficiency"] },
+    { key: "inventory_turnover", label: "Inventory Turnover", value: ratio(inventoryTurnover), formula: "COGS \u00f7 Avg Inventory (annualized)", icon: Package, status: "neutral", category: "Efficiency", color: C["Efficiency"] },
+    { key: "days_inventory", label: "Days Inventory", value: days(daysInventory), formula: "365 \u00f7 Inventory Turnover", icon: Clock, status: daysInventory > 0 ? byTarget(daysInventory < 90) : "neutral", benchmark: "< 90 days", category: "Efficiency", color: C["Efficiency"] },
+    { key: "cash_conversion_cycle", label: "Cash Conversion Cycle", value: days(cashConversionCycle), formula: "Collection + Days Inventory \u2212 Payable Period", icon: RefreshCw, status: byTarget(cashConversionCycle < 60), benchmark: "< 60 days", category: "Efficiency", color: C["Efficiency"] },
+    { key: "total_inflows", label: "Total Inflows", value: fmt(m.totalInflows), formula: "Sum of cash debits", icon: ArrowUpRight, status: "neutral", category: "Cash Flow", color: C["Cash Flow"] },
+    { key: "total_outflows", label: "Total Outflows", value: fmt(m.totalOutflows), formula: "Sum of cash credits", icon: ArrowDownRight, status: "neutral", category: "Cash Flow", color: C["Cash Flow"] },
+    { key: "net_cash_flow", label: "Net Cash Flow", value: fmt(m.totalInflows - m.totalOutflows), formula: "Inflows \u2212 Outflows", icon: DollarSign, status: bySign(m.totalInflows - m.totalOutflows), benchmark: "positive", category: "Cash Flow", color: C["Cash Flow"] },
+    { key: "cash_runway", label: "Cash Runway", value: months(m.cashRunwayMonths), formula: "Cash on Hand \u00f7 avg monthly net burn", icon: Fuel, status: byTarget(!isFinite(m.cashRunwayMonths) || m.cashRunwayMonths >= 6), benchmark: "\u2265 6 months", category: "Cash Flow", color: C["Cash Flow"] },
+    { key: "debt_to_equity", label: "Debt-to-Equity", value: ratio(debtToEquity), formula: "Total Liabilities \u00f7 Equity", icon: Scale, status: byTarget(debtToEquity < 2), benchmark: "< 2.00", category: "Solvency", color: C["Solvency"] },
+    { key: "debt_ratio", label: "Debt Ratio", value: ratio(debtRatio), formula: "Total Liabilities \u00f7 Total Assets", icon: Scale, status: byTarget(debtRatio < 0.6), benchmark: "< 0.60", category: "Solvency", color: C["Solvency"] },
+    { key: "equity_ratio", label: "Equity Ratio", value: ratio(equityRatio), formula: "Equity \u00f7 Total Assets", icon: PieChart, status: byTarget(equityRatio > 0.4), benchmark: "> 0.40", category: "Solvency", color: C["Solvency"] },
+    { key: "budget_variance", label: "Budget Variance", value: fmt(m.budgetVariance), formula: "Actual Spend \u2212 Budget", icon: Receipt, status: byTarget(m.budgetVariance <= 0), benchmark: "at or under budget", category: "Budget", color: C["Budget"] },
+    { key: "budget_variance_pct", label: "Budget Variance %", value: signedPct(m.budgetVariancePct), formula: "(Variance \u00f7 Budget) \u00d7 100", icon: Percent, status: byTarget(m.budgetVariancePct <= 0), benchmark: "at or under budget", category: "Budget", color: C["Budget"] },
   ];
 }
 
@@ -280,33 +298,44 @@ export default function KPICards({ metrics }: Props) {
                           >
                             <kpi.icon className="w-[18px] h-[18px]" style={{ color: kpi.color }} />
                           </div>
-                          <div className={cn(
-                            "flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold",
-                            kpi.positive
-                              ? "bg-[hsl(var(--success))]/10 text-[hsl(var(--success))]"
-                              : "bg-destructive/10 text-destructive"
-                          )}>
-                            {kpi.positive
-                              ? <ArrowUpRight className="w-3 h-3" />
-                              : <ArrowDownRight className="w-3 h-3" />}
-                            <span className="tracking-wide">{kpi.category}</span>
-                          </div>
+                          {/* Identity only — the category never implies a direction. */}
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-muted text-muted-foreground tracking-wide">
+                            {kpi.category}
+                          </span>
                         </div>
 
                         <p className="premium-label mb-2">{kpi.label}</p>
                         <p className={cn(
                           "premium-number text-[26px] font-semibold tabular-nums leading-none",
-                          kpi.positive ? "text-foreground" : "text-destructive"
+                          kpi.status === "bad" ? "text-[hsl(var(--danger-ink))]" : "text-foreground"
                         )}>
                           {kpi.value}
                         </p>
                         <div className="mt-4 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
-                        <p className="text-[10px] text-muted-foreground mt-2 truncate font-mono">{kpi.formula}</p>
+                        {kpi.status === "neutral" ? (
+                          <p className="text-[10px] text-muted-foreground mt-2 truncate font-mono">{kpi.formula}</p>
+                        ) : (
+                          <p className={cn(
+                            "text-[10px] mt-2 truncate flex items-center gap-1 font-medium",
+                            kpi.status === "good" ? "text-[hsl(var(--success-ink))]" : "text-[hsl(var(--danger-ink))]"
+                          )}>
+                            {kpi.status === "good"
+                              ? <CheckCircle2 className="w-3 h-3 shrink-0" />
+                              : <AlertTriangle className="w-3 h-3 shrink-0" />}
+                            <span className="truncate">
+                              {kpi.status === "good" ? "On target" : "Off target"}
+                              {kpi.benchmark ? ` \u00b7 ${kpi.benchmark}` : ""}
+                            </span>
+                          </p>
+                        )}
                       </div>
                     </TooltipTrigger>
-                    <TooltipContent side="bottom" className="max-w-[220px] text-xs">
+                    <TooltipContent side="bottom" className="max-w-[240px] text-xs">
                       <p className="font-semibold">{kpi.label}</p>
                       <p className="text-muted-foreground mt-0.5">Formula: {kpi.formula}</p>
+                      {kpi.status === "neutral"
+                        ? <p className="text-muted-foreground mt-0.5">Reference figure — no good/bad target.</p>
+                        : <p className="text-muted-foreground mt-0.5">Target: {kpi.benchmark}</p>}
                     </TooltipContent>
                   </Tooltip>
                   );

@@ -198,6 +198,14 @@ function useDashboardData(period: PeriodFilter) {
     },
   });
 
+  // Every query feeds the same derived numbers, so a failure in any one of them
+  // silently biases the whole dashboard toward zero. Surface it instead.
+  const queries = [
+    journalQuery, accountsQuery, invoicesQuery, expensesQuery,
+    budgetsQuery, prevJournalsQuery, employeesQuery, openingJournalsQuery,
+  ];
+  const failed = queries.find((q) => q.isError);
+
   return {
     journals: journalQuery.data || [],
     prevJournals: prevJournalsQuery.data || [],
@@ -208,11 +216,15 @@ function useDashboardData(period: PeriodFilter) {
     budgets: budgetsQuery.data || [],
     employees: employeesQuery.data || [],
     isLoading: journalQuery.isLoading || accountsQuery.isLoading || invoicesQuery.isLoading,
+    isError: !!failed,
+    error: (failed?.error as Error) ?? null,
+    isFetching: queries.some((q) => q.isFetching),
+    refetch: () => { queries.forEach((q) => { void q.refetch(); }); },
   };
 }
 
 export function useDashboardMetrics(period: PeriodFilter) {
-  const { journals, prevJournals, openingJournals, accounts, invoices, expenses, budgets, employees, isLoading } = useDashboardData(period);
+  const { journals, prevJournals, openingJournals, accounts, invoices, expenses, budgets, employees, isLoading, isError, error, isFetching, refetch } = useDashboardData(period);
 
   const metrics = useMemo<DashboardMetrics>(() => {
     // Build account lookup maps
@@ -552,5 +564,5 @@ export function useDashboardMetrics(period: PeriodFilter) {
     };
   }, [journals, prevJournals, openingJournals, accounts, invoices, expenses, budgets, employees, period]);
 
-  return { metrics, isLoading };
+  return { metrics, isLoading, isError, error, isFetching, refetch };
 }

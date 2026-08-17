@@ -152,12 +152,14 @@ function suspense(reason: SuspenseReason, suggestions: Suggestion[] = []): Resol
   return { kind: "suspense", reason, suggestions };
 }
 
-/** An account_type explicitly marked as suspense — "Suspense", "Suspense
- * Peoples Saving", … — must go to Suspense Clearing for manual review, never be
- * auto-matched or derived. Matches the whole word so "Suspend"/"Suspension"
- * don't trip it. */
+/** An account_type explicitly marked as suspense — "Suspense", "Suspenses",
+ * "Suspense Peoples Saving", … — must go to Suspense Clearing for manual
+ * review, never be auto-matched or derived. Matches the whole word (plural
+ * "s" allowed — a real ledger literally named "... Suspenses" would otherwise
+ * word-match Tier 1b and post there directly, skipping the review flag) so
+ * "Suspend"/"Suspension" still don't trip it. */
 function isSuspenseLabel(normalizedType: string): boolean {
-  return /\bsuspense\b/.test(normalizedType);
+  return /\bsuspenses?\b/.test(normalizedType);
 }
 
 /**
