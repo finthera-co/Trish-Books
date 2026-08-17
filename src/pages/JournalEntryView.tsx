@@ -1,10 +1,13 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAccounts } from "@/hooks/useData";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useMyPermissions } from "@/hooks/usePermissions";
+import { useState } from "react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { ArrowLeft, Copy, Edit, FileText, RotateCcw, Ban, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Copy, Edit, FileText, RotateCcw, Ban, Trash2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { typeColors, getTypeLabel } from "@/lib/accountTypes";
 import { resolveLineMemo, isMemoInherited, bySeq } from "@/lib/journalValidation";
@@ -16,6 +19,9 @@ export default function JournalEntryView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data: accounts } = useAccounts();
+  const queryClient = useQueryClient();
+  const { canDelete } = useMyPermissions();
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const { data: entry, isLoading, error } = useQuery({
     queryKey: ["journal_entry", id],
@@ -75,6 +81,28 @@ export default function JournalEntryView() {
   const isVoided = entry?.status === "voided";
   const isOBEEntry = entry?.entry_type === "opening_balance" && entry?.is_system_generated === true;
   const isLocked = isInClosedPeriod || isReconciled || isVoided || isOBEEntry;
+
+  // Only manual entries can be deleted here — anything raised by a source
+  // document has to be removed from that document. The RPC re-checks this.
+  const entrySource = entry?.source_type || entry?.entry_type || "manual";
+  const isSystemGenerated = entry?.is_system_generated === true || entrySource !== "manual";
+  const canDeleteEntry = canDelete("journals") && !isSystemGenerated && !isInClosedPeriod && !isReconciled;
+
+  const deleteEntry = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.rpc("delete_journal_entry", { p_entry_id: id! });
+      if (error) throw error;
+      return data as { lines_deleted: number };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
+      toast.success(`Journal entry deleted (${result?.lines_deleted ?? 0} lines removed)`);
+      setDeleteOpen(false);
+      navigate("/accounting/journals");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const entryLines = ((entry?.journal_lines as any[]) || [])
     .slice()
@@ -285,8 +313,62 @@ export default function JournalEntryView() {
           <Button variant="outline" onClick={() => navigate("/accounting/journals")}>
             Back to List
           </Button>
+          {canDelete("journals") && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex">
+                  <Button
+                    variant="outline"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10 disabled:pointer-events-none"
+                    disabled={!canDeleteEntry}
+                    onClick={() => setDeleteOpen(true)}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" /> Delete
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              {!canDeleteEntry && (
+                <TooltipContent>
+                  {isSystemGenerated
+                    ? "Generated from a source document — delete that document instead."
+                    : isInClosedPeriod
+                    ? "This entry is in a closed accounting period."
+                    : "This entry is linked to reconciled bank records."}
+                </TooltipContent>
+              )}
+            </Tooltip>
+          )}
         </div>
       </div>
+
+      {/* Delete confirmation */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Journal Entry</DialogTitle>
+            <DialogDescription>
+              This permanently removes the entry and all {entryLines.length} of its debit and credit lines.
+              It cannot be undone — void or reverse the entry instead if you need to keep an audit trail.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 space-y-1 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-foreground">{entry.description}</span>
+              <span className="font-mono text-xs text-muted-foreground">{entry.reference || "—"}</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {entry.entry_date} · LKR {fmt(totalDebit)}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setDeleteOpen(false)} className="flex-1">Cancel</Button>
+            <Button variant="destructive" onClick={() => deleteEntry.mutate()}
+              disabled={deleteEntry.isPending} className="flex-1">
+              {deleteEntry.isPending ? "Deleting…" : "Delete Entry"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

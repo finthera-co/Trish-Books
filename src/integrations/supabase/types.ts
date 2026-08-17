@@ -15065,6 +15065,10 @@ export type Database = {
         Returns: string
       }
       delete_invoice_number_row: { Args: { p_serial: string }; Returns: number }
+      delete_journal_entry: {
+        Args: { p_entry_id: string }
+        Returns: Json
+      }
       delete_invoice_number_series: {
         Args: { p_branch_code: string; p_period: string }
         Returns: number

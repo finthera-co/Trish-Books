@@ -1,4 +1,4 @@
-import { Plus, Search, RotateCcw, Ban, ChevronDown, ChevronRight, Filter, AlertTriangle, CheckCircle2, XCircle, Info, FileText, Copy } from "lucide-react";
+import { Plus, Search, RotateCcw, Ban, Trash2, ChevronDown, ChevronRight, Filter, AlertTriangle, CheckCircle2, XCircle, Info, FileText, Copy } from "lucide-react";
 import BudgetWarningBanner from "@/components/budgets/BudgetWarningBanner";
 import AccountSelector from "@/components/shared/AccountSelector";
 import AccountForm, { type Account as LedgerAccount } from "@/components/chart-of-accounts/AccountForm";
@@ -69,6 +69,9 @@ export default function JournalEntries() {
 
   // Reverse dialog
   const [reverseDialogId, setReverseDialogId] = useState<string | null>(null);
+
+  // Delete dialog
+  const [deleteDialogId, setDeleteDialogId] = useState<string | null>(null);
 
   // Inline "create new ledger" — same AccountForm the Chart of Accounts page uses.
   // Remembers which line asked for it so the new account can be selected there.
@@ -442,6 +445,25 @@ export default function JournalEntries() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Delete mutation — removes the header and, by cascade, both sides of the
+  // double entry. The RPC owns the guards (source-linked, reversed, closed
+  // period, reconciled) so they cannot be bypassed from the client.
+  const deleteEntry = useMutation({
+    mutationFn: async (entryId: string) => {
+      const { data, error } = await supabase.rpc("delete_journal_entry", { p_entry_id: entryId });
+      if (error) throw error;
+      return data as { lines_deleted: number };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
+      toast.success(`Journal entry deleted (${result?.lines_deleted ?? 0} lines removed)`);
+      setDeleteDialogId(null);
+      setExpandedId(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const getAccountName = (accountId: string) => {
     const acc = accounts?.find(a => a.id === accountId);
     return acc ? `${acc.account_code} – ${acc.account_name}` : accountId;
@@ -779,6 +801,54 @@ export default function JournalEntries() {
         </DialogContent>
       </Dialog>
 
+      {/* Delete Dialog */}
+      <Dialog open={!!deleteDialogId} onOpenChange={(v) => { if (!v) setDeleteDialogId(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Journal Entry</DialogTitle>
+            <DialogDescription>
+              This permanently removes the entry and every debit and credit line on it. It cannot be undone —
+              void or reverse the entry instead if you need to keep an audit trail.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {deleteDialogId && (() => {
+              const entry = entries?.find(e => e.id === deleteDialogId);
+              if (!entry) return null;
+              const lines = (entry.journal_lines as any[]) || [];
+              return (
+                <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-foreground">{entry.description}</span>
+                    <span className="font-mono text-xs text-muted-foreground">{entry.reference || "—"}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {entry.entry_date} · {lines.length} line{lines.length === 1 ? "" : "s"} will be removed
+                  </p>
+                  <div className="space-y-1">
+                    {lines.map((line: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground truncate mr-2">{getAccountName(line.account_id)}</span>
+                        <span className="tabular-nums font-mono text-foreground shrink-0">
+                          {Number(line.debit) > 0 ? `Dr ${fmt(Number(line.debit))}` : `Cr ${fmt(Number(line.credit))}`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setDeleteDialogId(null)} className="flex-1">Cancel</Button>
+              <Button variant="destructive" onClick={() => deleteDialogId && deleteEntry.mutate(deleteDialogId)}
+                disabled={deleteEntry.isPending} className="flex-1">
+                {deleteEntry.isPending ? "Deleting…" : "Delete Entry"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="stat-card">
@@ -903,26 +973,53 @@ export default function JournalEntries() {
                         }`}>{entry.status}</span>
                       </td>
                       <td className="text-right" onClick={e => e.stopPropagation()}>
-                        {entry.status === "posted" && (
-                          <div className="flex gap-1 justify-end">
-                            {isSystemGenerated && (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <span className="text-[10px] text-muted-foreground px-1.5 py-0.5 rounded bg-muted/50 self-center">Auto</span>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p className="text-xs">System-generated from {sourceLabel}. Edit the source document instead.</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            )}
-                            <Button variant="ghost" size="sm" title="Reverse" onClick={() => setReverseDialogId(entry.id)}>
-                              <RotateCcw className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="sm" title="Void" onClick={() => setVoidDialogId(entry.id)}>
-                              <Ban className="w-3.5 h-3.5" />
-                            </Button>
-                          </div>
-                        )}
+                        <div className="flex gap-1 justify-end">
+                          {entry.status === "posted" && (
+                            <>
+                              {isSystemGenerated && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-[10px] text-muted-foreground px-1.5 py-0.5 rounded bg-muted/50 self-center">Auto</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p className="text-xs">System-generated from {sourceLabel}. Edit the source document instead.</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              )}
+                              <Button variant="ghost" size="sm" title="Reverse" onClick={() => setReverseDialogId(entry.id)}>
+                                <RotateCcw className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="sm" title="Void" onClick={() => setVoidDialogId(entry.id)}>
+                                <Ban className="w-3.5 h-3.5" />
+                              </Button>
+                            </>
+                          )}
+                          {canDeleteJournals("journals") && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    title="Delete"
+                                    className="text-destructive hover:text-destructive hover:bg-destructive/10 disabled:pointer-events-none"
+                                    disabled={isSystemGenerated}
+                                    onClick={() => setDeleteDialogId(entry.id)}
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="text-xs">
+                                  {isSystemGenerated
+                                    ? `Generated from ${sourceLabel} — delete the source document instead.`
+                                    : "Delete entry and both sides of the double entry"}
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </div>
                       </td>
                     </tr>
 
