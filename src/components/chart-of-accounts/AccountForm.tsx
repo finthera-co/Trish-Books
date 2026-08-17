@@ -24,7 +24,7 @@ import {
 } from "@/lib/accountMappingEngine";
 import { usePersistedFormState } from "@/hooks/usePersistedFormState";
 
-interface Account {
+export interface Account {
   id: string;
   account_code: string;
   account_name: string;
@@ -54,6 +54,19 @@ interface AccountFormProps {
   editAccount?: Account | null;
   existingCodes?: Set<string>;
   onCreateCategory?: (data: { name: string; account_type: string }) => Promise<AccountCategory | undefined>;
+  /** Prefill the name on a fresh new-account draft (e.g. text typed in an account picker) */
+  initialName?: string;
+  /**
+   * When provided, name matches against the existing chart become clickable so the
+   * user can pick the account that already exists instead of creating a duplicate.
+   */
+  onUseExisting?: (account: Account) => void;
+  /**
+   * Namespace for the persisted draft. Defaults to "coa" so the Chart of Accounts
+   * page keeps its existing draft; callers embedding this form elsewhere (e.g. the
+   * journal entry dialog) pass their own scope so drafts don't bleed across screens.
+   */
+  draftScope?: string;
 }
 
 type AccountDraft = {
@@ -64,6 +77,9 @@ type AccountDraft = {
   parentId: string;
   categoryId: string;
 };
+
+/** Case/space-insensitive name key used for the duplicate-account check */
+const normalizeName = (n: string) => n.trim().toLowerCase().replace(/\s+/g, " ");
 
 const emptyDraft: AccountDraft = {
   accountName: "",
@@ -84,11 +100,16 @@ export default function AccountForm({
   editAccount,
   existingCodes,
   onCreateCategory,
+  initialName,
+  onUseExisting,
+  draftScope = "coa",
 }: AccountFormProps) {
   // User-entered fields live in one persisted draft so a browser refresh
   // doesn't lose half-filled data. Scope the key per-record: the new-account
   // draft is separate from each edit draft, so they never bleed into each other.
-  const draftKey = editAccount ? `coa-account:edit:${editAccount.id}` : "coa-account:new";
+  const draftKey = editAccount
+    ? `${draftScope}-account:edit:${editAccount.id}`
+    : `${draftScope}-account:new`;
   const {
     state: draft,
     setState: setDraft,
@@ -135,6 +156,10 @@ export default function AccountForm({
             }
           : d;
       });
+    } else if (initialName) {
+      // Opened from an account picker with text already typed: use it as the name,
+      // but never clobber a draft the user has already started.
+      setDraft((d) => (d.accountName ? d : { ...d, accountName: initialName }));
     }
     setShowNewCategory(false);
     setNewCategoryName("");
@@ -210,6 +235,34 @@ export default function AccountForm({
     ? existingCodes.has(draft.accountCode) && (!editAccount || editAccount.account_code !== draft.accountCode)
     : false;
 
+  // Duplicate-name guard. Same name under the same parent is a real duplicate and
+  // is blocked; the same name elsewhere in the chart (or a near match) is only
+  // flagged, since "Fuel" under two different parents is legitimate.
+  const nameMatches = useMemo(() => {
+    const target = normalizeName(draft.accountName);
+    if (!target) return { exactSameParent: null as Account | null, exactElsewhere: [] as Account[], similar: [] as Account[] };
+    const exactSameParent: Account[] = [];
+    const exactElsewhere: Account[] = [];
+    const similar: Account[] = [];
+    for (const a of accounts) {
+      if (editAccount && a.id === editAccount.id) continue;
+      const name = normalizeName(a.account_name);
+      if (name === target) {
+        if ((a.parent_account_id || "") === (draft.parentId || "")) exactSameParent.push(a);
+        else exactElsewhere.push(a);
+      } else if (target.length >= 3 && (name.includes(target) || target.includes(name))) {
+        similar.push(a);
+      }
+    }
+    return {
+      exactSameParent: exactSameParent[0] || null,
+      exactElsewhere: exactElsewhere.slice(0, 4),
+      similar: similar.slice(0, 4),
+    };
+  }, [draft.accountName, draft.parentId, accounts, editAccount]);
+
+  const isNameDuplicate = !!nameMatches.exactSameParent;
+
   const handleAddCategory = async () => {
     if (!newCategoryName.trim() || !onCreateCategory) return;
     setCreatingCategory(true);
@@ -226,7 +279,7 @@ export default function AccountForm({
   };
 
   const handleSubmit = async () => {
-    if (isCodeDuplicate) return;
+    if (isCodeDuplicate || isNameDuplicate) return;
     if (!draft.accountSubtype) return;
     await onSubmit({
       account_name: draft.accountName,
@@ -408,11 +461,53 @@ export default function AccountForm({
                 type="text"
                 value={draft.accountName}
                 onChange={(e) => setField("accountName", e.target.value)}
-                className={inputClass}
+                className={`${inputClass} ${isNameDuplicate ? "!border-destructive !ring-destructive/20" : ""}`}
                 placeholder="e.g. Cash on Hand"
               />
+              {isNameDuplicate && (
+                <p className="text-[10px] text-destructive mt-1 font-medium">
+                  An account with this name already exists in the same place
+                </p>
+              )}
             </div>
           </div>
+
+          {/* Duplicate / near-duplicate matches from the existing chart */}
+          {(nameMatches.exactSameParent || nameMatches.exactElsewhere.length > 0 || nameMatches.similar.length > 0) && (
+            <div
+              className={`rounded-lg border px-3 py-2 space-y-1.5 ${
+                isNameDuplicate ? "border-destructive/30 bg-destructive/5" : "border-warning/30 bg-warning/5"
+              }`}
+            >
+              <p className="text-[11px] font-medium flex items-center gap-1.5 text-foreground">
+                <AlertTriangle className={`w-3 h-3 ${isNameDuplicate ? "text-destructive" : "text-warning"}`} />
+                {isNameDuplicate ? "This account already exists" : "Similar accounts already exist"}
+              </p>
+              {[
+                ...(nameMatches.exactSameParent ? [nameMatches.exactSameParent] : []),
+                ...nameMatches.exactElsewhere,
+                ...nameMatches.similar,
+              ].map((a) => (
+                <div key={a.id} className="flex items-center justify-between gap-2 text-[11px]">
+                  <span className="truncate text-muted-foreground">
+                    <span className="font-mono mr-1.5">{a.account_code}</span>
+                    <span className="text-foreground">{a.account_name}</span>
+                    <span className="ml-1.5">· {getAccountTypeLabel(a.account_type)}</span>
+                    {!a.is_active && <span className="ml-1.5 italic">(inactive)</span>}
+                  </span>
+                  {onUseExisting && (
+                    <button
+                      type="button"
+                      onClick={() => onUseExisting(a)}
+                      className="shrink-0 text-primary hover:underline font-medium"
+                    >
+                      Use this
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Parent Account */}
           <div>
@@ -482,7 +577,7 @@ export default function AccountForm({
 
           <Button
             onClick={handleSubmit}
-            disabled={!draft.accountName || !draft.accountCode || !draft.accountSubtype || isCodeDuplicate || isPending || missingRequiredParent}
+            disabled={!draft.accountName || !draft.accountCode || !draft.accountSubtype || isCodeDuplicate || isNameDuplicate || isPending || missingRequiredParent}
             className="w-full"
           >
             {isPending ? "Saving..." : editAccount ? "Update Account" : "Create Account"}

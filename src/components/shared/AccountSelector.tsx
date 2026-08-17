@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronsUpDown, Loader2, Search, X } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -25,6 +25,11 @@ interface Props {
   fullWidth?: boolean;
   /** Optional id to bind <Label htmlFor=...> */
   id?: string;
+  /**
+   * When provided, the dropdown gets a "Create new ledger account" footer.
+   * Receives whatever the user had typed so the caller can prefill the name.
+   */
+  onCreateNew?: (query: string) => void;
 }
 
 function loadRecents(tenantId: string | null | undefined): AccountSearchResult[] {
@@ -73,6 +78,7 @@ export default function AccountSelector({
   className,
   fullWidth = true,
   id,
+  onCreateNew,
 }: Props) {
   const { appUser } = useAuth();
   const tenantId = appUser?.tenant_id || null;
@@ -129,6 +135,13 @@ export default function AccountSelector({
     setQuery("");
   };
 
+  const handleCreateNew = () => {
+    const q = query.trim();
+    setOpen(false);
+    setQuery("");
+    onCreateNew?.(q);
+  };
+
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
     onChange("", null);
@@ -146,6 +159,7 @@ export default function AccountSelector({
       e.preventDefault();
       const item = flatList[highlight];
       if (item) handleSelect(item);
+      else if (onCreateNew && !isFetching) handleCreateNew();
     } else if (e.key === "Escape") {
       e.preventDefault();
       setOpen(false);
@@ -267,6 +281,22 @@ export default function AccountSelector({
               </div>
             ))}
         </div>
+
+        {onCreateNew && (
+          <div className="border-t p-1">
+            <button
+              type="button"
+              onClick={handleCreateNew}
+              onMouseDown={(e) => e.preventDefault()}
+              className="w-full flex items-center gap-2 px-2 py-2 text-sm text-left rounded-sm text-primary hover:bg-accent"
+            >
+              <Plus className="h-4 w-4 shrink-0" />
+              <span className="truncate">
+                {query.trim() ? `Create new ledger account "${query.trim()}"` : "Create new ledger account"}
+              </span>
+            </button>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );

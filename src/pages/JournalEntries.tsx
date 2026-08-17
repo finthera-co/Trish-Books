@@ -1,12 +1,14 @@
 import { Plus, Search, RotateCcw, Ban, ChevronDown, ChevronRight, Filter, AlertTriangle, CheckCircle2, XCircle, Info, FileText, Copy } from "lucide-react";
 import BudgetWarningBanner from "@/components/budgets/BudgetWarningBanner";
 import AccountSelector from "@/components/shared/AccountSelector";
+import AccountForm, { type Account as LedgerAccount } from "@/components/chart-of-accounts/AccountForm";
 import { Button } from "@/components/ui/button";
 import { useState, Fragment, useMemo, useCallback, useEffect, useRef } from "react";
 import {
   useJournalEntriesPage, useJournalEntriesCount, useJournalEntryStats,
-  useNextJvReference, useAccounts, journalCursorOf, type JournalCursor,
+  useNextJvReference, useAccounts, useCreateAccount, journalCursorOf, type JournalCursor,
 } from "@/hooks/useData";
+import { useAccountCategories, useCreateAccountCategory } from "@/hooks/useAccountCategories";
 import { useSearchParams } from "react-router-dom";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
@@ -68,6 +70,10 @@ export default function JournalEntries() {
   // Reverse dialog
   const [reverseDialogId, setReverseDialogId] = useState<string | null>(null);
 
+  // Inline "create new ledger" — same AccountForm the Chart of Accounts page uses.
+  // Remembers which line asked for it so the new account can be selected there.
+  const [newAccountFor, setNewAccountFor] = useState<{ lineIndex: number; name: string } | null>(null);
+
   // Form. There is no entry-level description field: narration is typed per line
   // and the header description is derived from it on submit.
   const [entryDate, setEntryDate] = useState(new Date().toISOString().split("T")[0]);
@@ -100,6 +106,9 @@ export default function JournalEntries() {
   const { data: total = 0 } = useJournalEntriesCount(debouncedSearch, statusFilter, sourceFilter);
   const { data: stats } = useJournalEntryStats();
   const { data: accounts } = useAccounts();
+  const { data: accountCategories } = useAccountCategories();
+  const createAccount = useCreateAccount();
+  const createAccountCategory = useCreateAccountCategory();
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const pageRows = rows ?? [];
@@ -193,6 +202,12 @@ export default function JournalEntries() {
     });
     return map;
   }, [accounts]);
+
+  // Codes already taken — drives the duplicate check in the create-ledger form
+  const existingAccountCodes = useMemo(
+    () => new Set((accounts || []).map((a) => a.account_code)),
+    [accounts]
+  );
 
   // Accounts filtered for manual entry (no control accounts)
   const manualEntryAccounts = useMemo(() => {
@@ -513,6 +528,7 @@ export default function JournalEntries() {
                               onChange={(v) => updateLine(i, "account_id", v)}
                               placeholder="Search account…"
                               className={lineWarning ? "border-warning" : ""}
+                              onCreateNew={(q) => setNewAccountFor({ lineIndex: i, name: q })}
                             />
                             <input
                               type="number"
@@ -665,6 +681,36 @@ export default function JournalEntries() {
           </DialogContent>
         </Dialog>}
       </div>
+
+      {/* Create-ledger dialog — the exact same form the Chart of Accounts page uses.
+          Opened from any line's account picker; the new account drops into that line. */}
+      {newAccountFor && (
+        <AccountForm
+          open
+          draftScope="je"
+          initialName={newAccountFor.name}
+          onOpenChange={(v) => { if (!v) setNewAccountFor(null); }}
+          accounts={(accounts ?? []) as LedgerAccount[]}
+          categories={accountCategories || []}
+          isPending={createAccount.isPending}
+          existingCodes={existingAccountCodes}
+          onSubmit={async (data) => {
+            const created = await createAccount.mutateAsync(
+              data as Parameters<typeof createAccount.mutateAsync>[0]
+            );
+            // Fresh account isn't in the picker's search cache yet.
+            queryClient.invalidateQueries({ queryKey: ["account-search"] });
+            if (created?.id) updateLine(newAccountFor.lineIndex, "account_id", created.id);
+            setNewAccountFor(null);
+          }}
+          onCreateCategory={async (data) => await createAccountCategory.mutateAsync(data)}
+          onUseExisting={(acc) => {
+            // Duplicate avoided: drop the account that already exists into the line.
+            updateLine(newAccountFor.lineIndex, "account_id", acc.id);
+            setNewAccountFor(null);
+          }}
+        />
+      )}
 
       {/* Void Dialog */}
       <Dialog open={!!voidDialogId} onOpenChange={(v) => { if (!v) { setVoidDialogId(null); setVoidReason(""); } }}>
