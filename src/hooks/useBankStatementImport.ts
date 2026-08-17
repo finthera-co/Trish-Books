@@ -455,6 +455,8 @@ export interface SuspenseLine {
   batch_id: string;
   sheet_name: string;
   txn_date: string | null;
+  /** Date as imported, present only when the date has since been corrected. */
+  txn_date_original: string | null;
   description: string;
   name: string;
   canonical_category: string | null;
@@ -485,7 +487,7 @@ export function useSuspenseLines() {
       // time — that is how a clearing session actually runs.
       const { data, error } = await (supabase as any)
         .from("bank_statement_lines")
-        .select("id, batch_id, sheet_name, txn_date, description, name, canonical_category, raw_account_type, debit, credit, suspense_reason, suggestions, created_at, bank_statement_batches(bank_account_id, file_name)")
+        .select("id, batch_id, sheet_name, txn_date, txn_date_original, description, name, canonical_category, raw_account_type, debit, credit, suspense_reason, suggestions, created_at, bank_statement_batches(bank_account_id, file_name)")
         .eq("needs_reclassification", true)
         .order("txn_date", { ascending: true });
       if (error) throw error;
@@ -495,6 +497,42 @@ export function useSuspenseLines() {
         file_name: r.bank_statement_batches?.file_name ?? null,
       })) as SuspenseLine[];
     },
+  });
+}
+
+/** Correct the transaction date of an OPEN suspense item.
+ *
+ * The date lives in three places — the statement line, the suspense journal it
+ * posted, and the transactions mirror — so this goes through an RPC that moves
+ * all of them in one transaction rather than patching the row from here. The
+ * reclass journal is dated from the line, so clearing follows automatically. */
+export function useAmendSuspenseLineDate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: { line_id: string; txn_date: string }) => {
+      const { data, error } = await (supabase as any).rpc("amend_suspense_line_date", {
+        p_line_id: params.line_id,
+        p_txn_date: params.txn_date,
+      });
+      if (error) throw new Error(error.message);
+      return data as {
+        changed: boolean;
+        txn_date: string;
+        previous_txn_date: string | null;
+        imported_date: string | null;
+      };
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["suspense_lines"] });
+      qc.invalidateQueries({ queryKey: ["journal_entries"] });
+      qc.invalidateQueries({ queryKey: ["period_account_movements"] });
+      if (data?.changed) {
+        toast.success(`Date moved from ${data.previous_txn_date ?? "—"} to ${data.txn_date}`);
+      } else {
+        toast.info("Date unchanged");
+      }
+    },
+    onError: (e: Error) => toast.error(e.message),
   });
 }
 

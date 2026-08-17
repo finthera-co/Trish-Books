@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   HelpCircle, CheckCircle2, Clock, Wand2, Loader2,
   Search, ArrowUp, ArrowDown, ArrowUpDown, X, Download, Check, ChevronsUpDown, Landmark,
+  CalendarDays,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,7 @@ import {
   useClearSuspense,
   useSuspenseClearedStats,
   useImportedBankAccounts,
+  useAmendSuspenseLineDate,
   type SuspenseLine,
 } from "@/hooks/useBankStatementImport";
 
@@ -258,6 +260,96 @@ function BankCard({
   );
 }
 
+/**
+ * The Date cell, editable in place. A statement can carry a mis-parsed or
+ * plainly wrong date and this screen is where an accountant notices it, so the
+ * date is corrected here rather than by voiding and re-importing the batch.
+ * Saving re-dates the suspense journal too, so the ledger never disagrees with
+ * the line — see amend_suspense_line_date().
+ */
+function DateCell({
+  line, onSave, pending,
+}: {
+  line: SuspenseLine;
+  onSave: (txnDate: string) => Promise<boolean>;
+  pending: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(line.txn_date ?? "");
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Reopening always starts from what is currently stored, so an abandoned
+  // edit is never carried into the next one.
+  useEffect(() => {
+    if (open) setValue(line.txn_date ?? "");
+  }, [open, line.txn_date]);
+
+  const amended = !!line.txn_date_original && line.txn_date_original !== line.txn_date;
+  const dirty = !!value && value !== (line.txn_date ?? "");
+
+  async function save() {
+    if (!dirty) return;
+    if (await onSave(value)) setOpen(false);
+  }
+
+  return (
+    <div className="space-y-0.5">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="group inline-flex items-center gap-1.5 -mx-1.5 px-1.5 py-0.5 rounded font-mono text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+            title="Change the transaction date"
+          >
+            {line.txn_date ?? "—"}
+            {pending ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <CalendarDays className="w-3 h-3 opacity-30 group-hover:opacity-100" />
+            )}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-72 p-3 space-y-3" align="start">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Transaction date</Label>
+            <Input
+              type="date"
+              value={value}
+              max={today}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); void save(); }
+              }}
+              className="h-9"
+            />
+          </div>
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            The suspense journal moves to this date as well, and the reclass will post on it when
+            this item is cleared. Only open items can be re-dated, and neither date may sit in a
+            closed period.
+            {amended && (
+              <>
+                {" "}Imported as <span className="font-mono">{line.txn_date_original}</span>.
+              </>
+            )}
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={save} disabled={!dirty || pending}>
+              {pending ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Saving…</> : "Save date"}
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
+      {amended && (
+        <span className="block text-[11px] text-muted-foreground">
+          imported {line.txn_date_original}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /** Clickable column header: first click sorts, further clicks flip direction. */
 function SortHead({
   sortKey, label, align, activeKey, dir, onSort,
@@ -301,6 +393,23 @@ export default function SuspenseClearing() {
     [accounts]
   );
   const clearMut = useClearSuspense();
+  const amendDate = useAmendSuspenseLineDate();
+  // Which row's date is in flight, so only that cell shows a spinner.
+  const [dateSavingId, setDateSavingId] = useState<string | null>(null);
+
+  // The mutation already reports its own failure; returning false keeps the
+  // editor open on the offending row instead of throwing out of the click.
+  async function saveLineDate(lineId: string, txnDate: string): Promise<boolean> {
+    setDateSavingId(lineId);
+    try {
+      await amendDate.mutateAsync({ line_id: lineId, txn_date: txnDate });
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setDateSavingId(null);
+    }
+  }
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -487,6 +596,7 @@ export default function SuspenseClearing() {
       [
         { header: "Bank", value: (l) => bankNameOf(l.bank_account_id) },
         { header: "Date", value: (l) => l.txn_date ?? "" },
+        { header: "Date as imported", value: (l) => l.txn_date_original ?? "" },
         { header: "Description", value: (l) => l.description || l.name || "" },
         { header: "Name", value: (l) => l.name ?? "" },
         { header: "Raw Account Type", value: (l) => l.raw_account_type ?? "" },
@@ -500,7 +610,7 @@ export default function SuspenseClearing() {
       ],
       sorted,
       [
-        "TOTAL", "", "", "", "", "", "",
+        "TOTAL", "", "", "", "", "", "", "",
         sorted.reduce((s, l) => s + Number(l.debit || 0), 0),
         sorted.reduce((s, l) => s + Number(l.credit || 0), 0),
       ],
@@ -735,7 +845,13 @@ export default function SuspenseClearing() {
                       {bank === ALL_BANKS && (
                         <TableCell className="text-sm">{bankNameOf(l.bank_account_id)}</TableCell>
                       )}
-                      <TableCell className="font-mono text-sm">{l.txn_date ?? "—"}</TableCell>
+                      <TableCell>
+                        <DateCell
+                          line={l}
+                          pending={dateSavingId === l.id}
+                          onSave={(d) => saveLineDate(l.id, d)}
+                        />
+                      </TableCell>
                       <TableCell>
                         <span className="font-medium">{l.description || l.name || "—"}</span>
                         {l.raw_account_type && <span className="block text-xs text-muted-foreground">{l.raw_account_type}</span>}
