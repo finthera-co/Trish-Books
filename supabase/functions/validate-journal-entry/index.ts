@@ -10,6 +10,10 @@ const EPSILON = 0.005;
 const LINE_MEMO_MIN = 3;
 const LINE_MEMO_MAX = 200;
 
+// Mirrors CHEQUE_NUMBER_MAX in src/lib/journalValidation.ts and the
+// journal_entries_cheque_number_len CHECK constraint.
+const CHEQUE_NUMBER_MAX = 50;
+
 interface JournalLine {
   account_id: string;
   debit: number;
@@ -22,6 +26,8 @@ interface RequestBody {
   description: string;
   entry_date: string;
   reference?: string;
+  /** Optional cheque / payment instrument number -> journal_entries.cheque_number. */
+  cheque_number?: string | null;
   lines: JournalLine[];
 }
 
@@ -88,7 +94,8 @@ Deno.serve(async (req) => {
     if (blocked) return blocked;
 
     const body: RequestBody = await req.json();
-    const { description, entry_date, reference, lines } = body;
+    const { description, entry_date, reference, cheque_number, lines } = body;
+    const chequeNumber = (cheque_number ?? "").trim() || null;
 
     const errors: { field: string; message: string }[] = [];
 
@@ -121,6 +128,16 @@ Deno.serve(async (req) => {
           }
         }
       }
+    }
+
+    // ── 2b. Cheque number ───────────────────────────────────────────
+    // The column carries the same CHECK, so an over-long value would fail the
+    // insert with a raw constraint error instead of a readable message.
+    if (chequeNumber && chequeNumber.length > CHEQUE_NUMBER_MAX) {
+      errors.push({
+        field: "cheque_number",
+        message: `Cheque number must be ${CHEQUE_NUMBER_MAX} characters or fewer`,
+      });
     }
 
     // ── 3. Lines validation ─────────────────────────────────────────
@@ -249,6 +266,7 @@ Deno.serve(async (req) => {
         description: description.trim(),
         entry_date,
         reference: reference?.trim() || null,
+        cheque_number: chequeNumber,
         created_by: appUser.id,
         status: "draft",
       })
@@ -307,6 +325,7 @@ Deno.serve(async (req) => {
         description,
         entry_date,
         reference,
+        cheque_number: chequeNumber,
         total_debit: totalDebit,
         total_credit: totalCredit,
         line_count: activeLines.length,

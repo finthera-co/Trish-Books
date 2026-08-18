@@ -22,6 +22,7 @@ import {
   resolveLineMemo,
   bySeq,
   LINE_MEMO_MAX,
+  CHEQUE_NUMBER_MAX,
 } from "@/lib/journalValidation";
 
 interface EditTransactionModalProps {
@@ -76,12 +77,15 @@ export default function EditTransactionModal({
   // journal_entries.description is derived from the lines on save.
   const [entryDate, setEntryDate] = useState("");
   const [reference, setReference] = useState("");
+  // Feeds the register's own "Cheque No" column, which is what this modal edits from.
+  const [chequeNumber, setChequeNumber] = useState("");
   const [lines, setLines] = useState<JournalLine[]>([]);
 
   useEffect(() => {
     if (!entry) return;
     setEntryDate(entry.entry_date);
     setReference(entry.reference || "");
+    setChequeNumber(entry.cheque_number || "");
     setLines(
       ((entry.journal_lines as any[]) || [])
         .slice()
@@ -158,6 +162,7 @@ export default function EditTransactionModal({
           entry_date: entryDate,
           description: derivedDescription,
           reference: reference || null,
+          cheque_number: chequeNumber.trim() || null,
         })
         .eq("id", journalEntryId);
       if (headerError) throw headerError;
@@ -231,7 +236,7 @@ export default function EditTransactionModal({
         ) : (
           <div className="space-y-4 pt-2">
             {/* Header fields */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-4 gap-3">
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Date</label>
                 <input
@@ -249,6 +254,18 @@ export default function EditTransactionModal({
                   value={reference}
                   onChange={(e) => setReference(e.target.value)}
                   className={`w-full ${inputClass}`}
+                  placeholder="Optional"
+                  disabled={isReadOnly}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Cheque No</label>
+                <input
+                  type="text"
+                  value={chequeNumber}
+                  maxLength={CHEQUE_NUMBER_MAX}
+                  onChange={(e) => setChequeNumber(e.target.value)}
+                  className={`w-full font-mono ${inputClass}`}
                   placeholder="Optional"
                   disabled={isReadOnly}
                 />

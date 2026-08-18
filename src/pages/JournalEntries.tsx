@@ -28,6 +28,7 @@ import {
   resolveLineMemo,
   isMemoInherited,
   LINE_MEMO_MAX,
+  CHEQUE_NUMBER_MAX,
   type AccountInfo,
   type ValidationError,
   type ValidationResult,
@@ -84,6 +85,9 @@ export default function JournalEntries() {
   // and the header description is derived from it on submit.
   const [entryDate, setEntryDate] = useState(new Date().toISOString().split("T")[0]);
   const [reference, setReference] = useState("");
+  // Cheque / payment instrument number. Optional, and shown in the Account
+  // Register's "Cheque No" column — the same column a bank import fills in.
+  const [chequeNumber, setChequeNumber] = useState("");
   const [lines, setLines] = useState([
     { account_id: "", debit: 0, credit: 0, memo: "" },
     { account_id: "", debit: 0, credit: 0, memo: "" },
@@ -330,6 +334,7 @@ export default function JournalEntries() {
           description: derivedDescription,
           entry_date: entryDate,
           reference: reference.trim() || undefined,
+          cheque_number: chequeNumber.trim() || undefined,
           lines: activeLines,
         });
       } catch (e) {
@@ -363,6 +368,7 @@ export default function JournalEntries() {
 
   const resetForm = () => {
     setReference("");
+    setChequeNumber("");
     setEntryDate(new Date().toISOString().split("T")[0]);
     setLines([
       { account_id: "", debit: 0, credit: 0, memo: "" },
@@ -515,7 +521,7 @@ export default function JournalEntries() {
             </DialogHeader>
             <div className="space-y-4 pt-4">
               {/* Header fields. No entry-level description: each line carries its own. */}
-              <div className="grid grid-cols-2 gap-4 max-w-md">
+              <div className="grid grid-cols-3 gap-4 max-w-2xl">
                 <div>
                   <label className="text-sm font-medium text-foreground">
                     Date <span className="text-destructive">*</span>
@@ -542,6 +548,18 @@ export default function JournalEntries() {
                     className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
                     placeholder="JV-00001"
                   />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground">Cheque No</label>
+                  <input
+                    type="text"
+                    value={chequeNumber}
+                    maxLength={CHEQUE_NUMBER_MAX}
+                    onChange={(e) => setChequeNumber(e.target.value)}
+                    className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+                    placeholder="e.g. 004512"
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Shows in the Account Register</p>
                 </div>
               </div>
 

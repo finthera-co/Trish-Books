@@ -204,6 +204,8 @@ export default function JournalEntryView() {
             <span className="text-foreground">Journal Entry</span>
             <span className="text-muted-foreground font-medium">Reference:</span>
             <span className="font-mono text-foreground">{entry.reference || "—"}</span>
+            <span className="text-muted-foreground font-medium">Cheque No:</span>
+            <span className="font-mono text-foreground">{entry.cheque_number || "—"}</span>
             <span className="text-muted-foreground font-medium">Date:</span>
             <span className="text-foreground">{entry.entry_date}</span>
             <span className="text-muted-foreground font-medium">Transaction ID:</span>
@@ -233,7 +235,7 @@ export default function JournalEntryView() {
         </div>
 
         {/* Entry details */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-4 gap-4 mb-6">
           <div>
             <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Date</p>
             <p className="text-sm font-medium text-foreground">{entry.entry_date}</p>
@@ -241,6 +243,10 @@ export default function JournalEntryView() {
           <div>
             <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Reference</p>
             <p className="text-sm font-mono text-foreground">{entry.reference || "—"}</p>
+          </div>
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Cheque No</p>
+            <p className="text-sm font-mono text-foreground">{entry.cheque_number || "—"}</p>
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Created</p>

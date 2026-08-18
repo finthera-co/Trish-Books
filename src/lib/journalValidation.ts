@@ -18,6 +18,14 @@ export const LINE_MEMO_MAX = 200;
 /** Same floor the entry-level description has always had. */
 export const LINE_MEMO_MIN = 3;
 
+/**
+ * Cap on the entry-level cheque number. Matches the
+ * journal_entries_cheque_number_len CHECK constraint added in
+ * 20260818000000_journal_entry_cheque_number.sql, and is mirrored in
+ * supabase/functions/validate-journal-entry.
+ */
+export const CHEQUE_NUMBER_MAX = 50;
+
 export interface JournalLine {
   account_id: string;
   debit: number;

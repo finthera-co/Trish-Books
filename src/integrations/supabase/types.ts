@@ -3040,6 +3040,7 @@ export type Database = {
           suspense_reason: string | null
           tenant_id: string
           txn_date: string | null
+          txn_date_original: string | null
           validation_flags: Json
           voucher_no: string
         }
@@ -3075,6 +3076,7 @@ export type Database = {
           suspense_reason?: string | null
           tenant_id: string
           txn_date?: string | null
+          txn_date_original?: string | null
           validation_flags?: Json
           voucher_no?: string
         }
@@ -3110,6 +3112,7 @@ export type Database = {
           suspense_reason?: string | null
           tenant_id?: string
           txn_date?: string | null
+          txn_date_original?: string | null
           validation_flags?: Json
           voucher_no?: string
         }
@@ -7437,6 +7440,7 @@ export type Database = {
       journal_entries: {
         Row: {
           cash_flow_category: string | null
+          cheque_number: string | null
           created_at: string
           created_by: string | null
           description: string
@@ -7460,6 +7464,7 @@ export type Database = {
         }
         Insert: {
           cash_flow_category?: string | null
+          cheque_number?: string | null
           created_at?: string
           created_by?: string | null
           description: string
@@ -7483,6 +7488,7 @@ export type Database = {
         }
         Update: {
           cash_flow_category?: string | null
+          cheque_number?: string | null
           created_at?: string
           created_by?: string | null
           description?: string
@@ -14880,6 +14886,10 @@ export type Database = {
           days_written: number
         }[]
       }
+      amend_suspense_line_date: {
+        Args: { p_line_id: string; p_txn_date: string }
+        Returns: Json
+      }
       analyst_index_status: {
         Args: never
         Returns: {
@@ -15065,14 +15075,11 @@ export type Database = {
         Returns: string
       }
       delete_invoice_number_row: { Args: { p_serial: string }; Returns: number }
-      delete_journal_entry: {
-        Args: { p_entry_id: string }
-        Returns: Json
-      }
       delete_invoice_number_series: {
         Args: { p_branch_code: string; p_period: string }
         Returns: number
       }
+      delete_journal_entry: { Args: { p_entry_id: string }; Returns: Json }
       derive_period: {
         Args: { p_date: string; p_period_type: string }
         Returns: string
@@ -16021,6 +16028,7 @@ export type Database = {
         Args: { p_batch_id: string; p_reason?: string }
         Returns: Json
       }
+      unvoid_journal_entry: { Args: { p_entry_id: string }; Returns: Json }
       validate_pcv_line_account: {
         Args: {
           p_account_id: string
@@ -16039,10 +16047,6 @@ export type Database = {
           p_project_id?: string
           p_tenant_id: string
         }
-        Returns: Json
-      }
-      unvoid_journal_entry: {
-        Args: { p_entry_id: string }
         Returns: Json
       }
       verify_bank_import_batch: { Args: { p_batch_id: string }; Returns: Json }

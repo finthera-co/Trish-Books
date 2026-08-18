@@ -17,6 +17,7 @@ import {
   resolveLineMemo,
   bySeq,
   LINE_MEMO_MAX,
+  CHEQUE_NUMBER_MAX,
   type AccountInfo,
   type ValidationResult,
   EPSILON,
@@ -85,6 +86,9 @@ export default function JournalEntryEdit() {
   // `derivedDescription`), so there is no field for it.
   const [entryDate, setEntryDate] = useState("");
   const [reference, setReference] = useState("");
+  // Editable, unlike the reference: a cheque number is often only known (or
+  // corrected) after the entry has been posted.
+  const [chequeNumber, setChequeNumber] = useState("");
   const [lines, setLines] = useState<EditLine[]>([]);
   const [initialized, setInitialized] = useState(false);
 
@@ -93,6 +97,7 @@ export default function JournalEntryEdit() {
     if (entry && !initialized) {
       setEntryDate(entry.entry_date);
       setReference(entry.reference || "");
+      setChequeNumber(entry.cheque_number || "");
       const entryLines = ((entry.journal_lines as any[]) || [])
         // Match the order the lines post and report in, not whatever order the
         // embedded select happened to return.
@@ -230,6 +235,7 @@ export default function JournalEntryEdit() {
         .update({
           description: derivedDescription,
           entry_date: entryDate,
+          cheque_number: chequeNumber.trim() || null,
           // reference stays the same (not editable in edit mode)
         })
         .eq("id", id);
@@ -285,7 +291,12 @@ export default function JournalEntryEdit() {
           record_id: id,
           user_id: userId.data?.id,
           tenant_id: tenantId.data,
-          details: { description: derivedDescription, entry_date: entryDate, lines_count: activeLines.length },
+          details: {
+            description: derivedDescription,
+            entry_date: entryDate,
+            cheque_number: chequeNumber.trim() || null,
+            lines_count: activeLines.length,
+          },
         });
       } catch {
         // Silently fail audit log
@@ -384,7 +395,7 @@ export default function JournalEntryEdit() {
 
         <div className="space-y-4">
           {/* Header fields. No entry-level description: each line carries its own. */}
-          <div className="grid grid-cols-2 gap-4 max-w-md">
+          <div className="grid grid-cols-3 gap-4 max-w-2xl">
             <div>
               <label className="text-sm font-medium text-foreground">
                 Date <span className="text-destructive">*</span>
@@ -411,6 +422,18 @@ export default function JournalEntryEdit() {
                 className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-muted text-muted-foreground cursor-not-allowed"
               />
               <p className="text-[10px] text-muted-foreground mt-0.5">Reference cannot be changed</p>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground">Cheque No</label>
+              <input
+                type="text"
+                value={chequeNumber}
+                maxLength={CHEQUE_NUMBER_MAX}
+                onChange={(e) => setChequeNumber(e.target.value)}
+                className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+                placeholder="e.g. 004512"
+              />
+              <p className="text-[10px] text-muted-foreground mt-0.5">Shows in the Account Register</p>
             </div>
           </div>
 
