@@ -169,6 +169,36 @@ describe("classifyLine — Tier 1 (account_type → canonical → mapping)", () 
     expect(r).toMatchObject({ kind: "resolved", accountId: ACC.salary, tier: 1 });
   });
 
+  it("side mismatch + reversal wording in the description falls back to the _reversal sibling, even when account_type is unchanged", () => {
+    // Real Sampath rows never relabel the Account Type column for a reversal —
+    // "Salary" stays "Salary", only the description says "reverse", on credit.
+    const r = classifyLine(
+      makeLine({ credit: 5000, rawAccountType: "Salary", description: "Salary reverse" }),
+      makeCtx()
+    );
+    expect(r).toMatchObject({ kind: "resolved", accountId: ACC.salary, tier: 1 });
+  });
+
+  it("side mismatch without reversal wording still goes to suspense (no false-positive fallback)", () => {
+    const r = classifyLine(
+      makeLine({ credit: 5000, rawAccountType: "Salary", description: "Bonus payment" }),
+      makeCtx()
+    );
+    expect(r).toMatchObject({ kind: "suspense", reason: "side_mismatch" });
+  });
+
+  it("side mismatch + reversal wording but no _reversal mapping configured → still suspense", () => {
+    const entries: AccountMapEntry[] = [
+      { id: "map-rent", canonicalCategory: "building_rent", accountId: ACC.rent, expectedSide: "debit", isActive: true },
+    ];
+    const ctx = makeCtx({ accountMap: makeAccountMap(entries) });
+    const r = classifyLine(
+      makeLine({ credit: 5000, rawAccountType: "Rent", description: "Rent reverse" }),
+      ctx
+    );
+    expect(r).toMatchObject({ kind: "suspense", reason: "side_mismatch" });
+  });
+
   it("inactive mapping → suspense inactive_account_mapping", () => {
     const entries: AccountMapEntry[] = [
       { id: "m1", canonicalCategory: "salary", accountId: ACC.salary, expectedSide: "debit", isActive: false },

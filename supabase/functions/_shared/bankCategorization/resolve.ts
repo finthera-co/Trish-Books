@@ -163,6 +163,16 @@ function isSuspenseLabel(normalizedType: string): boolean {
 }
 
 /**
+ * Some source sheets never give reversal rows their own account_type text —
+ * a reversed "Legal & Compliance Cost" payment keeps that exact label and only
+ * flags itself in the free-text description ("lawyer payment reverse"), on
+ * the opposite side. Word-boundary so "irreversible"/"reversion" don't trip it.
+ */
+function isReversalDescription(normalizedDesc: string): boolean {
+  return /\brevers(e|ed|al)?\b|\brefund(ed)?\b/.test(normalizedDesc);
+}
+
+/**
  * Last resort before Suspense: auto-generate a ledger (Tier 4). The name comes
  * from the account_type LABEL when present (it's the curated category — "Bank
  * Charges", "Peoples Saving"), else from the description. Falls back to Suspense
@@ -280,6 +290,17 @@ export function classifyLine(line: ParsedLine, ctx: ResolutionContext): Resoluti
       const acctGate = gateAccount(mapping.accountId, ctx);
       if (acctGate) return acctGate;
       if (mapping.expectedSide !== "either" && mapping.expectedSide !== side) {
+        // The description marks this as a reversal of the same category, and a
+        // reversal sibling mapping exists (same account, opposite side) — post
+        // there instead of parking a routine reversal in Suspense.
+        if (isReversalDescription(rawDesc)) {
+          const reversal = ctx.accountMap.get(`${canonEntry!.canonicalCategory}_reversal`);
+          if (reversal && reversal.isActive && (reversal.expectedSide === "either" || reversal.expectedSide === side)) {
+            const reversalGate = gateAccount(reversal.accountId, ctx);
+            if (reversalGate) return reversalGate;
+            return { kind: "resolved", accountId: reversal.accountId, ruleId: reversal.id, tier: 1 };
+          }
+        }
         return suspense("side_mismatch", [
           { accountId: mapping.accountId, label: canonEntry!.canonicalCategory, source: "side_mismatch" },
         ]);
