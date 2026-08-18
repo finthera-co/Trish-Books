@@ -27,6 +27,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { sortAccounts } from "@/lib/accountSort";
+import AccountCombobox from "@/components/shared/AccountCombobox";
 
 function useOffsetAccounts() {
   const { appUser } = useAuth();
@@ -355,16 +356,12 @@ function NewLandedCostDialog() {
                     <Input value={c.description} onChange={(e) => updCharge(i, { description: e.target.value })} placeholder="e.g. Freight" />
                   </TableCell>
                   <TableCell>
-                    <Select value={c.offset_account_id} onValueChange={(v) => updCharge(i, { offset_account_id: v })}>
-                      <SelectTrigger><SelectValue placeholder="Select offset account" /></SelectTrigger>
-                      <SelectContent>
-                        {offsetAccounts.map((a: any) => (
-                          <SelectItem key={a.id} value={a.id}>
-                            {a.account_code} — {a.account_name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <AccountCombobox
+                      options={offsetAccounts}
+                      value={c.offset_account_id}
+                      onChange={(v) => updCharge(i, { offset_account_id: v })}
+                      placeholder="Select offset account"
+                    />
                   </TableCell>
                   <TableCell>
                     <Input type="number" step="0.01" min="0" className="text-right"

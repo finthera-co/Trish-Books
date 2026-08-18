@@ -4,12 +4,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useCreateVendorCreditNote } from "@/hooks/useAPModule";
 import { useAccountSettings } from "@/hooks/useAccountSettings";
 import { useAccounts } from "@/hooks/useData";
 import { toast } from "sonner";
+import AccountCombobox from "@/components/shared/AccountCombobox";
 
 interface Props {
   open: boolean;
@@ -99,14 +99,12 @@ export default function VendorCreditNoteDialog({ open, onOpenChange, vendorId, v
 
           <div>
             <Label>Expense Account *</Label>
-            <Select value={expenseAccountId} onValueChange={setExpenseAccountId}>
-              <SelectTrigger><SelectValue placeholder="Select expense account" /></SelectTrigger>
-              <SelectContent>
-                {expenseAccounts.map((a: any) => (
-                  <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <AccountCombobox
+              options={expenseAccounts}
+              value={expenseAccountId}
+              onChange={setExpenseAccountId}
+              placeholder="Select expense account"
+            />
             <p className="text-xs text-muted-foreground mt-1">Cr on credit note (reduces the original expense)</p>
           </div>
 

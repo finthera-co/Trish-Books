@@ -11,6 +11,7 @@ import { KpiCard } from "@/components/ui/KpiCard";
 import { Plus, Banknote, Trash2 } from "lucide-react";
 import { useEmployeeLoans, useCreateLoan, useCancelLoan } from "@/hooks/useLoans";
 import { useEmployees, useAccounts } from "@/hooks/useData";
+import AccountCombobox from "@/components/shared/AccountCombobox";
 
 const fmt = (n: number) => `LKR ${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
@@ -140,14 +141,13 @@ export default function Loans() {
             </div>
             <div>
               <Label>Pay advance from (optional)</Label>
-              <Select value={form.bank_account_id} onValueChange={(v) => setForm({ ...form, bank_account_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Don't post to GL" /></SelectTrigger>
-                <SelectContent>
-                  {bankAccounts.map((a: any) => (
-                    <SelectItem key={a.id} value={a.id}>{a.account_code} — {a.account_name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AccountCombobox
+                options={bankAccounts}
+                value={form.bank_account_id}
+                onChange={(v) => setForm({ ...form, bank_account_id: v })}
+                placeholder="Don't post to GL"
+                clearLabel="Don't post to GL"
+              />
               <p className="text-[11px] text-muted-foreground mt-1">Posts Dr Staff Loans Receivable / Cr this account.</p>
             </div>
             <Button className="w-full" onClick={submit} disabled={create.isPending || !form.employee_id || !Number(form.principal) || !Number(form.monthly_installment)}>

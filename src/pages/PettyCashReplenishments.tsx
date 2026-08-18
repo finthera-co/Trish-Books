@@ -17,6 +17,7 @@ import {
 import { useMyPermissions } from "@/hooks/usePermissions";
 import { PCFundDialog } from "@/components/petty-cash/PCFundDialog";
 import { formatCurrency } from "@/lib/currency";
+import AccountCombobox from "@/components/shared/AccountCombobox";
 
 export default function PettyCashReplenishments() {
   const [pcAccountId, setPcAccountId] = useState("");
@@ -118,14 +119,12 @@ export default function PettyCashReplenishments() {
               </div>
               <div className="space-y-2">
                 <Label>Bank Account</Label>
-                <Select value={bankAccountId} onValueChange={setBankAccountId}>
-                  <SelectTrigger><SelectValue placeholder="Select bank" /></SelectTrigger>
-                  <SelectContent>
-                    {bankAccounts?.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <AccountCombobox
+                  options={bankAccounts ?? []}
+                  value={bankAccountId}
+                  onChange={setBankAccountId}
+                  placeholder="Select bank"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Date</Label>

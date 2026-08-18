@@ -23,6 +23,7 @@ import {
   EPSILON,
 } from "@/lib/journalValidation";
 import { typeColors, getTypeLabel } from "@/lib/accountTypes";
+import AccountCombobox from "@/components/shared/AccountCombobox";
 
 const fmt = (n: number) =>
   n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -154,15 +155,6 @@ export default function JournalEntryEdit() {
     }));
     return getManualEntryAccounts(infos);
   }, [accounts]);
-
-  const groupedAccounts = useMemo(() => {
-    const groups: Record<string, AccountInfo[]> = {};
-    manualEntryAccounts.forEach((a) => {
-      if (!groups[a.account_type]) groups[a.account_type] = [];
-      groups[a.account_type].push(a);
-    });
-    return groups;
-  }, [manualEntryAccounts]);
 
   // The entry-level description this save will write, taken from the lines.
   const derivedDescription = useMemo(() => deriveEntryDescription(lines), [lines]);
@@ -456,24 +448,13 @@ export default function JournalEntryEdit() {
                   return (
                     <div key={i} className="px-3 py-2 space-y-1">
                       <div className="grid grid-cols-[minmax(0,1.2fr)_6.75rem_6.75rem_minmax(0,1fr)_2rem] gap-2 items-center">
-                        <select
+                        <AccountCombobox
+                          options={manualEntryAccounts}
                           value={line.account_id}
-                          onChange={(e) => updateLine(i, "account_id", e.target.value)}
-                          className={`text-sm border rounded-md px-2.5 py-1.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors ${
-                            lineWarning ? "border-warning" : "border-input"
-                          }`}
-                        >
-                          <option value="">Select account…</option>
-                          {Object.entries(groupedAccounts).map(([type, accs]) => (
-                            <optgroup key={type} label={getTypeLabel(type)}>
-                              {accs.map((a) => (
-                                <option key={a.id} value={a.id}>
-                                  {a.account_code} – {a.account_name}
-                                </option>
-                              ))}
-                            </optgroup>
-                          ))}
-                        </select>
+                          onChange={(v) => updateLine(i, "account_id", v)}
+                          placeholder="Search account…"
+                          className={lineWarning ? "border-warning" : ""}
+                        />
                         <input
                           type="number"
                           min="0"

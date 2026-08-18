@@ -7,12 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useFixedAsset, useAssetDepreciation, useDisposeAsset, useAssetJournalEntries } from "@/hooks/useFixedAssets";
 import { useAccounts } from "@/hooks/useData";
 import { formatCurrency } from "@/lib/currency";
 import { generateDepreciationSchedule, type Asset } from "@/lib/depreciation";
 import { Progress } from "@/components/ui/progress";
+import AccountCombobox from "@/components/shared/AccountCombobox";
 
 export default function AssetDetail() {
   const { id } = useParams();
@@ -274,14 +274,12 @@ export default function AssetDetail() {
             </div>
             <div>
               <label className="text-sm font-medium">Cash/Bank Account</label>
-              <Select value={cashAccountId} onValueChange={setCashAccountId}>
-                <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
-                <SelectContent>
-                  {cashAccounts.map((a: any) => (
-                    <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AccountCombobox
+                options={cashAccounts}
+                value={cashAccountId}
+                onChange={setCashAccountId}
+                placeholder="Select account"
+              />
             </div>
             <p className="text-sm">
               Gain/Loss: <strong className={saleValue - nbv >= 0 ? "text-green-600" : "text-red-600"}>

@@ -12,6 +12,7 @@ import {
   useFundPettyCash,
 } from "@/hooks/usePettyCash";
 import { formatCurrency } from "@/lib/currency";
+import AccountCombobox from "@/components/shared/AccountCombobox";
 
 interface Props {
   defaultPcAccountId?: string;
@@ -86,18 +87,13 @@ export function PCFundDialog({ defaultPcAccountId, trigger }: Props) {
 
           <div>
             <Label>Fund From (Bank / Cash Account)</Label>
-            <Select value={bankAccountId} onValueChange={setBankAccountId}>
-              <SelectTrigger><SelectValue placeholder="Select bank account" /></SelectTrigger>
-              <SelectContent position="popper" className="z-[9999]">
-                {bankAccounts?.length ? bankAccounts.map((a: any) => (
-                  <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
-                )) : (
-                  <div className="px-3 py-2 text-sm text-muted-foreground">
-                    No Bank-subtype accounts in the COA
-                  </div>
-                )}
-              </SelectContent>
-            </Select>
+            <AccountCombobox
+              options={bankAccounts ?? []}
+              value={bankAccountId}
+              onChange={setBankAccountId}
+              placeholder="Select bank account"
+              emptyText="No Bank-subtype accounts in the COA"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">

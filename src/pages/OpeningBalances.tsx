@@ -45,6 +45,7 @@ import {
 } from "@/lib/accountTypes";
 import CreateLedgerModal from "@/components/opening-balances/CreateLedgerModal";
 import OBSubledgerBreakdown from "@/components/opening-balances/OBSubledgerBreakdown";
+import AccountCombobox from "@/components/shared/AccountCombobox";
 
 export default function OpeningBalances() {
   const { appUser } = useAuth();
@@ -331,25 +332,15 @@ export default function OpeningBalances() {
               <div className="md:col-span-4 space-y-1">
                 <label className="block min-h-4 text-xs font-medium text-muted-foreground">Account</label>
                 <div className="flex gap-1">
-                  <select
+                  <AccountCombobox
+                    options={selectableAccounts}
                     value={formAccountId}
-                    onChange={(e) => {
-                      if (e.target.value === "__create__") {
-                        setShowCreateLedger(true);
-                      } else {
-                        setFormAccountId(e.target.value);
-                      }
-                    }}
-                    className="flex-1 h-9 rounded-md border border-input bg-background px-2 text-sm"
-                  >
-                    <option value="">Select account…</option>
-                    <option value="__create__" className="font-medium">＋ Create New Ledger</option>
-                    {selectableAccounts.map((a: any) => (
-                      <option key={a.id} value={a.id}>
-                        {a.account_code} — {a.account_name} ({a.account_type})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setFormAccountId}
+                    placeholder="Select account…"
+                    className="flex-1"
+                    onCreateNew={() => setShowCreateLedger(true)}
+                    createLabel="Create New Ledger"
+                  />
                 </div>
                 {formAccountId && (() => {
                   const acct = (accounts || []).find((a: any) => a.id === formAccountId) as any;

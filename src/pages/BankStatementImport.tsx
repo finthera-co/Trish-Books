@@ -1,11 +1,10 @@
 import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Upload, FileSpreadsheet, Landmark, AlertTriangle, CheckCircle2, Ban, HelpCircle, Loader2, ShieldCheck, Sparkles } from "lucide-react";
+import { Upload, FileSpreadsheet, AlertTriangle, CheckCircle2, Ban, HelpCircle, Loader2, ShieldCheck, Sparkles } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { formatCurrency } from "@/lib/currency";
@@ -23,6 +22,7 @@ import { Progress } from "@/components/ui/progress";
 import ImportHistory from "@/components/bank-import/ImportHistory";
 import VerifyBatchDialog from "@/components/bank-import/VerifyBatchDialog";
 import { toast } from "sonner";
+import AccountCombobox from "@/components/shared/AccountCombobox";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const monthLabel = (p: { year: number; month: number }) => `${MONTHS[p.month - 1]} ${p.year}`;
@@ -361,21 +361,14 @@ export default function BankStatementImport() {
           <CardDescription>The ledger account this statement belongs to.</CardDescription>
         </CardHeader>
         <CardContent>
-          <Select value={bankAccountId} onValueChange={setBankAccountId}>
-            <SelectTrigger className="max-w-md">
-              <SelectValue placeholder="Choose a bank account…" />
-            </SelectTrigger>
-            <SelectContent>
-              {bankAccounts.length === 0 && <SelectItem value="none" disabled>No postable bank accounts found</SelectItem>}
-              {bankAccounts.map((a: any) => (
-                <SelectItem key={a.id} value={a.id}>
-                  <span className="flex items-center gap-2">
-                    <Landmark className="w-4 h-4" /> {a.account_code} — {a.account_name}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <AccountCombobox
+            options={bankAccounts}
+            value={bankAccountId}
+            onChange={setBankAccountId}
+            placeholder="Choose a bank account…"
+            emptyText="No postable bank accounts found"
+            className="max-w-md"
+          />
         </CardContent>
       </Card>
 

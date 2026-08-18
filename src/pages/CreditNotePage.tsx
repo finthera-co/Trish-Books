@@ -20,6 +20,7 @@ import { useTaxProfile, useTaxGroups, useTaxCodes, currentRate } from "@/hooks/u
 import { calculateLineTax, type TaxMemberInput } from "@/lib/taxEngine";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import AccountCombobox from "@/components/shared/AccountCombobox";
 import {
   useARAccounts,
   useCreateCreditNote,
@@ -521,27 +522,23 @@ export default function CreditNotePage() {
                   {needsArPicker && (
                     <div>
                       <Label>AR Account *</Label>
-                      <Select value={form.ar_account_id} onValueChange={(v) => setForm({ ...form, ar_account_id: v })}>
-                        <SelectTrigger><SelectValue placeholder="Select AR account" /></SelectTrigger>
-                        <SelectContent>
-                          {(accounts?.arAccounts || []).map((a: any) => (
-                            <SelectItem key={a.id} value={a.id}>{a.account_code} - {a.account_name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <AccountCombobox
+                        options={accounts?.arAccounts || []}
+                        value={form.ar_account_id}
+                        onChange={(v) => setForm({ ...form, ar_account_id: v })}
+                        placeholder="Select AR account"
+                      />
                     </div>
                   )}
                   {needsRevPicker && (
                     <div>
                       <Label>Revenue Account *</Label>
-                      <Select value={form.revenue_account_id} onValueChange={(v) => setForm({ ...form, revenue_account_id: v })}>
-                        <SelectTrigger><SelectValue placeholder="Select revenue account" /></SelectTrigger>
-                        <SelectContent>
-                          {(accounts?.revenueAccounts || []).map((a: any) => (
-                            <SelectItem key={a.id} value={a.id}>{a.account_code} - {a.account_name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <AccountCombobox
+                        options={accounts?.revenueAccounts || []}
+                        value={form.revenue_account_id}
+                        onChange={(v) => setForm({ ...form, revenue_account_id: v })}
+                        placeholder="Select revenue account"
+                      />
                     </div>
                   )}
                 </div>

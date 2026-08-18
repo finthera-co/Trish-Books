@@ -19,6 +19,7 @@ import {
   useRecurringInvoices, useCreateRecurringInvoice, useSetRecurringStatus, useDeleteRecurringInvoice,
   type RecurringItemInput,
 } from "@/hooks/useRecurringInvoices";
+import AccountCombobox from "@/components/shared/AccountCombobox";
 
 const FREQ = [
   { value: "weekly", label: "Weekly" },
@@ -236,13 +237,14 @@ export default function RecurringInvoices() {
                           )}
                         </SelectContent>
                       </Select>
-                      <Select value={l.account_id || "none"} onValueChange={(v) => updateLine(l.id, "account_id", v === "none" ? "" : v)}>
-                        <SelectTrigger className="col-span-2 h-9 text-xs"><SelectValue placeholder="Revenue a/c" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Default</SelectItem>
-                          {revenueAccounts.map((a: any) => <SelectItem key={a.id} value={a.id}>{a.account_code} {a.account_name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                      <AccountCombobox
+                        options={revenueAccounts}
+                        value={l.account_id}
+                        onChange={(v) => updateLine(l.id, "account_id", v)}
+                        placeholder="Default"
+                        clearLabel="Default"
+                        className="col-span-2 h-9 text-xs"
+                      />
                       <div className="col-span-1 flex justify-end">
                         {lines.length > 1 && (
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setLines((p) => p.filter((x) => x.id !== l.id))}>

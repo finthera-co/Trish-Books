@@ -13,6 +13,7 @@ import { formatCurrency } from "@/lib/currency";
 import { useCustomers, useInvoices, useAccounts } from "@/hooks/useData";
 import { useAccountSettings } from "@/hooks/useAccountSettings";
 import { useDeposits, useRecordDeposit, useApplyDeposit, type DepositRow } from "@/hooks/useDeposits";
+import AccountCombobox from "@/components/shared/AccountCombobox";
 
 const statusColor = (s: string) =>
   s === "applied" ? "bg-primary/10 text-primary"
@@ -156,17 +157,21 @@ export default function Deposits() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Deposit to (Bank) *</Label>
-                <Select value={form.bank_account_id} onValueChange={(v) => setForm({ ...form, bank_account_id: v })}>
-                  <SelectTrigger><SelectValue placeholder="Bank account" /></SelectTrigger>
-                  <SelectContent>{bankAccounts.map((a: any) => <SelectItem key={a.id} value={a.id}>{a.account_code} {a.account_name}</SelectItem>)}</SelectContent>
-                </Select>
+                <AccountCombobox
+                  options={bankAccounts}
+                  value={form.bank_account_id}
+                  onChange={(v) => setForm({ ...form, bank_account_id: v })}
+                  placeholder="Bank account"
+                />
               </div>
               <div>
                 <Label>Advances account *</Label>
-                <Select value={form.advance_account_id} onValueChange={(v) => setForm({ ...form, advance_account_id: v })}>
-                  <SelectTrigger><SelectValue placeholder="Liability account" /></SelectTrigger>
-                  <SelectContent>{liabilityAccounts.map((a: any) => <SelectItem key={a.id} value={a.id}>{a.account_code} {a.account_name}</SelectItem>)}</SelectContent>
-                </Select>
+                <AccountCombobox
+                  options={liabilityAccounts}
+                  value={form.advance_account_id}
+                  onChange={(v) => setForm({ ...form, advance_account_id: v })}
+                  placeholder="Liability account"
+                />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">

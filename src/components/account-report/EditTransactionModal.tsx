@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAccounts } from "@/hooks/useData";
@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Save, Plus, Trash2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/currency";
+import AccountCombobox from "@/components/shared/AccountCombobox";
 import {
   validateLineDescriptions,
   deriveEntryDescription,
@@ -58,6 +59,15 @@ export default function EditTransactionModal({
 }: EditTransactionModalProps) {
   const queryClient = useQueryClient();
   const { data: accounts } = useAccounts();
+
+  // Only active accounts can be posted to; code order matches the COA.
+  const selectableAccounts = useMemo(
+    () =>
+      ((accounts as any[]) || [])
+        .filter((a: any) => a.is_active)
+        .sort((a: any, b: any) => a.account_code.localeCompare(b.account_code)),
+    [accounts]
+  );
 
   const { data: entry, isLoading } = useQuery({
     queryKey: ["journal_entry_edit", journalEntryId],
@@ -301,22 +311,13 @@ export default function EditTransactionModal({
                       className={`border-b transition-colors ${line.id === highlightLineId ? "bg-primary/5 ring-1 ring-inset ring-primary/20" : "hover:bg-muted/10"}`}
                     >
                       <td className="px-3 py-1.5">
-                        <select
+                        <AccountCombobox
+                          options={selectableAccounts}
                           value={line.account_id}
-                          onChange={(e) => updateLine(i, "account_id", e.target.value)}
-                          className={`w-full ${inputClass} !py-1.5`}
+                          onChange={(v) => updateLine(i, "account_id", v)}
+                          placeholder="Search account…"
                           disabled={isReadOnly}
-                        >
-                          <option value="">Select account…</option>
-                          {(accounts as any[] || [])
-                            .filter((a: any) => a.is_active)
-                            .sort((a: any, b: any) => a.account_code.localeCompare(b.account_code))
-                            .map((a: any) => (
-                              <option key={a.id} value={a.id}>
-                                {a.account_code} — {a.account_name}
-                              </option>
-                            ))}
-                        </select>
+                        />
                       </td>
                       <td className="px-3 py-1.5">
                         <input

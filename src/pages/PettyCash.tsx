@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { usePettyCashAccounts, useCreatePCAccount, useCashAccounts, usePCBalance } from "@/hooks/usePettyCash";
 import { ReimbursementBadge } from "@/components/petty-cash/ReimbursementBadge";
 import { useMyPermissions } from "@/hooks/usePermissions";
@@ -86,16 +85,13 @@ export default function PettyCash() {
                     </div>
                     <div>
                       <Label>Linked COA Account (Cash / Current Asset)</Label>
-                      <Select value={selectedCOAAccount} onValueChange={setSelectedCOAAccount}>
-                        <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
-                        <SelectContent position="popper" className="z-[9999]">
-                          {(cashAccounts && cashAccounts.length > 0) ? cashAccounts.map((a) => (
-                            <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
-                          )) : (
-                            <div className="px-3 py-2 text-sm text-muted-foreground">No cash/bank accounts found in COA</div>
-                          )}
-                        </SelectContent>
-                      </Select>
+                      <AccountCombobox
+                        options={cashAccounts ?? []}
+                        value={selectedCOAAccount}
+                        onChange={setSelectedCOAAccount}
+                        placeholder="Select account"
+                        emptyText="No cash/bank accounts found in COA"
+                      />
                     </div>
                     <div>
                       <Label>Float Amount (Imprest)</Label>
@@ -293,3 +289,4 @@ function VouchersList() {
 
 // Need to import this here since it's used in VouchersList
 import { usePCVouchers, type PCVoucherScope } from "@/hooks/usePettyCash";
+import AccountCombobox from "@/components/shared/AccountCombobox";

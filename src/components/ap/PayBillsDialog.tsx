@@ -16,6 +16,7 @@ import { useAccountSettings } from "@/hooks/useAccountSettings";
 import { useAccounts } from "@/hooks/useData";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import AccountCombobox from "@/components/shared/AccountCombobox";
 
 const NATURES = ["service_fee", "rent", "interest", "dividend", "royalty", "contractor", "other"];
 const prettify = (s: string) => s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -177,14 +178,12 @@ export default function PayBillsDialog({ open, onOpenChange, vendorId, vendorNam
             </div>
             <div>
               <Label>Bank / Cash Account *</Label>
-              <Select value={bankAccountId} onValueChange={setBankAccountId}>
-                <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
-                <SelectContent>
-                  {bankAccounts.map((a: any) => (
-                    <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AccountCombobox
+                options={bankAccounts}
+                value={bankAccountId}
+                onChange={setBankAccountId}
+                placeholder="Select account"
+              />
             </div>
           </div>
 

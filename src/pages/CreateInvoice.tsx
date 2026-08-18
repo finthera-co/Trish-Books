@@ -25,6 +25,7 @@ import { QuickCustomerDialog } from "@/components/invoices/QuickCustomerDialog";
 import { useSetHideSidebar } from "@/stores/useAppStore";
 import { useLegacyInvoiceNumbering } from "@/hooks/useTenantFeature";
 import { useCompanyProfile } from "@/hooks/useCompanyProfile";
+import AccountCombobox from "@/components/shared/AccountCombobox";
 
 interface LineItem {
   id: string;
@@ -945,16 +946,13 @@ export default function CreateInvoice() {
                             </Select>
                             {/* Revenue account — auto-filled from the product's income account,
                                 or pick one for an ad-hoc service line. */}
-                            <Select value={line.account_id} onValueChange={(v) => updateLine(line.id, "account_id", v)}>
-                              <SelectTrigger className="h-10 w-full shrink-0 text-xs sm:w-[190px]"><SelectValue placeholder="Revenue account…" /></SelectTrigger>
-                              <SelectContent>
-                                {revenueAccounts.map((a: any) => (
-                                  <SelectItem key={a.id} value={a.id}>
-                                    <span className="font-mono text-xs text-muted-foreground">{a.account_code}</span> {a.account_name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <AccountCombobox
+                              options={revenueAccounts}
+                              value={line.account_id}
+                              onChange={(v) => updateLine(line.id, "account_id", v)}
+                              placeholder="Revenue account…"
+                              className="h-10 w-full shrink-0 text-xs sm:w-[190px]"
+                            />
                           </div>
                           {(lineBadge || lineOnHand !== null) && (
                             <div className="flex items-center gap-2">

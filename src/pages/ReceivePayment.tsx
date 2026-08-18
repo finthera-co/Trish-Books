@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { formatCurrency } from "@/lib/currency";
 import { useCustomers, useInvoices } from "@/hooks/useData";
 import { useARAccounts, useReceiveCustomerPayment } from "@/hooks/useARModule";
+import AccountCombobox from "@/components/shared/AccountCombobox";
 
 // One customer receipt settling many invoices in a single server-posted
 // transaction: journal + allocations + AR sub-ledgers move together, any
@@ -160,14 +161,12 @@ export default function ReceivePayment() {
             </div>
             <div>
               <Label>Deposit To (Bank Account) *</Label>
-              <Select value={bankAccountId} onValueChange={setBankAccountId}>
-                <SelectTrigger><SelectValue placeholder="Select bank account" /></SelectTrigger>
-                <SelectContent>
-                  {(accounts?.bankAccounts || []).map((a: any) => (
-                    <SelectItem key={a.id} value={a.id}>{a.account_code} - {a.account_name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AccountCombobox
+                options={accounts?.bankAccounts || []}
+                value={bankAccountId}
+                onChange={setBankAccountId}
+                placeholder="Select bank account"
+              />
             </div>
             <div>
               <Label>Reference / Check #</Label>

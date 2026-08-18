@@ -34,6 +34,7 @@ import BankFeedImport from "./BankFeedImport";
 import ReconciliationRulesManager from "./ReconciliationRulesManager";
 import MatchExplanation from "./MatchExplanation";
 import SplitMatchDialog from "./SplitMatchDialog";
+import AccountCombobox from "@/components/shared/AccountCombobox";
 
 interface Props {
   reconciliationId: string;
@@ -1141,14 +1142,12 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
             </div>
             <div className="space-y-1">
               <Label>{adjType === "charge" ? "Expense Account" : "Income Account"} <span className="text-destructive">*</span></Label>
-              <Select value={adjAccountId} onValueChange={setAdjAccountId}>
-                <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
-                <SelectContent>
-                  {(adjType === "charge" ? expenseAccounts : incomeAccounts).map((a: any) => (
-                    <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AccountCombobox
+                options={adjType === "charge" ? expenseAccounts : incomeAccounts}
+                value={adjAccountId}
+                onChange={setAdjAccountId}
+                placeholder="Select account"
+              />
               {adjType === "interest" && incomeAccounts.length === 0 && (
                 <p className="text-[11px] text-amber-600">No income accounts found. Please create an "Interest Income" account in your Chart of Accounts (Type: Other Income).</p>
               )}

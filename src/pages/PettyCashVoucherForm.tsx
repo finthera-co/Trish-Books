@@ -14,8 +14,6 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  SelectGroup,
-  SelectLabel,
 } from "@/components/ui/select";
 import {
   usePettyCashAccounts,
@@ -28,6 +26,7 @@ import {
 import { useFiscalPeriods } from "@/hooks/useFiscalPeriodBalances";
 import { formatCurrency } from "@/lib/currency";
 import { toast } from "sonner";
+import AccountCombobox from "@/components/shared/AccountCombobox";
 
 interface VoucherLine {
   date: string;
@@ -83,21 +82,18 @@ export default function PettyCashVoucherForm() {
     return row?.account_id as string | undefined;
   }, [pcAccounts, pcAccountId]);
 
-  // Active vs inactive grouped buckets for the dropdown
-  const groupedAccounts = useMemo(() => {
+  // One ordered list for the line picker: postable accounts by type, inactive
+  // ones last so they stay reachable for old vouchers without inviting reuse.
+  const selectableLineAccounts = useMemo(() => {
     const list = (lineAccounts ?? []).filter((a: any) => a.id !== pettyCashGlAccountId);
-    const groups: Record<string, any[]> = {
-      Expense: [],
-      "Other Expense": [],
-      "Cost of Goods Sold": [],
-      Asset: [],
-      Inactive: [],
-    };
-    for (const a of list) {
-      if (!a.is_active) groups["Inactive"].push(a);
-      else groups[a.account_type]?.push(a);
-    }
-    return groups;
+    const order = ["Expense", "Other Expense", "Cost of Goods Sold", "Asset"];
+    const active = list.filter((a: any) => a.is_active && order.includes(a.account_type));
+    active.sort(
+      (a: any, b: any) =>
+        order.indexOf(a.account_type) - order.indexOf(b.account_type) ||
+        String(a.account_code).localeCompare(String(b.account_code))
+    );
+    return [...active, ...list.filter((a: any) => !a.is_active)];
   }, [lineAccounts, pettyCashGlAccountId]);
 
   const accountById = useMemo(() => {
@@ -335,45 +331,21 @@ export default function PettyCashVoucherForm() {
                           <Input value={line.description} onChange={(ev) => updateLine(idx, "description", ev.target.value)} placeholder="Description" className="h-8 text-xs" />
                         </td>
                         <td className="px-3 py-1">
-                          <Select value={line.account_id} onValueChange={(v) => updateLine(idx, "account_id", v)}>
-                            <SelectTrigger
-                              className={`h-8 text-xs ${
-                                showErr && e.account
-                                  ? "border-destructive ring-1 ring-destructive"
-                                  : showWarn
-                                  ? "border-yellow-500"
-                                  : ""
-                              }`}
-                              aria-invalid={!!(showErr && e.account)}
-                              aria-describedby={showErr && e.account ? errId : undefined}
-                            >
-                              <SelectValue placeholder="Select account" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {Object.entries(groupedAccounts).map(([groupName, items]) =>
-                                items.length === 0 ? null : (
-                                  <SelectGroup key={groupName}>
-                                    <SelectLabel
-                                      className={
-                                        groupName === "Inactive" ? "text-muted-foreground opacity-70" : ""
-                                      }
-                                    >
-                                      {groupName === "Inactive" ? "⚠ Inactive Accounts" : `${groupName} Accounts`}
-                                    </SelectLabel>
-                                    {items.map((a: any) => (
-                                      <SelectItem
-                                        key={a.id}
-                                        value={a.id}
-                                        className={!a.is_active ? "opacity-70" : ""}
-                                      >
-                                        {a.account_code} – {a.account_name}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectGroup>
-                                ),
-                              )}
-                            </SelectContent>
-                          </Select>
+                          <AccountCombobox
+                            options={selectableLineAccounts}
+                            value={line.account_id}
+                            onChange={(v) => updateLine(idx, "account_id", v)}
+                            placeholder="Select account"
+                            className={`h-8 text-xs ${
+                              showErr && e.account
+                                ? "border-destructive ring-1 ring-destructive"
+                                : showWarn
+                                ? "border-yellow-500"
+                                : ""
+                            }`}
+                            aria-invalid={!!(showErr && e.account)}
+                            aria-describedby={showErr && e.account ? errId : undefined}
+                          />
                           {showErr && e.account && (
                             <p id={errId} className="text-[11px] text-destructive mt-1 leading-tight">
                               {e.account}

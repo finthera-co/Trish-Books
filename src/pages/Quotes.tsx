@@ -24,6 +24,7 @@ import {
 import QuoteDocument from "@/components/quotes/QuoteDocument";
 import { useAuth } from "@/contexts/AuthContext";
 import { downloadQuotePdf } from "@/lib/quotePdf";
+import AccountCombobox from "@/components/shared/AccountCombobox";
 
 const TERMS = [
   { value: "due_on_receipt", label: "Due on receipt" },
@@ -235,13 +236,14 @@ export default function Quotes() {
                       <div className="flex items-center gap-2">
                         <span className="w-4 shrink-0 text-[11px] text-muted-foreground">{idx + 1}</span>
                         <Input className="h-9 min-w-0 flex-1 text-sm" placeholder="Description" value={l.description} onChange={(e) => updateLine(l.id, "description", e.target.value)} />
-                        <Select value={l.account_id || "none"} onValueChange={(v) => updateLine(l.id, "account_id", v === "none" ? "" : v)}>
-                          <SelectTrigger className="h-9 w-[160px] shrink-0 text-xs"><SelectValue placeholder="Revenue a/c" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Default</SelectItem>
-                            {revenueAccounts.map((a: any) => <SelectItem key={a.id} value={a.id}>{a.account_code} {a.account_name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
+                        <AccountCombobox
+                          options={revenueAccounts}
+                          value={l.account_id}
+                          onChange={(v) => updateLine(l.id, "account_id", v)}
+                          placeholder="Default"
+                          clearLabel="Default"
+                          className="h-9 w-[160px] shrink-0 text-xs"
+                        />
                         <div className="w-8 shrink-0">
                           {lines.length > 1 && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setLines((p) => p.filter((x) => x.id !== l.id))}><Trash2 className="w-4 h-4 text-muted-foreground" /></Button>}
                         </div>

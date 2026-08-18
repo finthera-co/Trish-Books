@@ -19,6 +19,7 @@ import { useVendorsWithBalance } from "@/hooks/useSubledgerData";
 import { useAccounts } from "@/hooks/useData";
 import PayBillsDialog from "@/components/ap/PayBillsDialog";
 import { toast } from "sonner";
+import AccountCombobox from "@/components/shared/AccountCombobox";
 
 interface BillLineInput { account_id?: string; description?: string; qty: number; unit_cost: number }
 
@@ -363,14 +364,13 @@ export default function BillsPage() {
                     {nbLines.map((line, i) => (
                       <TableRow key={i}>
                         <TableCell>
-                          <Select value={line.account_id ?? ""} onValueChange={(v) => updateLine(i, { account_id: v })}>
-                            <SelectTrigger className="h-8"><SelectValue placeholder="Select" /></SelectTrigger>
-                            <SelectContent>
-                              {expenseAccounts.map((a: any) => (
-                                <SelectItem key={a.id} value={a.id}>{a.account_code} – {a.account_name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <AccountCombobox
+                            options={expenseAccounts}
+                            value={line.account_id ?? ""}
+                            onChange={(v) => updateLine(i, { account_id: v })}
+                            placeholder="Select"
+                            className="h-8"
+                          />
                         </TableCell>
                         <TableCell>
                           <Input className="h-8" placeholder="Description" value={line.description ?? ""} onChange={(e) => updateLine(i, { description: e.target.value })} />
