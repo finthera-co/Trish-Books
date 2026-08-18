@@ -69,6 +69,14 @@ const fmtAmt = (n: number) => {
 
 const fmtBal = (n: number) => formatCurrency(n);
 
+// Supabase/Postgrest errors are plain objects with a `.message`, not Error
+// instances — `String(e)` on one of those renders as the useless "[object Object]".
+const errorMessage = (e: unknown): string => {
+  if (e instanceof Error) return e.message;
+  if (e && typeof e === "object" && "message" in e) return String((e as { message?: unknown }).message);
+  return String(e);
+};
+
 // The transaction type is no longer derived here. It comes from the register
 // RPC's txn_type (public.ledger_txn_type, ported verbatim from the function
 // that used to live at this spot), because the type filter now runs in SQL
@@ -438,7 +446,7 @@ export default function Ledger() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      toast.error(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Export failed: ${errorMessage(e)}`);
     } finally {
       setExporting(false);
     }
@@ -503,7 +511,7 @@ export default function Ledger() {
         ["", "TOTALS", "", "", "", "", "", totalDebit, totalCredit, closingBalance],
       );
     } catch (e) {
-      toast.error(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Export failed: ${errorMessage(e)}`);
     } finally {
       setExporting(false);
     }
