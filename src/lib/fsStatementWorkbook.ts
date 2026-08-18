@@ -157,7 +157,7 @@ export function buildSociFaceGrid(
 
     for (const a of kids) {
       const kid: SheetCell[] = [
-        textCell(`    ${a.account_code}  ${a.account_name}`),
+        textCell(`${" ".repeat(4 + (a.depth ?? 0) * 2)}${a.account_code}  ${a.account_name}`),
         { v: null },
         balanceCell(a.current_value),
       ];
@@ -216,7 +216,7 @@ export function buildSociNotesGrid(
       const row: SheetCell[] = [
         { v: null },
         textCell(a.account_code),
-        textCell(a.account_name),
+        textCell(`${" ".repeat((a.depth ?? 0) * 2)}${a.account_name}`),
         balanceCell(a.current_value),
       ];
       if (hasCmp) {

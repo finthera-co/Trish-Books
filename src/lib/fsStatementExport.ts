@@ -86,13 +86,19 @@ export const SOCI_CSV_HEADERS = ["Label", "Note", "Current", "Comparative", "Cur
 /** Label, Note, Current, Comparative, Current Margin %, Comparative Margin %.
  * Pure — split out from exportSociCsv so it's testable without Blob/URL
  * download side effects (see the golden-file snapshot test). */
-/** Ledgers under a line, indented one level, in the same order the report shows
- * them. Omitted entirely when `accounts` is not supplied, so the statutory face
- * of the statement stays exportable on its own. */
+/** Ledgers under a line, indented one level — plus a further two spaces per
+ * generation, so a subtree rolled up under a mapped parent reads as a subtree
+ * here too. Omitted entirely when `accounts` is not supplied, so the statutory
+ * face of the statement stays exportable on its own. */
+/** Four spaces to sit under the line, then two more per generation of roll-up. */
+function indentFor(a: FsStatementAccount): string {
+  return " ".repeat(4 + (a.depth ?? 0) * 2);
+}
+
 function childRows(line: FsStatementLine, accounts: Map<string, FsStatementAccount[]> | undefined): (string | number)[][] {
   const kids = accounts?.get(line.line_id) ?? [];
   return kids.map((a) => [
-    `    ${a.account_code} ${a.account_name}`,
+    `${indentFor(a)}${a.account_code} ${a.account_name}`,
     "",
     csvAmt(a.current_value, false),
     csvAmt(a.compare_value, false),
@@ -182,7 +188,7 @@ export function exportSociPdf(
     ]);
     for (const a of accounts?.get(l.line_id) ?? []) {
       rows.push([
-        `    ${a.account_code} ${a.account_name}`,
+        `${indentFor(a)}${a.account_code} ${a.account_name}`,
         "",
         pdfAmt(a.current_value, false),
         pdfAmt(a.compare_value, false),

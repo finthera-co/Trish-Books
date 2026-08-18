@@ -1,6 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, Fragment } from "react";
 import { useSearchParams } from "react-router-dom";
-import { CheckCircle2, AlertTriangle, ArrowRight, X, ChevronUp, ChevronDown, Settings2 } from "lucide-react";
+import { CheckCircle2, AlertTriangle, ArrowRight, X, ChevronUp, ChevronDown, ChevronRight, Settings2, BookOpen, CornerDownRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -9,8 +9,9 @@ import {
   useFsMapping, useMapAccountToLine, useUnmapAccount, useMoveAccountToLine,
   useFsLineDetails, useUpdateFsLine, useFsLineTerms, useSetFsLineTerms,
   useFsParameters, useSetFsParameter, isFsPnlAccountType, useMoveFsLine,
-  type FsLineDetail, type FsUnmappedAccount,
+  type FsLineDetail, type FsUnmappedAccount, type FsMappedAccount,
 } from "@/hooks/useFinancialStatements";
+import { checkFsLine, type FsStandardsIssue } from "@/lib/fsMappingStandards";
 
 const STATEMENT_CODE = "SOCI";
 
@@ -62,15 +63,47 @@ export default function FinancialStatementMapping() {
   }, [mapped]);
 
   // Balance-sheet accounts parked on a statement line are presentational; the
-  // tie-out is a P&L coverage check and must ignore them on both sides.
-  const mappedTotal = mapped
-    .filter((m) => isFsPnlAccountType(m.account_type))
-    .reduce((s, m) => s + m.balance, 0);
+  // tie-out is a P&L coverage check and must ignore them on both sides. A
+  // rolled-up ledger counts exactly like a directly mapped one — it is on the
+  // statement — so the descendants are summed here too, on their own type
+  // rather than their parent's.
+  const mappedTotal = mapped.reduce((sum, m) => {
+    const own = isFsPnlAccountType(m.account_type) ? m.balance : 0;
+    const kids = m.descendants.reduce((s, d) => s + (isFsPnlAccountType(d.account_type) ? d.balance : 0), 0);
+    return sum + own + kids;
+  }, 0);
   const unmappedTotal = unmapped.reduce((s, a) => s + a.balance, 0);
   const fullTotal = mappedTotal + unmappedTotal;
   const isClean = Math.abs(unmappedTotal) < 0.005;
 
   const detailLines = useMemo(() => (lineDetails ?? []).filter((l) => l.line_type === "detail"), [lineDetails]);
+
+  // Everything at or below the memorandum heading is outside profit or loss by
+  // construction — that boundary is what the standards checks are read against.
+  const memoFromSort = useMemo(() => {
+    const heading = (lineDetails ?? []).find((l) => l.line_code === "BS_MEMO_HEADING");
+    return heading ? heading.sort_order : Number.POSITIVE_INFINITY;
+  }, [lineDetails]);
+
+  const issuesByLine = useMemo(() => {
+    const out = new Map<string, FsStandardsIssue[]>();
+    for (const line of lineDetails ?? []) {
+      if (line.line_type !== "detail") continue;
+      const rows = mappedByLine.get(line.id) ?? [];
+      const accounts = rows.flatMap((m) => [
+        { account_code: m.account_code, account_type: m.account_type },
+        ...m.descendants.map((d) => ({ account_code: d.account_code, account_type: d.account_type })),
+      ]);
+      const issues = checkFsLine({ label: line.label, isMemo: line.sort_order >= memoFromSort, accounts });
+      if (issues.length > 0) out.set(line.id, issues);
+    }
+    return out;
+  }, [lineDetails, mappedByLine, memoFromSort]);
+
+  const issueCount = useMemo(
+    () => Array.from(issuesByLine.values()).reduce((s, v) => s + v.length, 0),
+    [issuesByLine]
+  );
 
   const [otherFilter, setOtherFilter] = useState("");
   const visibleOthers = useMemo(() => {
@@ -129,6 +162,17 @@ export default function FinancialStatementMapping() {
           <span>Statement total {fmt(fullTotal)}</span>
           <span className="opacity-60 font-normal">profit &amp; loss accounts only</span>
         </div>
+
+        {issueCount > 0 && (
+          <div className="mt-2 flex items-start gap-2 px-4 py-2.5 rounded-lg text-sm bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+            <BookOpen className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <span>
+              <strong>{issueCount} presentation issue{issueCount !== 1 ? "s" : ""}</strong> across {issuesByLine.size} line
+              {issuesByLine.size !== 1 ? "s" : ""} — each is flagged on the line itself. These are LKAS&nbsp;1 / IAS&nbsp;1 questions
+              about what is presented where, not arithmetic errors, so the figures still tie out.
+            </span>
+          </div>
+        )}
 
         {fiscalPeriodId && (
           <div className="mt-4 pt-4 border-t border-border flex flex-wrap items-end gap-3">
@@ -223,7 +267,12 @@ export default function FinancialStatementMapping() {
             <div className="space-y-3 max-h-[70vh] overflow-y-auto">
               {(lineDetails ?? []).map((line, idx) => {
                 const accounts = mappedByLine.get(line.id) ?? [];
-                const subtotal = accounts.reduce((s, a) => s + a.balance, 0);
+                // What the line is actually worth: a mapped parent contributes
+                // its subtree, so summing own balances alone would under-report
+                // the line against the statement it is supposed to mirror.
+                const subtotal = accounts.reduce((s, a) => s + a.rollup_balance, 0);
+                const rolledCount = accounts.reduce((s, a) => s + a.descendants.length, 0);
+                const lineIssues = issuesByLine.get(line.id) ?? [];
                 return (
                   <div key={line.id} className="border border-border rounded-lg p-3">
                     <div className="flex items-center justify-between gap-2">
@@ -239,7 +288,9 @@ export default function FinancialStatementMapping() {
                         <div className="min-w-0">
                           <p className="text-sm font-semibold text-foreground truncate">{line.label}</p>
                           <p className="text-xs text-muted-foreground">
-                            {line.line_type}{line.note_ref ? ` · Note ${line.note_ref}` : ""}{line.line_type === "detail" ? ` · ${accounts.length} account${accounts.length !== 1 ? "s" : ""}` : ""}
+                            {line.line_type}{line.note_ref ? ` · Note ${line.note_ref}` : ""}
+                            {line.line_type === "detail" ? ` · ${accounts.length} account${accounts.length !== 1 ? "s" : ""}` : ""}
+                            {rolledCount > 0 ? ` (+${rolledCount} rolled up)` : ""}
                           </p>
                         </div>
                       </div>
@@ -250,12 +301,26 @@ export default function FinancialStatementMapping() {
                         </button>
                       </div>
                     </div>
+                    {lineIssues.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {lineIssues.map((iss) => (
+                          <div key={iss.code} className="flex items-start gap-1.5 text-[11px] leading-snug text-amber-800 dark:text-amber-300">
+                            <BookOpen className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                            <span>
+                              <span className="font-semibold">{iss.reference}</span> · {iss.summary}
+                              <span className="font-mono ml-1 opacity-80">{iss.accounts.slice(0, 6).join(", ")}{iss.accounts.length > 6 ? `, +${iss.accounts.length - 6}` : ""}</span>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {line.line_type === "detail" && accounts.length > 0 && (
                       <div className="mt-2 pt-2 border-t border-border/50 space-y-1">
                         {accounts.map((a) => (
-                          <div key={a.fs_line_account_id} className="flex items-center gap-2 text-xs">
+                          <Fragment key={a.fs_line_account_id}>
+                          <div className="flex items-center gap-2 text-xs">
                             <span className="flex-1 truncate text-foreground">{a.account_code} · {a.account_name}</span>
-                            <span className="font-mono tabular-nums text-muted-foreground">{fmt(a.balance)}</span>
+                            <span className="font-mono tabular-nums text-muted-foreground">{fmt(a.descendants.length > 0 ? a.rollup_balance : a.balance)}</span>
                             <Select onValueChange={(toLineId) => {
                               const toLine = linesByLabel.get(toLineId);
                               moveAccount.mutate({ fsLineAccountId: a.fs_line_account_id, toLineId, fromLabel: line.label, toLabel: toLine?.label ?? "", accountName: a.account_name });
@@ -274,6 +339,8 @@ export default function FinancialStatementMapping() {
                               <X className="w-3 h-3" />
                             </button>
                           </div>
+                          <RolledUpDetail account={a} />
+                          </Fragment>
                         ))}
                       </div>
                     )}
@@ -287,6 +354,60 @@ export default function FinancialStatementMapping() {
 
       {editingLine && (
         <LineEditorDialog line={editingLine} allLines={lineDetails ?? []} onClose={() => setEditingLine(null)} />
+      )}
+    </div>
+  );
+}
+
+/** The subtree a mapped account carries, and the branches it does NOT. Both
+ * matter: a header account reads 0.00 on its own, so without this the screen
+ * gives no clue whether that means "empty" or "its ledgers went elsewhere". */
+function RolledUpDetail({ account }: { account: FsMappedAccount }) {
+  const [open, setOpen] = useState(false);
+  const { descendants, diverted } = account;
+  if (descendants.length === 0 && diverted.length === 0) return null;
+
+  return (
+    <div className="pl-4 pb-1 space-y-0.5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary"
+        aria-expanded={open}
+      >
+        {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+        {descendants.length > 0 && <span>rolls up {descendants.length} sub-ledger{descendants.length !== 1 ? "s" : ""}</span>}
+        {descendants.length > 0 && diverted.length > 0 && <span className="opacity-50">·</span>}
+        {diverted.length > 0 && (
+          <span className="text-amber-700 dark:text-amber-400">
+            {diverted.length} mapped elsewhere, excluded
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="space-y-0.5 pl-4 border-l border-border/50">
+          {descendants.map((d) => (
+            <div key={d.account_id} className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <CornerDownRight className="w-3 h-3 flex-shrink-0 opacity-50" style={{ marginLeft: (d.depth - 1) * 10 }} />
+              <span className="flex-1 truncate">{d.account_code} · {d.account_name}</span>
+              <span className="font-mono tabular-nums">{fmt(d.balance)}</span>
+            </div>
+          ))}
+          {diverted.map((d) => (
+            <div key={d.account_id} className="flex items-center gap-2 text-[11px] text-amber-700 dark:text-amber-400">
+              <X className="w-3 h-3 flex-shrink-0 opacity-60" />
+              <span className="flex-1 truncate">{d.account_code} · {d.account_name}</span>
+              <span className="opacity-80">on its own line</span>
+            </div>
+          ))}
+          {diverted.length > 0 && (
+            <p className="text-[10px] text-muted-foreground pt-1">
+              A ledger mapped in its own right leaves its parent's roll-up, so it is counted once. Unmap it from its own
+              line to fold it back in here.
+            </p>
+          )}
+        </div>
       )}
     </div>
   );

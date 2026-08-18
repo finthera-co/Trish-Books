@@ -326,7 +326,9 @@ export default function StatementOfComprehensiveIncome() {
                     </tr>
                     {isOpen && kids.map((a) => (
                       <tr key={a.account_id} className="text-xs text-muted-foreground">
-                        <td className="py-1 pr-2 pl-6">
+                        {/* depth > 0 = a ledger rolled up under the account that
+                            was mapped, so it steps in one level per generation. */}
+                        <td className="py-1 pr-2 pl-6" style={{ paddingLeft: `${1.5 + a.depth * 0.75}rem` }}>
                           <span className="inline-block w-3 border-t border-border/60 align-middle mr-2" />
                           <span className="font-mono">{a.account_code}</span>
                           <span className="ml-2">{a.account_name}</span>

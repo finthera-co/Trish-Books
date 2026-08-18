@@ -11,7 +11,7 @@ function line(p: Partial<FsStatementLine> & Pick<FsStatementLine, "line_id" | "l
   };
 }
 function acct(p: Partial<FsStatementAccount> & Pick<FsStatementAccount, "line_id" | "account_id" | "account_code">): FsStatementAccount {
-  return { account_name: "Account", account_type: "Income", current_value: 0, compare_value: null, ...p };
+  return { account_name: "Account", account_type: "Income", owner_id: p.account_id, depth: 0, current_value: 0, compare_value: null, ...p };
 }
 
 const META: FsExportMeta = {

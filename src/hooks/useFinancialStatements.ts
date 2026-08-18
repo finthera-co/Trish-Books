@@ -29,6 +29,12 @@ export interface FsStatementAccount {
   account_code: string;
   account_name: string;
   account_type: string;
+  /** The account actually named in fs_line_accounts. Equals account_id for a
+   * directly mapped ledger; for a rolled-up descendant it is the ancestor that
+   * carried it onto the line. */
+  owner_id: string;
+  /** 0 = mapped in its own right, 1+ = generations below the mapped ancestor. */
+  depth: number;
   current_value: number | null;
   compare_value: number | null;
 }
@@ -124,6 +130,7 @@ export function useFsStatementAccounts(
       type Row = {
         line_id: string; account_id: string; account_code: string | null;
         account_name: string | null; account_type: string | null;
+        owner_id: string | null; depth: unknown;
         current_value: unknown; compare_value: unknown;
       };
       return ((data ?? []) as Row[]).map((r) => ({
@@ -132,6 +139,8 @@ export function useFsStatementAccounts(
         account_code: r.account_code ?? "",
         account_name: r.account_name ?? "",
         account_type: r.account_type ?? "",
+        owner_id: r.owner_id ?? r.account_id,
+        depth: toNum(r.depth),
         current_value: r.current_value == null ? null : toNum(r.current_value),
         compare_value: r.compare_value == null ? null : toNum(r.compare_value),
       }));
@@ -165,6 +174,9 @@ function invalidateStatement(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: ["fs_statement"] });
   queryClient.invalidateQueries({ queryKey: ["fs_coverage"] });
   queryClient.invalidateQueries({ queryKey: ["fs_mapping"] });
+  // Prefix matching does not reach a differently-named key, and mapping one
+  // account changes which OTHER accounts are rolled up under it.
+  queryClient.invalidateQueries({ queryKey: ["fs_mapping_expanded"] });
 }
 
 export interface FsStatementMeta {
@@ -196,6 +208,18 @@ export function useFsStatementMeta(statementCode: string) {
   });
 }
 
+/** A ledger that a mapped ancestor carries onto a line (depth >= 1). It has no
+ * fs_line_accounts row of its own — unmapping it means unmapping the ancestor,
+ * or mapping it somewhere itself, which overrides the roll-up. */
+export interface FsRolledAccount {
+  account_id: string;
+  account_code: string;
+  account_name: string;
+  account_type: string;
+  depth: number;
+  balance: number;
+}
+
 export interface FsMappedAccount {
   line_id: string;
   fs_line_account_id: string;
@@ -205,7 +229,16 @@ export interface FsMappedAccount {
   account_type: string;
   period_debit: number;
   period_credit: number;
+  /** This account's own postings only. A parent header account reads 0.00. */
   balance: number;
+  /** What the line actually takes: own postings plus every rolled-up ledger. */
+  rollup_balance: number;
+  /** Ledgers swept in under this account, nearest-ancestor rule applied. */
+  descendants: FsRolledAccount[];
+  /** Descendants that are NOT included because they are mapped in their own
+   * right elsewhere on this statement. Shown so a parent reading 0.00 is
+   * explained rather than mysterious. */
+  diverted: FsRolledAccount[];
 }
 
 export interface FsUnmappedAccount {
@@ -249,9 +282,14 @@ export function isFsPnlAccountType(t: string | null | undefined): boolean {
 
 /**
  * Mapping-UI data: for the given statement + period, every account already
- * mapped (grouped per line) and every P&L account with movement that isn't
- * mapped to any line — sorted by absolute balance descending, largest
- * omissions first, per the mapping UI's spec.
+ * mapped (grouped per line, each with the ledgers it rolls up) and every P&L
+ * account with movement that no line picks up — sorted by absolute balance
+ * descending, largest omissions first, per the mapping UI's spec.
+ *
+ * "Picked up" means covered, not merely named: mapping a parent carries its
+ * whole subtree, minus any descendant mapped in its own right (the server's
+ * nearest-mapped-ancestor rule). A rolled-up ledger is therefore neither
+ * unmapped nor available — it is already on a line.
  *
  * `others` is a separate, optional bucket: EVERY remaining ledger — asset,
  * liability, equity — movement or not, so any account can be parked on a
@@ -319,11 +357,58 @@ export function useFsMapping(statementCode: string, dateFrom: string, dateTo: st
     staleTime: 30_000,
   });
 
-  const isLoading = metaQuery.isLoading || balancesQuery.isLoading || mappedQuery.isLoading;
-  const error = metaQuery.error || balancesQuery.error || mappedQuery.error;
+  // Which ledgers each mapped account actually carries. Read from the server
+  // rather than recomputed here: fn_fs_line_accounts_expanded is what the
+  // statement itself is valued from, and a second implementation of the
+  // nearest-mapped-ancestor rule would eventually disagree with it.
+  const expandedQuery = useQuery({
+    queryKey: ["fs_mapping_expanded", tenantId, statementId],
+    enabled: Boolean(tenantId && statementId),
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("fn_fs_line_accounts_expanded" as any, {
+        p_statement_id: statementId!,
+      });
+      if (error) throw error;
+      return (data ?? []) as { out_line_id: string; out_owner_id: string; out_account_id: string; out_depth: number }[];
+    },
+    staleTime: 30_000,
+  });
 
-  const mappedAccountIds = new Set((mappedQuery.data ?? []).map((r) => r.account_id));
+  // Parent links, for explaining a subtree that ISN'T rolled up: a child mapped
+  // in its own right leaves its parent's roll-up, and a parent then reading
+  // 0.00 has to say why.
+  const treeQuery = useQuery({
+    queryKey: ["fs_mapping_tree", tenantId],
+    enabled: Boolean(tenantId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("accounts")
+        .select("id, parent_account_id")
+        .eq("tenant_id", tenantId!);
+      if (error) throw error;
+      const kids = new Map<string, string[]>();
+      for (const r of (data ?? []) as { id: string; parent_account_id: string | null }[]) {
+        if (!r.parent_account_id) continue;
+        const arr = kids.get(r.parent_account_id) ?? [];
+        arr.push(r.id);
+        kids.set(r.parent_account_id, arr);
+      }
+      return kids;
+    },
+    staleTime: 60_000,
+  });
+
+  const isLoading = metaQuery.isLoading || balancesQuery.isLoading || mappedQuery.isLoading || expandedQuery.isLoading;
+  const error = metaQuery.error || balancesQuery.error || mappedQuery.error || expandedQuery.error;
+
   const balances = balancesQuery.data ?? new Map<string, FsAccountBalance>();
+  const expanded = expandedQuery.data ?? [];
+  const childrenOf = treeQuery.data ?? new Map<string, string[]>();
+
+  // Every account the statement picks up, directly or through an ancestor.
+  // Nothing in here is "unmapped" — it is already on a line.
+  const coveredAccountIds = new Set(expanded.map((e) => e.out_account_id));
+  const directlyMappedIds = new Set((mappedQuery.data ?? []).map((r) => r.account_id));
 
   // What a row is "worth" on this screen, matching how the statement values it:
   // movement for P&L accounts, closing balance for everything else. Once an
@@ -337,9 +422,53 @@ export function useFsMapping(statementCode: string, dateFrom: string, dateTo: st
     return lineSign === "invert" ? -b.closing : b.closing;
   };
 
+  const rolled = (accountId: string, depth: number, lineSign?: string): FsRolledAccount => {
+    const b = balances.get(accountId);
+    const accountType = b?.account_type ?? "";
+    return {
+      account_id: accountId,
+      account_code: b?.account_code ?? "",
+      account_name: b?.account_name ?? "",
+      account_type: accountType,
+      depth,
+      balance: displayValue(b, accountType, lineSign),
+    };
+  };
+
+  // Descendants grouped by the account that carried them onto the line.
+  const descendantsByOwner = new Map<string, { account_id: string; depth: number }[]>();
+  for (const e of expanded) {
+    if (e.out_depth === 0) continue;
+    const key = `${e.out_line_id}:${e.out_owner_id}`;
+    const arr = descendantsByOwner.get(key) ?? [];
+    arr.push({ account_id: e.out_account_id, depth: e.out_depth });
+    descendantsByOwner.set(key, arr);
+  }
+
+  /** The complement of the roll-up: walk down from a mapped account and collect
+   * the first mapped node on each branch. Those are the ledgers this account
+   * would have carried had they not been mapped themselves. */
+  const divertedUnder = (accountId: string, lineSign?: string): FsRolledAccount[] => {
+    const out: FsRolledAccount[] = [];
+    const walk = (id: string, depth: number) => {
+      if (depth > 12) return;
+      for (const child of childrenOf.get(id) ?? []) {
+        if (directlyMappedIds.has(child)) out.push(rolled(child, depth + 1, lineSign));
+        else walk(child, depth + 1);
+      }
+    };
+    walk(accountId, 0);
+    return out;
+  };
+
   const mapped: FsMappedAccount[] = (mappedQuery.data ?? []).map((r) => {
     const accountType = r.accounts?.account_type ?? "";
+    const lineSign = r.fs_lines?.sign;
     const b = balances.get(r.account_id);
+    const own = displayValue(b, accountType, lineSign);
+    const descendants = (descendantsByOwner.get(`${r.line_id}:${r.account_id}`) ?? [])
+      .map((d) => rolled(d.account_id, d.depth, lineSign))
+      .sort((x, y) => x.account_code.localeCompare(y.account_code, undefined, { numeric: true }));
     return {
       line_id: r.line_id,
       fs_line_account_id: r.id,
@@ -349,7 +478,10 @@ export function useFsMapping(statementCode: string, dateFrom: string, dateTo: st
       account_type: accountType,
       period_debit: b?.period_debit ?? 0,
       period_credit: b?.period_credit ?? 0,
-      balance: displayValue(b, accountType, r.fs_lines?.sign),
+      balance: own,
+      rollup_balance: own + descendants.reduce((s, d) => s + d.balance, 0),
+      descendants,
+      diverted: divertedUnder(r.account_id, lineSign),
     };
   });
 
@@ -363,7 +495,10 @@ export function useFsMapping(statementCode: string, dateFrom: string, dateTo: st
     balance: displayValue(b, b.account_type),
   });
 
-  const available = Array.from(balances.values()).filter((b) => !mappedAccountIds.has(b.account_id));
+  // Covered, not merely mapped: a ledger rolled up under a mapped parent is on
+  // the statement and must not be offered for mapping again — doing so would
+  // pull it out of its parent's roll-up without anyone intending it.
+  const available = Array.from(balances.values()).filter((b) => !coveredAccountIds.has(b.account_id));
 
   const unmapped: FsUnmappedAccount[] = available
     .filter((b) => isFsPnlAccountType(b.account_type))
@@ -380,6 +515,7 @@ export function useFsMapping(statementCode: string, dateFrom: string, dateTo: st
 
   return { statementId, mapped, unmapped, others, isLoading, error };
 }
+
 
 async function logMappingChange(tenantId: string, userId: string | undefined, detail: Record<string, unknown>) {
   await supabase.from("audit_logs").insert({
