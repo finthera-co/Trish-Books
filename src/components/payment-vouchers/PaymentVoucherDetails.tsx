@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Printer, Download } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
+import { formatDate } from "@/lib/format";
 
 interface Props {
   voucherId: string | null;
@@ -71,7 +72,7 @@ export default function PaymentVoucherDetails({ voucherId }: Props) {
 
         <div className="header-info" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 14 }}>
           <div><span className="label" style={{ fontWeight: 600, color: "#555" }}>Payee: </span>{(voucher as any).customers?.name || "—"}</div>
-          <div><span className="label" style={{ fontWeight: 600, color: "#555" }}>Date: </span>{voucher.payment_date}</div>
+          <div><span className="label" style={{ fontWeight: 600, color: "#555" }}>Date: </span>{formatDate(voucher.payment_date)}</div>
           <div><span className="label" style={{ fontWeight: 600, color: "#555" }}>Payment Account: </span>{(voucher as any).accounts?.account_name || "—"}</div>
           <div><span className="label" style={{ fontWeight: 600, color: "#555" }}>Method: </span>{voucher.payment_method}</div>
           {voucher.account_number && <div><span className="label" style={{ fontWeight: 600, color: "#555" }}>Account #: </span>{voucher.account_number}</div>}

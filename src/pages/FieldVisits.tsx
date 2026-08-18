@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { formatTime } from "@/lib/format";
 
 function today() {
   return format(new Date(), "yyyy-MM-dd");
@@ -139,12 +140,12 @@ export default function FieldVisits() {
                   <td className="text-muted-foreground">{v.visit_date}</td>
                   <td className="text-muted-foreground">{v.client_name || "—"}</td>
                   <td className="text-muted-foreground">
-                    {format(new Date(v.check_in_at), "p")}
+                    {formatTime(v.check_in_at)}
                     {v.attendance_status === "absent" && (
                       <span className="ml-2 inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300">late · absent</span>
                     )}
                   </td>
-                  <td className="text-muted-foreground">{v.check_out_at ? format(new Date(v.check_out_at), "p") : <span className="text-emerald-600">Active</span>}</td>
+                  <td className="text-muted-foreground">{v.check_out_at ? formatTime(v.check_out_at) : <span className="text-emerald-600">Active</span>}</td>
                   <td className="text-muted-foreground">{duration(v.check_in_at, v.check_out_at)}</td>
                   <td className="text-right">
                     <div className="inline-flex items-center gap-2 justify-end">

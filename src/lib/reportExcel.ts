@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { formatDateTime } from "@/lib/format";
 
 /**
  * Generic financial-report Excel exporter — the .xlsx counterpart to
@@ -206,7 +207,7 @@ function buildHeading(meta: ReportExcelMeta): SheetCell[][] {
   if (meta.subtitle) lines.push(meta.subtitle);
   if (meta.dateLine) lines.push(meta.dateLine);
   lines.push(meta.basisLine ?? "All amounts in LKR");
-  lines.push(meta.generatedLine ?? `Generated on ${new Date().toLocaleString()}`);
+  lines.push(meta.generatedLine ?? `Generated on ${formatDateTime(new Date())}`);
   lines.push("");
   return lines.map((text) => [{ v: text || null }]);
 }

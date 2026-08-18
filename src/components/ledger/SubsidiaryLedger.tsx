@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Download, Users, Building2, Search, Eye } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { format } from "date-fns";
+import { formatDate } from "@/lib/format";
 
 const fmt = (n: number) => {
   const abs = Math.abs(n);
@@ -194,7 +195,7 @@ export function ARSubledger() {
       <div className="stat-card">
         <div className="text-center mb-4">
           <h2 className="text-lg font-bold text-foreground">Accounts Receivable Subsidiary Ledger</h2>
-          <p className="text-xs text-muted-foreground">Customer balances as of {format(new Date(), "MMM d, yyyy")}</p>
+          <p className="text-xs text-muted-foreground">Customer balances as of {formatDate(new Date())}</p>
         </div>
 
         {invoicesLoading ? (
@@ -285,7 +286,7 @@ export function ARSubledger() {
                 <tbody>
                   {selectedCustomer.entries.map((e, i) => (
                     <tr key={i}>
-                      <td className="text-muted-foreground tabular-nums">{e.date}</td>
+                      <td className="text-muted-foreground tabular-nums">{formatDate(e.date)}</td>
                       <td className="text-foreground">{e.description}</td>
                       <td className="font-mono text-xs text-muted-foreground">{e.reference || "—"}</td>
                       <td className={`text-right font-mono tabular-nums ${e.amount < 0 ? "text-success" : "text-foreground"}`}>
@@ -432,7 +433,7 @@ export function APSubledger() {
       <div className="stat-card">
         <div className="text-center mb-4">
           <h2 className="text-lg font-bold text-foreground">Accounts Payable Subsidiary Ledger</h2>
-          <p className="text-xs text-muted-foreground">Vendor balances as of {format(new Date(), "MMM d, yyyy")}</p>
+          <p className="text-xs text-muted-foreground">Vendor balances as of {formatDate(new Date())}</p>
         </div>
 
         {isLoading ? (
@@ -523,7 +524,7 @@ export function APSubledger() {
                 <tbody>
                   {selectedVendor.entries.map((e, i) => (
                     <tr key={i}>
-                      <td className="text-muted-foreground tabular-nums">{e.date}</td>
+                      <td className="text-muted-foreground tabular-nums">{formatDate(e.date)}</td>
                       <td className="text-foreground">{e.description}</td>
                       <td className="font-mono text-xs text-muted-foreground">{e.reference || "—"}</td>
                       <td className={`text-right font-mono tabular-nums ${e.amount < 0 ? "text-success" : "text-foreground"}`}>

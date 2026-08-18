@@ -21,6 +21,7 @@ import { useEmployees } from "@/hooks/useData";
 import { useMyPermissions } from "@/hooks/usePermissions";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import { formatDate } from "@/lib/format";
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "bg-amber-500", approved: "bg-blue-600", settled: "bg-green-600",
@@ -193,7 +194,7 @@ export default function Leave() {
                       <div className="text-xs text-muted-foreground">{r.employees?.employee_number}</div>
                     </td>
                     <td><Badge style={{ backgroundColor: r.leave_types?.color || undefined }} className="text-white">{r.leave_types?.name}</Badge></td>
-                    <td className="text-muted-foreground">{r.start_date}{r.end_date !== r.start_date ? ` → ${r.end_date}` : ""}{r.is_half_day ? ` (½ ${r.half_day_period === "afternoon" ? "PM" : "AM"})` : ""}</td>
+                    <td className="text-muted-foreground">{formatDate(r.start_date)}{r.end_date !== r.start_date ? ` → ${formatDate(r.end_date)}` : ""}{r.is_half_day ? ` (½ ${r.half_day_period === "afternoon" ? "PM" : "AM"})` : ""}</td>
                     <td className="text-right">{r.days}</td>
                     <td><Badge className={`${STATUS_COLORS[r.status] || "bg-muted"} text-white`}>{r.status}</Badge></td>
                     <td className="text-right space-x-1">
@@ -393,7 +394,7 @@ export default function Leave() {
           <DialogHeader>
             <DialogTitle>
               {selectedHoliday ? "Edit holiday" : "Add holiday"}
-              {hol.holiday_date && <span className="text-muted-foreground font-normal"> · {hol.holiday_date}</span>}
+              {hol.holiday_date && <span className="text-muted-foreground font-normal"> · {formatDate(hol.holiday_date)}</span>}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">

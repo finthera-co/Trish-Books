@@ -29,6 +29,7 @@ import { ReportMasthead } from "@/components/reports/ReportMasthead";
 import { ARSubledger, APSubledger } from "@/components/ledger/SubsidiaryLedger";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { formatDate } from "@/lib/format";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -419,9 +420,9 @@ export default function Ledger() {
       // Credit and the debit total under Memo.
       const header = ["Date", "Type", "Ref No", "Cheque No", "Name", "Account", "Memo", "Debit (LKR)", "Credit (LKR)", "Balance (LKR)"];
       const rows = [
-        [effectiveDateFrom || "", "Opening Balance", "", "", "", "", "Carried forward from prior period", "", "", openingBalance.toFixed(2)],
+        [effectiveDateFrom ? formatDate(effectiveDateFrom) : "", "Opening Balance", "", "", "", "", "Carried forward from prior period", "", "", openingBalance.toFixed(2)],
         ...exportRows.map(r => [
-          r.date, r.transactionType, r.refNumber, r.chequeNo, r.entityName,
+          formatDate(r.date), r.transactionType, r.refNumber, r.chequeNo, r.entityName,
           r.contraAccount, r.memo.replace(/"/g, '""'),
           r.debit > 0 ? r.debit.toFixed(2) : "",
           r.credit > 0 ? r.credit.toFixed(2) : "",
@@ -458,11 +459,11 @@ export default function Ledger() {
       const registerRows = await fetchExportRows();
       const exportRows: ExportRow[] = [
         {
-          date: effectiveDateFrom || "", type: "Opening Balance", ref: "", chequeNo: "", name: "",
+          date: effectiveDateFrom ? formatDate(effectiveDateFrom) : "", type: "Opening Balance", ref: "", chequeNo: "", name: "",
           account: "", memo: "", debit: null, credit: null, balance: openingBalance,
         },
         ...registerRows.map(r => ({
-          date: r.date,
+          date: formatDate(r.date),
           type: r.transactionType,
           ref: r.refNumber,
           chequeNo: r.chequeNo,
@@ -480,7 +481,7 @@ export default function Ledger() {
           title: `Account Register — ${selectedAccount.account_code} ${selectedAccount.account_name}`,
           subtitle: getTypeLabel(selectedAccount.account_type),
           dateLine: (effectiveDateFrom || dateTo)
-            ? `${effectiveDateFrom || "Inception"} → ${dateTo || "Today"}`
+            ? `${effectiveDateFrom ? formatDate(effectiveDateFrom) : "Inception"} → ${dateTo ? formatDate(dateTo) : "Today"}`
             : undefined,
           sheetName: `${selectedAccount.account_code} Register`,
           fileName: `Register ${selectedAccount.account_code} ${selectedAccount.account_name}.xlsx`,
@@ -809,7 +810,7 @@ export default function Ledger() {
                           className={`border-b border-border/50 cursor-pointer transition-colors hover:bg-primary/5 ${row.isReversal ? "bg-destructive/5" : ""}`}
                         >
                           <td className="px-3 py-2 text-right text-muted-foreground text-xs tabular-nums">{page * PAGE_SIZE + i + 1}</td>
-                          <td className="px-3 py-2 text-muted-foreground tabular-nums">{row.date}</td>
+                          <td className="px-3 py-2 text-muted-foreground tabular-nums">{formatDate(row.date)}</td>
                           <td className="px-3 py-2">
                             <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap ${txnTypeBadge[row.transactionType] || txnTypeBadge["Journal Entry"]}`}>
                               {row.transactionType}
@@ -970,7 +971,7 @@ export default function Ledger() {
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Date</p>
-                  <p className="font-medium text-foreground">{drillDownEntry.date}</p>
+                  <p className="font-medium text-foreground">{formatDate(drillDownEntry.date)}</p>
                 </div>
                 <div>
                   <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Reference</p>

@@ -12,6 +12,7 @@ import { usePettyCashAccounts, usePCBalance } from "@/hooks/usePettyCash";
 import { useCreatePCCount, usePostPCCount, usePCCount } from "@/hooks/usePettyCashCount";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatCurrency } from "@/lib/currency";
+import { formatDate } from "@/lib/format";
 
 // Default Sri Lanka denominations (face value + note/coin classification).
 const DEFAULT_DENOMINATIONS: { value: number; type: "note" | "coin" }[] = [
@@ -67,7 +68,7 @@ function ExistingCountView({ id }: { id: string }) {
               <Badge variant="outline">{count.status}</Badge>
             </h1>
             <p className="page-description">
-              {(count.petty_cash_accounts as any)?.account_name} · {new Date(count.count_date).toLocaleDateString()}
+              {(count.petty_cash_accounts as any)?.account_name} · {formatDate(count.count_date)}
             </p>
           </div>
         </div>

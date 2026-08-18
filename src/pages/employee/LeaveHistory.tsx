@@ -6,6 +6,7 @@ import { useLeaveRequests, useCancelLeaveRequest } from "@/hooks/useLeave";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatDate } from "@/lib/format";
 
 const STATUS_STYLE: Record<string, string> = {
   pending:   "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
@@ -63,7 +64,7 @@ export default function LeaveHistory() {
               <tr key={r.id}>
                 <td className="px-4 py-3 font-medium text-foreground">{r.leave_types?.name ?? "—"}</td>
                 <td className="px-4 py-3 text-muted-foreground">
-                  {r.start_date}{r.end_date !== r.start_date ? ` → ${r.end_date}` : ""}{r.is_half_day ? " (½)" : ""}
+                  {formatDate(r.start_date)}{r.end_date !== r.start_date ? ` → ${formatDate(r.end_date)}` : ""}{r.is_half_day ? " (½)" : ""}
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">{Number(r.days)}</td>
                 <td className="px-4 py-3">

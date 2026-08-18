@@ -22,6 +22,7 @@ import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { Upload, CheckCircle2, AlertTriangle, Sparkles, Wand2, Clock } from "lucide-react";
+import { formatDate } from "@/lib/format";
 
 const NONE = "__none__";
 
@@ -619,7 +620,7 @@ export default function AttendanceImport() {
                   <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-3 text-sm space-y-2">
                     <p className="font-medium text-amber-800 dark:text-amber-300 flex items-center gap-2"><AlertTriangle className="w-4 h-4" />Overlapping batch already imported</p>
                     <p className="text-amber-700 dark:text-amber-400">
-                      A batch covering this period was already imported on {new Date(overlaps![0].created_at).toLocaleDateString()} ({overlaps![0].file_name}, {overlaps![0].total_rows} rows). Importing again may double-count hours.
+                      A batch covering this period was already imported on {formatDate(overlaps![0].created_at)} ({overlaps![0].file_name}, {overlaps![0].total_rows} rows). Importing again may double-count hours.
                     </p>
                     <label className="flex items-center gap-2 text-amber-800 dark:text-amber-300">
                       <Checkbox checked={acknowledgedOverlap} onCheckedChange={(c) => setAcknowledgedOverlap(!!c)} /> Import anyway

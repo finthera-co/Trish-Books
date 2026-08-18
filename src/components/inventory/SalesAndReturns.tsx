@@ -21,6 +21,7 @@ import { useInventoryMaster } from "@/hooks/useProcurement";
 import { useWarehouses } from "@/hooks/useWarehouses";
 import { useCustomers } from "@/hooks/useData";
 import { useVendors } from "@/hooks/useSubledger";
+import { formatDate } from "@/lib/format";
 import {
   useDeliveryNotes, useCreateDeliveryNote, usePostDeliveryNote,
   useSalesReturns, useCreateSalesReturn, usePostSalesReturn,
@@ -70,7 +71,7 @@ export function DeliveryNotesTab() {
               {list.map((d: any) => (
                 <TableRow key={d.id}>
                   <TableCell className="font-mono">{d.dn_number}</TableCell>
-                  <TableCell>{format(new Date(d.dispatch_date), "PP")}</TableCell>
+                  <TableCell>{formatDate(d.dispatch_date)}</TableCell>
                   <TableCell>{d.customers?.name || "—"}</TableCell>
                   <TableCell>{d.warehouses?.name || "—"}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(d.total_cogs)}</TableCell>
@@ -213,7 +214,7 @@ export function SalesReturnsTab() {
               {list.map((s: any) => (
                 <TableRow key={s.id}>
                   <TableCell className="font-mono">{s.sr_number}</TableCell>
-                  <TableCell>{format(new Date(s.return_date), "PP")}</TableCell>
+                  <TableCell>{formatDate(s.return_date)}</TableCell>
                   <TableCell>{s.customers?.name || "—"}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(s.total_amount)}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(s.total_cogs)}</TableCell>
@@ -373,7 +374,7 @@ export function PurchaseReturnsTab() {
               {list.map((p: any) => (
                 <TableRow key={p.id}>
                   <TableCell className="font-mono">{p.pr_number}</TableCell>
-                  <TableCell>{format(new Date(p.return_date), "PP")}</TableCell>
+                  <TableCell>{formatDate(p.return_date)}</TableCell>
                   <TableCell>{p.vendors?.name || "—"}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(p.total_amount)}</TableCell>
                   <TableCell><StatusBadge status={p.status} /></TableCell>

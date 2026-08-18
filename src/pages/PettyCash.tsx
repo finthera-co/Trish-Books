@@ -260,7 +260,7 @@ function VouchersList() {
                 {vouchers.map((v: any) => (
                   <tr key={v.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/banking/petty-cash/voucher/${v.id}`)}>
                     <td className="font-mono text-sm">{v.voucher_number}</td>
-                    <td className="text-muted-foreground">{new Date(v.date).toLocaleDateString()}</td>
+                    <td className="text-muted-foreground">{formatDate(v.date)}</td>
                     <td>{v.paid_to || "—"}</td>
                     <td className="text-muted-foreground">{v.petty_cash_accounts?.account_name}</td>
                     <td className="text-right font-medium">{formatCurrency(v.total_amount)}</td>
@@ -290,3 +290,4 @@ function VouchersList() {
 // Need to import this here since it's used in VouchersList
 import { usePCVouchers, type PCVoucherScope } from "@/hooks/usePettyCash";
 import AccountCombobox from "@/components/shared/AccountCombobox";
+import { formatDate } from "@/lib/format";

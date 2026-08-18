@@ -20,6 +20,7 @@ import {
   Eye,
 } from "lucide-react";
 import { format } from "date-fns";
+import { formatDate } from "@/lib/format";
 
 export default function AnomalyDashboard() {
   const [tab, setTab] = useState("pending");
@@ -139,7 +140,7 @@ export default function AnomalyDashboard() {
                         <TableRow key={a.id}>
                           <TableCell className="text-xs whitespace-nowrap">
                             {a.transactions?.date
-                              ? format(new Date(a.transactions.date), "MMM d, yyyy")
+                              ? formatDate(a.transactions.date)
                               : "—"}
                           </TableCell>
                           <TableCell className="text-sm max-w-[200px] truncate">

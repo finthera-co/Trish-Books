@@ -17,6 +17,7 @@ import { AlertCircle, Loader2, RefreshCw, TrendingUp } from "lucide-react";
 import { formatCurrency, formatCompactAmount } from "@/lib/currency";
 import { useChartTheme } from "@/lib/chartTokens";
 import { Button } from "@/components/ui/button";
+import { formatDate, formatDateTick } from "@/lib/format";
 
 export default function CashBalanceForecastChart() {
   const { data = [], isLoading, isError, refetch } = useFinancialForecasts("cash");
@@ -25,7 +26,7 @@ export default function CashBalanceForecastChart() {
   const chartData = useMemo(
     () =>
       data.map((d) => ({
-        label: format(parseISO(d.period), "MMM d"),
+        label: formatDateTick(d.period),
         forecast: Number(d.forecast_value),
         lower: Number(d.lower_bound),
         upper: Number(d.upper_bound),
@@ -45,7 +46,7 @@ export default function CashBalanceForecastChart() {
         </CardTitle>
         <CardDescription>
           {first && last
-            ? `${format(parseISO(first.period), "MMM d")} → ${format(parseISO(last.period), "MMM d, yyyy")}`
+            ? `${formatDateTick(first.period)} → ${formatDate(last.period)}`
             : "Statistical 95% confidence interval"}
         </CardDescription>
       </CardHeader>

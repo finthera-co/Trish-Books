@@ -12,6 +12,7 @@ import { useSerialRegister, type SerialRow } from "@/hooks/useSerialRegister";
 import { useInvoiceNextNumbers, useSetInvoiceNextNumber, useDeleteInvoiceNumberSeries, useDeleteInvoiceNumberRow, type NextNumberRow } from "@/hooks/useInvoiceNumbering";
 import { useLegacyInvoiceNumbering } from "@/hooks/useTenantFeature";
 import { useCompanyProfile, useUpdateCompanyProfile } from "@/hooks/useCompanyProfile";
+import { formatDate } from "@/lib/format";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
@@ -234,7 +235,7 @@ export default function InvoiceSerialRegister() {
                       <TableCell className="font-mono font-medium">{r.serial}</TableCell>
                       <TableCell><Badge className={statusBadge(r.status)}>{r.status}</Badge></TableCell>
                       <TableCell className="text-muted-foreground">{r.reason || "—"}</TableCell>
-                      <TableCell className="text-muted-foreground">{new Date(r.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</TableCell>
+                      <TableCell className="text-muted-foreground">{formatDate(r.created_at)}</TableCell>
                       {canSetNextNumber && (
                         <TableCell>
                           {/* An issued number is part of the statutory record and

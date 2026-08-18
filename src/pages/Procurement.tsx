@@ -36,6 +36,7 @@ import { CheckCircle2, XCircle, Lock } from "lucide-react";
 import PayBillsDialog from "@/components/ap/PayBillsDialog";
 import { computeBillStatus } from "@/lib/billStatus";
 import { useTaxGroups, useTaxCodes, currentRate } from "@/hooks/useTaxEngine";
+import { formatDate } from "@/lib/format";
 
 // Encoded purchase-tax value: "g:<groupId>" | "c:<codeId>" | "".
 // Only input / reverse-charge codes (and groups) are valid on the purchase side.
@@ -211,7 +212,7 @@ function POTab() {
               {(pos || []).map((p: any) => (
                 <TableRow key={p.id}>
                   <TableCell className="font-mono">{p.po_number}</TableCell>
-                  <TableCell>{format(new Date(p.order_date), "MMM d, yyyy")}</TableCell>
+                  <TableCell>{formatDate(p.order_date)}</TableCell>
                   <TableCell>{p.vendor?.name}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(p.total_amount)}</TableCell>
                   <TableCell><StatusBadge status={p.status} /></TableCell>
@@ -440,7 +441,7 @@ function GRNTab() {
               {(grns || []).map((g: any) => (
                 <TableRow key={g.id}>
                   <TableCell className="font-mono">{g.grn_number}</TableCell>
-                  <TableCell>{format(new Date(g.receipt_date), "MMM d, yyyy")}</TableCell>
+                  <TableCell>{formatDate(g.receipt_date)}</TableCell>
                   <TableCell>{g.vendor?.name}</TableCell>
                   <TableCell className="text-right font-mono">{formatCurrency(g.total_value)}</TableCell>
                   <TableCell><StatusBadge status={g.status} /></TableCell>
@@ -586,7 +587,7 @@ function BillTab() {
                     <TableRow key={b.id}>
                       <TableCell className="font-mono">{b.bill_number}</TableCell>
                       <TableCell className="text-muted-foreground">{b.vendor_ref || "—"}</TableCell>
-                      <TableCell>{format(new Date(b.bill_date), "MMM d, yyyy")}</TableCell>
+                      <TableCell>{formatDate(b.bill_date)}</TableCell>
                       <TableCell>{b.vendor?.name}</TableCell>
                       <TableCell className="text-right font-mono">{formatCurrency(b.total_amount)}</TableCell>
                       <TableCell>

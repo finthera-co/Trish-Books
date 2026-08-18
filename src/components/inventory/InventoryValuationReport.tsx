@@ -8,6 +8,7 @@ import { ChevronRight, Layers, Package } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { useInventoryValuation, useStockLots, type ValuationRow } from "@/hooks/useInventoryValuation";
 import { format } from "date-fns";
+import { formatDate } from "@/lib/format";
 
 export function InventoryValuationReport() {
   const { data, isLoading } = useInventoryValuation();
@@ -141,7 +142,7 @@ function LotList({ itemId }: { itemId: string }) {
         {lots.map((l) => (
           <TableRow key={l.id} className={l.is_exhausted ? "opacity-50" : ""}>
             <TableCell className="font-mono text-xs">{l.lot_number}</TableCell>
-            <TableCell>{format(new Date(l.receipt_date), "MMM d, yyyy")}</TableCell>
+            <TableCell>{formatDate(l.receipt_date)}</TableCell>
             <TableCell className="text-right font-mono">{Number(l.qty_received).toLocaleString()}</TableCell>
             <TableCell className="text-right font-mono">{Number(l.qty_remaining).toLocaleString()}</TableCell>
             <TableCell className="text-right font-mono">{formatCurrency(l.unit_cost)}</TableCell>

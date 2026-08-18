@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { formatDate } from "@/lib/format";
 
 export default function ApplyLeave() {
   const navigate = useNavigate();
@@ -188,7 +189,7 @@ export default function ApplyLeave() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Request leave{form.start_date ? ` — ${format(parseISO(form.start_date), "d MMM yyyy")}` : ""}</DialogTitle>
+            <DialogTitle>Request leave{form.start_date ? ` — ${formatDate(form.start_date)}` : ""}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 pt-1">

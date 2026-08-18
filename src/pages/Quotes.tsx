@@ -25,6 +25,7 @@ import QuoteDocument from "@/components/quotes/QuoteDocument";
 import { useAuth } from "@/contexts/AuthContext";
 import { downloadQuotePdf } from "@/lib/quotePdf";
 import AccountCombobox from "@/components/shared/AccountCombobox";
+import { formatDate } from "@/lib/format";
 
 const TERMS = [
   { value: "due_on_receipt", label: "Due on receipt" },
@@ -357,7 +358,7 @@ export default function Quotes() {
                     <TableRow key={q.id}>
                       <TableCell className="font-medium">{q.quote_number}</TableCell>
                       <TableCell>{(q.customers as any)?.name || "—"}</TableCell>
-                      <TableCell className="text-muted-foreground">{q.issue_date}</TableCell>
+                      <TableCell className="text-muted-foreground">{formatDate(q.issue_date)}</TableCell>
                       <TableCell className="text-muted-foreground">{q.expiry_date || "—"}</TableCell>
                       <TableCell><Badge className={statusColor(st)}>{st}</Badge></TableCell>
                       <TableCell className="text-right tabular-nums font-semibold">{formatCurrency(Number(q.total_amount))}</TableCell>

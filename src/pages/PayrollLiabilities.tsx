@@ -37,6 +37,7 @@ import { useAccounts } from "@/hooks/useData";
 import { usePayrollGLMappings } from "@/hooks/usePayrollGLMapping";
 import { formatCurrency } from "@/lib/currency";
 import { exportToCsv } from "@/lib/csvExport";
+import { formatDate } from "@/lib/format";
 
 const REMITTANCE_TYPES: { value: RemittanceType; label: string }[] = [
   { value: "EPF_EMPLOYEE", label: "EPF Employee (8%)" },
@@ -108,7 +109,7 @@ function VoidConfirmDialog({ rem, open, onOpenChange }: {
             <p><span className="text-muted-foreground">Type:</span> <span className="font-medium">{LIABILITY_LABELS[rem.remittance_type as RemittanceType] ?? rem.remittance_type}</span></p>
             <p><span className="text-muted-foreground">Period:</span> <span className="font-mono">{rem.period}</span></p>
             <p><span className="text-muted-foreground">Amount:</span> <span className="font-semibold">{formatCurrency(rem.amount)}</span></p>
-            <p><span className="text-muted-foreground">Payment date:</span> {rem.payment_date}</p>
+            <p><span className="text-muted-foreground">Payment date:</span> {formatDate(rem.payment_date)}</p>
           </div>
 
           <Alert variant="destructive">
@@ -712,7 +713,7 @@ export default function PayrollLiabilities() {
                         <TableCell className={`text-right font-mono font-semibold ${r.outstanding_amount > 0 ? "text-destructive" : "text-green-600"}`}>
                           {formatCurrency(r.outstanding_amount)}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{r.due_date}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{formatDate(r.due_date)}</TableCell>
                         <TableCell>
                           <StatusBadge status={r.remittance_status} dueDate={r.due_date} />
                         </TableCell>
@@ -798,7 +799,7 @@ export default function PayrollLiabilities() {
                   <TableBody>
                     {filteredHistory.map((rem) => (
                       <TableRow key={rem.id} className={rem.status === "voided" ? "opacity-50" : ""}>
-                        <TableCell className="text-sm">{rem.payment_date}</TableCell>
+                        <TableCell className="text-sm">{formatDate(rem.payment_date)}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className="text-xs whitespace-nowrap">
                             {LIABILITY_LABELS[rem.remittance_type as RemittanceType] ?? rem.remittance_type}

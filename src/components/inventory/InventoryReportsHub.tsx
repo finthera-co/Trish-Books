@@ -17,6 +17,7 @@ import {
 } from "@/hooks/useInventoryReports";
 import { useAbcAnalysis, useInventoryAlerts } from "@/hooks/useInventoryAnalytics";
 import { InventoryValuationReport } from "./InventoryValuationReport";
+import { formatDate } from "@/lib/format";
 
 export function InventoryReportsHub() {
   return (
@@ -504,7 +505,7 @@ function MovementAnalysisCard() {
                     </TableCell>
                     <TableCell><Badge className={cls(r.classification)}>{r.classification}</Badge></TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {r.last_movement_date ? format(new Date(r.last_movement_date), "MMM d, yyyy") : "—"}
+                      {r.last_movement_date ? formatDate(r.last_movement_date) : "—"}
                     </TableCell>
                   </TableRow>
                 ))}

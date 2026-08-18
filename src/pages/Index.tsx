@@ -18,6 +18,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useMemo } from "react";
 import { format, subMonths, startOfMonth } from "date-fns";
 import { isDebitNormal } from "@/lib/accountTypes";
+import { formatDate } from "@/lib/format";
 
 // Income statement sides, by canonical account_type. These must match
 // src/lib/accountTypes.ts — the previous values here were "Revenue" and "COGS",
@@ -176,7 +177,7 @@ export default function Index() {
         <div>
           <h1 className="page-title">Financial Dashboard</h1>
           <p className="page-description">
-            Welcome back, {appUser?.first_name}. Here's your financial overview as of {format(new Date(), "MMMM d, yyyy")}.
+            Welcome back, {appUser?.first_name}. Here's your financial overview as of {formatDate(new Date())}.
           </p>
         </div>
       </div>
@@ -275,7 +276,7 @@ export default function Index() {
             <tbody>
               {recentTransactions.map((txn) => (
                 <tr key={txn.id}>
-                  <td className="text-muted-foreground tabular-nums">{txn.date}</td>
+                  <td className="text-muted-foreground tabular-nums">{formatDate(txn.date)}</td>
                   <td className="font-medium text-foreground">
                     {txn.description}
                     {txn.isReversal && <span className="ml-1 text-xs text-destructive">(reversal)</span>}

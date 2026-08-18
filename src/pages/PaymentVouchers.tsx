@@ -22,6 +22,7 @@ import PaymentVoucherForm from "@/components/payment-vouchers/PaymentVoucherForm
 import PaymentVoucherDetails from "@/components/payment-vouchers/PaymentVoucherDetails";
 import { formatCurrency } from "@/lib/currency";
 import { useSearchParams } from "react-router-dom";
+import { formatDate } from "@/lib/format";
 
 const STATUS_OPTIONS = ["all", "draft", "posted", "reversed", "voided"] as const;
 
@@ -269,7 +270,7 @@ export default function PaymentVouchers() {
                       className={cn("w-full justify-start text-left font-normal", !fromDate && "text-muted-foreground")}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
-                      {fromDate ? format(fromDate, "PPP") : "Pick a date"}
+                      {fromDate ? formatDate(fromDate) : "Pick a date"}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
@@ -294,7 +295,7 @@ export default function PaymentVouchers() {
                       className={cn("w-full justify-start text-left font-normal", !toDate && "text-muted-foreground")}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
-                      {toDate ? format(toDate, "PPP") : "Pick a date"}
+                      {toDate ? formatDate(toDate) : "Pick a date"}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
@@ -346,7 +347,7 @@ export default function PaymentVouchers() {
                   <TableRow key={v.id} className={highlightId === v.id ? "bg-accent/40" : ""}>
                     <TableCell className="font-mono font-medium">{v.voucher_number}</TableCell>
                     <TableCell>{v.customers?.name || "—"}</TableCell>
-                    <TableCell>{v.payment_date}</TableCell>
+                    <TableCell>{formatDate(v.payment_date)}</TableCell>
                     <TableCell>{v.accounts?.account_name || "—"}</TableCell>
                     <TableCell>{v.cheque_number || "—"}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{v.reference_number || "—"}</TableCell>

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { format as formatDate, parseISO, isValid } from "date-fns";
+import { parseISO, isValid } from "date-fns";
+import { formatDate, formatDateTime } from "@/lib/format";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -53,7 +54,7 @@ export function useReportCompany() {
 export function formatReportDate(iso?: string | null): string {
   if (!iso) return "—";
   const d = parseISO(iso);
-  return isValid(d) ? formatDate(d, "d MMM yyyy") : iso;
+  return isValid(d) ? formatDate(d) : iso;
 }
 
 /** One scope/filter fact shown under the period line. */
@@ -174,7 +175,7 @@ export function ReportMasthead({
       {note && <p className="text-xs text-muted-foreground italic mt-1">{note}</p>}
 
       <p className="text-[10px] text-muted-foreground/80 mt-1.5">
-        Generated {formatDate(new Date(), "d MMM yyyy 'at' h:mm a")}
+        Generated {formatDateTime(new Date())}
         {preparedBy ? ` by ${preparedBy}` : ""}
       </p>
       {documentId && (

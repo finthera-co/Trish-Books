@@ -21,6 +21,7 @@ import { buildScheduleBlocks, deriveFYWindow, fyLabel, type AssetMeta } from "@/
 import TrialBalance from "@/pages/TrialBalance";
 import StatementOfComprehensiveIncome from "@/components/reports/StatementOfComprehensiveIncome";
 import { ReportMasthead, useReportCompany } from "@/components/reports/ReportMasthead";
+import { formatDate } from "@/lib/format";
 
 type ReportType = "trial-balance" | "pnl" | "balance-sheet" | "cash-flow" | "expense-summary" | "aged-receivables" | "fixed-asset-schedule" | "ppe-schedule" | null;
 
@@ -1025,7 +1026,7 @@ export default function Reports() {
                           <td className="pl-6 font-medium text-foreground">{asset.asset_name}</td>
                           <td className="text-muted-foreground text-xs">{asset.category}</td>
                           <td className="text-right font-mono text-xs text-muted-foreground">
-                            {asset.acquisition_date ? format(new Date(asset.acquisition_date), "dd MMM yyyy") : "—"}
+                            {asset.acquisition_date ? formatDate(asset.acquisition_date) : "—"}
                           </td>
                           <td className="text-right font-mono">{fmt(asset.cost)}</td>
                           <td className="text-right font-mono text-destructive/80">{fmt(asset.accumulated_depreciation)}</td>
@@ -1281,8 +1282,8 @@ export default function Reports() {
     if (!activeReport) return null;
     const reportName = reports.find(r => r.id === activeReport)?.name ?? "Report";
     const dateLine = AS_AT_REPORTS.includes(activeReport)
-      ? `As at ${format(new Date(periodTo), "MMM d, yyyy")}`
-      : `For the period ${format(new Date(periodFrom), "MMM d, yyyy")} — ${format(new Date(periodTo), "MMM d, yyyy")}`;
+      ? `As at ${formatDate(periodTo)}`
+      : `For the period ${formatDate(periodFrom)} — ${formatDate(periodTo)}`;
     return {
       companyName: company?.company_name,
       address: company?.address,

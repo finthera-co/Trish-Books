@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { usePCCounts } from "@/hooks/usePettyCashCount";
 import { formatCurrency } from "@/lib/currency";
+import { formatDate } from "@/lib/format";
 
 function VarianceCell({ variance }: { variance: number }) {
   if (variance === 0) return <span className="text-success">{formatCurrency(0)}</span>;
@@ -63,7 +64,7 @@ export default function PettyCashCounts() {
                 >
                   <td className="font-mono text-xs">{c.count_number}</td>
                   <td>{c.petty_cash_accounts?.account_name || "—"}</td>
-                  <td className="text-muted-foreground">{new Date(c.count_date).toLocaleDateString()}</td>
+                  <td className="text-muted-foreground">{formatDate(c.count_date)}</td>
                   <td className="text-right">{formatCurrency(Number(c.book_balance || 0))}</td>
                   <td className="text-right">{formatCurrency(Number(c.counted_balance || 0))}</td>
                   <td className="text-right font-medium"><VarianceCell variance={Number(c.variance || 0)} /></td>

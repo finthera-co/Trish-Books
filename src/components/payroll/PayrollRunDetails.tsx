@@ -16,6 +16,7 @@ const cashNet = (item: any, denom: number) => {
 import { formatCurrency } from "@/lib/currency";
 import { exportToCsv } from "@/lib/csvExport";
 import { CheckCircle, XCircle, Printer, FileText, Download, Eye, AlertTriangle, ExternalLink, Send } from "lucide-react";
+import { formatDate } from "@/lib/format";
 
 interface Props {
   run: any;
@@ -204,7 +205,7 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
           <div className="grid grid-cols-4 gap-3">
             <div className="stat-card">
               <p className="text-xs text-muted-foreground">Period</p>
-              <p className="text-sm font-semibold text-foreground">{run.period_start} — {run.period_end}</p>
+              <p className="text-sm font-semibold text-foreground">{formatDate(run.period_start)} — {formatDate(run.period_end)}</p>
             </div>
             <div className="stat-card">
               <p className="text-xs text-muted-foreground">Total Gross</p>
@@ -329,7 +330,7 @@ export default function PayrollRunDetails({ run, open, onOpenChange }: Props) {
               )}
               {run.payslips_published_at && (
                 <span className="text-xs text-muted-foreground self-center">
-                  Published {new Date(run.payslips_published_at).toLocaleDateString()}
+                  Published {formatDate(run.payslips_published_at)}
                 </span>
               )}
             </div>

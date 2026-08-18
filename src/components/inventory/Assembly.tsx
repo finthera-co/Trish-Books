@@ -14,6 +14,7 @@ import { format } from "date-fns";
 import { formatCurrency } from "@/lib/currency";
 import { useInventoryMaster } from "@/hooks/useProcurement";
 import { useWarehouses } from "@/hooks/useWarehouses";
+import { formatDate } from "@/lib/format";
 import {
   useBoms, useCreateBom, useDeleteBom,
   useAssemblyOrders, useCreateAssemblyOrder, usePostAssemblyOrder,
@@ -202,7 +203,7 @@ function AOList() {
                 <>
                   <TableRow key={a.id} className="cursor-pointer" onClick={() => setExpanded(expanded === a.id ? null : a.id)}>
                     <TableCell className="font-mono">{a.ao_number}</TableCell>
-                    <TableCell>{format(new Date(a.ao_date), "MMM d, yyyy")}</TableCell>
+                    <TableCell>{formatDate(a.ao_date)}</TableCell>
                     <TableCell>{a.fg?.item_name}</TableCell>
                     <TableCell className="text-right font-mono">{a.output_qty}</TableCell>
                     <TableCell className="text-right font-mono">{formatCurrency(a.total_cost)}</TableCell>

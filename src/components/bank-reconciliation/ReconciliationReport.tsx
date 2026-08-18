@@ -6,6 +6,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatCurrency } from "@/lib/currency";
 import { ArrowLeft, Printer } from "lucide-react";
+import { formatDate } from "@/lib/format";
 
 interface Props {
   recon: any;
@@ -47,7 +48,7 @@ function toMMDDYYYY(d: string) {
 function printedAt() {
   const now = new Date();
   return (
-    now.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" }) +
+    formatDate(now) +
     "  " +
     now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
   );
@@ -156,7 +157,7 @@ export default function ReconciliationReport({ recon, transactions, summary, onB
       return (
         <TableRow key={t.id}>
           <TableCell className="text-xs">{getTransactionType(je, jl)}</TableCell>
-          <TableCell className="text-xs">{je?.entry_date}</TableCell>
+          <TableCell className="text-xs">{formatDate(je?.entry_date)}</TableCell>
           <TableCell className="text-xs font-mono">{je?.reference || "—"}</TableCell>
           <TableCell className="text-xs">{je?.description}</TableCell>
           <TableCell className="text-xs text-center">{t.cleared ? "✓" : ""}</TableCell>
@@ -358,7 +359,7 @@ export default function ReconciliationReport({ recon, transactions, summary, onB
       <Separator className="my-4" />
       <div className="text-xs text-muted-foreground flex justify-between">
         <span>Reconciliation Status: {recon.status === "reconciled" ? "Reconciled" : "In Progress"}</span>
-        <span>Reconciled: {recon.reconciled_at ? new Date(recon.reconciled_at).toLocaleDateString() : "—"}</span>
+        <span>Reconciled: {recon.reconciled_at ? formatDate(recon.reconciled_at) : "—"}</span>
       </div>
     </div>
   );

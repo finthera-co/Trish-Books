@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, Fragment } from "react";
 import { useNavigate } from "react-router-dom";
-import { format as formatDate } from "date-fns";
+import { formatDateTime } from "@/lib/format";
 import { Download, FileText, FileSpreadsheet, Printer, AlertTriangle, XCircle, ChevronRight, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -105,7 +105,7 @@ export default function StatementOfComprehensiveIncome() {
 
   const execute = (action: ExportAction) => {
     if (!lines) return;
-    const ackNote = errors.length > 0 ? `Exported with ${errors.length} unresolved coverage error(s), acknowledged by ${appUser?.first_name ?? "user"} on ${formatDate(new Date(), "PPpp")}` : undefined;
+    const ackNote = errors.length > 0 ? `Exported with ${errors.length} unresolved coverage error(s), acknowledged by ${appUser?.first_name ?? "user"} on ${formatDateTime(new Date())}` : undefined;
     const exportMeta = {
       tenantId: appUser?.tenant_id ?? "",
       userId: appUser?.id,

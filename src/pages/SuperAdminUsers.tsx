@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { formatDateTime } from "@/lib/format";
 import {
   Select,
   SelectContent,
@@ -234,7 +235,7 @@ export default function SuperAdminUsers() {
                       <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[status] || statusColors.active}`}>{status}</span>
                     </td>
                     <td className="text-xs text-muted-foreground">
-                      {(user as any).last_login_at ? format(new Date((user as any).last_login_at), "MMM d, HH:mm") : "Never"}
+                      {(user as any).last_login_at ? formatDateTime((user as any).last_login_at) : "Never"}
                     </td>
                     <td>
                       {!isSuperAdminUser && (

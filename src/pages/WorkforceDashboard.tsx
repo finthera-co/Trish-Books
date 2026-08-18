@@ -6,6 +6,7 @@ import { useEmployees } from "@/hooks/useData";
 import { useLeaveRequests } from "@/hooks/useLeave";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { DatePicker } from "@/components/ui/date-picker";
+import { formatDateWithWeekday } from "@/lib/format";
 
 const today = () => format(new Date(), "yyyy-MM-dd");
 
@@ -68,7 +69,7 @@ export default function WorkforceDashboard() {
       <div className="rounded-3xl bg-gradient-to-br from-indigo-50 to-violet-100 text-foreground px-6 sm:px-8 py-6 shadow-sm border border-border">
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
           <div>
-            <p className="text-sm text-muted-foreground">{format(new Date(date + "T00:00:00"), "EEEE, d MMMM yyyy")}</p>
+            <p className="text-sm text-muted-foreground">{formatDateWithWeekday(date)}</p>
             <h2 className="text-3xl font-bold tracking-tight mt-1 text-indigo-700">{day.rate}% present</h2>
             <p className="text-sm text-muted-foreground mt-1">{day.present} of {day.total} active employees</p>
           </div>

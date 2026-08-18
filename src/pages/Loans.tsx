@@ -12,6 +12,7 @@ import { Plus, Banknote, Trash2 } from "lucide-react";
 import { useEmployeeLoans, useCreateLoan, useCancelLoan } from "@/hooks/useLoans";
 import { useEmployees, useAccounts } from "@/hooks/useData";
 import AccountCombobox from "@/components/shared/AccountCombobox";
+import { formatDate } from "@/lib/format";
 
 const fmt = (n: number) => `LKR ${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
@@ -89,7 +90,7 @@ export default function Loans() {
                     <tr key={l.id}>
                       <td className="font-medium text-foreground">{e ? `${e.first_name} ${e.last_name}` : "—"}</td>
                       <td className="text-muted-foreground">{l.description || "—"}</td>
-                      <td className="text-muted-foreground">{l.start_date}</td>
+                      <td className="text-muted-foreground">{formatDate(l.start_date)}</td>
                       <td className="text-right tabular-nums">{fmt(l.principal)}</td>
                       <td className="text-right tabular-nums">{fmt(l.monthly_installment)}</td>
                       <td className="text-right tabular-nums font-medium">{fmt(l.balance)}</td>

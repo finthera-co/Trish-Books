@@ -13,6 +13,7 @@ import { formatCurrency } from "@/lib/currency";
 import { generateDepreciationSchedule, type Asset } from "@/lib/depreciation";
 import { Progress } from "@/components/ui/progress";
 import AccountCombobox from "@/components/shared/AccountCombobox";
+import { formatDate } from "@/lib/format";
 
 export default function AssetDetail() {
   const { id } = useParams();
@@ -202,7 +203,7 @@ export default function AssetDetail() {
                     <TableRow key={`${je.id}-${idx}`}>
                       {idx === 0 ? (
                         <>
-                          <TableCell rowSpan={je.journal_lines.length} className="font-medium align-top">{je.entry_date}</TableCell>
+                          <TableCell rowSpan={je.journal_lines.length} className="font-medium align-top">{formatDate(je.entry_date)}</TableCell>
                           <TableCell rowSpan={je.journal_lines.length} className="align-top">{je.description}</TableCell>
                         </>
                       ) : null}

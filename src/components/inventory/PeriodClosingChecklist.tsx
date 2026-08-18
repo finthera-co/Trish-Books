@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { CheckCircle2, AlertTriangle, ClipboardCheck, Lock, RefreshCw } from "lucide-react";
 import { useFiscalPeriods, useCurrentFiscalPeriod } from "@/hooks/useFiscalPeriodBalances";
 import { format } from "date-fns";
+import { formatDate, formatDateTick } from "@/lib/format";
 
 interface ChecklistRow {
   key: string;
@@ -111,7 +112,7 @@ export function PeriodClosingChecklist() {
           </CardTitle>
           <p className="text-sm text-muted-foreground mt-1">
             Period: <span className="font-medium text-foreground">{period.name}</span>{" "}
-            ({format(new Date(period.period_start), "MMM d")} → {format(new Date(period.period_end), "MMM d, yyyy")})
+            ({formatDateTick(period.period_start)} → {formatDate(period.period_end)})
             {period.status === "closed" && <Badge variant="outline" className="ml-2"><Lock className="w-3 h-3 mr-1" />Closed</Badge>}
           </p>
         </div>

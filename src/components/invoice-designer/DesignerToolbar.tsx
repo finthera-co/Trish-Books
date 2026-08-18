@@ -122,7 +122,7 @@ export default function DesignerToolbar({
               </div>
               <div className="space-y-2">
                 <Label className="text-xs">Date Format</Label>
-                <Select value={pageSettings.dateFormat || 'DD MMM YYYY'} onValueChange={v => onPageSettingsChange({ dateFormat: v as any })}>
+                <Select value={pageSettings.dateFormat || 'DD/MM/YYYY'} onValueChange={v => onPageSettingsChange({ dateFormat: v as any })}>
                   <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="DD MMM YYYY">03 Jul 2026</SelectItem>

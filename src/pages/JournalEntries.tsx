@@ -39,6 +39,7 @@ import {
   EPSILON,
 } from "@/lib/journalValidation";
 import { typeColors, getTypeLabel } from "@/lib/accountTypes";
+import { formatDate } from "@/lib/format";
 
 const fmt = (n: number) =>
   n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -852,7 +853,7 @@ export default function JournalEntries() {
               return (
                 <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
                   <p className="text-sm font-medium text-foreground">{entry.description}</p>
-                  <p className="text-xs text-muted-foreground">Date: {entry.entry_date} · Ref: {entry.reference || "—"}</p>
+                  <p className="text-xs text-muted-foreground">Date: {formatDate(entry.entry_date)} · Ref: {entry.reference || "—"}</p>
                   <div className="mt-2 space-y-1">
                     {entryLines.map((line: any, i: number) => (
                       <div key={i} className="flex justify-between text-xs">
@@ -900,7 +901,7 @@ export default function JournalEntries() {
                     <span className="font-mono text-xs text-muted-foreground">{entry.reference || "—"}</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {entry.entry_date} · LKR {fmt(debit)} across {lines.length} line{lines.length === 1 ? "" : "s"}
+                    {formatDate(entry.entry_date)} · LKR {fmt(debit)} across {lines.length} line{lines.length === 1 ? "" : "s"}
                   </p>
                   {entry.void_reason && (
                     <p className="text-xs text-muted-foreground border-t border-border pt-2">
@@ -944,7 +945,7 @@ export default function JournalEntries() {
                     <span className="font-mono text-xs text-muted-foreground">{entry.reference || "—"}</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {entry.entry_date} · {lines.length} line{lines.length === 1 ? "" : "s"} will be removed
+                    {formatDate(entry.entry_date)} · {lines.length} line{lines.length === 1 ? "" : "s"} will be removed
                     {entry.status === "voided" && " · currently voided"}
                   </p>
                   <div className="space-y-1">
@@ -1080,7 +1081,7 @@ export default function JournalEntries() {
                           ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
                           : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />}
                       </td>
-                      <td className={`text-muted-foreground text-sm ${dim}`}>{entry.entry_date}</td>
+                      <td className={`text-muted-foreground text-sm ${dim}`}>{formatDate(entry.entry_date)}</td>
                       <td className={`font-medium text-foreground ${dim} ${isVoided ? "line-through" : ""}`}>
                         {entry.description}
                         {isReversal && <span className="ml-1.5 text-xs text-muted-foreground">(reversal)</span>}

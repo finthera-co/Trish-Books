@@ -25,6 +25,7 @@ import {
   type PCImportBatch,
 } from "@/hooks/usePettyCashImport";
 import { useMyPermissions } from "@/hooks/usePermissions";
+import { formatDate } from "@/lib/format";
 
 type BatchRow = PCImportBatch & {
   petty_cash_accounts?: { account_name: string } | null;
@@ -133,7 +134,7 @@ export default function PettyCashImports() {
                           : "—"}
                       </TableCell>
                       <TableCell className="py-2 whitespace-nowrap">
-                        {new Date(b.created_at).toLocaleDateString()}
+                        {formatDate(b.created_at)}
                       </TableCell>
                       <TableCell className="py-2">
                         <div className="flex justify-end gap-1">

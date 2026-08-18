@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { invokeEdgeFunction } from "@/lib/edgeFunction";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { formatDate } from "@/lib/format";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -433,7 +434,7 @@ export default function Tenants() {
                       tenant.status === "active" ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"
                     }`}>{tenant.status}</span>
                   </td>
-                  <td className="text-xs text-muted-foreground">{format(new Date(tenant.created_at), "MMM d, yyyy")}</td>
+                  <td className="text-xs text-muted-foreground">{formatDate(tenant.created_at)}</td>
                   <td>
                     {showDeleted ? (
                       <div className="flex items-center gap-2">

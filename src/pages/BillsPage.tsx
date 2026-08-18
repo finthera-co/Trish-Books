@@ -20,6 +20,7 @@ import { useAccounts } from "@/hooks/useData";
 import PayBillsDialog from "@/components/ap/PayBillsDialog";
 import { toast } from "sonner";
 import AccountCombobox from "@/components/shared/AccountCombobox";
+import { formatDate } from "@/lib/format";
 
 interface BillLineInput { account_id?: string; description?: string; qty: number; unit_cost: number }
 
@@ -228,7 +229,7 @@ export default function BillsPage() {
                           {vendorName}
                         </Button>
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{bill.bill_date}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">{formatDate(bill.bill_date)}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">{bill.due_date || "—"}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatCurrency(Number(bill.total_amount))}</TableCell>
                       <TableCell className="text-right tabular-nums text-primary">{formatCurrency(bill.amount_paid)}</TableCell>

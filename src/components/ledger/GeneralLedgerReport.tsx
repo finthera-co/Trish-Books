@@ -1,6 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { format as formatDate, parseISO } from "date-fns";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -18,7 +17,7 @@ import {
   type GLTransactionRow,
 } from "@/hooks/useGeneralLedger";
 import {
-  buildGeneralLedgerRows, getVisibleLeafAccountIds, fmtAmt, fmtBal, GL_DATE_FORMAT, GL_REPORT_CURRENCY,
+  buildGeneralLedgerRows, getVisibleLeafAccountIds, fmtAmt, fmtBal, GL_REPORT_CURRENCY,
   type GLReportRow,
 } from "@/lib/glReportModel";
 import {
@@ -27,13 +26,14 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { describeError } from "@/lib/errorMessage";
+import { formatDate } from "@/lib/format";
 
 const ROW_HEIGHT = 36;
 const RENDER_ALL_WARN_THRESHOLD = 20_000;
 
 function glDate(iso: string): string {
   try {
-    return formatDate(parseISO(iso), GL_DATE_FORMAT);
+    return formatDate(iso);
   } catch {
     return iso;
   }

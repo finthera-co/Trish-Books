@@ -27,6 +27,7 @@ import { downloadTaxInvoicePdf } from "@/lib/taxInvoicePdf";
 import { loadTaxInvoice, type TaxInvoiceModel } from "@/lib/taxInvoiceData";
 import TaxInvoiceDocument from "@/components/invoices/TaxInvoiceDocument";
 import { shareInvoiceViaWhatsApp, shareInvoiceViaGmail, type ShareInvoiceArgs } from "@/lib/invoiceShare";
+import { formatDate } from "@/lib/format";
 
 // Canonical invoice status vocabulary (stored): draft · posted · partial · paid · voided.
 // "overdue" is derived live (posted/partial past due); "sent" is a legacy alias for "posted".
@@ -547,7 +548,7 @@ export default function Invoices() {
                         </button>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{(inv.customers as any)?.name || "-"}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{inv.issue_date}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{formatDate(inv.issue_date)}</td>
                       <td className="px-4 py-3 text-muted-foreground">
                         <div className="flex items-center gap-2">
                           <span>{inv.due_date || "-"}</span>

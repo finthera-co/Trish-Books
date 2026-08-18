@@ -8,6 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { CheckCircle, XCircle, Search, GitBranch } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { useApproveSplitMatch } from "@/hooks/useBankFeeds";
+import { formatDate } from "@/lib/format";
 
 interface BankFeed {
   id: string;
@@ -125,7 +126,7 @@ export default function SplitMatchDialog({ open, onClose, bankFeed, reconciliati
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium">{bankFeed.description || "—"}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{bankFeed.transaction_date}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{formatDate(bankFeed.transaction_date)}</p>
               </div>
               <p className={`text-lg font-bold font-mono ${bankFeed.amount >= 0 ? "text-green-600" : "text-red-600"}`}>
                 {formatCurrency(bankFeed.amount)}

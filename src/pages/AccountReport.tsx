@@ -46,6 +46,7 @@ import { downloadDataExcel } from "@/lib/reportExcel";
 import { resolveLineMemo } from "@/lib/journalValidation";
 import { ReportMasthead } from "@/components/reports/ReportMasthead";
 import EditTransactionModal from "@/components/account-report/EditTransactionModal";
+import { formatDate } from "@/lib/format";
 
 interface TransactionRow {
   date: string;
@@ -296,7 +297,7 @@ export default function AccountReport() {
       const exportRows = await fetchExportRows();
       const header = ["Date", "Type", "Journal No", "Reference", "Cheque No", "Name", "Payee", "Memo", "Debit", "Credit", "Balance"];
       const csvRows = exportRows.map((r) => [
-        r.date,
+        formatDate(r.date),
         r.entryType,
         r.journalNo,
         r.reference,
@@ -337,12 +338,12 @@ export default function AccountReport() {
         // Balance Sheet accounts carry an opening balance into the window.
         ...(!isPeriodBased && openingBalance !== 0
           ? [{
-              date: dateFrom, entryType: "Opening Balance", journalNo: "", reference: "",
+              date: formatDate(dateFrom), entryType: "Opening Balance", journalNo: "", reference: "",
               name: "", payee: "", chequeNo: "", memo: "", debit: null, credit: null, balance: openingBalance,
             }]
           : []),
         ...allRows.map((r) => ({
-          date: r.date,
+          date: formatDate(r.date),
           entryType: r.entryType,
           journalNo: r.journalNo,
           reference: r.reference,
@@ -360,7 +361,7 @@ export default function AccountReport() {
         {
           title: `Account Report — ${account.account_code} ${account.account_name}`,
           subtitle: getTypeLabel(account.account_type),
-          dateLine: `${dateFrom} → ${dateTo}`,
+          dateLine: `${formatDate(dateFrom)} → ${formatDate(dateTo)}`,
           sheetName: `${account.account_code} Report`,
           fileName: `${account.account_code} ${account.account_name} Report.xlsx`,
         },
@@ -498,7 +499,7 @@ export default function AccountReport() {
               <div>
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">Created</p>
                 <p className="text-sm text-muted-foreground">
-                  {account.created_at ? format(new Date(account.created_at), "MMM d, yyyy") : "—"}
+                  {account.created_at ? formatDate(account.created_at) : "—"}
                 </p>
               </div>
             </div>
@@ -660,7 +661,7 @@ export default function AccountReport() {
                       onClick={() => setEditEntry({ journalEntryId: row.journalEntryId, lineId: row.lineId })}
                     >
                       <td className="px-4 py-2 text-right text-muted-foreground text-xs tabular-nums">{firstRowIndex + i + 1}</td>
-                      <td className="px-4 py-2 text-muted-foreground tabular-nums">{row.date}</td>
+                      <td className="px-4 py-2 text-muted-foreground tabular-nums">{formatDate(row.date)}</td>
                       <td className="px-4 py-2">
                         <span className="text-[10px] bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded capitalize">
                           {row.entryType.replace(/_/g, " ")}

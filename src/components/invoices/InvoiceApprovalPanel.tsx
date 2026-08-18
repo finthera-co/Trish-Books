@@ -20,6 +20,7 @@ import {
   useDecideInvoice, useResubmitInvoice, useAddApprovalComment,
   actorName, type ApprovalEvent,
 } from "@/hooks/useApprovals";
+import { formatDateTime } from "@/lib/format";
 
 interface Props {
   invoice: {
@@ -45,8 +46,7 @@ const eventStyle: Record<string, { label: string; className: string; Icon: typeo
   comment:           { label: "Comment",                className: "text-muted-foreground", Icon: MessageSquare },
 };
 
-const when = (iso: string) =>
-  new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+const when = formatDateTime;
 
 export default function InvoiceApprovalPanel({ invoice, hideWhenNotRequired = true }: Props) {
   const { appUser } = useAuth();

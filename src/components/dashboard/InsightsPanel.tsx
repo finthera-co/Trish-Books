@@ -1,6 +1,7 @@
 import { useInsights, type Insight } from "@/hooks/useInsights";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { formatDate } from "@/lib/format";
 import {
   TrendingUp,
   TrendingDown,
@@ -60,7 +61,7 @@ function InsightCard({ insight }: { insight: Insight }) {
             {insight.severity}
           </Badge>
           <span className="text-[10px] opacity-60">
-            {new Date(insight.created_at).toLocaleDateString()}
+            {formatDate(insight.created_at)}
           </span>
         </div>
       </div>

@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/currency";
 import { useCustomerDetail } from "@/hooks/useARModule";
+import { formatDate } from "@/lib/format";
 
 export default function CustomerDetail() {
   const { id } = useParams<{ id: string }>();
@@ -173,7 +174,7 @@ export default function CustomerDetail() {
                   ) : invoices.map((inv: any) => (
                     <TableRow key={inv.id}>
                       <TableCell className="font-medium">{inv.invoice_number}</TableCell>
-                      <TableCell className="text-muted-foreground">{inv.issue_date}</TableCell>
+                      <TableCell className="text-muted-foreground">{formatDate(inv.issue_date)}</TableCell>
                       <TableCell className="text-muted-foreground">{inv.due_date || "—"}</TableCell>
                       <TableCell>
                         <Badge variant={inv.balance_due <= 0 ? "default" : "destructive"}>
@@ -210,7 +211,7 @@ export default function CustomerDetail() {
                     <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-8">No payments received</TableCell></TableRow>
                   ) : payments.map((p: any) => (
                     <TableRow key={p.id}>
-                      <TableCell>{new Date(p.payment_date).toLocaleDateString()}</TableCell>
+                      <TableCell>{formatDate(p.payment_date)}</TableCell>
                       <TableCell className="capitalize">{p.payment_method?.replace("_", " ") || "—"}</TableCell>
                       <TableCell className="text-muted-foreground">{p.reference || "—"}</TableCell>
                       <TableCell className="text-right tabular-nums font-medium text-primary">{formatCurrency(Number(p.amount))}</TableCell>

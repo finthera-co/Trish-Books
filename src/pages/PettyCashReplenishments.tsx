@@ -18,6 +18,7 @@ import { useMyPermissions } from "@/hooks/usePermissions";
 import { PCFundDialog } from "@/components/petty-cash/PCFundDialog";
 import { formatCurrency } from "@/lib/currency";
 import AccountCombobox from "@/components/shared/AccountCombobox";
+import { formatDate } from "@/lib/format";
 
 export default function PettyCashReplenishments() {
   const [pcAccountId, setPcAccountId] = useState("");
@@ -178,7 +179,7 @@ export default function PettyCashReplenishments() {
                               />
                             </td>
                             <td className="font-mono text-xs">{v.voucher_number}</td>
-                            <td className="text-muted-foreground">{new Date(v.voucher_date).toLocaleDateString()}</td>
+                            <td className="text-muted-foreground">{formatDate(v.voucher_date)}</td>
                             <td>{v.paid_to || "—"}</td>
                             <td className="text-right font-medium">{formatCurrency(Number(v.total_amount))}</td>
                           </tr>
@@ -255,7 +256,7 @@ export default function PettyCashReplenishments() {
                 {replenishments.map((r: any) => (
                   <tr key={r.id}>
                     <td className="font-mono text-sm">{r.replenishment_number}</td>
-                    <td className="text-muted-foreground">{new Date(r.date).toLocaleDateString()}</td>
+                    <td className="text-muted-foreground">{formatDate(r.date)}</td>
                     <td>{r.petty_cash_accounts?.account_name}</td>
                     <td className="text-muted-foreground">{r.bank_account?.account_code} – {r.bank_account?.account_name}</td>
                     <td className="text-right font-medium">{formatCurrency(r.amount)}</td>

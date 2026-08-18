@@ -35,6 +35,7 @@ import ReconciliationRulesManager from "./ReconciliationRulesManager";
 import MatchExplanation from "./MatchExplanation";
 import SplitMatchDialog from "./SplitMatchDialog";
 import AccountCombobox from "@/components/shared/AccountCombobox";
+import { formatDate } from "@/lib/format";
 
 interface Props {
   reconciliationId: string;
@@ -373,7 +374,7 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
         <TableCell className="w-10 text-center">
           <Checkbox checked={t.cleared} onCheckedChange={() => handleToggle(t.id, t.cleared)} disabled={isReconciled} />
         </TableCell>
-        <TableCell className="text-xs">{je?.entry_date}</TableCell>
+        <TableCell className="text-xs">{formatDate(je?.entry_date)}</TableCell>
         <TableCell className="text-xs text-muted-foreground">{type}</TableCell>
         <TableCell className="text-xs font-mono">{je?.reference || "—"}</TableCell>
         <TableCell className="text-xs max-w-[180px] truncate">{je?.description}</TableCell>
@@ -637,7 +638,7 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
                               {/* Transaction content */}
                               <div className="flex-1 min-w-0">
                                 <div className="flex justify-between items-start">
-                                  <span className="text-muted-foreground shrink-0">{f.transaction_date}</span>
+                                  <span className="text-muted-foreground shrink-0">{formatDate(f.transaction_date)}</span>
                                   <span className={`font-mono font-medium ml-2 ${f.amount > 0 ? "text-green-600" : "text-red-600"}`}>
                                     {formatCurrency(f.amount)}
                                   </span>

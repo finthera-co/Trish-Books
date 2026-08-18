@@ -1,4 +1,5 @@
 import type { jsPDF } from "jspdf";
+import { formatDate, formatDateTime } from "@/lib/format";
 
 /**
  * The centred statement heading drawn at the top of every exported financial
@@ -28,25 +29,20 @@ export interface StatementHeadingMeta extends StatementHeadingCompany {
   title: string;
   /** Second line under the title — an account, a method, a basis. */
   subtitle?: string | null;
-  /** "For the period 1 Jan 2026 to 31 Mar 2026" / "As at 31 Mar 2026". */
+  /** "For the period 01/01/2026 to 31/03/2026" / "As at 31/03/2026". */
   periodLine?: string | null;
   /** "Accrual basis · All amounts in LKR". */
   basisLine?: string | null;
   /** Filters in force, so a reader can reproduce the figures. */
   scopeLine?: string | null;
-  /** "Generated 14 Aug 2026 at 3:45 PM by Jane Perera". */
+  /** "Generated 14/08/2026 15:45 by Jane Perera". */
   generatedLine?: string | null;
 }
 
-/** ISO date → "14 Aug 2026", without pulling date-fns into every exporter. */
-export function headingDate(iso?: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(`${iso.slice(0, 10)}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-}
+/** ISO date → "14/08/2026", the system standard. */
+export const headingDate = formatDate;
 
-/** "For the period 1 Jan 2026 to 31 Mar 2026". */
+/** "For the period 01/01/2026 to 31/03/2026". */
 export function periodSentence(dateFrom?: string | null, dateTo?: string | null): string {
   if (dateFrom && dateTo) return `For the period ${headingDate(dateFrom)} to ${headingDate(dateTo)}`;
   if (dateTo) return `Up to ${headingDate(dateTo)}`;
@@ -54,12 +50,9 @@ export function periodSentence(dateFrom?: string | null, dateTo?: string | null)
   return "";
 }
 
-/** "Generated 14 Aug 2026 at 3:45 PM by Jane Perera". */
+/** "Generated 14/08/2026 15:45 by Jane Perera". */
 export function generatedSentence(preparedBy?: string | null): string {
-  const stamp = new Date().toLocaleString("en-GB", {
-    day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit",
-  });
-  return `Generated ${stamp}${preparedBy ? ` by ${preparedBy}` : ""}`;
+  return `Generated ${formatDateTime(new Date())}${preparedBy ? ` by ${preparedBy}` : ""}`;
 }
 
 /**

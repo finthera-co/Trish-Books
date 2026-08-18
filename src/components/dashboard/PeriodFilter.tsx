@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { formatDate } from "@/lib/format";
 
 interface PeriodFilterProps {
   from: Date;
@@ -29,7 +30,7 @@ function DatePicker({ label, date, onSelect }: { label: string; date: Date; onSe
       <PopoverTrigger asChild>
         <Button variant="outline" size="sm" className={cn("h-8 text-xs gap-1.5 font-normal")}>
           <CalendarIcon className="w-3.5 h-3.5" />
-          {format(date, "MMM d, yyyy")}
+          {formatDate(date)}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">

@@ -4,6 +4,7 @@ import { useMyEmployee, useTenantBranding } from "@/hooks/useMyEmployee";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { StoredAvatarImage } from "@/components/StoredAvatarImage";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatDate } from "@/lib/format";
 
 function tenure(hire?: string | null) {
   if (!hire) return "—";
@@ -92,7 +93,7 @@ export default function MyProfile() {
         <div className="rounded-2xl border border-border bg-card shadow-sm p-5">
           <h3 className="text-sm font-semibold text-foreground mb-1">Service</h3>
           <div className="divide-y divide-border/70">
-            <Row icon={CalendarDays} label="Date Joined" value={me?.hire_date ? format(parseISO(me.hire_date), "d MMMM yyyy") : null} />
+            <Row icon={CalendarDays} label="Date Joined" value={me?.hire_date ? formatDate(me.hire_date) : null} />
             <Row icon={Clock} label="Tenure" value={tenure(me?.hire_date)} />
           </div>
         </div>

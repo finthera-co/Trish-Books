@@ -3,6 +3,7 @@ import { formatCurrency } from "@/lib/currency";
 import { buildPayslipModel, maskAccount, payslipRef } from "@/lib/payslip";
 import { amountInWords } from "@/lib/numberToWords";
 import type { LoadedLogo } from "@/lib/invoicePdf";
+import { formatDate, formatDateTime } from "@/lib/format";
 
 /**
  * Branded, document-grade single-employee payslip PDF.
@@ -70,8 +71,8 @@ export function generatePaySlipPdf(item: any, run: any, tenant?: any, logo?: Loa
   setText(doc, MUTED);
   let metaY = y + 8;
   doc.text(`Ref: ${payslipRef(run, emp)}`, right, metaY, { align: "right" }); metaY += 4;
-  doc.text(`Period: ${run.period_start} to ${run.period_end}`, right, metaY, { align: "right" }); metaY += 4;
-  if (run.payment_date) { doc.text(`Payment Date: ${run.payment_date}`, right, metaY, { align: "right" }); metaY += 4; }
+  doc.text(`Period: ${formatDate(run.period_start)} to ${formatDate(run.period_end)}`, right, metaY, { align: "right" }); metaY += 4;
+  if (run.payment_date) { doc.text(`Payment Date: ${formatDate(run.payment_date)}`, right, metaY, { align: "right" }); metaY += 4; }
 
   y = Math.max(leftY, metaY) + 3;
   setDraw(doc, RULE);
@@ -175,7 +176,7 @@ export function generatePaySlipPdf(item: any, run: any, tenant?: any, logo?: Loa
   // ── Footer ──
   doc.setFontSize(8);
   setText(doc, MUTED);
-  doc.text(`Generated ${new Date().toLocaleString()}`, left, 287);
+  doc.text(`Generated ${formatDateTime(new Date())}`, left, 287);
   doc.text("This is a computer-generated payslip.", right, 287, { align: "right" });
 
   const filename = `payslip-${sanitize(fullName)}-${sanitize(run.run_number ?? "")}.pdf`.replace(/-+\.pdf$/, ".pdf");

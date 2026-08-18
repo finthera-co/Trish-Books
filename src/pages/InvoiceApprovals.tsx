@@ -23,6 +23,7 @@ import {
   actorName, type ApprovalQueueRow,
 } from "@/hooks/useApprovals";
 import InvoiceApprovalPanel from "@/components/invoices/InvoiceApprovalPanel";
+import { formatDate } from "@/lib/format";
 
 type TabKey = "mine" | "flight" | "sent_back" | "rejected" | "history";
 
@@ -287,7 +288,7 @@ export default function InvoiceApprovals() {
                     {historyRows.map((h) => (
                       <TableRow key={h.id}>
                         <TableCell className="text-muted-foreground whitespace-nowrap">
-                          {new Date(h.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                          {formatDate(h.created_at)}
                         </TableCell>
                         <TableCell className="font-medium">{h.invoices?.invoice_number || "—"}</TableCell>
                         <TableCell><EventLabel action={h.action} /></TableCell>

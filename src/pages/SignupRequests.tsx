@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Check, X, Mail, Phone, Building2, Copy, Inbox } from "lucide-react";
+import { formatDate } from "@/lib/format";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
@@ -149,7 +150,7 @@ export default function SignupRequests() {
                   </p>
                 </div>
                 <span className="text-xs text-muted-foreground tabular-nums shrink-0">
-                  {format(new Date(r.created_at), "d MMM yyyy")}
+                  {formatDate(r.created_at)}
                 </span>
               </div>
 
@@ -196,7 +197,7 @@ export default function SignupRequests() {
               ) : (
                 <p className="text-xs text-muted-foreground pt-1">
                   {r.status === "approved" ? "Approved" : "Rejected"}
-                  {r.reviewed_at ? ` ${format(new Date(r.reviewed_at), "d MMM yyyy")}` : ""}
+                  {r.reviewed_at ? ` ${formatDate(r.reviewed_at)}` : ""}
                   {r.review_note ? ` — ${r.review_note}` : ""}
                 </p>
               )}

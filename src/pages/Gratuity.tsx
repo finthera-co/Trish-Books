@@ -15,6 +15,7 @@ import {
   useBonusSettings, useSaveBonusSettings, useBonusProvisions, usePostBonusProvision,
 } from "@/hooks/useGratuity";
 import { useEmployees } from "@/hooks/useData";
+import { formatDate } from "@/lib/format";
 
 const fmt = (n: number) => `LKR ${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
@@ -145,7 +146,7 @@ export default function Gratuity() {
                       <td>{p.period}</td>
                       <td className="text-right">{fmt(p.total_amount)}</td>
                       <td className="text-right">{p.employee_count}</td>
-                      <td className="text-muted-foreground">{format(new Date(p.created_at), "dd MMM yyyy")}</td>
+                      <td className="text-muted-foreground">{formatDate(p.created_at)}</td>
                     </tr>
                   ))}
                 </tbody>

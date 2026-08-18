@@ -13,6 +13,7 @@ import { format } from "date-fns";
 import { formatCurrency } from "@/lib/currency";
 import { useWarehouses, useCreateWarehouse, useStockTransfers, useCreateStockTransfer, usePostStockTransfer } from "@/hooks/useWarehouses";
 import { useInventoryMaster } from "@/hooks/useProcurement";
+import { formatDate } from "@/lib/format";
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -120,7 +121,7 @@ export function TransfersTab() {
               {(transfers || []).map((t) => (
                 <TableRow key={t.id}>
                   <TableCell className="font-mono">{t.transfer_number}</TableCell>
-                  <TableCell>{format(new Date(t.transfer_date), "MMM d, yyyy")}</TableCell>
+                  <TableCell>{formatDate(t.transfer_date)}</TableCell>
                   <TableCell>{whName(t.from_warehouse_id)}</TableCell>
                   <TableCell>{whName(t.to_warehouse_id)}</TableCell>
                   <TableCell><Badge className={STATUS_COLORS[t.status] || "bg-muted"}>{t.status}</Badge></TableCell>

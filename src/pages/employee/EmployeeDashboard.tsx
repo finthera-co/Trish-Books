@@ -11,6 +11,7 @@ import { formatCurrency } from "@/lib/currency";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import PayStub from "@/components/payroll/PayStub";
+import { formatDate, formatDateWithWeekday, formatTime } from "@/lib/format";
 
 // Statuses that count as a scheduled working day (weekends & holidays excluded).
 const WORKING_STATUSES = ["present", "absent", "half_day", "paid_leave", "unpaid_leave"];
@@ -121,7 +122,7 @@ export default function EmployeeDashboard() {
   return (
     <div className="px-4 sm:px-6 py-6 space-y-6 max-w-5xl mx-auto">
       <div className="rounded-3xl bg-gradient-to-br from-indigo-700 to-indigo-800 text-white px-6 sm:px-8 py-7 shadow-lg">
-        <p className="text-sm text-white/80">{format(new Date(), "EEEE, d MMMM yyyy")}</p>
+        <p className="text-sm text-white/80">{formatDateWithWeekday(new Date())}</p>
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mt-1">{greeting} 👋</h1>
         <p className="text-sm text-white/85 mt-1">{me?.designation || me?.employee_number || "Your personal workspace"}</p>
       </div>
@@ -136,7 +137,7 @@ export default function EmployeeDashboard() {
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> ON A FIELD VISIT
                 </span>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {openVisit.client_name || "Field work"} · since {format(new Date(openVisit.check_in_at), "p")}
+                  {openVisit.client_name || "Field work"} · since {formatTime(openVisit.check_in_at)}
                 </p>
               </div>
               <span className="text-2xl font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
@@ -178,7 +179,7 @@ export default function EmployeeDashboard() {
         <KpiCard
           label="Latest Net Salary"
           value={latest ? formatCurrency(Number(latest.net_pay)) : "—"}
-          sublabel={latest ? `${latest.payroll_runs.period_start} → ${latest.payroll_runs.period_end}` : "No payslips yet"}
+          sublabel={latest ? `${formatDate(latest.payroll_runs.period_start)} → ${formatDate(latest.payroll_runs.period_end)}` : "No payslips yet"}
           icon={Wallet}
           tone="primary"
         />
@@ -269,7 +270,7 @@ export default function EmployeeDashboard() {
                 const deductions = Number(it.employee_epf || 0) + Number(it.employee_paye || 0) + Number(it.other_deductions || 0);
                 return (
                   <tr key={it.id}>
-                    <td className="px-5 py-3 font-medium text-foreground">{it.payroll_runs.period_start} → {it.payroll_runs.period_end}</td>
+                    <td className="px-5 py-3 font-medium text-foreground">{formatDate(it.payroll_runs.period_start)} → {formatDate(it.payroll_runs.period_end)}</td>
                     <td className="px-5 py-3 text-muted-foreground">{it.payroll_runs.payment_date || "—"}</td>
                     <td className="px-5 py-3 text-right tabular-nums">{formatCurrency(Number(it.gross_pay))}</td>
                     <td className="px-5 py-3 text-right tabular-nums text-destructive">-{formatCurrency(deductions)}</td>

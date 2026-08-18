@@ -39,6 +39,7 @@ import {
   Plus, Trash2, Sparkles, AlertTriangle, Lightbulb, Activity,
 } from "lucide-react";
 import { formatCurrency, formatCurrencyShort } from "@/lib/currency";
+import { formatDate, formatDateTick, formatDateTime } from "@/lib/format";
 
 export default function ForecastDashboard() {
   const { appUser } = useAuth();
@@ -65,7 +66,7 @@ export default function ForecastDashboard() {
         {jobs[0] && (
           <Badge variant="outline" className="gap-1.5">
             <Activity className="w-3 h-3" />
-            Last run {format(parseISO(jobs[0].run_time), "MMM d, HH:mm")} · {jobs[0].status}
+            Last run {formatDateTime(jobs[0].run_time)} · {jobs[0].status}
           </Badge>
         )}
       </header>
@@ -106,7 +107,7 @@ export default function ForecastDashboard() {
 /* ─────────────────────────────  CASH OVERVIEW  ───────────────────────────── */
 function CashForecastChart({ data, loading }: { data: Array<{ period: string; forecast_value: number; lower_bound: number; upper_bound: number }>; loading: boolean }) {
   const chartData = useMemo(() => data.map((d) => ({
-    label: format(parseISO(d.period), "MMM d"),
+    label: formatDateTick(d.period),
     forecast: Number(d.forecast_value),
     lower: Number(d.lower_bound),
     upper: Number(d.upper_bound),
@@ -131,7 +132,7 @@ function CashForecastChart({ data, loading }: { data: Array<{ period: string; fo
         <CardHeader>
           <CardTitle className="text-base">Cash Balance Forecast with Confidence Bands</CardTitle>
           <CardDescription>
-            {first && last && `${format(parseISO(first.period), "MMM d")} → ${format(parseISO(last.period), "MMM d, yyyy")}`}
+            {first && last && `${formatDateTick(first.period)} → ${formatDate(last.period)}`}
           </CardDescription>
         </CardHeader>
         <CardContent>

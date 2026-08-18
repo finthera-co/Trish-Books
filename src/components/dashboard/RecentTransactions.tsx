@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/currency";
+import { formatDate } from "@/lib/format";
 
 interface TransactionItem {
   id: string;
@@ -169,7 +170,7 @@ export default function RecentTransactions() {
                     {tx.type === "debit" ? "Dr" : "Cr"} {formatCurrency(tx.amount)}
                   </p>
                   <p className="text-[10px] text-muted-foreground tabular-nums">
-                    {format(new Date(tx.date), "MMM d, yyyy")}
+                    {formatDate(tx.date)}
                   </p>
                 </div>
               </div>

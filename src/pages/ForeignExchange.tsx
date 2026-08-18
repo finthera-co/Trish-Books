@@ -12,6 +12,7 @@ import { useAccountSettings } from "@/hooks/useAccountSettings";
 import {
   useExchangeRates, useUpsertExchangeRate, useFxRevaluations, useRunFxRevaluation,
 } from "@/hooks/useForeignExchange";
+import { formatDate } from "@/lib/format";
 
 const CURRENCIES = ["USD", "EUR", "GBP", "INR", "AUD", "SGD", "JPY", "AED"];
 
@@ -133,7 +134,7 @@ export default function ForeignExchange() {
               <TableBody>
                 {(revals || []).map((r: any) => (
                   <TableRow key={r.id}>
-                    <TableCell className="text-muted-foreground">{r.period_end}</TableCell>
+                    <TableCell className="text-muted-foreground">{formatDate(r.period_end)}</TableCell>
                     <TableCell className="font-medium">{(r.invoices as any)?.invoice_number || "—"}</TableCell>
                     <TableCell>{r.currency}</TableCell>
                     <TableCell className="text-right tabular-nums font-mono">{Number(r.open_amount_fc).toFixed(2)}</TableCell>

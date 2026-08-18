@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { drawStatementHeading, generatedSentence } from "@/lib/reportHeading";
+import { formatDateTime } from "@/lib/format";
 
 /**
  * Generic financial-report PDF exporter for the Reports hub.
@@ -112,7 +113,7 @@ export function downloadReportPdf(container: HTMLElement, meta: ReportPdfMeta) {
   }
 
   // ── Footer: generated stamp + page numbers on every page ──────────
-  const generated = `Generated on ${new Date().toLocaleString()}`;
+  const generated = `Generated on ${formatDateTime(new Date())}`;
   const pageCount = doc.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);

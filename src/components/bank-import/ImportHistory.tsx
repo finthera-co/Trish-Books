@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { formatCurrency } from "@/lib/currency";
+import { formatDate } from "@/lib/format";
 import {
   useBankStatementBatches,
   useUndoBankImport,
@@ -93,7 +94,7 @@ export default function ImportHistory() {
                 return (
                   <TableRow key={b.id}>
                     <TableCell className="text-sm whitespace-nowrap">
-                      {new Date(b.created_at).toLocaleDateString()}
+                      {formatDate(b.created_at)}
                     </TableCell>
                     <TableCell className="font-medium whitespace-nowrap">{periodLabel(b)}</TableCell>
                     <TableCell className="text-xs text-muted-foreground max-w-[160px] truncate" title={b.file_name ?? ""}>

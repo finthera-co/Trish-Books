@@ -13,6 +13,7 @@ import {
   useCoaAssetAnalysis, useAdoptCoaAssets, summariseByClass,
   type AdoptionResult, type CoaAssetCandidate,
 } from "@/hooks/useAssetAdoption";
+import { formatDate } from "@/lib/format";
 
 function monthsLabel(m: number) {
   if (!m) return "—";
@@ -218,7 +219,7 @@ export default function AssetAdoption() {
                         <TableRow key={d.journal_line_id} className="bg-muted/40">
                           <TableCell />
                           <TableCell className="pl-6 text-sm">{d.proposed_name}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{d.entry_date}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{formatDate(d.entry_date)}</TableCell>
                           <TableCell className="text-sm text-muted-foreground" colSpan={2}>
                             {d.already_adopted
                               ? "already in register"

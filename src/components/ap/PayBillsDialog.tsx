@@ -17,6 +17,7 @@ import { useAccounts } from "@/hooks/useData";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import AccountCombobox from "@/components/shared/AccountCombobox";
+import { formatDate } from "@/lib/format";
 
 const NATURES = ["service_fee", "rent", "interest", "dividend", "royalty", "contractor", "other"];
 const prettify = (s: string) => s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -224,7 +225,7 @@ export default function PayBillsDialog({ open, onOpenChange, vendorId, vendorNam
                           {isOverdue && <Badge variant="destructive" className="ml-2 text-xs">Overdue</Badge>}
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">
-                          {bill.due_date ? format(new Date(bill.due_date), "MMM d, yyyy") : "—"}
+                          {bill.due_date ? formatDate(bill.due_date) : "—"}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{formatCurrency(bill.balance_due)}</TableCell>
                         <TableCell className="text-right">

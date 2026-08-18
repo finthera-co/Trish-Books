@@ -1,7 +1,7 @@
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { formatCurrency } from "@/lib/currency";
-import { formatInvoiceDate } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import {
   STAMP_TILT, STAMP_W, STAMP_H, STAMP_CSS_COLOR, paidStampBounds, paidStampSublines, type PaidStamp,
 } from "@/lib/paidStamp";
@@ -66,12 +66,18 @@ export function formatTemplateDate(iso: string, fmt?: PageSettings["dateFormat"]
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const yyyy = String(d.getFullYear());
   switch (fmt) {
-    case "DD/MM/YYYY": return `${dd}/${mm}/${yyyy}`;
     case "MM/DD/YYYY": return `${mm}/${dd}/${yyyy}`;
     case "YYYY-MM-DD": return `${yyyy}-${mm}-${dd}`;
-    case "DD MMM YYYY":
+    // Spelled out explicitly rather than via the shared helper: this branch is
+    // an explicit per-template opt-out of the DD/MM/YYYY house standard, so it
+    // must keep rendering what its label promises.
+    case "DD MMM YYYY": {
+      const MMM = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getMonth()];
+      return `${dd} ${MMM} ${yyyy}`;
+    }
+    case "DD/MM/YYYY":
     default:
-      return formatInvoiceDate(d);
+      return formatDate(d);
   }
 }
 

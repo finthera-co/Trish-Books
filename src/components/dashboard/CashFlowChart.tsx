@@ -16,6 +16,7 @@ import {
 } from "recharts";
 import { format, subDays } from "date-fns";
 import { TrendingUp, Loader2 } from "lucide-react";
+import { formatDateTick } from "@/lib/format";
 
 export default function CashFlowChart() {
   const from = format(subDays(new Date(), 90), "yyyy-MM-dd");
@@ -34,7 +35,7 @@ export default function CashFlowChart() {
     for (const b of actuals || []) {
       combined.push({
         date: b.date,
-        label: format(new Date(b.date), "MMM d"),
+        label: formatDateTick(b.date),
         actual: Number(b.closing_balance),
       });
     }
@@ -47,7 +48,7 @@ export default function CashFlowChart() {
       } else {
         combined.push({
           date: f.date,
-          label: format(new Date(f.date), "MMM d"),
+          label: formatDateTick(f.date),
           forecast: f.predicted_balance,
         });
       }
@@ -150,10 +151,7 @@ export default function CashFlowChart() {
               />
               {actuals?.length && (
                 <ReferenceLine
-                  x={format(
-                    new Date(actuals[actuals.length - 1].date),
-                    "MMM d"
-                  )}
+                  x={formatDateTick(actuals[actuals.length - 1].date)}
                   stroke="hsl(var(--muted-foreground))"
                   strokeDasharray="3 3"
                   label={{

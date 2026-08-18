@@ -4,8 +4,8 @@ import {
 } from "@/lib/reportExcel";
 import { openingSplit, closingSplit, type TrialBalanceGroupBlock, type TrialBalanceGrandTotal } from "@/lib/trialBalanceModel";
 import { fingerprintFor, logExport, type TrialBalanceExportMeta } from "@/lib/trialBalanceExport";
-import { GL_DATE_FORMAT, GL_REPORT_CURRENCY, type GLReportRow } from "@/lib/glReportModel";
-import { format as formatDate, parseISO } from "date-fns";
+import { GL_REPORT_CURRENCY, type GLReportRow } from "@/lib/glReportModel";
+import { formatDate } from "@/lib/format";
 
 export interface CompanyIdentity {
   company_name?: string | null;
@@ -32,7 +32,7 @@ const GL_HEADERS = ["Account", "Type", "Date", "Num", "Adj", "Name", "Memo", "Sp
 
 function glDate(iso: string): string {
   try {
-    return formatDate(parseISO(iso), GL_DATE_FORMAT);
+    return formatDate(iso);
   } catch {
     return iso;
   }

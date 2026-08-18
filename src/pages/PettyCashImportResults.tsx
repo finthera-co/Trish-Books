@@ -20,6 +20,7 @@ import {
 } from "@/hooks/usePettyCashImport";
 import { useMyPermissions } from "@/hooks/usePermissions";
 import { formatCurrency } from "@/lib/currency";
+import { formatDate } from "@/lib/format";
 
 const PAGE_SIZE = 100;
 
@@ -125,7 +126,7 @@ export default function PettyCashImportResults() {
             <SelectContent>
               {(batches ?? []).map((b) => (
                 <SelectItem key={b.id} value={b.id}>
-                  {b.file_name} · {new Date(b.created_at).toLocaleDateString()}
+                  {b.file_name} · {formatDate(b.created_at)}
                 </SelectItem>
               ))}
             </SelectContent>

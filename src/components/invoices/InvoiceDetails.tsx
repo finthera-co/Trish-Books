@@ -17,7 +17,7 @@ import { useInvoiceAttachments, useUploadAttachment, useDeleteAttachment } from 
 import InvoiceApprovalPanel from "@/components/invoices/InvoiceApprovalPanel";
 import InvoiceDocumentViewer from "@/components/invoices/InvoiceDocumentViewer";
 import { useInvoiceReceipt } from "@/hooks/useInvoiceReceipts";
-import { formatInvoiceDate } from "@/lib/format";
+import { formatDate, formatInvoiceDate } from "@/lib/format";
 import { useNavigate } from "react-router-dom";
 
 interface Props {
@@ -385,7 +385,7 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
           </div>
           <div>
             <span className="text-muted-foreground">Issue Date: </span>
-            <span className="text-foreground">{invoice.issue_date}</span>
+            <span className="text-foreground">{formatDate(invoice.issue_date)}</span>
           </div>
           <div>
             <span className="text-muted-foreground">Due Date: </span>
@@ -599,7 +599,7 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
               <p className="-mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
                 <MailCheck className="w-3.5 h-3.5" />
                 {invoice.email_status === "opened" ? "Opened by recipient" : invoice.email_status === "failed" ? "Last email failed" : "Emailed"}
-                {invoice.last_emailed_at ? ` · ${new Date(invoice.last_emailed_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}` : ""}
+                {invoice.last_emailed_at ? ` · ${formatDate(invoice.last_emailed_at)}` : ""}
                 {invoice.email_recipient ? ` · ${invoice.email_recipient}` : ""}
               </p>
             )}
@@ -752,9 +752,7 @@ export default function InvoiceDetails({ invoice, open, onOpenChange }: Props) {
                           {isDiscount && <span className="ml-2 text-xs font-normal text-violet-600 dark:text-violet-400">Discount</span>}
                         </p>
                         <span className="text-xs text-muted-foreground">
-                          {new Date(a.date).toLocaleDateString("en-GB", {
-                            day: "2-digit", month: "short", year: "numeric",
-                          })}
+                          {formatDate(a.date)}
                         </span>
                       </div>
                       {a.detail && (

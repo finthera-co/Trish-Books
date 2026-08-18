@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Building2, Users, Activity, AlertTriangle, Shield, TrendingUp } from "lucide-react";
 import { format } from "date-fns";
+import { formatDate, formatDateTime, formatDateWithWeekday } from "@/lib/format";
 
 export default function SuperAdminDashboard() {
   const { appUser } = useAuth();
@@ -44,7 +45,7 @@ export default function SuperAdminDashboard() {
         <p className="text-xs font-medium text-primary mb-1">Super Admin → Control Plane</p>
         <h1 className="text-2xl font-bold text-foreground tracking-tight">System Overview</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Welcome back, {appUser?.first_name || "Admin"}. {format(new Date(), "EEEE, MMMM d, yyyy")}
+          Welcome back, {appUser?.first_name || "Admin"}. {formatDateWithWeekday(new Date())}
         </p>
       </div>
 
@@ -93,7 +94,7 @@ function RecentTenantsCard() {
             <div key={t.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
               <div>
                 <p className="text-sm font-medium text-foreground">{t.company_name}</p>
-                <p className="text-xs text-muted-foreground">{format(new Date(t.created_at), "MMM d, yyyy")}</p>
+                <p className="text-xs text-muted-foreground">{formatDate(t.created_at)}</p>
               </div>
               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                 t.status === "active" ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"
@@ -139,7 +140,7 @@ function RecentErrorsCard() {
             <div key={e.id} className="flex items-start justify-between py-2 border-b border-border last:border-0">
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-foreground truncate">{e.message}</p>
-                <p className="text-xs text-muted-foreground">{e.module} · {format(new Date(e.created_at), "MMM d, HH:mm")}</p>
+                <p className="text-xs text-muted-foreground">{e.module} · {formatDateTime(e.created_at)}</p>
               </div>
               <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 ml-2 ${severityColors[e.severity] || severityColors.info}`}>
                 {e.severity}

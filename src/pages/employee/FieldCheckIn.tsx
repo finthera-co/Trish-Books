@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { formatTime } from "@/lib/format";
 
 function fmtDuration(fromIso: string, toMs: number) {
   const secs = Math.max(0, Math.floor((toMs - new Date(fromIso).getTime()) / 1000));
@@ -188,7 +189,7 @@ export default function FieldCheckIn() {
           </div>
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div><p className="text-xs text-muted-foreground">Client / Site</p><p className="font-medium text-foreground">{openVisit.client_name || "—"}</p></div>
-            <div><p className="text-xs text-muted-foreground">Checked in</p><p className="font-medium text-foreground">{format(new Date(openVisit.check_in_at), "p")}</p></div>
+            <div><p className="text-xs text-muted-foreground">Checked in</p><p className="font-medium text-foreground">{formatTime(openVisit.check_in_at)}</p></div>
             {openVisit.notes && <div className="col-span-2"><p className="text-xs text-muted-foreground">Notes</p><p className="text-foreground">{openVisit.notes}</p></div>}
             {mapLink(openVisit.check_in_lat, openVisit.check_in_lng) && (
               <div className="col-span-2">
@@ -245,8 +246,8 @@ export default function FieldCheckIn() {
                   <tr key={v.id}>
                     <td className="px-5 py-2.5 text-foreground">{v.visit_date}</td>
                     <td className="px-5 py-2.5 text-muted-foreground">{v.client_name || "—"}</td>
-                    <td className="px-5 py-2.5 text-muted-foreground">{format(new Date(v.check_in_at), "p")}</td>
-                    <td className="px-5 py-2.5 text-muted-foreground">{v.check_out_at ? format(new Date(v.check_out_at), "p") : <span className="text-emerald-600">Active</span>}</td>
+                    <td className="px-5 py-2.5 text-muted-foreground">{formatTime(v.check_in_at)}</td>
+                    <td className="px-5 py-2.5 text-muted-foreground">{v.check_out_at ? formatTime(v.check_out_at) : <span className="text-emerald-600">Active</span>}</td>
                     <td className="px-5 py-2.5 text-right">
                       {link ? <a href={link} target="_blank" rel="noreferrer" className="text-primary inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /></a> : "—"}
                     </td>

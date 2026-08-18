@@ -13,6 +13,7 @@ import SystemHealthCheck from "@/components/dashboard/SystemHealthCheck";
 import CashBalanceForecastChart from "@/components/dashboard/CashBalanceForecastChart";
 import { Loader2, Filter, AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { formatDateWithWeekday } from "@/lib/format";
 
 export default function Home() {
   const { appUser, isSuperAdmin, isEmployee, loading } = useAuth();
@@ -70,7 +71,7 @@ function TenantDashboard() {
               Financial Dashboard
             </h1>
             <p className="text-sm text-muted-foreground mt-2">
-              Welcome back, <span className="text-foreground font-medium">{appUser?.first_name || "User"}</span>. {format(new Date(), "EEEE, MMMM d, yyyy")}
+              Welcome back, <span className="text-foreground font-medium">{appUser?.first_name || "User"}</span>. {formatDateWithWeekday(new Date())}
             </p>
           </div>
           <div className="flex items-center gap-2">

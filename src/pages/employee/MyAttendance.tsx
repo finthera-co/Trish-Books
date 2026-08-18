@@ -6,6 +6,7 @@ import { useMyEmployee } from "@/hooks/useMyEmployee";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { formatDateWithWeekday } from "@/lib/format";
 
 type Glyph = { mark: string; label: string; cls: string };
 
@@ -172,7 +173,7 @@ export default function MyAttendance() {
           {selected && (
             <>
               <DialogHeader>
-                <DialogTitle>{format(selected.date, "EEEE, d MMMM yyyy")}</DialogTitle>
+                <DialogTitle>{formatDateWithWeekday(selected.date)}</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 pt-1">
                 <div className="flex items-center gap-2">

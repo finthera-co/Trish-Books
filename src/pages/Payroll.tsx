@@ -19,6 +19,7 @@ import { exportToCsv } from "@/lib/csvExport";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { buildEpfEtfReturn, buildPayeSchedule, buildBankDisbursement } from "@/lib/statutoryReturns";
 import { useSearchParams } from "react-router-dom";
+import { formatDate } from "@/lib/format";
 
 const statusColors: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -264,7 +265,7 @@ export default function Payroll() {
                     {filteredRuns.map((run: any) => (
                       <tr key={run.id} className="border-t border-border hover:bg-muted/30 transition-colors">
                         <td className="px-4 py-3 font-medium text-foreground">{run.run_number}</td>
-                        <td className="px-4 py-3 text-muted-foreground">{run.period_start} — {run.period_end}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{formatDate(run.period_start)} — {formatDate(run.period_end)}</td>
                         <td className="px-4 py-3 text-muted-foreground">{(run.pay_schedules as any)?.name || "Manual"}</td>
                         <td className="px-4 py-3">
                           <Badge className={statusColors[run.status]}>{run.status}</Badge>

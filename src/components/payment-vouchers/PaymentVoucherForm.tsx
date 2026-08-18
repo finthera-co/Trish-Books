@@ -31,6 +31,7 @@ import {
 import AccountSelector from "@/components/shared/AccountSelector";
 import { formatCurrency } from "@/lib/currency";
 import { toast } from "sonner";
+import { formatDate } from "@/lib/format";
 
 const PAYMENT_METHODS = ["Cash", "Bank Transfer", "Cheque", "Credit Card"];
 
@@ -232,7 +233,7 @@ export default function PaymentVoucherForm({ editId, onClose }: Props) {
                 className={cn("w-full justify-start text-left font-normal", !paymentDate && "text-muted-foreground")}
               >
                 <CalendarIcon className="mr-2 h-4 w-4" />
-                {paymentDate ? format(paymentDate, "PPP") : "Pick date"}
+                {paymentDate ? formatDate(paymentDate) : "Pick date"}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">

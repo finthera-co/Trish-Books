@@ -24,6 +24,7 @@ import {
 } from "@/hooks/useAttendance";
 import { exportToCsv } from "@/lib/csvExport";
 import { KpiCard } from "@/components/ui/KpiCard";
+import { formatDate } from "@/lib/format";
 
 const STATUS_OPTIONS: { value: AttendanceStatus; label: string }[] = [
   { value: "present", label: "Present" },
@@ -243,7 +244,7 @@ function HolidaysDialog({ open, onOpenChange, canEdit }: {
                 <tr><td colSpan={4} className="text-center py-6 text-muted-foreground">No holidays defined</td></tr>
               ) : holidays.map((h: any) => (
                 <tr key={h.id} className="border-t border-border">
-                  <td className="px-3 py-2 text-foreground">{h.holiday_date}</td>
+                  <td className="px-3 py-2 text-foreground">{formatDate(h.holiday_date)}</td>
                   <td className="px-3 py-2 text-foreground">{h.name}</td>
                   <td className="px-3 py-2">{h.is_recurring ? <Badge variant="outline" className="text-xs">Yearly</Badge> : "—"}</td>
                   {canEdit && (

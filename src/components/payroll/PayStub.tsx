@@ -9,6 +9,7 @@ import { loadLogo, type LoadedLogo } from "@/lib/invoicePdf";
 import { buildPayslipModel, maskAccount, payslipRef } from "@/lib/payslip";
 import { amountInWords } from "@/lib/numberToWords";
 import { useTenantBranding } from "@/hooks/useMyEmployee";
+import { formatDate } from "@/lib/format";
 
 interface Props {
   item: any;
@@ -74,8 +75,8 @@ export default function PayStub({ item, run, open, onOpenChange, tenant: tenantP
             </div>
             <div className="text-right shrink-0">
               <p className="text-lg font-bold tracking-wide">PAYSLIP</p>
-              <p className="text-[11px] text-white/85">{run.period_start} → {run.period_end}</p>
-              {run.payment_date && <p className="text-[11px] text-white/85">Paid: {run.payment_date}</p>}
+              <p className="text-[11px] text-white/85">{formatDate(run.period_start)} → {formatDate(run.period_end)}</p>
+              {run.payment_date && <p className="text-[11px] text-white/85">Paid: {formatDate(run.payment_date)}</p>}
             </div>
           </div>
 

@@ -28,6 +28,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { sortAccounts } from "@/lib/accountSort";
 import AccountCombobox from "@/components/shared/AccountCombobox";
+import { formatDate } from "@/lib/format";
 
 function useOffsetAccounts() {
   const { appUser } = useAuth();
@@ -160,7 +161,7 @@ function ViewLandedCostDialog({ id, onClose }: { id: string; onClose: () => void
                   {data.grns.map((g: any) => (
                     <TableRow key={g.id}>
                       <TableCell className="font-mono">{g.grn?.grn_number}</TableCell>
-                      <TableCell>{g.grn?.receipt_date}</TableCell>
+                      <TableCell>{formatDate(g.grn?.receipt_date)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(Number(g.grn?.total_value || 0))}</TableCell>
                     </TableRow>
                   ))}
@@ -323,7 +324,7 @@ function NewLandedCostDialog() {
                       <TableCell><Checkbox checked={grnIds.includes(g.id)} /></TableCell>
                       <TableCell className="font-mono text-xs">{g.grn_number}</TableCell>
                       <TableCell>{g.vendor?.name || "—"}</TableCell>
-                      <TableCell>{g.receipt_date}</TableCell>
+                      <TableCell>{formatDate(g.receipt_date)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(Number(g.total_value))}</TableCell>
                     </TableRow>
                   ))}

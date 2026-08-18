@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { AlertTriangle, CheckCircle, Search, Filter } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import { formatDateTimeSeconds } from "@/lib/format";
 import {
   Select,
   SelectContent,
@@ -141,7 +142,7 @@ export default function ErrorLogs() {
                     </span>
                     <span className="text-xs text-muted-foreground font-mono">{err.module}</span>
                     <span className="text-xs text-muted-foreground">
-                      {format(new Date(err.created_at), "MMM d, HH:mm:ss")}
+                      {formatDateTimeSeconds(err.created_at)}
                     </span>
                   </div>
                   <p className="text-sm text-foreground font-medium">{err.message}</p>

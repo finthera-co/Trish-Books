@@ -23,12 +23,13 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
+import { formatDate } from "@/lib/format";
 
 const fmt = (n: number) =>
   n.toLocaleString("en-LK", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function periodLabel(p: TaxPeriodRow) {
-  return `${p.period_start} → ${p.period_end}`;
+  return `${formatDate(p.period_start)} → ${formatDate(p.period_end)}`;
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -50,7 +51,7 @@ function DrillDown({ rows }: { rows: TaxTransactionRow[] }) {
       <tbody>
         {rows.map((r) => (
           <tr key={r.id}>
-            <td>{r.transaction_date}</td>
+            <td>{formatDate(r.transaction_date)}</td>
             <td className="font-mono">{r.tax_codes?.code}</td>
             <td>
               <Link className="underline" to={
@@ -350,7 +351,7 @@ function WhtCertificate({ row, onClose }: { row: any; onClose: () => void }) {
               <tr><td className="py-1 text-muted-foreground">Payee</td><td className="text-right">{meta?.vendor?.name ?? "—"}</td></tr>
               <tr><td className="py-1 text-muted-foreground">Payee TIN</td><td className="text-right">{meta?.vendor?.tin ?? "—"}</td></tr>
               <tr><td className="py-1 text-muted-foreground">Nature of payment</td><td className="text-right">{row.payment_nature ?? "—"}</td></tr>
-              <tr><td className="py-1 text-muted-foreground">Payment date</td><td className="text-right">{row.payment_date}</td></tr>
+              <tr><td className="py-1 text-muted-foreground">Payment date</td><td className="text-right">{formatDate(row.payment_date)}</td></tr>
               <tr><td className="py-1 text-muted-foreground">Gross amount</td><td className="text-right font-mono">{fmt(Number(row.amount))}</td></tr>
               <tr><td className="py-1 text-muted-foreground">WHT rate</td><td className="text-right">{row.rate_label}</td></tr>
               <tr className="font-semibold border-t"><td className="py-2">Tax withheld</td><td className="text-right font-mono">{fmt(Number(row.wht_amount))}</td></tr>

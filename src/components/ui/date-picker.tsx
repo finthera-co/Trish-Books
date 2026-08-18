@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { formatDate } from "@/lib/format";
 
 interface DatePickerProps {
   /** ISO date string, "yyyy-MM-dd" (or empty for no selection). */
@@ -53,7 +54,7 @@ export function DatePicker({
           )}
         >
           <CalendarIcon className="h-4 w-4 shrink-0 opacity-60" />
-          {selected ? format(selected, "dd MMM yyyy") : <span>{placeholder}</span>}
+          {selected ? formatDate(selected) : <span>{placeholder}</span>}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">

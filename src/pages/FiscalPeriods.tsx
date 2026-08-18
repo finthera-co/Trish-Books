@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Plus, Lock, Unlock, Calendar, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { formatDate, formatDateTime } from "@/lib/format";
 import {
   useFiscalPeriods,
   useCloseFiscalPeriod,
@@ -131,8 +132,8 @@ export default function FiscalPeriods() {
               {periods.map((p: any) => (
                 <tr key={p.id}>
                   <td className="font-medium text-foreground">{p.name}</td>
-                  <td className="text-muted-foreground">{p.period_start}</td>
-                  <td className="text-muted-foreground">{p.period_end}</td>
+                  <td className="text-muted-foreground">{formatDate(p.period_start)}</td>
+                  <td className="text-muted-foreground">{formatDate(p.period_end)}</td>
                   <td>
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
                       p.status === "closed"
@@ -147,7 +148,7 @@ export default function FiscalPeriods() {
                     {p.users ? `${p.users.first_name} ${p.users.last_name}` : "—"}
                   </td>
                   <td className="text-muted-foreground text-sm">
-                    {p.closed_at ? format(new Date(p.closed_at), "PPp") : "—"}
+                    {p.closed_at ? formatDateTime(p.closed_at) : "—"}
                   </td>
                   <td className="text-right">
                     {p.status === "open" ? (

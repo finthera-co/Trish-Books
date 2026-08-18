@@ -1,13 +1,13 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { format as formatDate, parseISO } from "date-fns";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { exportToCsv } from "@/lib/csvExport";
-import { fmtAmt, fmtBal, GL_DATE_FORMAT, type GLReportRow } from "@/lib/glReportModel";
+import { fmtAmt, fmtBal, type GLReportRow } from "@/lib/glReportModel";
 import {
   drawStatementHeading, generatedSentence, periodSentence, type StatementHeadingCompany,
 } from "@/lib/reportHeading";
+import { formatDate } from "@/lib/format";
 
 // djb2 — a reproducibility label, not a security control, so a small synchronous
 // hash is the right tool: no reason to reach for crypto.subtle and make this async.
@@ -46,7 +46,7 @@ export function formatGlFingerprintLine(p: GlFingerprintParams, hash: string): s
 
 function formatGlDate(iso: string): string {
   try {
-    return formatDate(parseISO(iso), GL_DATE_FORMAT);
+    return formatDate(iso);
   } catch {
     return iso;
   }

@@ -5,6 +5,7 @@ import { FileText, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import PayStub from "@/components/payroll/PayStub";
+import { formatDate } from "@/lib/format";
 
 export default function MySalarySlips() {
   const { data: me } = useMyEmployee();
@@ -36,7 +37,7 @@ export default function MySalarySlips() {
             <div key={it.id} className="flex items-center justify-between gap-4 px-5 py-4">
               <div className="min-w-0">
                 <p className="font-medium text-foreground">{it.payroll_runs.run_number || "Payroll"}</p>
-                <p className="text-xs text-muted-foreground">{it.payroll_runs.period_start} → {it.payroll_runs.period_end}</p>
+                <p className="text-xs text-muted-foreground">{formatDate(it.payroll_runs.period_start)} → {formatDate(it.payroll_runs.period_end)}</p>
               </div>
               <div className="text-right shrink-0">
                 <p className="text-sm font-semibold text-foreground">{formatCurrency(Number(it.net_pay))}</p>

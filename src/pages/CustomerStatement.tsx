@@ -13,6 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatCurrency } from "@/lib/currency";
 import { useCustomerStatement } from "@/hooks/useCustomerStatement";
+import { formatDate } from "@/lib/format";
 
 // First and last day of the current month, ISO.
 const monthStart = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split("T")[0]; };
@@ -80,7 +81,7 @@ export default function CustomerStatement() {
               taxId: company?.tax_id,
               title: "Statement of Account",
               subtitle: customer?.legal_name || customer?.name || undefined,
-              dateLine: `${from} → ${to}`,
+              dateLine: `${formatDate(from)} → ${formatDate(to)}`,
               sheetName: "Statement",
               fileName: `Statement — ${customer?.name ?? "Customer"} ${to}.xlsx`,
             });
@@ -143,7 +144,7 @@ export default function CustomerStatement() {
               ) : (
                 stmt!.rows.map((r, i) => (
                   <tr key={i} className="border-b border-border/40">
-                    <td className="py-2 text-muted-foreground whitespace-nowrap">{r.date}</td>
+                    <td className="py-2 text-muted-foreground whitespace-nowrap">{formatDate(r.date)}</td>
                     <td className="py-2">{r.kind}</td>
                     <td className="py-2 font-medium">{r.reference}</td>
                     <td className="py-2 text-right font-mono tabular-nums">{r.debit ? formatCurrency(r.debit) : "—"}</td>

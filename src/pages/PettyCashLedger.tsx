@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { usePettyCashAccounts, usePCLedger, usePCBalance } from "@/hooks/usePettyCash";
 import { formatCurrency } from "@/lib/currency";
+import { formatDate } from "@/lib/format";
 
 const typeLabel: Record<string, string> = {
   petty_cash: "Voucher",
@@ -82,7 +83,7 @@ export default function PettyCashLedger() {
                   className="cursor-pointer hover:bg-muted/50"
                   onClick={() => navigate(`/accounting/journal-entries/${row.journal_entry_id}`)}
                 >
-                  <td className="text-muted-foreground">{new Date(row.date).toLocaleDateString()}</td>
+                  <td className="text-muted-foreground">{formatDate(row.date)}</td>
                   <td><Badge variant="outline">{typeLabel[row.entry_type] || row.entry_type}</Badge></td>
                   <td className="font-mono text-xs">{row.reference || "—"}</td>
                   <td>{row.description}</td>

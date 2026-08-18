@@ -11,6 +11,7 @@ import { ArrowLeft, Copy, Edit, FileText, RotateCcw, Ban, Undo2, Trash2, AlertTr
 import { toast } from "sonner";
 import { typeColors, getTypeLabel } from "@/lib/accountTypes";
 import { resolveLineMemo, isMemoInherited, bySeq } from "@/lib/journalValidation";
+import { formatDate } from "@/lib/format";
 
 const fmt = (n: number) =>
   n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -207,7 +208,7 @@ export default function JournalEntryView() {
             <span className="text-muted-foreground font-medium">Cheque No:</span>
             <span className="font-mono text-foreground">{entry.cheque_number || "—"}</span>
             <span className="text-muted-foreground font-medium">Date:</span>
-            <span className="text-foreground">{entry.entry_date}</span>
+            <span className="text-foreground">{formatDate(entry.entry_date)}</span>
             <span className="text-muted-foreground font-medium">Transaction ID:</span>
             <div className="flex items-center gap-1.5">
               <Tooltip>
@@ -238,7 +239,7 @@ export default function JournalEntryView() {
         <div className="grid grid-cols-4 gap-4 mb-6">
           <div>
             <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Date</p>
-            <p className="text-sm font-medium text-foreground">{entry.entry_date}</p>
+            <p className="text-sm font-medium text-foreground">{formatDate(entry.entry_date)}</p>
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Reference</p>
@@ -250,7 +251,7 @@ export default function JournalEntryView() {
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Created</p>
-            <p className="text-sm text-foreground">{new Date(entry.created_at).toLocaleDateString()}</p>
+            <p className="text-sm text-foreground">{formatDate(entry.created_at)}</p>
           </div>
         </div>
 
@@ -309,7 +310,7 @@ export default function JournalEntryView() {
             <Ban className="w-3.5 h-3.5 mt-0.5 shrink-0" />
             <div>
               <span className="font-semibold">Void reason:</span> {entry.void_reason}
-              {entry.voided_at && <span className="ml-2 text-muted-foreground">({new Date(entry.voided_at).toLocaleDateString()})</span>}
+              {entry.voided_at && <span className="ml-2 text-muted-foreground">({formatDate(entry.voided_at)})</span>}
             </div>
           </div>
         )}
@@ -394,7 +395,7 @@ export default function JournalEntryView() {
               <span className="font-medium text-foreground">{entry.description}</span>
               <span className="font-mono text-xs text-muted-foreground">{entry.reference || "—"}</span>
             </div>
-            <p className="text-xs text-muted-foreground">{entry.entry_date} · LKR {fmt(totalDebit)}</p>
+            <p className="text-xs text-muted-foreground">{formatDate(entry.entry_date)} · LKR {fmt(totalDebit)}</p>
             {entry.void_reason && (
               <p className="text-xs text-muted-foreground border-t border-border pt-2 mt-2">
                 <span className="font-medium text-foreground">Voided because:</span> {entry.void_reason}
@@ -429,7 +430,7 @@ export default function JournalEntryView() {
               <span className="font-mono text-xs text-muted-foreground">{entry.reference || "—"}</span>
             </div>
             <p className="text-xs text-muted-foreground">
-              {entry.entry_date} · LKR {fmt(totalDebit)}
+              {formatDate(entry.entry_date)} · LKR {fmt(totalDebit)}
             </p>
           </div>
           <div className="flex gap-2">

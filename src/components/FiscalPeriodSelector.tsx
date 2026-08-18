@@ -1,5 +1,6 @@
 import { Calendar } from "lucide-react";
 import { useFiscalPeriods } from "@/hooks/useFiscalPeriodBalances";
+import { formatDate } from "@/lib/format";
 
 interface FiscalPeriodSelectorProps {
   value: string;
@@ -23,7 +24,7 @@ export default function FiscalPeriodSelector({ value, onChange, className }: Fis
         <option value="">All periods</option>
         {periods.map((p: any) => (
           <option key={p.id} value={p.id}>
-            {p.name} ({p.period_start} → {p.period_end})
+            {p.name} ({formatDate(p.period_start)} → {formatDate(p.period_end)})
             {p.status === "closed" ? " 🔒" : ""}
           </option>
         ))}

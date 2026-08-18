@@ -34,7 +34,7 @@ export const DEFAULT_PAGE_SETTINGS: PageSettings = {
   // clamped to 65px, wrapping every right-aligned amount.
   margins: { top: 40, bottom: 40, left: 24, right: 24 },
   fontFamily: 'Helvetica',
-  dateFormat: 'DD MMM YYYY',
+  dateFormat: 'DD/MM/YYYY',
   pageFooter: { enabled: true, message: 'Thank you for your business' },
 };
 

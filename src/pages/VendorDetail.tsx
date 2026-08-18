@@ -10,6 +10,7 @@ import { formatCurrency } from "@/lib/currency";
 import { useVendorDetail } from "@/hooks/useAPModule";
 import PayBillsDialog from "@/components/ap/PayBillsDialog";
 import VendorCreditNoteDialog from "@/components/ap/VendorCreditNoteDialog";
+import { formatDate } from "@/lib/format";
 
 function getBillStatus(bill: any): { label: string; variant: "default" | "secondary" | "destructive" | "outline" } {
   const today = new Date();
@@ -161,7 +162,7 @@ export default function VendorDetail() {
                           onClick={() => navigate("/accounting/procurement")}
                         >
                           <TableCell className="font-mono font-medium">{bill.bill_number}</TableCell>
-                          <TableCell className="text-muted-foreground text-sm">{bill.bill_date}</TableCell>
+                          <TableCell className="text-muted-foreground text-sm">{formatDate(bill.bill_date)}</TableCell>
                           <TableCell className="text-muted-foreground text-sm">{bill.due_date || "—"}</TableCell>
                           <TableCell className="text-right tabular-nums">{formatCurrency(Number(bill.total_amount))}</TableCell>
                           <TableCell className="text-right tabular-nums text-primary">{formatCurrency(bill.amount_paid)}</TableCell>
@@ -212,7 +213,7 @@ export default function VendorDetail() {
                   ) : (
                     payments.map((p: any) => (
                       <TableRow key={p.id}>
-                        <TableCell className="text-muted-foreground">{p.payment_date}</TableCell>
+                        <TableCell className="text-muted-foreground">{formatDate(p.payment_date)}</TableCell>
                         <TableCell className="text-muted-foreground">{p.reference || "—"}</TableCell>
                         <TableCell className="text-muted-foreground text-sm">{p.bank_account_id?.substring(0, 8)}…</TableCell>
                         <TableCell className="text-right tabular-nums font-medium text-primary">

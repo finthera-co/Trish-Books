@@ -10,6 +10,7 @@ import BudgetCreateDialog from "./BudgetCreateDialog";
 import BudgetLineDialog from "./BudgetLineDialog";
 import BudgetTrendChart from "./BudgetTrendChart";
 import BudgetHierarchy from "./BudgetHierarchy";
+import { formatDate } from "@/lib/format";
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
@@ -177,7 +178,7 @@ export default function BudgetDashboard() {
                         <span className="text-xs text-muted-foreground">v{version}</span>
                       </div>
                       <span className="text-xs text-muted-foreground">
-                        {b.department} · {b.period_start} → {b.period_end} · {(b as any).period_type || "monthly"}
+                        {b.department} · {formatDate(b.period_start)} → {formatDate(b.period_end)} · {(b as any).period_type || "monthly"}
                       </span>
                     </div>
                     <div className="text-right">

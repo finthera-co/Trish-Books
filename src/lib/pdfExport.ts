@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { drawStatementHeading, type StatementHeadingMeta } from "@/lib/reportHeading";
+import { formatDateTime } from "@/lib/format";
 
 /**
  * Generic PDF table export utility.
@@ -45,7 +46,7 @@ export function exportToPdf(
       doc.setTextColor(0);
     }
     doc.setFontSize(8);
-    doc.text(`Generated: ${new Date().toLocaleString()}`, margin, opts?.subtitle ? 70 : 56);
+    doc.text(`Generated: ${formatDateTime(new Date())}`, margin, opts?.subtitle ? 70 : 56);
     startY = opts?.subtitle ? 84 : 70;
   }
 

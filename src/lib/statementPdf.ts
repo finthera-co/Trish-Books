@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { formatCurrency } from "@/lib/currency";
+import { formatDate } from "@/lib/format";
 import { loadLogo, type LoadedLogo } from "@/lib/invoicePdf";
 import type { CustomerStatement } from "@/hooks/useCustomerStatement";
 
@@ -56,7 +57,7 @@ export function buildStatementPdf({ stmt, customer, company, from, to }: Stateme
   doc.setFont("helvetica", "bold").setFontSize(18).setTextColor(90, 96, 104);
   doc.text("STATEMENT", right, M + 6, { align: "right" });
   doc.setFont("helvetica", "normal").setFontSize(9).setTextColor(...MUTED);
-  doc.text(`${from}  to  ${to}`, right, M + 12, { align: "right" });
+  doc.text(`${formatDate(from)}  to  ${formatDate(to)}`, right, M + 12, { align: "right" });
 
   let y = Math.max(cy, logoBottom) + 4;
   doc.setDrawColor(...RULE).setLineWidth(0.3).line(M, y, right, y);
@@ -91,7 +92,7 @@ export function buildStatementPdf({ stmt, customer, company, from, to }: Stateme
     body: [
       ["", "Opening balance", "", "", "", fmt(stmt.opening_balance)],
       ...stmt.rows.map((r) => [
-        r.date, r.kind, r.reference,
+        formatDate(r.date), r.kind, r.reference,
         r.debit ? fmt(r.debit) : "—",
         r.credit ? fmt(r.credit) : "—",
         fmt(r.balance),
