@@ -383,7 +383,7 @@ function AccountRow({
                   accountSubtype={account.account_subtype}
                   currentBalance={displayBalance}
                   currentType={displayType}
-                  normalBalance={getNormalBalance(account.account_type)}
+                  normalBalance={getNormalBalance(account.account_type, isContraAccount(account))}
                   isLocked={(account as any).is_locked || isPeriodClosed || false}
                 />
               )}
@@ -592,7 +592,7 @@ function FlatAccountRow({
                 accountSubtype={account.account_subtype}
                 currentBalance={displayBalance}
                 currentType={displayType}
-                normalBalance={getNormalBalance(account.account_type)}
+                normalBalance={getNormalBalance(account.account_type, isContraAccount(account))}
                 isLocked={(account as any).is_locked || isPeriodClosed || false}
               />
             )}

@@ -520,7 +520,10 @@ export function suggestSubtypeFromCode(
   return subs[0] || null;
 }
 
-// Control accounts that cannot be posted to directly
+// Control accounts that cannot be posted to directly.
+// Accumulated Depreciation is deliberately absent: it is a contra account whose
+// opening balance is a plain trial-balance figure at migration, and depreciation
+// runs, impairments and disposals all post to it directly.
 export const CONTROL_ACCOUNT_SUBTYPES = [
   "Accounts Receivable",
   "Accounts Payable",
@@ -529,7 +532,6 @@ export const CONTROL_ACCOUNT_SUBTYPES = [
   "Furniture & Equipment",
   "Vehicles",
   "Buildings",
-  "Accumulated Depreciation",
 ];
 
 // Control account subtypes that do NOT allow sub-accounts (must use subledger only)
@@ -575,8 +577,8 @@ export function getControlAccountRoute(subledgerType: string | null | undefined)
     case "customer": return "/sales/customers";
     case "vendor": return "/accounting/vendors";
     case "inventory": return "/accounting/inventory";
-    case "fixed_asset": return "/accounting/assets";
-    case "asset_depreciation": return "/accounting/assets/depreciation";
+    case "fixed_asset": return "/assets/register";
+    case "asset_depreciation": return "/assets/depreciation";
     default: return null;
   }
 }
@@ -587,7 +589,6 @@ export const SUBLEDGER_SUBTYPES = [
   "Accounts Payable",
   "Inventory",
   "Fixed Assets",
-  "Accumulated Depreciation",
 ];
 
 export function requiresSubledger(subtype: string | null | undefined): boolean {
@@ -613,9 +614,6 @@ export function deriveSubledgerFields(accountSubtype: string | null | undefined)
   }
   if (lower.includes("fixed asset") || lower.includes("furniture") || lower.includes("vehicle") || lower.includes("building")) {
     return { requires_subledger: true, subledger_type: "fixed_asset" };
-  }
-  if (lower.includes("accumulated depreciation")) {
-    return { requires_subledger: true, subledger_type: "asset_depreciation" };
   }
   return { requires_subledger: false, subledger_type: "none" };
 }

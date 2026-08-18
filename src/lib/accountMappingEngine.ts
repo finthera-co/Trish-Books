@@ -83,7 +83,10 @@ export function deriveAccountFlags(subtype: string | null | undefined): {
   managed_by_subledger: boolean;
 } {
   const stype = detectSubledgerType(subtype);
-  const isControl = stype !== "none";
+  // Accumulated depreciation is a contra account, not a subledger-managed control
+  // account: it takes a direct opening balance and accepts manual postings
+  // (depreciation runs, impairments, disposals).
+  const isControl = stype !== "none" && stype !== "asset_depreciation";
   // AR, AP, Inventory cannot have GL sub-accounts
   const noSubAccounts = ["customer", "vendor", "inventory"].includes(stype);
   return {

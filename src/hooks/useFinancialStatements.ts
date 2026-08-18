@@ -311,7 +311,7 @@ export function useFsMapping(statementCode: string, dateFrom: string, dateTo: st
     queryFn: async () => {
       const { data, error } = await supabase
         .from("fs_line_accounts")
-        .select("id, line_id, account_id, accounts(account_code, account_name, account_type), fs_lines!inner(statement_id)")
+        .select("id, line_id, account_id, accounts(account_code, account_name, account_type), fs_lines!inner(statement_id, sign)")
         .eq("fs_lines.statement_id", statementId!);
       if (error) throw error;
       return (data ?? []) as any[];
@@ -326,10 +326,15 @@ export function useFsMapping(statementCode: string, dateFrom: string, dateTo: st
   const balances = balancesQuery.data ?? new Map<string, FsAccountBalance>();
 
   // What a row is "worth" on this screen, matching how the statement values it:
-  // movement for P&L accounts, closing balance for everything else.
-  const displayValue = (b: FsAccountBalance | undefined, accountType: string): number => {
+  // movement for P&L accounts, closing balance for everything else. Once an
+  // asset/liability/equity account sits on a line, that line's sign decides the
+  // orientation too — a liability parked on the credit-natured "Liabilities"
+  // line reads positive here exactly as it does on the face of the statement.
+  // Unmapped rows have no line, so they stay in trial-balance orientation.
+  const displayValue = (b: FsAccountBalance | undefined, accountType: string, lineSign?: string): number => {
     if (!b) return 0;
-    return isFsPnlAccountType(accountType) ? b.period_credit - b.period_debit : b.closing;
+    if (isFsPnlAccountType(accountType)) return b.period_credit - b.period_debit;
+    return lineSign === "invert" ? -b.closing : b.closing;
   };
 
   const mapped: FsMappedAccount[] = (mappedQuery.data ?? []).map((r) => {
@@ -344,7 +349,7 @@ export function useFsMapping(statementCode: string, dateFrom: string, dateTo: st
       account_type: accountType,
       period_debit: b?.period_debit ?? 0,
       period_credit: b?.period_credit ?? 0,
-      balance: displayValue(b, accountType),
+      balance: displayValue(b, accountType, r.fs_lines?.sign),
     };
   });
 

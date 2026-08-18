@@ -486,7 +486,6 @@ export function requiresSubledgerBreakdown(account: AccountInfo): string | null 
     vendor: "vendor",
     inventory: "inventory",
     fixed_asset: "fixed_asset",
-    asset_depreciation: "fixed_asset",
   };
   return labelMap[stype] || null;
 }
