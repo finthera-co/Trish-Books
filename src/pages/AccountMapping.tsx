@@ -534,14 +534,14 @@ export default function AccountMapping() {
               </div>
 
               <FieldRow fieldKey="bank_import_unrecognized_deposit_account_id" label="Unrecognized Deposits" badge={<Cr />}
-                types={["Income", "Other Income", "Liability"]}
-                hint="Holding account for unresolved money IN (statement Credit column). Must net to zero as items are cleared."
-                quickType="Income" quickSubtype="Suspense" quickName="Unrecognized Deposits"
+                types={["Liability", "Income", "Other Income"]}
+                hint="Holding account for unresolved money IN (statement Credit column). Cash received but not yet recognised as earned — sits as a current liability until identified, and must net to zero as items are cleared."
+                quickType="Liability" quickSubtype="Other Current Liability" quickName="Unrecognized Deposits"
                 {...sharedProps} />
               <FieldRow fieldKey="bank_import_unrecognized_payment_account_id" label="Unrecognized Payments" badge={<Dr />}
-                types={["Expense", "Other Expense", "Asset"]}
-                hint="Holding account for unresolved money OUT (statement Debit column). Must net to zero as items are cleared."
-                quickType="Expense" quickSubtype="Suspense" quickName="Unrecognized Payments"
+                types={["Asset", "Expense", "Other Expense"]}
+                hint="Holding account for unresolved money OUT (statement Debit column). Cash paid out but not yet recognised as an expense — sits as a current asset until identified, and must net to zero as items are cleared."
+                quickType="Asset" quickSubtype="Other Current Assets" quickName="Unrecognized Payments"
                 {...sharedProps} />
 
               {/* Petty cash import routes both directions through one account,

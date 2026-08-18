@@ -13,7 +13,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useMyPermissions } from "@/hooks/usePermissions";
 import { useFiscalPeriods } from "@/hooks/useFiscalPeriodBalances";
 import {
-  useGLAccountTree, useGLIntegrity, useGLOpeningReconciliation, fetchGLTransactions,
+  useGLAccountTree, useGLIntegrity, useGLPeriodInfo, fetchGLTransactions,
   type GLTransactionRow,
 } from "@/hooks/useGeneralLedger";
 import {
@@ -181,7 +181,7 @@ export default function GeneralLedgerReport({
 
   const treeQuery = useGLAccountTree(dateFrom, dateTo, accountType === "all" ? undefined : accountType, includeInactive);
   const integrityQuery = useGLIntegrity(dateFrom, dateTo);
-  const reconciliation = useGLOpeningReconciliation(dateFrom);
+  const periodInfo = useGLPeriodInfo(dateFrom);
 
   // Arriving from the Trial Balance a second time (different account, different
   // period) remounts nothing, so the range has to follow the caller's params.
@@ -301,11 +301,8 @@ export default function GeneralLedgerReport({
       lines.push(`[${issue.severity.toUpperCase()}] ${issue.code}: ${issue.detail}${issue.amount != null ? ` (${issue.amount.toFixed(2)})` : ""}`);
     }
     if (Math.abs(reportImbalance) > 0.005) lines.push(`[ERROR] IMBALANCE: Dr/Cr differ by ${reportImbalance.toFixed(2)}`);
-    if (reconciliation.status === "variance") {
-      lines.push(`[WARNING] OPENING_VARIANCE: ledger vs opening_balances differ by ${reconciliation.totalVariance.toFixed(2)} across ${reconciliation.accounts.length} account(s)`);
-    }
     return lines;
-  }, [integrityQuery.data, reportImbalance, reconciliation]);
+  }, [integrityQuery.data, reportImbalance]);
 
   const runExport = useCallback(
     async (kind: "csv" | "pdf") => {
@@ -406,8 +403,8 @@ export default function GeneralLedgerReport({
   }
 
   const closedPeriodNotice =
-    reconciliation.period && reconciliation.period.status === "closed"
-      ? `Range includes closed period "${reconciliation.period.name}" (closed ${reconciliation.period.closed_at ? glDate(reconciliation.period.closed_at) : "—"})`
+    periodInfo.period && periodInfo.period.status === "closed"
+      ? `Range includes closed period "${periodInfo.period.name}" (closed ${periodInfo.period.closed_at ? glDate(periodInfo.period.closed_at) : "—"})`
       : null;
 
   const isLoading = treeQuery.isLoading;
@@ -518,13 +515,6 @@ export default function GeneralLedgerReport({
       {!dismissedBanners.has("imbalance") && Math.abs(reportImbalance) > 0.005 && (
         <Banner tone="error" icon={XCircle} onDismiss={() => setDismissedBanners((s) => new Set(s).add("imbalance"))}>
           <strong>Report does not balance.</strong> Debits and credits differ by {GL_REPORT_CURRENCY} {Math.abs(reportImbalance).toFixed(2)}.
-        </Banner>
-      )}
-      {!dismissedBanners.has("reconciliation") && reconciliation.status === "variance" && (
-        <Banner tone="warning" icon={AlertTriangle} onDismiss={() => setDismissedBanners((s) => new Set(s).add("reconciliation"))}>
-          <strong>Opening balances disagree with the ledger.</strong> The stored opening balance for this fiscal period differs from the
-          journal by {GL_REPORT_CURRENCY} {reconciliation.totalVariance.toFixed(2)} across {reconciliation.accounts.length} account(s). The
-          General Ledger reflects the journal.
         </Banner>
       )}
       {!dismissedBanners.has("closed-period") && closedPeriodNotice && (

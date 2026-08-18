@@ -12,7 +12,6 @@ import {
   fetchAccountLedgerAll,
   type AccountLedgerPageRow,
 } from "@/hooks/useData";
-import { useFiscalPeriods, usePeriodOpeningBalances } from "@/hooks/useFiscalPeriodBalances";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -112,7 +111,6 @@ export default function AccountReport() {
   const queryClient = useQueryClient();
 
   const { data: accounts } = useAccounts();
-  const { data: periods } = useFiscalPeriods();
 
   const [dateFrom, setDateFrom] = useState(() => {
     const d = new Date();
@@ -182,23 +180,6 @@ export default function AccountReport() {
     // but does not fight a manual date narrowing (deps unchanged between edits).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId, earliestEntryDate, account]);
-
-  // Find matching fiscal period for opening balance
-  const matchingPeriod = useMemo(() => {
-    if (!periods) return null;
-    return (periods as any[]).find(
-      (p) => p.period_start <= dateFrom && p.period_end >= dateFrom
-    ) || null;
-  }, [periods, dateFrom]);
-
-  const { data: openingBalances } = useQuery({
-    queryKey: ["opening_balances"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("opening_balances").select("*");
-      if (error) throw error;
-      return data;
-    },
-  });
 
   // Parent account
   const parentAccount = useMemo(() => {
@@ -273,7 +254,6 @@ export default function AccountReport() {
     queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
     queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
     queryClient.invalidateQueries({ queryKey: ["accounts"] });
-    queryClient.invalidateQueries({ queryKey: ["opening_balances"] });
   };
 
   // The grid holds one page; an export is expected to hold everything that

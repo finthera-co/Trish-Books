@@ -235,25 +235,6 @@ export function useGLIntegrity(dateFrom: string, dateTo: string) {
   });
 }
 
-export interface GLOpeningVarianceAccount {
-  account_id: string;
-  account_name: string;
-  ledger: number;
-  stored: number;
-  variance: number;
-}
-
-export type GLOpeningReconciliation =
-  | { status: "no-period" }
-  | { status: "reconciled" }
-  | {
-      status: "variance";
-      totalVariance: number;
-      accounts: GLOpeningVarianceAccount[];
-      periodId: string;
-      periodName: string;
-    };
-
 export interface FiscalPeriodSummary {
   id: string;
   name: string;
@@ -264,18 +245,19 @@ export interface FiscalPeriodSummary {
 }
 
 /**
- * The GL is a rendering of the journal — it never reads opening_balances for
- * its own figures. This hook exists solely to detect and surface when the two
- * sources disagree (expected until period close posts a real closing journal
- * entry — see PART 0.3 of the GL spec). A silent divergence is worse than a
- * visible, quantified one.
+ * Resolves the fiscal period enclosing dateFrom, purely to drive the
+ * "range includes a closed period" notice. rpc_gl_account_tree and
+ * rpc_gl_transactions now apply the same opening_balances audit override as
+ * rpc_trial_balance themselves, so the GL and Trial Balance always agree on
+ * opening balances by construction — there is no separate reconciliation to
+ * surface here anymore.
  */
-export function useGLOpeningReconciliation(dateFrom: string) {
+export function useGLPeriodInfo(dateFrom: string) {
   const { appUser } = useAuth();
   const tenantId = appUser?.tenant_id;
 
   const periodQuery = useQuery({
-    queryKey: ["gl_reconciliation_period", tenantId, dateFrom],
+    queryKey: ["gl_period_info", tenantId, dateFrom],
     enabled: Boolean(tenantId && dateFrom),
     queryFn: async (): Promise<FiscalPeriodSummary | null> => {
       const { data, error } = await supabase
@@ -291,72 +273,9 @@ export function useGLOpeningReconciliation(dateFrom: string) {
     staleTime: 60_000,
   });
 
-  const period = periodQuery.data ?? null;
-
-  const reconciliationQuery = useQuery({
-    queryKey: ["gl_reconciliation", tenantId, period?.id, dateFrom],
-    enabled: Boolean(tenantId && period?.id && dateFrom),
-    queryFn: async (): Promise<GLOpeningReconciliation> => {
-      const [obRes, treeRes] = await Promise.all([
-        supabase
-          .from("opening_balances")
-          .select("account_id, debit, credit, accounts(account_name)")
-          .eq("tenant_id", tenantId!)
-          .eq("fiscal_period_id", period!.id),
-        supabase.rpc("rpc_gl_account_tree" as any, {
-          p_date_from: dateFrom,
-          p_date_to: dateFrom,
-          p_account_type: null,
-          p_include_inactive: true,
-        }),
-      ]);
-      if (obRes.error) throw obRes.error;
-      if (treeRes.error) throw treeRes.error;
-
-      const ledgerOpening = new Map<string, number>();
-      for (const row of (treeRes.data ?? []) as any[]) {
-        if (row.is_other_node) continue;
-        ledgerOpening.set(row.account_id, toNum(row.own_opening));
-      }
-
-      const accounts: GLOpeningVarianceAccount[] = [];
-      let totalVariance = 0;
-      for (const ob of (obRes.data ?? []) as any[]) {
-        const stored = toNum(ob.debit) - toNum(ob.credit);
-        const ledger = ledgerOpening.get(ob.account_id) ?? 0;
-        const variance = ledger - stored;
-        if (Math.abs(variance) > 0.005) {
-          accounts.push({
-            account_id: ob.account_id,
-            account_name: ob.accounts?.account_name ?? ob.account_id,
-            ledger,
-            stored,
-            variance,
-          });
-          totalVariance += Math.abs(variance);
-        }
-      }
-
-      if (accounts.length === 0) return { status: "reconciled" };
-      return {
-        status: "variance",
-        totalVariance,
-        accounts,
-        periodId: period!.id,
-        periodName: period!.name,
-      };
-    },
-    staleTime: 60_000,
-  });
-
-  const result: GLOpeningReconciliation = period
-    ? reconciliationQuery.data ?? { status: "reconciled" }
-    : { status: "no-period" };
-
   return {
-    ...result,
-    isLoading: periodQuery.isLoading || reconciliationQuery.isLoading,
-    error: periodQuery.error || reconciliationQuery.error,
-    period,
+    period: periodQuery.data ?? null,
+    isLoading: periodQuery.isLoading,
+    error: periodQuery.error,
   };
 }
