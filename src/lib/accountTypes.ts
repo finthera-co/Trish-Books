@@ -374,6 +374,34 @@ export const ACCOUNT_SUBTYPE_BANDS: Record<string, { min: number; max: number }>
   "Miscellaneous Expense":   { min: 9600, max: 9999 },
 };
 
+/**
+ * Detail types available for an account type: the built-in master list plus
+ * any custom detail type the tenant has already used on an account of that
+ * type. Custom entries are listed after the built-ins so the standard
+ * QuickBooks-style options stay on top.
+ */
+export function getSubtypesForType(
+  accountType: string,
+  accounts?: { account_type: string; account_subtype?: string | null }[] | null,
+): string[] {
+  const master = ACCOUNT_SUBTYPES[accountType] || [];
+  if (!accounts?.length) return master;
+
+  const seen = new Set(master.map(s => s.toLowerCase()));
+  const custom: string[] = [];
+  for (const a of accounts) {
+    if (a.account_type !== accountType) continue;
+    const st = a.account_subtype?.trim();
+    if (!st) continue;
+    const key = st.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    custom.push(st);
+  }
+  custom.sort((a, b) => a.localeCompare(b));
+  return [...master, ...custom];
+}
+
 /** Return the sub-band for a subtype, or null if none is mapped. */
 export function getSubtypeBand(subtype: string | null | undefined): { min: number; max: number } | null {
   if (!subtype) return null;

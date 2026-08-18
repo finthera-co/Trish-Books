@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { useAccounts, useCreateAccount } from "@/hooks/useData";
 import { generateAccountCodeBanded } from "@/lib/accountCodeGenerator";
-import { ACCOUNT_TYPES, ACCOUNT_SUBTYPES } from "@/lib/accountTypes";
+import { ACCOUNT_TYPES, ACCOUNT_SUBTYPES, getSubtypesForType } from "@/lib/accountTypes";
 import { toast } from "sonner";
 
 interface QuickAddAccountProps {
@@ -69,7 +69,12 @@ export default function QuickAddAccount({
     [allAccounts]
   );
 
-  const subtypeOptions = ACCOUNT_SUBTYPES[type] || [];
+  // Built-in detail types plus any custom ones already used in this chart
+  // (added from the full Chart of Accounts form).
+  const subtypeOptions = useMemo(
+    () => getSubtypesForType(type, (allAccounts || []) as { account_type: string; account_subtype?: string | null }[]),
+    [type, allAccounts]
+  );
   const isCodeDuplicate = existingCodes.has(String(autoCode).trim());
 
   // Reset to smart defaults each time the dialog opens.

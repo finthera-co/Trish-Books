@@ -7,6 +7,7 @@ import {
   ACCOUNT_TYPES,
   ACCOUNT_SUBTYPES,
   ACCOUNT_NUMBER_RANGES,
+  getSubtypesForType,
   getNormalBalance,
   getStatementPlacement,
   isContraSubtype,
@@ -123,6 +124,8 @@ export default function AccountForm({
   const [showNewCategory, setShowNewCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [creatingCategory, setCreatingCategory] = useState(false);
+  const [showNewSubtype, setShowNewSubtype] = useState(false);
+  const [newSubtypeName, setNewSubtypeName] = useState("");
 
   // Clear the draft on any user-initiated close (cancel / X / Escape). A page
   // refresh does NOT call this, so the draft survives refresh and is only
@@ -163,6 +166,8 @@ export default function AccountForm({
     }
     setShowNewCategory(false);
     setNewCategoryName("");
+    setShowNewSubtype(false);
+    setNewSubtypeName("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editAccount, open]);
 
@@ -197,7 +202,10 @@ export default function AccountForm({
   }, [draft.accountType, draft.parentId, draft.accountSubtype, accounts, editAccount, open]);
 
   const filteredCategories = categories.filter(c => c.account_type === draft.accountType);
-  const subtypes = ACCOUNT_SUBTYPES[draft.accountType] || [];
+  const subtypes = useMemo(
+    () => getSubtypesForType(draft.accountType, accounts),
+    [draft.accountType, accounts]
+  );
   const numberRange = ACCOUNT_NUMBER_RANGES[draft.accountType];
   const accountsMap = useMemo(() => buildAccountsMap(accounts), [accounts]);
 
@@ -215,6 +223,14 @@ export default function AccountForm({
   }, [draft.accountSubtype]);
 
   const missingRequiredParent = !editAccount && requiresParentLink && !draft.parentId;
+
+  // A detail type the tenant invented (or one carried over from an older chart):
+  // it has no reserved number band and no subledger behaviour attached.
+  const isCustomSubtype = useMemo(() => {
+    const st = draft.accountSubtype.trim().toLowerCase();
+    if (!st) return false;
+    return !(ACCOUNT_SUBTYPES[draft.accountType] || []).some(m => m.toLowerCase() === st);
+  }, [draft.accountSubtype, draft.accountType]);
 
   // Validate parent selection
   const parentValidation = useMemo(() => {
@@ -278,6 +294,17 @@ export default function AccountForm({
     }
   };
 
+  // Custom detail type: not in the built-in list, so just adopt the typed value.
+  // It becomes a selectable option everywhere once the account is saved with it.
+  const handleAddSubtype = () => {
+    const name = newSubtypeName.trim();
+    if (!name) return;
+    const existing = subtypes.find(st => st.toLowerCase() === name.toLowerCase());
+    setField("accountSubtype", existing || name);
+    setNewSubtypeName("");
+    setShowNewSubtype(false);
+  };
+
   const handleSubmit = async () => {
     if (isCodeDuplicate || isNameDuplicate) return;
     if (!draft.accountSubtype) return;
@@ -315,6 +342,8 @@ export default function AccountForm({
               onChange={(e) => {
                 setDraft((d) => ({ ...d, accountType: e.target.value, accountSubtype: "", categoryId: "" }));
                 setShowNewCategory(false);
+                setShowNewSubtype(false);
+                setNewSubtypeName("");
               }}
               disabled={editTypeRestriction !== null && !editTypeRestriction.allowed}
               className={inputClass}
@@ -392,41 +421,99 @@ export default function AccountForm({
               <label className="text-sm font-medium">
                 Detail Type <span className="text-destructive">*</span>
               </label>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs gap-1"
-                onClick={() => {
-                  const suggestion = suggestSubtypeFromCode(draft.accountCode, draft.accountType);
-                  if (suggestion) setField("accountSubtype", suggestion);
-                }}
-                title="Auto-assign based on account number range"
-              >
-                <Sparkles className="h-3 w-3" /> Quick Setup
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs gap-1"
+                  onClick={() => {
+                    const suggestion = suggestSubtypeFromCode(draft.accountCode, draft.accountType);
+                    if (suggestion) setField("accountSubtype", suggestion);
+                  }}
+                  title="Auto-assign based on account number range"
+                >
+                  <Sparkles className="h-3 w-3" /> Quick Setup
+                </Button>
+                {!showNewSubtype && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs gap-1"
+                    onClick={() => {
+                      setNewSubtypeName("");
+                      setShowNewSubtype(true);
+                    }}
+                    title="Add a detail type that isn't in the list"
+                  >
+                    <Plus className="h-3 w-3" /> New
+                  </Button>
+                )}
+              </div>
             </div>
-            <select
-              value={draft.accountSubtype}
-              onChange={(e) => setField("accountSubtype", e.target.value)}
-              className={`${inputClass} ${!draft.accountSubtype ? "!border-destructive/40" : ""}`}
-            >
-              <option value="">— Select detail type —</option>
-              {subtypes.map(st => (
-                <option key={st} value={st}>{st}</option>
-              ))}
-            </select>
+            {!showNewSubtype ? (
+              <select
+                value={draft.accountSubtype}
+                onChange={(e) => setField("accountSubtype", e.target.value)}
+                className={`${inputClass} ${!draft.accountSubtype ? "!border-destructive/40" : ""}`}
+              >
+                <option value="">— Select detail type —</option>
+                {subtypes.map(st => (
+                  <option key={st} value={st}>{st}</option>
+                ))}
+              </select>
+            ) : (
+              <div className="flex gap-2 mt-1">
+                <input
+                  type="text"
+                  value={newSubtypeName}
+                  onChange={(e) => setNewSubtypeName(e.target.value)}
+                  className={`${inputClass} flex-1 !mt-0`}
+                  placeholder={`e.g. custom ${getAccountTypeLabel(draft.accountType).toLowerCase()} detail type`}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddSubtype();
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={!newSubtypeName.trim()}
+                  onClick={handleAddSubtype}
+                >
+                  Add
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { setShowNewSubtype(false); setNewSubtypeName(""); }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            )}
             {!draft.accountSubtype ? (
               <p className="text-[10px] text-destructive mt-1 flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
                 Required — drives statement classification, subledger routing & validations. Use Quick Setup to auto-assign.
               </p>
-            ) : deriveAccountFlags(draft.accountSubtype).is_control_account && (
+            ) : deriveAccountFlags(draft.accountSubtype).is_control_account ? (
               <p className="text-[10px] text-warning mt-1 flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
                 This detail type creates a control account managed by subledger. Manual posting will be restricted.
               </p>
-            )}
+            ) : isCustomSubtype ? (
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Custom detail type — no reserved number band, so the account number is taken
+                from the next free slot in the {getAccountTypeLabel(draft.accountType)} range
+                {numberRange ? ` (${numberRange.min}–${numberRange.max})` : ""}.
+              </p>
+            ) : null}
           </div>
 
 

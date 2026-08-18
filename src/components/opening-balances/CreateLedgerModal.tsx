@@ -5,6 +5,7 @@ import { Lock, Plus } from "lucide-react";
 import {
   ACCOUNT_TYPES,
   ACCOUNT_SUBTYPES,
+  getSubtypesForType,
   ACCOUNT_NUMBER_RANGES,
   getNormalBalance,
   getStatementPlacement,
@@ -91,7 +92,11 @@ export default function CreateLedgerModal({ open, onOpenChange, onCreated }: Cre
     return (categories || []).filter(c => c.account_type === accountType);
   }, [categories, accountType]);
 
-  const subtypes = ACCOUNT_SUBTYPES[accountType] || [];
+  // Built-in detail types plus any custom ones already used in this chart.
+  const subtypes = useMemo(
+    () => getSubtypesForType(accountType, (allAccounts || []) as { account_type: string; account_subtype?: string | null }[]),
+    [accountType, allAccounts]
+  );
   const numberRange = ACCOUNT_NUMBER_RANGES[accountType];
 
   const parentAccounts = useMemo(() => {
