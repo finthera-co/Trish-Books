@@ -19,7 +19,7 @@ import {
   ShieldAlert,
   Eye,
 } from "lucide-react";
-import { format } from "date-fns";
+
 import { formatDate } from "@/lib/format";
 
 export default function AnomalyDashboard() {

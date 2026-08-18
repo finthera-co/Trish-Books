@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { invokeEdgeFunction } from "@/lib/edgeFunction";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { format } from "date-fns";
+
 import { Check, X, Mail, Phone, Building2, Copy, Inbox } from "lucide-react";
 import { formatDate } from "@/lib/format";
 import {

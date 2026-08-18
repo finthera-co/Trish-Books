@@ -8,7 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { supabase } from "@/integrations/supabase/client";
 import { invokeEdgeFunction } from "@/lib/edgeFunction";
 import { toast } from "sonner";
-import { format } from "date-fns";
+
 import { formatDate } from "@/lib/format";
 import {
   AlertDialog,

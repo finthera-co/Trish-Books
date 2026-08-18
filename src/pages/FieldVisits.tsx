@@ -12,7 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { formatTime } from "@/lib/format";
+import { formatDate, formatTime } from "@/lib/format";
 
 function today() {
   return format(new Date(), "yyyy-MM-dd");
@@ -137,7 +137,7 @@ export default function FieldVisits() {
                     {emp ? `${emp.first_name} ${emp.last_name}` : "—"}
                     {emp?.employee_number && <span className="text-muted-foreground text-xs ml-1">({emp.employee_number})</span>}
                   </td>
-                  <td className="text-muted-foreground">{v.visit_date}</td>
+                  <td className="text-muted-foreground">{formatDate(v.visit_date)}</td>
                   <td className="text-muted-foreground">{v.client_name || "—"}</td>
                   <td className="text-muted-foreground">
                     {formatTime(v.check_in_at)}

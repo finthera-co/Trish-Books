@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { formatTime } from "@/lib/format";
+import { formatDate, formatTime } from "@/lib/format";
 
 function fmtDuration(fromIso: string, toMs: number) {
   const secs = Math.max(0, Math.floor((toMs - new Date(fromIso).getTime()) / 1000));
@@ -244,7 +244,7 @@ export default function FieldCheckIn() {
                 const link = mapLink(v.check_in_lat, v.check_in_lng);
                 return (
                   <tr key={v.id}>
-                    <td className="px-5 py-2.5 text-foreground">{v.visit_date}</td>
+                    <td className="px-5 py-2.5 text-foreground">{formatDate(v.visit_date)}</td>
                     <td className="px-5 py-2.5 text-muted-foreground">{v.client_name || "—"}</td>
                     <td className="px-5 py-2.5 text-muted-foreground">{formatTime(v.check_in_at)}</td>
                     <td className="px-5 py-2.5 text-muted-foreground">{v.check_out_at ? formatTime(v.check_out_at) : <span className="text-emerald-600">Active</span>}</td>

@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/currency";
 import { useARAging, useARReconciliation } from "@/hooks/useARModule";
+import { formatDate } from "@/lib/format";
 
 const BUCKETS = [
   { key: "current",     label: "Current",    color: "text-green-600" },
@@ -133,7 +134,7 @@ export default function ARAgingReport() {
             )}
           </div>
 
-          <p className="text-xs text-muted-foreground ml-auto">As of {recon.as_of_date}</p>
+          <p className="text-xs text-muted-foreground ml-auto">As of {formatDate(recon.as_of_date)}</p>
         </div>
       )}
 

@@ -227,8 +227,8 @@ describe("SOCI workbook", () => {
 
     expect(value("Entity")).toBe("Acme (Pvt) Ltd");
     expect(value("Registration number")).toBe("PV 12345");
-    expect(value("Reporting period")).toBe("1 Apr 2025 to 31 Mar 2026");
-    expect(value("Comparative period")).toBe("1 Apr 2024 to 31 Mar 2025");
+    expect(value("Reporting period")).toBe("01/04/2025 to 31/03/2026");
+    expect(value("Comparative period")).toBe("01/04/2024 to 31/03/2025");
     expect(value("Presentation currency")).toBe("Sri Lanka Rupees (LKR)");
     expect(value("Basis of accounting")).toContain("Accrual basis");
     expect(value("Scope")).toContain("not a complete set of financial statements");

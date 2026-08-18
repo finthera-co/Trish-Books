@@ -18,6 +18,7 @@ import ReconciliationWorkspace from "@/components/bank-reconciliation/Reconcilia
 import { Landmark, Plus, RotateCcw, Eye, Search, CheckCircle2, Clock } from "lucide-react";
 import { useMyPermissions } from "@/hooks/usePermissions";
 import { useSetHideSidebar } from "@/stores/useAppStore";
+import { formatDate } from "@/lib/format";
 
 type View = "list" | "setup" | "workspace";
 type StatusFilter = "all" | "in_progress" | "reconciled";
@@ -189,7 +190,7 @@ export default function BankReconciliation() {
                             <div className="text-xs text-muted-foreground mt-0.5">{r.accounts.account_code}</div>
                           )}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{r.statement_ending_date}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{formatDate(r.statement_ending_date)}</TableCell>
                         <TableCell className="text-right text-sm tabular-nums">
                           {formatCurrency(r.statement_ending_balance)}
                         </TableCell>

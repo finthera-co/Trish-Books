@@ -269,7 +269,7 @@ export default function VendorDetail() {
                     creditNotes.map((cn: any) => (
                       <TableRow key={cn.id}>
                         <TableCell className="font-mono font-medium">{cn.credit_note_number}</TableCell>
-                        <TableCell className="text-muted-foreground">{cn.credit_date}</TableCell>
+                        <TableCell className="text-muted-foreground">{formatDate(cn.credit_date)}</TableCell>
                         <TableCell className="text-right tabular-nums font-medium" style={{ color: "hsl(var(--warning))" }}>
                           {formatCurrency(Number(cn.amount))}
                         </TableCell>

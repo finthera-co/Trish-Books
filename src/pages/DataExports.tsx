@@ -5,7 +5,7 @@ import { invokeEdgeFunction } from "@/lib/edgeFunction";
 import { Button } from "@/components/ui/button";
 import { Download, RefreshCw, FileArchive, Calendar } from "lucide-react";
 import { toast } from "sonner";
-import { format } from "date-fns";
+
 import { formatDateTime } from "@/lib/format";
 
 export default function DataExports() {

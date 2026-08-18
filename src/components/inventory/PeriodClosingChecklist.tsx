@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CheckCircle2, AlertTriangle, ClipboardCheck, Lock, RefreshCw } from "lucide-react";
 import { useFiscalPeriods, useCurrentFiscalPeriod } from "@/hooks/useFiscalPeriodBalances";
-import { format } from "date-fns";
+
 import { formatDate, formatDateTick } from "@/lib/format";
 
 interface ChecklistRow {

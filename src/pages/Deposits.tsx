@@ -14,6 +14,7 @@ import { useCustomers, useInvoices, useAccounts } from "@/hooks/useData";
 import { useAccountSettings } from "@/hooks/useAccountSettings";
 import { useDeposits, useRecordDeposit, useApplyDeposit, type DepositRow } from "@/hooks/useDeposits";
 import AccountCombobox from "@/components/shared/AccountCombobox";
+import { formatDate } from "@/lib/format";
 
 const statusColor = (s: string) =>
   s === "applied" ? "bg-primary/10 text-primary"
@@ -115,7 +116,7 @@ export default function Deposits() {
                   const unapplied = Number(d.amount) - Number(d.applied_amount);
                   return (
                     <TableRow key={d.id}>
-                      <TableCell className="text-muted-foreground">{d.deposit_date}</TableCell>
+                      <TableCell className="text-muted-foreground">{formatDate(d.deposit_date)}</TableCell>
                       <TableCell className="font-medium">{(d.customers as any)?.name || "—"}</TableCell>
                       <TableCell className="text-muted-foreground">{d.reference || "—"}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatCurrency(Number(d.amount))}</TableCell>

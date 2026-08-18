@@ -19,7 +19,7 @@ describe("paid stamp", () => {
 
   it("names the receipt it stands for", () => {
     expect(paidStampSublines({ receiptNumber: "RCP-2026-0007", receiptDate: "2026-08-14" }))
-      .toEqual(["RECEIPT RCP-2026-0007", "14 Aug 2026"]);
+      .toEqual(["RECEIPT RCP-2026-0007", "14/08/2026"]);
     // A receipt with no date still prints its number rather than an empty line.
     expect(paidStampSublines({ receiptNumber: "RCP-2026-0007", receiptDate: "" }))
       .toEqual(["RECEIPT RCP-2026-0007"]);

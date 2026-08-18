@@ -242,7 +242,7 @@ export default function CustomerDetail() {
                   ) : creditNotes.map((cn: any) => (
                     <TableRow key={cn.id}>
                       <TableCell className="font-medium">{cn.credit_note_number}</TableCell>
-                      <TableCell className="text-muted-foreground">{cn.credit_date}</TableCell>
+                      <TableCell className="text-muted-foreground">{formatDate(cn.credit_date)}</TableCell>
                       <TableCell className="text-muted-foreground">{cn.reason || "—"}</TableCell>
                       <TableCell><Badge variant="outline">{cn.status}</Badge></TableCell>
                       <TableCell className="text-right tabular-nums font-medium text-warning">{formatCurrency(Number(cn.amount))}</TableCell>

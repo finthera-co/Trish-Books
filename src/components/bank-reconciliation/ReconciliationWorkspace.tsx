@@ -398,7 +398,7 @@ export default function ReconciliationWorkspace({ reconciliationId, onBack }: Pr
               Reconcile: {(recon as any).accounts?.account_name}
             </h2>
             <p className="text-xs text-muted-foreground">
-              Statement Date: {recon.statement_ending_date} · Statement Balance: {formatCurrency(Number(recon.statement_ending_balance))}
+              Statement Date: {formatDate(recon.statement_ending_date)} · Statement Balance: {formatCurrency(Number(recon.statement_ending_balance))}
             </p>
           </div>
           <Badge variant={isReconciled ? "default" : "secondary"}>

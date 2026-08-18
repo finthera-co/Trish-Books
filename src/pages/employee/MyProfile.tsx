@@ -1,4 +1,4 @@
-import { format, parseISO, differenceInMonths } from "date-fns";
+import { parseISO, differenceInMonths } from "date-fns";
 import { Mail, Briefcase, Building2, CalendarDays, BadgeCheck, Hash, Clock } from "lucide-react";
 import { useMyEmployee, useTenantBranding } from "@/hooks/useMyEmployee";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";

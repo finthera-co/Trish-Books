@@ -279,7 +279,7 @@ export default function ReconciliationReport({ recon, transactions, summary, onB
         {companyName && <p className="text-sm font-bold">{companyName}</p>}
         <h1 className="text-lg font-bold">Reconciliation Report</h1>
         <h2 className="text-sm text-muted-foreground">{accountName}</h2>
-        <p className="text-xs text-muted-foreground">Statement Ending Date: {recon.statement_ending_date}</p>
+        <p className="text-xs text-muted-foreground">Statement Ending Date: {formatDate(recon.statement_ending_date)}</p>
       </div>
 
       {/* Summary Section */}

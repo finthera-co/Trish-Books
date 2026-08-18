@@ -114,7 +114,7 @@ export default function ForeignExchange() {
                 {(rates || []).map((r: any) => (
                   <TableRow key={r.id}>
                     <TableCell className="font-medium">{r.currency}</TableCell>
-                    <TableCell className="text-muted-foreground">{r.rate_date}</TableCell>
+                    <TableCell className="text-muted-foreground">{formatDate(r.rate_date)}</TableCell>
                     <TableCell className="text-right tabular-nums font-mono">{Number(r.rate_to_base).toFixed(4)}</TableCell>
                   </TableRow>
                 ))}

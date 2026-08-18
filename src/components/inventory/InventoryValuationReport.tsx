@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ChevronRight, Layers, Package } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { useInventoryValuation, useStockLots, type ValuationRow } from "@/hooks/useInventoryValuation";
-import { format } from "date-fns";
+
 import { formatDate } from "@/lib/format";
 
 export function InventoryValuationReport() {

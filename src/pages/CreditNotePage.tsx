@@ -31,6 +31,7 @@ import {
   useDeleteDraftCreditNote,
   type CreditNoteItemInput,
 } from "@/hooks/useARModule";
+import { formatDate } from "@/lib/format";
 
 const NO_INVOICE = "__none__";
 
@@ -600,7 +601,7 @@ export default function CreditNotePage() {
                   <TableRow key={cn.id} className={cn.status === "voided" ? "opacity-50" : ""}>
                     <TableCell className="font-medium">{cn.credit_note_number}</TableCell>
                     <TableCell>{(cn.customers as any)?.name || "—"}</TableCell>
-                    <TableCell className="text-muted-foreground">{cn.credit_date}</TableCell>
+                    <TableCell className="text-muted-foreground">{formatDate(cn.credit_date)}</TableCell>
                     <TableCell className="text-muted-foreground max-w-48 truncate">{cn.reason || "—"}</TableCell>
                     <TableCell>{statusBadge(cn)}</TableCell>
                     <TableCell className="text-right tabular-nums font-semibold text-warning">

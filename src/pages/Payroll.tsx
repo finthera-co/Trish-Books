@@ -56,7 +56,6 @@ export default function Payroll() {
     }
   }, [highlightId, runs]);
 
-
   const filteredRuns = runs?.filter((r: any) =>
     r.run_number.toLowerCase().includes(search.toLowerCase()) ||
     r.status.toLowerCase().includes(search.toLowerCase())

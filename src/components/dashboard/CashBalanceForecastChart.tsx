@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { format, parseISO } from "date-fns";
+import { parseISO } from "date-fns";
 import { useFinancialForecasts } from "@/hooks/useCashflowForecast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {

@@ -7,6 +7,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useAuth } from "@/contexts/AuthContext";
 import { useMyPermissions } from "@/hooks/usePermissions";
 import AccountSelector from "@/components/shared/AccountSelector";
+import { formatDate } from "@/lib/format";
 
 const statusColors: Record<string, string> = {
   approved: "bg-success/10 text-success",
@@ -248,7 +249,7 @@ export default function Expenses() {
                       {(exp.expense_categories as any)?.name || "Uncategorized"}
                     </span>
                   </td>
-                  <td className="text-muted-foreground">{exp.expense_date}</td>
+                  <td className="text-muted-foreground">{formatDate(exp.expense_date)}</td>
                   <td><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[exp.status] || ""}`}>{exp.status}</span></td>
                   <td className="text-right font-medium text-foreground">LKR {Number(exp.amount).toLocaleString()}</td>
                   <td>
