@@ -1,7 +1,9 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAccounts } from "@/hooks/useData";
+import { useAccounts, useCustomers } from "@/hooks/useData";
+import { useVendors } from "@/hooks/useSubledger";
+import SubledgerTagPicker from "@/components/journal/SubledgerTagPicker";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, CheckCircle2, XCircle, AlertTriangle, Info, FileText } from "lucide-react";
@@ -12,6 +14,8 @@ import {
   validateJournalEntry,
   getManualEntryAccounts,
   isSubledgerAccount,
+  controlEntityFor,
+  isControlLineTagged,
   deriveEntryDescription,
   normalizeLineMemo,
   resolveLineMemo,
@@ -55,6 +59,8 @@ export default function JournalEntryEdit() {
   const queryClient = useQueryClient();
   const { appUser } = useAuth();
   const { data: accounts } = useAccounts();
+  const { data: customers } = useCustomers();
+  const { data: vendors } = useVendors();
 
   const { data: entry, isLoading, error } = useQuery({
     queryKey: ["journal_entry", id],
@@ -191,6 +197,14 @@ export default function JournalEntryEdit() {
 
   const updateLine = (index: number, field: string, value: any) => {
     const newLines = [...lines];
+    // Re-pointing a line drops the dimensions that described the old account —
+    // the same rule the save path applies, enforced here so the form shows the
+    // truth rather than a tag that is about to be discarded.
+    if (field === "account_id") {
+      const nextEntity = controlEntityFor(accountsMap.get(value));
+      if (nextEntity !== "customer") newLines[index].customer_id = null;
+      if (nextEntity !== "vendor") newLines[index].vendor_id = null;
+    }
     if (field === "debit" && Number(value) > 0) {
       (newLines[index] as any)["credit"] = 0;
     } else if (field === "credit" && Number(value) > 0) {
@@ -200,15 +214,18 @@ export default function JournalEntryEdit() {
     setLines(newLines);
   };
 
-  const getLineWarning = useCallback(
-    (accountId: string): string | null => {
-      if (!accountId) return null;
-      const acc = accountsMap.get(accountId);
+  // Only an inactive account actually blocks. A control account posts fine —
+  // its notice is informational and clears once the line carries a tag.
+  const getLineNotice = useCallback(
+    (line: EditLine): { text: string; blocking: boolean } | null => {
+      if (!line.account_id) return null;
+      const acc = accountsMap.get(line.account_id);
       if (!acc) return null;
-      if (!acc.is_active) return "This account is inactive";
+      if (!acc.is_active) return { text: "This account is inactive", blocking: true };
+      if (isControlLineTagged(line, acc)) return null;
       const subType = isSubledgerAccount(acc);
-      if (subType === "AR") return "AR control account — use Invoices instead";
-      if (subType === "AP") return "AP control account — use Bills instead";
+      if (subType === "AR") return { text: "AR control account — posts fine; tag a customer to keep the aging tied", blocking: false };
+      if (subType === "AP") return { text: "AP control account — posts fine; tag a vendor to keep the aging tied", blocking: false };
       return null;
     },
     [accountsMap]
@@ -250,14 +267,19 @@ export default function JournalEntryEdit() {
       // they are dropped with the account they described.
       const newLines = activeLines.map((l) => {
         const sameAccount = l.original_account_id === l.account_id;
+        // Customer / vendor are editable on control-account lines, so they are
+        // kept whenever the account the line now points at can carry them —
+        // not merely when the account is unchanged, which would silently throw
+        // away a tag the user just set on a re-pointed line.
+        const entity = controlEntityFor(accountsMap.get(l.account_id));
         return {
           journal_entry_id: id,
           account_id: l.account_id,
           debit: Number(l.debit),
           credit: Number(l.credit),
           memo: normalizeLineMemo(l.memo),
-          customer_id: sameAccount ? l.customer_id ?? null : null,
-          vendor_id: sameAccount ? l.vendor_id ?? null : null,
+          customer_id: entity === "customer" ? l.customer_id ?? null : null,
+          vendor_id: entity === "vendor" ? l.vendor_id ?? null : null,
           item_id: sameAccount ? l.item_id ?? null : null,
           asset_id: sameAccount ? l.asset_id ?? null : null,
           cost_center_id: sameAccount ? l.cost_center_id ?? null : null,
@@ -442,8 +464,9 @@ export default function JournalEntryEdit() {
               </div>
               <div className="divide-y divide-border/50">
                 {lines.map((line, i) => {
-                  const lineWarning = getLineWarning(line.account_id);
+                  const lineNotice = getLineNotice(line);
                   const acc = line.account_id ? accountsMap.get(line.account_id) : null;
+                  const tagEntity = controlEntityFor(acc);
                   const memoError = lineMemoErrors.get(i);
                   return (
                     <div key={i} className="px-3 py-2 space-y-1">
@@ -453,7 +476,7 @@ export default function JournalEntryEdit() {
                           value={line.account_id}
                           onChange={(v) => updateLine(i, "account_id", v)}
                           placeholder="Search account…"
-                          className={lineWarning ? "border-warning" : ""}
+                          className={lineNotice?.blocking ? "border-warning" : ""}
                         />
                         <input
                           type="number"
@@ -508,10 +531,32 @@ export default function JournalEntryEdit() {
                           {memoError}
                         </div>
                       )}
-                      {lineWarning && (
-                        <div className="flex items-center gap-1.5 text-xs text-warning pl-1">
-                          <AlertTriangle className="w-3 h-3 shrink-0" />
-                          {lineWarning}
+                      {tagEntity && (
+                        <SubledgerTagPicker
+                          entity={tagEntity}
+                          value={tagEntity === "customer" ? line.customer_id : line.vendor_id}
+                          onChange={(entityId) =>
+                            updateLine(i, tagEntity === "customer" ? "customer_id" : "vendor_id", entityId)
+                          }
+                          options={
+                            tagEntity === "customer"
+                              ? (customers || []).map((c) => ({ id: c.id, name: c.name }))
+                              : (vendors || []).map((v) => ({ id: v.id, name: v.name }))
+                          }
+                        />
+                      )}
+                      {lineNotice && (
+                        <div
+                          className={`flex items-center gap-1.5 text-xs pl-1 ${
+                            lineNotice.blocking ? "text-warning" : "text-muted-foreground"
+                          }`}
+                        >
+                          {lineNotice.blocking ? (
+                            <AlertTriangle className="w-3 h-3 shrink-0" />
+                          ) : (
+                            <Info className="w-3 h-3 shrink-0" />
+                          )}
+                          {lineNotice.text}
                         </div>
                       )}
                     </div>
@@ -541,18 +586,12 @@ export default function JournalEntryEdit() {
           })}
 
           {/* Validation Panel */}
-          {(validation.errors.length > 0 || validation.warnings.length > 0) && (
+          {validation.errors.length > 0 && (
             <div className="space-y-2">
               {validation.errors.filter(e => !["entry_date", "description"].includes(e.field) && !/^lines\[\d+\]\.memo$/.test(e.field)).map((err, i) => (
                 <div key={`err-${i}`} className="flex items-start gap-2 text-xs text-destructive bg-destructive/5 rounded-md px-3 py-2 border border-destructive/20">
                   <XCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
                   <span>{err.message}</span>
-                </div>
-              ))}
-              {validation.warnings.map((w, i) => (
-                <div key={`warn-${i}`} className="flex items-start gap-2 text-xs text-warning bg-warning/5 rounded-md px-3 py-2 border border-warning/20">
-                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                  <span>{w.message}</span>
                 </div>
               ))}
             </div>

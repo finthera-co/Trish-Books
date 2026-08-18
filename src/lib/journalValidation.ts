@@ -45,6 +45,19 @@ export interface JournalLine {
    * read through `resolveLineMemo`, which falls back to the entry description.
    */
   memo?: string | null;
+  /**
+   * Sub-ledger tagging for lines that hit a control account.
+   *
+   * `journal_lines` has carried customer_id / vendor_id since the first schema,
+   * but the manual entry forms never set them, so a hand-written entry against
+   * Trade Debtors landed in the GL with no idea whose receivable it was. These
+   * make the tag available on the manual path: optional (an entry that predates
+   * the customer record, or a tenant not running the AR module at all, still
+   * posts), but once set the line is attributable and `validateControlAccounts`
+   * stops nagging about it.
+   */
+  customer_id?: string | null;
+  vendor_id?: string | null;
 }
 
 export interface AccountInfo {
@@ -193,7 +206,44 @@ export function validateAccountStatus(
     .filter(Boolean) as ValidationError[];
 }
 
-/** Validate control accounts — warn that subledger breakdown is required */
+/**
+ * Which sub-ledger tag a line against this account can carry, if any.
+ *
+ * Only customer (AR) and vendor (AP) are offered on the manual entry forms —
+ * inventory and fixed assets move through their own modules, which post the
+ * quantity and cost side the GL alone cannot reconstruct.
+ */
+export function controlEntityFor(
+  account: AccountInfo | undefined | null
+): "customer" | "vendor" | null {
+  if (!account) return null;
+  const stype = detectSubledgerType(account.account_subtype);
+  if (stype === "customer") return "customer";
+  if (stype === "vendor") return "vendor";
+  return null;
+}
+
+/** Is this line already attributed to the entity its control account needs? */
+export function isControlLineTagged(
+  line: Pick<JournalLine, "customer_id" | "vendor_id">,
+  account: AccountInfo | undefined | null
+): boolean {
+  const entity = controlEntityFor(account);
+  if (entity === "customer") return !!line.customer_id;
+  if (entity === "vendor") return !!line.vendor_id;
+  return false;
+}
+
+/**
+ * Flag control-account lines that carry no sub-ledger tag.
+ *
+ * This is advisory, never blocking: posting a manual double entry to the AR or
+ * AP control account is legitimate accounting (opening balances, contras,
+ * reclassifications, year-end adjustments), and the server allows it too. What
+ * it costs is attribution — an untagged line moves the control account without
+ * moving any customer or vendor, so the aging and the reconciliation drift by
+ * that amount. Tagging the line (see `controlEntityFor`) clears the notice.
+ */
 export function validateControlAccounts(
   lines: JournalLine[],
   accountsMap: Map<string, AccountInfo>,
@@ -208,14 +258,21 @@ export function validateControlAccounts(
       const isControl = CONTROL_ACCOUNT_SUBTYPES.some((c) =>
         acc.account_subtype!.toLowerCase().includes(c.toLowerCase())
       );
-      if (isControl) {
-        return {
-          field: `account_${l.account_id}`,
-          message: `"${acc.account_name}" is a control account (${acc.account_subtype}). Sub-ledger breakdown is required.`,
-          severity: "warning" as const,
-        };
-      }
-      return null;
+      if (!isControl) return null;
+      if (isControlLineTagged(l, acc)) return null;
+
+      const entity = controlEntityFor(acc);
+      const tagHint =
+        entity === "customer"
+          ? " Tag a customer on the line to keep the AR aging tied to it."
+          : entity === "vendor"
+          ? " Tag a vendor on the line to keep the AP aging tied to it."
+          : "";
+      return {
+        field: `account_${l.account_id}`,
+        message: `"${acc.account_name}" is the ${acc.account_subtype} control account. This will post, but the sub-ledger won't see it.${tagHint}`,
+        severity: "warning" as const,
+      };
     })
     .filter(Boolean) as ValidationError[];
 }

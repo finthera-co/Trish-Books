@@ -20,6 +20,14 @@ interface JournalLine {
   credit: number;
   /** Per-line narration -> journal_lines.memo. Required on manual entries. */
   memo?: string | null;
+  /**
+   * Optional sub-ledger tags for lines hitting a control account, persisted to
+   * journal_lines.customer_id / vendor_id. Both are verified to belong to the
+   * caller's tenant before insert — this handler runs on the service role key,
+   * so RLS is not there to catch an id from another tenant.
+   */
+  customer_id?: string | null;
+  vendor_id?: string | null;
 }
 
 interface RequestBody {
@@ -240,6 +248,40 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ── 4b. Sub-ledger tags ─────────────────────────────────────────
+    // A tag is optional, but one that is present must name a customer/vendor of
+    // this tenant. Checked in two set queries rather than per line.
+    const customerIds = [...new Set(activeLines.map((l) => l.customer_id).filter(Boolean))] as string[];
+    const vendorIds = [...new Set(activeLines.map((l) => l.vendor_id).filter(Boolean))] as string[];
+
+    if (customerIds.length > 0) {
+      const { data: rows } = await adminClient
+        .from("customers")
+        .select("id")
+        .in("id", customerIds)
+        .eq("tenant_id", appUser.tenant_id);
+      const found = new Set((rows || []).map((r) => r.id));
+      for (const cid of customerIds) {
+        if (!found.has(cid)) {
+          errors.push({ field: `customer_${cid}`, message: "Customer does not belong to your organization" });
+        }
+      }
+    }
+
+    if (vendorIds.length > 0) {
+      const { data: rows } = await adminClient
+        .from("vendors")
+        .select("id")
+        .in("id", vendorIds)
+        .eq("tenant_id", appUser.tenant_id);
+      const found = new Set((rows || []).map((r) => r.id));
+      for (const vid of vendorIds) {
+        if (!found.has(vid)) {
+          errors.push({ field: `vendor_${vid}`, message: "Vendor does not belong to your organization" });
+        }
+      }
+    }
+
     // ── Return errors if any ────────────────────────────────────────
     if (errors.length > 0) {
       // Log the failed attempt
@@ -288,6 +330,8 @@ Deno.serve(async (req) => {
       debit: Number(l.debit) || 0,
       credit: Number(l.credit) || 0,
       memo: (l.memo ?? "").trim() || null,
+      customer_id: l.customer_id || null,
+      vendor_id: l.vendor_id || null,
     }));
 
     const { error: linesErr } = await adminClient.from("journal_lines").insert(journalLines);

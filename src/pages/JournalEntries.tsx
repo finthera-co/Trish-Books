@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import { useState, Fragment, useMemo, useCallback, useEffect, useRef } from "react";
 import {
   useJournalEntriesPage, useJournalEntriesCount, useJournalEntryStats,
-  useNextJvReference, useAccounts, useCreateAccount, journalCursorOf, type JournalCursor,
+  useNextJvReference, useAccounts, useCreateAccount, useCustomers, journalCursorOf, type JournalCursor,
 } from "@/hooks/useData";
 import { useAccountCategories, useCreateAccountCategory } from "@/hooks/useAccountCategories";
+import { useVendors } from "@/hooks/useSubledger";
+import SubledgerTagPicker from "@/components/journal/SubledgerTagPicker";
 import { useSearchParams } from "react-router-dom";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
@@ -23,6 +25,8 @@ import {
   getManualEntryAccounts,
   isSubledgerAccount,
   requiresSubledgerBreakdown,
+  controlEntityFor,
+  isControlLineTagged,
   deriveEntryDescription,
   normalizeLineMemo,
   resolveLineMemo,
@@ -89,8 +93,8 @@ export default function JournalEntries() {
   // Register's "Cheque No" column — the same column a bank import fills in.
   const [chequeNumber, setChequeNumber] = useState("");
   const [lines, setLines] = useState([
-    { account_id: "", debit: 0, credit: 0, memo: "" },
-    { account_id: "", debit: 0, credit: 0, memo: "" },
+    { account_id: "", debit: 0, credit: 0, memo: "", customer_id: null as string | null, vendor_id: null as string | null },
+    { account_id: "", debit: 0, credit: 0, memo: "", customer_id: null as string | null, vendor_id: null as string | null },
   ]);
 
   // Keystrokes shouldn't each fire a query against a 35k-row table.
@@ -116,6 +120,8 @@ export default function JournalEntries() {
   const { data: total = 0 } = useJournalEntriesCount(debouncedSearch, statusFilter, sourceFilter);
   const { data: stats } = useJournalEntryStats();
   const { data: accounts } = useAccounts();
+  const { data: customers } = useCustomers();
+  const { data: vendors } = useVendors();
   const { data: accountCategories } = useAccountCategories();
   const createAccount = useCreateAccount();
   const createAccountCategory = useCreateAccountCategory();
@@ -280,13 +286,21 @@ export default function JournalEntries() {
   const totalPosted = stats?.posted ?? 0;
   const totalVoided = stats?.voided ?? 0;
 
-  const addLine = () => setLines([...lines, { account_id: "", debit: 0, credit: 0, memo: "" }]);
+  const addLine = () => setLines([...lines, { account_id: "", debit: 0, credit: 0, memo: "", customer_id: null as string | null, vendor_id: null as string | null }]);
   const removeLine = (index: number) => {
     if (lines.length > 2) setLines(lines.filter((_, i) => i !== index));
   };
 
   const updateLine = (index: number, field: string, value: any) => {
     const newLines = [...lines];
+    // Swapping the account can invalidate the tag: a customer tagged on a Trade
+    // Debtors line must not survive a switch to Bank, where journal_lines
+    // .customer_id would be a lie no report could explain.
+    if (field === "account_id") {
+      const nextEntity = controlEntityFor(accountsMap.get(value));
+      if (nextEntity !== "customer") newLines[index].customer_id = null;
+      if (nextEntity !== "vendor") newLines[index].vendor_id = null;
+    }
     if (field === "debit" && Number(value) > 0) {
       (newLines[index] as any)["credit"] = 0;
     } else if (field === "credit" && Number(value) > 0) {
@@ -296,18 +310,22 @@ export default function JournalEntries() {
     setLines(newLines);
   };
 
-  // Get inline warning for a specific line's account
-  const getLineWarning = useCallback(
-    (accountId: string): string | null => {
-      if (!accountId) return null;
-      const acc = accountsMap.get(accountId);
+  // Inline notice for a line. Only an inactive account is an actual problem;
+  // control accounts post fine, so their notice is informational and disappears
+  // once the line carries a sub-ledger tag.
+  const getLineNotice = useCallback(
+    (line: { account_id: string; customer_id?: string | null; vendor_id?: string | null }):
+      { text: string; blocking: boolean } | null => {
+      if (!line.account_id) return null;
+      const acc = accountsMap.get(line.account_id);
       if (!acc) return null;
-      if (!acc.is_active) return `This account is inactive`;
+      if (!acc.is_active) return { text: "This account is inactive", blocking: true };
+      if (isControlLineTagged(line, acc)) return null;
       const subledgerType = requiresSubledgerBreakdown(acc);
-      if (subledgerType === "customer") return "Control account — sub-ledger breakdown required (Customers)";
-      if (subledgerType === "vendor") return "Control account — sub-ledger breakdown required (Vendors)";
-      if (subledgerType === "inventory") return "Control account — sub-ledger breakdown required (Items)";
-      if (subledgerType === "fixed_asset") return "Control account — sub-ledger breakdown required (Assets)";
+      if (subledgerType === "customer") return { text: "AR control account — posts fine; tag a customer to keep the aging tied", blocking: false };
+      if (subledgerType === "vendor") return { text: "AP control account — posts fine; tag a vendor to keep the aging tied", blocking: false };
+      if (subledgerType === "inventory") return { text: "Inventory control account — posts fine; quantities stay untouched", blocking: false };
+      if (subledgerType === "fixed_asset") return { text: "Fixed asset control account — posts fine; the asset register stays untouched", blocking: false };
       return null;
     },
     [accountsMap]
@@ -323,6 +341,8 @@ export default function JournalEntries() {
           debit: Number(l.debit) || 0,
           credit: Number(l.credit) || 0,
           memo: normalizeLineMemo(l.memo),
+          customer_id: l.customer_id || null,
+          vendor_id: l.vendor_id || null,
         }));
 
       let data: { valid?: boolean; errors?: { message: string }[] } | null = null;
@@ -371,8 +391,8 @@ export default function JournalEntries() {
     setChequeNumber("");
     setEntryDate(new Date().toISOString().split("T")[0]);
     setLines([
-      { account_id: "", debit: 0, credit: 0, memo: "" },
-      { account_id: "", debit: 0, credit: 0, memo: "" },
+      { account_id: "", debit: 0, credit: 0, memo: "", customer_id: null as string | null, vendor_id: null as string | null },
+      { account_id: "", debit: 0, credit: 0, memo: "", customer_id: null as string | null, vendor_id: null as string | null },
     ]);
   };
 
@@ -578,8 +598,9 @@ export default function JournalEntries() {
                   {/* Lines */}
                   <div className="divide-y divide-border/50">
                     {lines.map((line, i) => {
-                      const lineWarning = getLineWarning(line.account_id);
+                      const lineNotice = getLineNotice(line);
                       const acc = line.account_id ? accountsMap.get(line.account_id) : null;
+                      const tagEntity = controlEntityFor(acc);
                       const memoError = formTouched ? lineMemoErrors.get(i) : undefined;
                       return (
                         <div key={i} className="px-3 py-2 space-y-1">
@@ -588,7 +609,7 @@ export default function JournalEntries() {
                               value={line.account_id}
                               onChange={(v) => updateLine(i, "account_id", v)}
                               placeholder="Search account…"
-                              className={lineWarning ? "border-warning" : ""}
+                              className={lineNotice?.blocking ? "border-warning" : ""}
                               onCreateNew={(q) => setNewAccountFor({ lineIndex: i, name: q })}
                             />
                             <input
@@ -645,10 +666,32 @@ export default function JournalEntries() {
                               {memoError}
                             </div>
                           )}
-                          {lineWarning && (
-                            <div className="flex items-center gap-1.5 text-xs text-warning pl-1">
-                              <AlertTriangle className="w-3 h-3 shrink-0" />
-                              {lineWarning}
+                          {tagEntity && (
+                            <SubledgerTagPicker
+                              entity={tagEntity}
+                              value={tagEntity === "customer" ? line.customer_id : line.vendor_id}
+                              onChange={(id) =>
+                                updateLine(i, tagEntity === "customer" ? "customer_id" : "vendor_id", id)
+                              }
+                              options={
+                                tagEntity === "customer"
+                                  ? (customers || []).map((c) => ({ id: c.id, name: c.name }))
+                                  : (vendors || []).map((v) => ({ id: v.id, name: v.name }))
+                              }
+                            />
+                          )}
+                          {lineNotice && (
+                            <div
+                              className={`flex items-center gap-1.5 text-xs pl-1 ${
+                                lineNotice.blocking ? "text-warning" : "text-muted-foreground"
+                              }`}
+                            >
+                              {lineNotice.blocking ? (
+                                <AlertTriangle className="w-3 h-3 shrink-0" />
+                              ) : (
+                                <Info className="w-3 h-3 shrink-0" />
+                              )}
+                              {lineNotice.text}
                             </div>
                           )}
                         </div>
@@ -679,18 +722,12 @@ export default function JournalEntries() {
               })}
 
               {/* Validation Panel */}
-              {formTouched && (validation.errors.length > 0 || validation.warnings.length > 0) && (
+              {formTouched && validation.errors.length > 0 && (
                 <div className="space-y-2">
                   {validation.errors.filter(e => !["entry_date", "description"].includes(e.field) && !/^lines\[\d+\]\.memo$/.test(e.field)).map((err, i) => (
                     <div key={`err-${i}`} className="flex items-start gap-2 text-xs text-destructive bg-destructive/5 rounded-md px-3 py-2 border border-destructive/20">
                       <XCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
                       <span>{err.message}</span>
-                    </div>
-                  ))}
-                  {validation.warnings.map((w, i) => (
-                    <div key={`warn-${i}`} className="flex items-start gap-2 text-xs text-warning bg-warning/5 rounded-md px-3 py-2 border border-warning/20">
-                      <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                      <span>{w.message}</span>
                     </div>
                   ))}
                 </div>
