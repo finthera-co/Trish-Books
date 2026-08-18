@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
   useAccounts,
@@ -11,6 +11,7 @@ import {
   type AccountLedgerPageRow,
 } from "@/hooks/useData";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {
@@ -24,6 +25,7 @@ import { isDebitNormal as checkDebitNormal, isPeriodBasedAccount, getTypeLabel, 
 import { formatCurrency } from "@/lib/currency";
 import { resolveLineMemo } from "@/lib/journalValidation";
 import GeneralLedgerReport from "@/components/ledger/GeneralLedgerReport";
+import BulkChangeLedgerAccountDialog from "@/components/ledger/BulkChangeLedgerAccountDialog";
 import { ReportMasthead } from "@/components/reports/ReportMasthead";
 import { ARSubledger, APSubledger } from "@/components/ledger/SubsidiaryLedger";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -102,6 +104,7 @@ const txnTypeBadge: Record<string, string> = {
 
 export default function Ledger() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: accounts, isLoading: accountsLoading } = useAccounts();
 
@@ -171,6 +174,8 @@ export default function Ledger() {
   const [page, setPage] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [drillDownEntry, setDrillDownEntry] = useState<RegisterRow | null>(null);
+  const [selectedLineIds, setSelectedLineIds] = useState<Set<string>>(new Set());
+  const [bulkAccountDialogOpen, setBulkAccountDialogOpen] = useState(false);
 
   // Keystrokes shouldn't immediately re-run filter→sort→balance over the
   // account's register.
@@ -336,6 +341,70 @@ export default function Ledger() {
     () => buildRows(ledgerPage?.rows ?? []),
     [buildRows, ledgerPage]
   );
+
+  // Bulk selection is scoped to the rows on screen — whenever the account,
+  // window, filters or sort change (or the page turns), the ids on screen are
+  // no longer what's selected, so start clean rather than carry over a
+  // selection the user can't see.
+  useEffect(() => {
+    setSelectedLineIds(new Set());
+  }, [selectedAccount?.id, page, effectiveDateFrom, effectiveDateTo, debouncedSearchTerm, typeFilter, sortField, sortDir]);
+
+  const pageRowIds = useMemo(() => pagedRows.map(r => r.id), [pagedRows]);
+  const allOnPageSelected = pageRowIds.length > 0 && pageRowIds.every(id => selectedLineIds.has(id));
+  const someOnPageSelected = pageRowIds.some(id => selectedLineIds.has(id));
+
+  const toggleLineSelected = (id: string) => {
+    setSelectedLineIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllOnPage = () => {
+    setSelectedLineIds(prev => {
+      const next = new Set(prev);
+      if (allOnPageSelected) {
+        pageRowIds.forEach(id => next.delete(id));
+      } else {
+        pageRowIds.forEach(id => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  // Re-points selected register lines at a different account. Debit/credit
+  // are untouched, so the parent entry stays balanced — this is purely a
+  // reclassification, not an amount change. Sub-ledger dimensions (customer,
+  // vendor, item, asset, cost center) belonged to the old account's context,
+  // so they're dropped, same as a single-line account change in
+  // EditTransactionModal.
+  const bulkChangeAccountMutation = useMutation({
+    mutationFn: async (targetAccountId: string) => {
+      const { error } = await supabase
+        .from("journal_lines")
+        .update({
+          account_id: targetAccountId,
+          customer_id: null,
+          vendor_id: null,
+          item_id: null,
+          asset_id: null,
+          cost_center_id: null,
+        })
+        .in("id", Array.from(selectedLineIds));
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success(`Moved ${selectedLineIds.size} line${selectedLineIds.size !== 1 ? "s" : ""} to the new account`);
+      queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["trial_balance"] });
+      queryClient.invalidateQueries({ queryKey: ["balance_sheet"] });
+      setSelectedLineIds(new Set());
+      setBulkAccountDialogOpen(false);
+    },
+    onError: (e: Error) => toast.error(`Move failed: ${errorMessage(e)}`),
+  });
 
   // Transaction types present in the window, from the server — the same
   // ledger_txn_type() the filter is applied with.
@@ -725,6 +794,22 @@ export default function Ledger() {
                 }
               />
 
+              {selectedLineIds.size > 0 && (
+                <div className="flex items-center justify-between gap-3 mb-3 px-3 py-2 rounded-lg bg-primary/5 border border-primary/20 print:hidden">
+                  <span className="text-sm font-medium text-foreground">
+                    {selectedLineIds.size} transaction{selectedLineIds.size !== 1 ? "s" : ""} selected
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => setSelectedLineIds(new Set())}>
+                      Clear
+                    </Button>
+                    <Button size="sm" onClick={() => setBulkAccountDialogOpen(true)}>
+                      Change Account
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {isLoading ? (
                 <div className="flex items-center justify-center py-16">
                   <span className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
@@ -748,6 +833,13 @@ export default function Ledger() {
                   <table className="w-full text-sm report-table report-table--grid">
                     <thead>
                       <tr className="border-b-2 border-border bg-muted/30">
+                        <th className="px-3 py-2.5 w-8 print:hidden">
+                          <Checkbox
+                            checked={allOnPageSelected ? true : someOnPageSelected ? "indeterminate" : false}
+                            onCheckedChange={toggleSelectAllOnPage}
+                            aria-label="Select all transactions on this page"
+                          />
+                        </th>
                         <th className="text-right px-3 py-2.5 w-12">
                           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">#</span>
                         </th>
@@ -793,6 +885,7 @@ export default function Ledger() {
                       {/* Opening Balance Row — only for cumulative (Balance Sheet) accounts */}
                       {!isPeriodBased && (
                         <tr className="bg-muted/20 border-b border-border">
+                          <td className="px-3 py-2 print:hidden" />
                           <td className="px-3 py-2 text-right text-muted-foreground/50 text-xs tabular-nums">—</td>
                           <td className="px-3 py-2 text-muted-foreground text-xs tabular-nums">{effectiveDateFrom || "—"}</td>
                           <td className="px-3 py-2">
@@ -816,6 +909,13 @@ export default function Ledger() {
                           onClick={() => handleDrillDown(row)}
                           className={`border-b border-border/50 cursor-pointer transition-colors hover:bg-primary/5 ${row.isReversal ? "bg-destructive/5" : ""}`}
                         >
+                          <td className="px-3 py-2 print:hidden" onClick={(e) => e.stopPropagation()}>
+                            <Checkbox
+                              checked={selectedLineIds.has(row.id)}
+                              onCheckedChange={() => toggleLineSelected(row.id)}
+                              aria-label={`Select transaction on ${formatDate(row.date)}`}
+                            />
+                          </td>
                           <td className="px-3 py-2 text-right text-muted-foreground text-xs tabular-nums">{page * PAGE_SIZE + i + 1}</td>
                           <td className="px-3 py-2 text-muted-foreground tabular-nums">{formatDate(row.date)}</td>
                           <td className="px-3 py-2">
@@ -855,7 +955,7 @@ export default function Ledger() {
                     </tbody>
                     <tfoot>
                       <tr className="border-t-2 border-border bg-muted/30">
-                        <td colSpan={8} className="px-3 py-2.5 font-bold text-foreground text-xs">Period Totals</td>
+                        <td colSpan={9} className="px-3 py-2.5 font-bold text-foreground text-xs">Period Totals</td>
                         <td className="text-right px-3 py-2.5 font-mono font-bold tabular-nums text-foreground">
                           {totalDebit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </td>
@@ -865,7 +965,7 @@ export default function Ledger() {
                         <td className="text-right px-3 py-2.5 text-muted-foreground">—</td>
                       </tr>
                       <tr className="border-t border-border/50">
-                        <td colSpan={8} className="px-3 py-2.5 font-bold text-foreground text-xs">Closing Balance</td>
+                        <td colSpan={9} className="px-3 py-2.5 font-bold text-foreground text-xs">Closing Balance</td>
                         <td colSpan={2}></td>
                         <td className={`text-right px-3 py-2.5 font-mono font-bold tabular-nums ${closingBalance < 0 ? "text-destructive" : "text-foreground"}`}>
                           {fmtBal(closingBalance)}
@@ -917,6 +1017,17 @@ export default function Ledger() {
         <TabsContent value="ar"><ARSubledger /></TabsContent>
         <TabsContent value="ap"><APSubledger /></TabsContent>
       </Tabs>
+
+      {/* ═══ Bulk Change Account Dialog ═══ */}
+      <BulkChangeLedgerAccountDialog
+        open={bulkAccountDialogOpen}
+        onOpenChange={setBulkAccountDialogOpen}
+        count={selectedLineIds.size}
+        accounts={accounts ?? []}
+        currentAccountId={selectedAccount?.id}
+        onConfirm={(accountId) => bulkChangeAccountMutation.mutate(accountId)}
+        isPending={bulkChangeAccountMutation.isPending}
+      />
 
       {/* ═══ Drill-Down Dialog ═══ */}
       <Dialog open={!!drillDownEntry} onOpenChange={() => setDrillDownEntry(null)}>
