@@ -33,10 +33,11 @@ export default function AppLayout() {
   // Without this gate, child pages would render against an empty cache.
   const needsHydration = !!appUser?.tenant_id && tenantId !== appUser.tenant_id;
 
-  // Auto-logout when countdown hits 0
+  // Auto-logout when countdown hits 0. Automatic, so an unposted journal entry
+  // is still waiting when the user signs back in.
   useEffect(() => {
     if (isIdle && countdown === 0) {
-      signOut();
+      signOut({ automatic: true });
     }
   }, [isIdle, countdown, signOut]);
 

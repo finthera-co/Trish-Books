@@ -111,7 +111,8 @@ export function idleFor(): number {
 
 /**
  * Drops the persisted Supabase session (and the drafts tied to that login) so
- * the auth client boots signed out.
+ * the auth client boots signed out. Sticky drafts are deliberately kept: closing
+ * the browser mid-entry must not destroy work the user cannot retype.
  */
 function purgeStoredSession() {
   const local = store();

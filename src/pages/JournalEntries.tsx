@@ -40,6 +40,8 @@ import {
 } from "@/lib/journalValidation";
 import { typeColors, getTypeLabel } from "@/lib/accountTypes";
 import { formatDate } from "@/lib/format";
+import { useJournalEntryDraft } from "@/hooks/useJournalEntryDraft";
+import DraftRestoredNotice from "@/components/journal/DraftRestoredNotice";
 
 const fmt = (n: number) =>
   n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -48,6 +50,27 @@ type StatusFilter = "all" | "posted" | "voided";
 type SourceFilter = "all" | "manual" | "invoice" | "payment_received" | "credit_note" | "depreciation" | "opening_balance" | "other";
 
 const PAGE_SIZE = 50;
+
+interface CreateLine {
+  account_id: string;
+  debit: number;
+  credit: number;
+  memo: string;
+  customer_id: string | null;
+  vendor_id: string | null;
+}
+
+/* One definition of "an untouched form", used both to reset it and to decide
+ * whether there is a draft worth keeping. They must not drift apart. */
+const blankLine = (): CreateLine =>
+  ({ account_id: "", debit: 0, credit: 0, memo: "", customer_id: null, vendor_id: null });
+const today = () => new Date().toISOString().split("T")[0];
+const emptyForm = () => ({
+  entryDate: today(),
+  reference: "",
+  chequeNumber: "",
+  lines: [blankLine(), blankLine()],
+});
 
 export default function JournalEntries() {
   const { appUser } = useAuth();
@@ -88,15 +111,32 @@ export default function JournalEntries() {
 
   // Form. There is no entry-level description field: narration is typed per line
   // and the header description is derived from it on submit.
-  const [entryDate, setEntryDate] = useState(new Date().toISOString().split("T")[0]);
+  const [entryDate, setEntryDate] = useState(today);
   const [reference, setReference] = useState("");
   // Cheque / payment instrument number. Optional, and shown in the Account
   // Register's "Cheque No" column — the same column a bank import fills in.
   const [chequeNumber, setChequeNumber] = useState("");
-  const [lines, setLines] = useState([
-    { account_id: "", debit: 0, credit: 0, memo: "", customer_id: null as string | null, vendor_id: null as string | null },
-    { account_id: "", debit: 0, credit: 0, memo: "", customer_id: null as string | null, vendor_id: null as string | null },
-  ]);
+  const [lines, setLines] = useState<CreateLine[]>(() => [blankLine(), blankLine()]);
+
+  // A typed-but-unposted entry survives anything that stops it from reaching
+  // the server: a dropped connection, an expired token, a closed tab. The draft
+  // is deleted only once the entry actually posts.
+  const { restoredAt, clearDraft, dismissRestoredNotice } = useJournalEntryDraft<CreateLine>({
+    entry: "new",
+    scope: appUser ? `${appUser.tenant_id}:${appUser.id}` : null,
+    value: { entryDate, reference, chequeNumber, lines },
+    baseline: emptyForm(),
+    // The auto-filled JV reference appears on its own the moment the dialog
+    // opens; only a line the user actually typed makes this worth keeping.
+    hasContent: lines.some((l) => l.account_id || Number(l.debit) > 0 || Number(l.credit) > 0 || l.memo.trim()),
+    ready: open,
+    onRestore: useCallback((draft) => {
+      setEntryDate(draft.entryDate || today());
+      setReference(draft.reference ?? "");
+      setChequeNumber(draft.chequeNumber ?? "");
+      if (draft.lines.length) setLines(draft.lines.map((l) => ({ ...blankLine(), ...l })));
+    }, []),
+  });
 
   // Keystrokes shouldn't each fire a query against a 35k-row table.
   useEffect(() => {
@@ -150,10 +190,13 @@ export default function JournalEntries() {
   // Next JV reference (JV-001, JV-002, …), computed server-side over JV refs only
   const { data: nextJvReference } = useNextJvReference();
 
-  // Auto-fill reference when opening the New Entry dialog
+  // Auto-fill reference when opening the New Entry dialog. The update is
+  // functional so it reads the reference as it stands at commit time: a draft
+  // restored in the same pass has already queued its own reference, and must
+  // not be overwritten by the next number in the sequence.
   useEffect(() => {
-    if (open && !reference && nextJvReference) {
-      setReference(nextJvReference);
+    if (open && nextJvReference) {
+      setReference((current) => current || nextJvReference);
     }
   }, [open, nextJvReference]);
 
@@ -381,6 +424,10 @@ export default function JournalEntries() {
       queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
       queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
       toast.success("Journal entry posted successfully");
+      // Posted: the draft has served its purpose. Anything short of this — a
+      // validation rejection, a network failure, an expired token — leaves it in
+      // place so the entry can be retried rather than retyped.
+      clearDraft();
       setOpen(false);
       resetForm();
     },
@@ -388,13 +435,11 @@ export default function JournalEntries() {
   });
 
   const resetForm = () => {
-    setReference("");
-    setChequeNumber("");
-    setEntryDate(new Date().toISOString().split("T")[0]);
-    setLines([
-      { account_id: "", debit: 0, credit: 0, memo: "", customer_id: null as string | null, vendor_id: null as string | null },
-      { account_id: "", debit: 0, credit: 0, memo: "", customer_id: null as string | null, vendor_id: null as string | null },
-    ]);
+    const blank = emptyForm();
+    setReference(blank.reference);
+    setChequeNumber(blank.chequeNumber);
+    setEntryDate(blank.entryDate);
+    setLines(blank.lines);
   };
 
   const handleCreate = async () => {
@@ -541,6 +586,16 @@ export default function JournalEntries() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 pt-4">
+              {restoredAt !== null && (
+                <DraftRestoredNotice
+                  savedAt={restoredAt}
+                  // Back to a clean entry, including the JV number the dialog
+                  // would have offered had there been no draft.
+                  onDiscard={() => { clearDraft(); resetForm(); setReference(nextJvReference ?? ""); }}
+                  onDismiss={dismissRestoredNotice}
+                  context="an empty entry"
+                />
+              )}
               {/* Header fields. No entry-level description: each line carries its own. */}
               <div className="grid grid-cols-3 gap-4 max-w-2xl">
                 <div>

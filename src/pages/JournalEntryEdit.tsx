@@ -28,6 +28,8 @@ import {
 } from "@/lib/journalValidation";
 import { typeColors, getTypeLabel } from "@/lib/accountTypes";
 import AccountCombobox from "@/components/shared/AccountCombobox";
+import { useJournalEntryDraft } from "@/hooks/useJournalEntryDraft";
+import DraftRestoredNotice from "@/components/journal/DraftRestoredNotice";
 
 const fmt = (n: number) =>
   n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -98,6 +100,11 @@ export default function JournalEntryEdit() {
   const [chequeNumber, setChequeNumber] = useState("");
   const [lines, setLines] = useState<EditLine[]>([]);
   const [initialized, setInitialized] = useState(false);
+  // The entry exactly as it was loaded. Edits are only worth keeping as a draft
+  // while they differ from it.
+  const [savedSnapshot, setSavedSnapshot] = useState<{
+    entryDate: string; reference: string; chequeNumber: string; lines: EditLine[];
+  } | null>(null);
 
   // Pre-fill form when entry loads
   useEffect(() => {
@@ -110,28 +117,62 @@ export default function JournalEntryEdit() {
         // embedded select happened to return.
         .slice()
         .sort(bySeq);
-      setLines(
-        entryLines.map((l: any) => ({
-          id: l.id,
-          account_id: l.account_id,
-          original_account_id: l.account_id,
-          debit: Number(l.debit),
-          credit: Number(l.credit),
-          // Entries posted before line descriptions existed, and every
-          // system-generated entry, have no memo. Seed each line with the
-          // description it has been displaying all along rather than making the
-          // user retype it to get past validation.
-          memo: resolveLineMemo(l.memo, entry.description),
-          customer_id: l.customer_id ?? null,
-          vendor_id: l.vendor_id ?? null,
-          item_id: l.item_id ?? null,
-          asset_id: l.asset_id ?? null,
-          cost_center_id: l.cost_center_id ?? null,
-        }))
-      );
+      const loadedLines: EditLine[] = entryLines.map((l: any) => ({
+        id: l.id,
+        account_id: l.account_id,
+        original_account_id: l.account_id,
+        debit: Number(l.debit),
+        credit: Number(l.credit),
+        // Entries posted before line descriptions existed, and every
+        // system-generated entry, have no memo. Seed each line with the
+        // description it has been displaying all along rather than making the
+        // user retype it to get past validation.
+        memo: resolveLineMemo(l.memo, entry.description),
+        customer_id: l.customer_id ?? null,
+        vendor_id: l.vendor_id ?? null,
+        item_id: l.item_id ?? null,
+        asset_id: l.asset_id ?? null,
+        cost_center_id: l.cost_center_id ?? null,
+      }));
+      setLines(loadedLines);
+      setSavedSnapshot({
+        entryDate: entry.entry_date,
+        reference: entry.reference || "",
+        chequeNumber: entry.cheque_number || "",
+        lines: loadedLines,
+      });
       setInitialized(true);
     }
   }, [entry, initialized]);
+
+  // Unsaved edits survive whatever stops the save from landing — a dropped
+  // connection, an expired token, a closed tab. The draft is dropped only once
+  // the entry has actually been updated, or when the user discards it.
+  const { restoredAt, clearDraft, dismissRestoredNotice } = useJournalEntryDraft<EditLine>({
+    entry: id ?? null,
+    scope: appUser ? `${appUser.tenant_id}:${appUser.id}` : null,
+    value: { entryDate, reference, chequeNumber, lines },
+    baseline: savedSnapshot,
+    // An entry being edited always holds content; `baseline` is what decides
+    // whether it has actually been changed.
+    hasContent: true,
+    ready: initialized,
+    onRestore: useCallback((draft) => {
+      setEntryDate(draft.entryDate);
+      setReference(draft.reference ?? "");
+      setChequeNumber(draft.chequeNumber ?? "");
+      if (draft.lines.length) setLines(draft.lines);
+    }, []),
+  });
+
+  const discardDraft = useCallback(() => {
+    clearDraft();
+    if (!savedSnapshot) return;
+    setEntryDate(savedSnapshot.entryDate);
+    setReference(savedSnapshot.reference);
+    setChequeNumber(savedSnapshot.chequeNumber);
+    setLines(savedSnapshot.lines);
+  }, [clearDraft, savedSnapshot]);
 
   // Accounts map for validation
   const accountsMap = useMemo(() => {
@@ -321,6 +362,9 @@ export default function JournalEntryEdit() {
       queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
       queryClient.invalidateQueries({ queryKey: ["journal_entry", id] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      // The edits are in the ledger now, so the draft can go. A failed save
+      // keeps it — that is the case it exists for.
+      clearDraft();
       toast.success("Journal Entry updated successfully");
       navigate(`/accounting/journals/${id}`);
     },
@@ -408,6 +452,14 @@ export default function JournalEntryEdit() {
         </div>
 
         <div className="space-y-4">
+          {restoredAt !== null && (
+            <DraftRestoredNotice
+              savedAt={restoredAt}
+              onDiscard={discardDraft}
+              onDismiss={dismissRestoredNotice}
+              context="the entry as it is currently posted"
+            />
+          )}
           {/* Header fields. No entry-level description: each line carries its own. */}
           <div className="grid grid-cols-3 gap-4 max-w-2xl">
             <div>

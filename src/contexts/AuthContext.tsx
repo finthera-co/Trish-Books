@@ -24,7 +24,8 @@ interface AuthContextType {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, firstName: string, lastName: string, tenantId?: string) => Promise<{ error: Error | null }>;
-  signOut: () => Promise<void>;
+  /** `automatic: true` for a sign-out the user did not ask for (idle timeout): it keeps sticky drafts. */
+  signOut: (opts?: { automatic?: boolean }) => Promise<void>;
   isSuperAdmin: boolean;
   isCompanyAdmin: boolean;
   isPrimaryAdmin: boolean;
@@ -188,8 +189,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null };
   };
 
-  const signOut = async () => {
-    clearAllFintheraDrafts();
+  /**
+   * `automatic` marks a sign-out the user did not ask for (an idle timeout).
+   * Those keep sticky drafts — an unposted journal entry must still be there
+   * when the same user signs back in. Choosing "Sign out" clears everything, so
+   * a deliberate exit leaves a shared machine clean.
+   */
+  const signOut = async (opts: { automatic?: boolean } = {}) => {
+    clearAllFintheraDrafts({ includeSticky: !opts.automatic });
     await supabase.auth.signOut();
     setAppUser(null);
     // Never leave one user's ledger data cached for the next person to sign in
@@ -200,7 +207,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Unattended machine: end the session rather than leave the ledgers open.
   const handleIdle = useCallback(() => {
     setSignOutReason("idle");
-    void signOut();
+    void signOut({ automatic: true });
   }, []);
   useIdleLogout(!!session, handleIdle);
 

@@ -3,6 +3,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const DRAFT_PREFIX = "finthera:draft";
 const DRAFT_VERSION = "v1"; // bump to invalidate all old drafts after a shape change
 
+/**
+ * Drafts that must outlive an *involuntary* end of session — an expired token,
+ * the idle timeout, a closed browser — because losing them loses work the user
+ * cannot get back. They are keyed per tenant+user like every other draft, so
+ * they only ever rehydrate for the person who typed them, and an explicit
+ * "Sign out" still wipes them (see clearAllFintheraDrafts).
+ */
+export const STICKY_DRAFT_PREFIX = "finthera:sticky-draft";
+
 function makeKey(page: string, scope?: string) {
   return `${DRAFT_PREFIX}:${DRAFT_VERSION}:${page}${scope ? ":" + scope : ""}`;
 }
@@ -17,13 +26,22 @@ function safeRemove(key: string) {
   try { localStorage.removeItem(key); } catch { /* ignore */ }
 }
 
-// Remove every Trish Books draft (call on sign-out — see 11.4).
-export function clearAllFintheraDrafts() {
+/**
+ * Remove Trish Books drafts (call on sign-out — see 11.4).
+ *
+ * Sticky drafts are kept unless `includeSticky` is set: the automatic sign-out
+ * paths (idle timeout, browser close, expired session) must not destroy a
+ * half-typed journal entry, while a deliberate sign-out clears everything so a
+ * shared machine is left clean.
+ */
+export function clearAllFintheraDrafts(opts: { includeSticky?: boolean } = {}) {
   try {
     const toRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (k && k.startsWith(DRAFT_PREFIX)) toRemove.push(k);
+      if (!k) continue;
+      if (k.startsWith(DRAFT_PREFIX)) toRemove.push(k);
+      else if (opts.includeSticky && k.startsWith(STICKY_DRAFT_PREFIX)) toRemove.push(k);
     }
     toRemove.forEach((k) => localStorage.removeItem(k));
   } catch { /* ignore */ }
