@@ -1721,8 +1721,10 @@ export type Database = {
           disposal_loss_account_id: string | null
           id: string
           is_active: boolean
+          is_depreciable: boolean
           name: string
           proration_method: string
+          source_account_id: string | null
           tenant_id: string
           updated_at: string
         }
@@ -1737,8 +1739,10 @@ export type Database = {
           disposal_loss_account_id?: string | null
           id?: string
           is_active?: boolean
+          is_depreciable?: boolean
           name: string
           proration_method?: string
+          source_account_id?: string | null
           tenant_id: string
           updated_at?: string
         }
@@ -1753,8 +1757,10 @@ export type Database = {
           disposal_loss_account_id?: string | null
           id?: string
           is_active?: boolean
+          is_depreciable?: boolean
           name?: string
           proration_method?: string
+          source_account_id?: string | null
           tenant_id?: string
           updated_at?: string
         }
@@ -1790,6 +1796,13 @@ export type Database = {
           {
             foreignKeyName: "asset_categories_disposal_loss_account_id_fkey"
             columns: ["disposal_loss_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_categories_source_account_id_fkey"
+            columns: ["source_account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
             referencedColumns: ["id"]
@@ -5559,7 +5572,10 @@ export type Database = {
           disposal_gain_account_id: string | null
           disposal_loss_account_id: string | null
           id: string
+          is_depreciable: boolean
           salvage_value: number
+          source: string
+          source_journal_line_id: string | null
           start_date: string | null
           status: string
           tenant_id: string
@@ -5581,7 +5597,10 @@ export type Database = {
           disposal_gain_account_id?: string | null
           disposal_loss_account_id?: string | null
           id?: string
+          is_depreciable?: boolean
           salvage_value?: number
+          source?: string
+          source_journal_line_id?: string | null
           start_date?: string | null
           status?: string
           tenant_id: string
@@ -5603,7 +5622,10 @@ export type Database = {
           disposal_gain_account_id?: string | null
           disposal_loss_account_id?: string | null
           id?: string
+          is_depreciable?: boolean
           salvage_value?: number
+          source?: string
+          source_journal_line_id?: string | null
           start_date?: string | null
           status?: string
           tenant_id?: string
@@ -5651,6 +5673,13 @@ export type Database = {
             columns: ["disposal_loss_account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixed_assets_source_journal_line_id_fkey"
+            columns: ["source_journal_line_id"]
+            isOneToOne: false
+            referencedRelation: "journal_lines"
             referencedColumns: ["id"]
           },
           {
@@ -14793,6 +14822,7 @@ export type Database = {
         Args: { p_account_id: string }
         Returns: string
       }
+      account_is_obe: { Args: { p_account_id: string }; Returns: boolean }
       account_ledger_facets: {
         Args: { p_account_id: string; p_date_from?: string; p_date_to?: string }
         Returns: Json
@@ -14880,6 +14910,10 @@ export type Database = {
         Args: { p_invoice_id: string; p_note: string }
         Returns: Json
       }
+      adopt_coa_assets: {
+        Args: { p_post_depreciation?: boolean; p_through_period?: string }
+        Returns: Json
+      }
       aggregate_attendance_batch: {
         Args: { p_batch_id: string }
         Returns: {
@@ -14912,6 +14946,27 @@ export type Database = {
           similarity: number
           source_id: string
           source_type: string
+        }[]
+      }
+      analyze_coa_assets: {
+        Args: { p_through_period?: string }
+        Returns: {
+          account_code: string
+          account_id: string
+          account_name: string
+          already_adopted: boolean
+          class_key: string
+          cost: number
+          depreciation_method: string
+          entry_date: string
+          est_depreciation: number
+          est_net_book_value: number
+          is_depreciable: boolean
+          journal_entry_id: string
+          journal_line_id: string
+          months_to_charge: number
+          proposed_name: string
+          useful_life_months: number
         }[]
       }
       ap_aging_report: { Args: { p_as_of_date?: string }; Returns: Json }
@@ -15100,6 +15155,11 @@ export type Database = {
           user_id: string
         }[]
       }
+      ensure_asset_categories_from_coa: {
+        Args: { p_tenant_id: string }
+        Returns: Json
+      }
+      ensure_asset_gl_accounts: { Args: { p_tenant_id: string }; Returns: Json }
       ensure_cash_over_short_account: {
         Args: { p_tenant_id: string }
         Returns: string
@@ -15194,6 +15254,19 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      fn_asset_class_profile: {
+        Args: { p_name: string }
+        Returns: {
+          class_key: string
+          depreciable: boolean
+          life_months: number
+          method: string
+        }[]
+      }
+      fn_asset_name_from_je: {
+        Args: { p_class: string; p_description: string }
+        Returns: string
+      }
       fn_fs_eval_accounts: {
         Args: { p_date_from: string; p_date_to: string; p_statement_id: string }
         Returns: {
@@ -15211,12 +15284,34 @@ export type Database = {
           value: number
         }[]
       }
+      fn_next_free_account_code: {
+        Args: {
+          p_max: number
+          p_start: number
+          p_step: number
+          p_tenant_id: string
+        }
+        Returns: string
+      }
       fn_normalize_import_key: { Args: { p_text: string }; Returns: string }
       fn_parse_import_amount: { Args: { p_raw: string }; Returns: number }
+      fn_ppe_cost_accounts: {
+        Args: { p_tenant_id: string }
+        Returns: {
+          account_code: string
+          account_id: string
+          account_name: string
+        }[]
+      }
+      fs_link_depreciation_account: {
+        Args: { p_account_id: string; p_tenant_id: string }
+        Returns: undefined
+      }
       fx_rate: {
         Args: { p_currency: string; p_date: string; p_tenant_id: string }
         Returns: number
       }
+      generate_asset_schedule: { Args: { p_asset_id: string }; Returns: number }
       generate_bill_number: { Args: { p_tenant_id: string }; Returns: string }
       generate_grn_number: { Args: { p_tenant_id: string }; Returns: string }
       generate_item_code: { Args: { p_tenant_id: string }; Returns: string }
@@ -15583,6 +15678,11 @@ export type Database = {
       }
       post_assembly_order: { Args: { p_ao_id: string }; Returns: Json }
       post_delivery_note: { Args: { p_id: string }; Returns: Json }
+      post_depreciation_period: { Args: { p_period: string }; Returns: Json }
+      post_depreciation_period_internal: {
+        Args: { p_period: string; p_tenant_id: string; p_user_id: string }
+        Returns: Json
+      }
       post_grn: { Args: { p_grn_id: string }; Returns: Json }
       post_imprest_replenishment: {
         Args: {

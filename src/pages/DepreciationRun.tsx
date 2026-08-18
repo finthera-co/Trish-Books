@@ -68,7 +68,9 @@ export default function DepreciationRun() {
   }, [categories]);
 
   const activeAssets = useMemo(() => {
-    const all = assets?.filter(a => a.status === "active") ?? [];
+    // Land and other indefinite-life items are in the register but carry no
+    // schedule (IAS 16.58), so they never belong in a depreciation run.
+    const all = assets?.filter(a => a.status === "active" && (a as any).is_depreciable !== false) ?? [];
     if (!accountId) return all;
     const ids = new Set([accountId, ...getChildAccountIds(accountId, accounts as any[] || [])]);
     return all.filter((a: any) => ids.has(a.depreciation_account_id));

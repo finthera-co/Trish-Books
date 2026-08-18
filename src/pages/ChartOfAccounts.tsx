@@ -1002,6 +1002,29 @@ export default function ChartOfAccounts() {
     });
   }, [displayAccounts, search, filterType, showInactive]);
 
+  // The category a sub-account is DISPLAYED under is its root ancestor's, not
+  // its own. Grouping happens before buildTree, so an account whose category
+  // differs from its parent's (typically a child left uncategorized) would be
+  // split into another bucket, render as a detached root, and never roll up
+  // into its parent's balance. Walking to the root keeps a branch intact.
+  const rootCategoryOf = useMemo(() => {
+    const byId = new Map(displayAccounts.map(a => [a.id, a]));
+    const out = new Map<string, string | null>();
+    for (const a of displayAccounts) {
+      let node = a;
+      const seen = new Set<string>([a.id]);
+      while (node.parent_account_id) {
+        const parent = byId.get(node.parent_account_id);
+        // Missing parent or a cycle: stop and use the highest account reached.
+        if (!parent || seen.has(parent.id)) break;
+        seen.add(parent.id);
+        node = parent;
+      }
+      out.set(a.id, node.category_id ?? null);
+    }
+    return out;
+  }, [displayAccounts]);
+
   // Build Type → Category → Account hierarchy
   const typeGroups = useMemo((): TypeGroup[] => {
     const types = filterType !== "all" ? [filterType] : [...ACCOUNT_TYPES];
@@ -1012,7 +1035,7 @@ export default function ChartOfAccounts() {
         .map(cat => ({
           id: cat.id,
           name: cat.name,
-          accounts: typeAccounts.filter(a => a.category_id === cat.id),
+          accounts: typeAccounts.filter(a => rootCategoryOf.get(a.id) === cat.id),
         }))
         .filter(g => g.accounts.length > 0)
         .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
@@ -1020,7 +1043,7 @@ export default function ChartOfAccounts() {
       const uncategorized = typeAccounts.filter(a => !categorizedIds.has(a.id));
       return { type, categories: catGroups, uncategorized };
     }).filter(g => g.categories.length > 0 || g.uncategorized.length > 0);
-  }, [filteredAccounts, categories, filterType]);
+  }, [filteredAccounts, categories, filterType, rootCategoryOf]);
 
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = {};

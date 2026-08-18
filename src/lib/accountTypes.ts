@@ -53,6 +53,59 @@ export function isContraAccount(account?: {
   return false;
 }
 
+/**
+ * Statement-of-financial-position classification. LKAS 1.60 splits assets and
+ * liabilities into current and non-current on the face of the statement, and
+ * the detail type is what decides which side an account lands on — an account
+ * *type* of "Asset" says nothing about whether it is realised within the
+ * operating cycle.
+ *
+ * Matching is case-insensitive and by substring, so both the canonical
+ * ACCOUNT_SUBTYPES entries and the longer variants tenants type by hand
+ * ("Fixed Assets", "Property, Plant & Equipment") resolve the same way.
+ */
+export const NON_CURRENT_ASSET_SUBTYPES = [
+  "Fixed Asset",
+  "Property, Plant",
+  "Property Plant",
+  "Furniture",
+  "Vehicle",
+  "Building",
+  "Machinery",
+  "Land",
+  "Intangible",
+  "Accumulated Depreciation",
+  "Accumulated Amortisation",
+  "Accumulated Amortization",
+  "Investment",
+];
+
+export const NON_CURRENT_LIABILITY_SUBTYPES = [
+  "Long-term",
+  "Long Term",
+  "Long-Term",
+  "Non-current",
+  "Noncurrent",
+  "Lease Liability",
+  "Deferred Tax",
+];
+
+const matchesAny = (value: string | null | undefined, needles: string[]): boolean => {
+  if (!value) return false;
+  const v = value.toLowerCase();
+  return needles.some(n => v.includes(n.toLowerCase()));
+};
+
+/** True when an Asset account's detail type places it outside current assets. */
+export function isNonCurrentAssetSubtype(subtype: string | null | undefined): boolean {
+  return matchesAny(subtype, NON_CURRENT_ASSET_SUBTYPES);
+}
+
+/** True when a Liability account's detail type places it outside current liabilities. */
+export function isNonCurrentLiabilitySubtype(subtype: string | null | undefined): boolean {
+  return matchesAny(subtype, NON_CURRENT_LIABILITY_SUBTYPES);
+}
+
 export function getNormalBalance(accountType: string, isContra = false): "Debit" | "Credit" {
   const debit = isDebitNormal(accountType);
   const effective = isContra ? !debit : debit;

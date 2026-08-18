@@ -91,6 +91,7 @@ import Budgets from "./pages/Budgets";
 import BudgetVsActual from "./pages/BudgetVsActual";
 import DataExports from "./pages/DataExports";
 import AssetRegister from "./pages/AssetRegister";
+import AssetAdoption from "./pages/AssetAdoption";
 import AssetForm from "./pages/AssetForm";
 import AssetDetail from "./pages/AssetDetail";
 import DepreciationRun from "./pages/DepreciationRun";
@@ -321,6 +322,7 @@ const App = () => (
                     <Route path="/assets" element={<ModuleDashboard config={MODULE_CONFIGS.assets} />} />
                     <Route path="/assets/register" element={<AssetRegister />} />
                     <Route path="/assets/new" element={<AssetForm />} />
+                    <Route path="/assets/adopt" element={<AssetAdoption />} />
                     <Route path="/assets/categories" element={<AssetCategories />} />
                     <Route path="/assets/:id/edit" element={<AssetForm />} />
                     <Route path="/assets/:id" element={<AssetDetail />} />

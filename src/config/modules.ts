@@ -200,6 +200,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "Asset Register", path: "/assets/register", icon: ClipboardList, group: "Register" },
       { label: "Add Asset", path: "/assets/new", icon: Warehouse, group: "Register" },
       { label: "Asset Categories", path: "/assets/categories", icon: Box, group: "Register" },
+      { label: "Build from COA", path: "/assets/adopt", icon: Wand2, group: "Register" },
       { label: "Run Depreciation", path: "/assets/depreciation", icon: Calculator, group: "Processing" },
       { label: "Asset Reports", path: "/reports/financial?report=fixed-asset-schedule", icon: BarChart3, group: "Processing" },
     ],

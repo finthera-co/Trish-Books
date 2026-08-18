@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
-import { Plus, Eye, BarChart3 } from "lucide-react";
+import { Plus, Eye, BarChart3, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -117,6 +117,10 @@ export default function AssetRegister() {
             <BarChart3 className="w-4 h-4 mr-2" />
             Asset Schedule
           </Button>
+          <Button variant="outline" size="sm" onClick={() => navigate("/assets/adopt")}>
+            <Wand2 className="w-4 h-4 mr-2" />
+            Build from COA
+          </Button>
           <Button onClick={() => navigate("/assets/new")}>
             <Plus className="w-4 h-4 mr-2" /> Add Asset
           </Button>
@@ -162,7 +166,7 @@ export default function AssetRegister() {
                   <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                     {accountId
                       ? "No assets in this category. Click \"Add Asset\" to get started."
-                      : "No assets found. Click \"Add Asset\" to get started."}
+                      : "No assets found. Use \"Build from COA\" to create the register from the purchases already posted to your PP&E ledgers, or add one by hand."}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -177,9 +181,14 @@ export default function AssetRegister() {
                       <TableCell className="text-right">{formatCurrency(asset.accumulated_depreciation)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(nbv)}</TableCell>
                       <TableCell>
-                        <Badge variant={asset.status === "active" ? "default" : "secondary"}>
-                          {asset.status}
-                        </Badge>
+                        <div className="flex items-center gap-1">
+                          <Badge variant={asset.status === "active" ? "default" : "secondary"}>
+                            {asset.status}
+                          </Badge>
+                          {asset.is_depreciable === false && (
+                            <Badge variant="outline" className="text-xs">not depreciated</Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); navigate(`/assets/${asset.id}`); }}>

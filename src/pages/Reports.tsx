@@ -9,7 +9,12 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 import { format } from "date-fns";
-import { isDebitNormal as checkDebitNormal } from "@/lib/accountTypes";
+import {
+  isDebitNormal as checkDebitNormal,
+  isContraSubtype,
+  isNonCurrentAssetSubtype,
+  isNonCurrentLiabilitySubtype,
+} from "@/lib/accountTypes";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { buildScheduleBlocks, deriveFYWindow, fyLabel, type AssetMeta } from "@/lib/ppeSchedule";
@@ -284,7 +289,7 @@ export default function Reports() {
   // 35k entries and 70k lines pulled into the browser to be summed there.
   const { data: cumulativeTotals } = useAccountBalances(obPeriod?.period_start, periodTo);
 
-  type AccountBal = { id: string; name: string; code: string; type: string; subtype: string | null; subledger_type: string | null; debit: number; credit: number; openingBalance: number };
+  type AccountBal = { id: string; name: string; code: string; type: string; subtype: string | null; subledger_type: string | null; normalBalance: string | null; debit: number; credit: number; openingBalance: number };
 
   const buildBalanceMap = (entries: any[], includeOpening: boolean) => {
     const map = new Map<string, AccountBal>();
@@ -296,6 +301,7 @@ export default function Reports() {
         type: a.account_type,
         subtype: (a as any).account_subtype ?? null,
         subledger_type: (a as any).subledger_type ?? null,
+        normalBalance: (a as any).normal_balance ?? null,
         debit: 0,
         credit: 0,
         openingBalance: includeOpening ? (openingBalanceMap.get(a.id) || 0) : 0,
@@ -335,6 +341,7 @@ export default function Reports() {
         type: a.account_type,
         subtype: (a as any).account_subtype ?? null,
         subledger_type: (a as any).subledger_type ?? null,
+        normalBalance: (a as any).normal_balance ?? null,
         debit: 0,
         credit: 0,
         openingBalance: openingBalanceMap.get(a.id) || 0,
@@ -359,10 +366,23 @@ export default function Reports() {
 
   const cumulativeList = Array.from(cumulativeBalances.values()).filter(a => a.debit > 0 || a.credit > 0 || a.openingBalance !== 0);
 
+  // The side an account's balance normally sits on. Deriving this from the
+  // account TYPE alone is wrong for contra accounts: Accumulated Depreciation
+  // is type "Asset" but credit-normal, so a type-only rule reports its balance
+  // as a negative asset, and the Balance Sheet then *adds* depreciation back
+  // instead of deducting it. Prefer the normal_balance the COA itself records,
+  // fall back to the contra subtype, then to the type.
+  const isDebitSide = (a: AccountBal) => {
+    const declared = a.normalBalance?.trim().toLowerCase();
+    if (declared === "debit" || declared === "credit") return declared === "debit";
+    const debitByType = checkDebitNormal(a.type);
+    return isContraSubtype(a.subtype) ? !debitByType : debitByType;
+  };
+
   // Signed closing balance in the account's normal-balance direction
   // (positive = normal side). Works for any balance map built above.
   const getNetBalance = (a: AccountBal) => {
-    const journalNet = checkDebitNormal(a.type) ? (a.debit - a.credit) : (a.credit - a.debit);
+    const journalNet = isDebitSide(a) ? (a.debit - a.credit) : (a.credit - a.debit);
     return a.openingBalance + journalNet;
   };
 
@@ -370,12 +390,15 @@ export default function Reports() {
   const lowerSub = (a: AccountBal) => (a.subtype ?? "").toLowerCase();
   const isAccumDepAccount = (a: AccountBal) =>
     a.subledger_type === "asset_depreciation" || lowerSub(a).includes("accumulated depreciation");
+  // Non-current assets are identified from the detail type (LKAS 1.60), not the
+  // account type — "Property, Plant & Equipment", "Fixed Asset" and the rest
+  // are all type "Asset", so a type-only rule leaves every fixed asset sitting
+  // in current assets.
+  const isIntangibleAccount = (a: AccountBal) => lowerSub(a).includes("intangible");
   const isPPEAccount = (a: AccountBal) =>
     a.subledger_type === "fixed_asset" ||
-    ["fixed asset", "furniture", "vehicle", "building"].some(k => lowerSub(a).includes(k));
-  const isIntangibleAccount = (a: AccountBal) => lowerSub(a).includes("intangible");
-  const isNonCurrentLiability = (a: AccountBal) =>
-    lowerSub(a).includes("long-term") || lowerSub(a).includes("long term");
+    (isNonCurrentAssetSubtype(a.subtype) && !isAccumDepAccount(a) && !isIntangibleAccount(a));
+  const isNonCurrentLiability = (a: AccountBal) => isNonCurrentLiabilitySubtype(a.subtype);
   const isCashAccount = (a: AccountBal) =>
     a.type === "Asset" &&
     !isPPEAccount(a) && !isAccumDepAccount(a) &&
@@ -457,21 +480,56 @@ export default function Reports() {
     const totalEquity = equity.reduce((s, a) => s + getNetBalance(a), 0) + retainedEarnings;
     const totalLiabEquity = totalLiabilities + totalEquity;
 
-    const SectionRows = ({ items, sign }: { items: typeof allAssets; sign: "debit" | "credit" }) => (
+    // The face of the statement is built from four repeating parts, so every
+    // section of both halves carries identical typography: a top-level caption
+    // (ASSETS / EQUITY AND LIABILITIES), a sub-section caption, the ledger
+    // lines, and the sub-section's own total.
+    const FaceCaption = ({ label }: { label: string }) => (
+      <tr className="bg-muted/60">
+        <td colSpan={2} className="font-bold text-foreground uppercase tracking-wider text-sm py-2">{label}</td>
+      </tr>
+    );
+
+    const SectionCaption = ({ label }: { label: string }) => (
+      <tr className="bg-muted/25">
+        <td colSpan={2} className="font-semibold text-foreground text-sm py-1.5 pl-2">{label}</td>
+      </tr>
+    );
+
+    const SectionRows = ({ items }: { items: typeof allAssets }) => (
       <>
-        {items.map((a, i) => {
-          const bal = getNetBalance(a);
-          return (
-            <tr key={i}>
-              <td className="pl-8 text-foreground">{a.name}</td>
-              <td className="text-right font-mono">{fmt(bal)}</td>
-            </tr>
-          );
-        })}
+        {items.length === 0 ? (
+          <tr>
+            <td className="pl-8 text-muted-foreground italic text-sm">None</td>
+            <td className="text-right font-mono text-muted-foreground">—</td>
+          </tr>
+        ) : items.map((a, i) => (
+          <tr key={i}>
+            <td className="pl-8 text-foreground">{a.name}</td>
+            <td className="text-right font-mono">{fmt(getNetBalance(a))}</td>
+          </tr>
+        ))}
       </>
     );
 
-    const hasAssetData = allAssets.length > 0;
+    // Sub-section total: single rule above, as on a printed statement.
+    const SectionTotal = ({ label, value }: { label: string; value: number }) => (
+      <tr className="border-t border-border/60">
+        <td className="pl-4 text-sm font-medium text-foreground">{label}</td>
+        <td className="text-right font-mono font-semibold">{fmt(value)}</td>
+      </tr>
+    );
+
+    // Face total (Total Assets / Total Equity and Liabilities): the ruled,
+    // double-underlined line each half of the statement closes on.
+    const FaceTotal = ({ label, value }: { label: string; value: number }) => (
+      <tr className="font-bold border-t-2 border-b-4 border-double border-foreground/40 bg-primary/5">
+        <td className="uppercase tracking-wide text-sm py-2">{label}</td>
+        <td className="text-right font-mono py-2">{fmt(value)}</td>
+      </tr>
+    );
+
+    const hasData = allAssets.length > 0 || liabilities.length > 0 || equity.length > 0;
 
     return (
       <div className="space-y-4">
@@ -483,108 +541,71 @@ export default function Reports() {
 
         <div className="stat-card print:shadow-none">
           <StatementHeader title="Statement of Financial Position" subtitle="Balance Sheet" asAt />
-            {!hasAssetData && liabilities.length === 0 && equity.length === 0 ? (
+            {!hasData ? (
               <p className="text-center py-12 text-muted-foreground">No balance sheet data. Create accounts and post journal entries.</p>
             ) : (
               <table className="data-table">
-                <thead><tr><th>Account</th><th className="text-right w-40">Balance</th></tr></thead>
+                <thead><tr><th>Account</th><th className="text-right w-40">Amount</th></tr></thead>
                 <tbody>
-                  {hasAssetData && <tr><td colSpan={2} className="font-semibold text-foreground bg-muted/40 py-2">Assets</td></tr>}
+                  {/* ─────────── ASSETS ─────────── */}
+                  <FaceCaption label="Assets" />
 
-                  {/* Current Assets */}
-                  {currentAssets.length > 0 && (
-                    <>
-                      <tr className="bg-muted/30">
-                        <td colSpan={2} className="font-semibold text-foreground text-sm py-1.5 pl-2">Current Assets</td>
-                      </tr>
-                      <SectionRows items={currentAssets} sign="debit" />
-                      <tr className="border-t border-border/50">
-                        <td className="pl-4 text-sm text-muted-foreground italic">Total Current Assets</td>
-                        <td className="text-right font-mono font-semibold">{fmt(totalCurrentAssets)}</td>
-                      </tr>
-                    </>
+                  <SectionCaption label="Non-Current Assets" />
+                  <SectionRows items={ppeAccounts} />
+                  {accumDepAccounts.map((a, i) => (
+                    <tr key={`accum-${i}`}>
+                      <td className="pl-8 text-foreground italic text-sm">Less: {a.name}</td>
+                      <td className="text-right font-mono text-destructive/80">{fmt(-getNetBalance(a))}</td>
+                    </tr>
+                  ))}
+                  {(ppeAccounts.length > 0 || accumDepAccounts.length > 0) && (
+                    <tr className="border-t border-border/40">
+                      <td className="pl-6 text-sm text-muted-foreground italic">Property, Plant &amp; Equipment — Net</td>
+                      <td className={`text-right font-mono ${netPPE >= 0 ? "" : "text-destructive"}`}>{fmt(netPPE)}</td>
+                    </tr>
                   )}
+                  {intangibleAccounts.length > 0 && <SectionRows items={intangibleAccounts} />}
+                  <SectionTotal label="Total Non-Current Assets" value={totalNonCurrentAssets} />
 
-                  {/* Non-Current Assets */}
-                  {(ppeAccounts.length > 0 || accumDepAccounts.length > 0 || intangibleAccounts.length > 0) && (
-                    <>
-                      <tr className="bg-muted/30">
-                        <td colSpan={2} className="font-semibold text-foreground text-sm py-1.5 pl-2">Non-Current Assets</td>
-                      </tr>
-                      <SectionRows items={ppeAccounts} sign="debit" />
-                      {accumDepAccounts.map((a, i) => {
-                        const bal = getNetBalance(a);
-                        return (
-                          <tr key={`accum-${i}`}>
-                            <td className="pl-8 text-foreground italic text-sm">Less: {a.name}</td>
-                            <td className="text-right font-mono text-destructive/80">{fmt(-bal)}</td>
-                          </tr>
-                        );
-                      })}
-                      {(ppeAccounts.length > 0 || accumDepAccounts.length > 0) && (
-                        <tr className="border-t border-border/50">
-                          <td className="pl-4 text-sm text-muted-foreground italic">Property, Plant &amp; Equipment — Net</td>
-                          <td className={`text-right font-mono font-semibold ${netPPE >= 0 ? "" : "text-destructive"}`}>
-                            {fmt(netPPE)}
-                          </td>
-                        </tr>
-                      )}
-                      <SectionRows items={intangibleAccounts} sign="debit" />
-                      <tr className="border-t border-border/50">
-                        <td className="pl-4 text-sm text-muted-foreground italic">Total Non-Current Assets</td>
-                        <td className="text-right font-mono font-semibold">{fmt(totalNonCurrentAssets)}</td>
-                      </tr>
-                    </>
+                  <SectionCaption label="Current Assets" />
+                  <SectionRows items={currentAssets} />
+                  <SectionTotal label="Total Current Assets" value={totalCurrentAssets} />
+
+                  <FaceTotal label="Total Assets" value={totalAssets} />
+
+                  {/* ─────── EQUITY AND LIABILITIES ─────── */}
+                  <FaceCaption label="Equity and Liabilities" />
+
+                  <SectionCaption label="Equity" />
+                  <SectionRows items={equity} />
+                  {retainedEarnings !== 0 && (
+                    <tr>
+                      <td className="pl-8 text-foreground italic">Net Income (Current Earnings)</td>
+                      <td className="text-right font-mono">{fmt(retainedEarnings)}</td>
+                    </tr>
                   )}
+                  <SectionTotal label="Total Equity" value={totalEquity} />
 
-                  <tr className="font-bold border-t-2 border-foreground/30">
-                    <td>Total Assets</td>
-                    <td className="text-right font-mono">{fmt(totalAssets)}</td>
-                  </tr>
-
-                  {liabilities.length > 0 && <tr><td colSpan={2} className="font-semibold text-foreground bg-muted/40 py-2">Liabilities</td></tr>}
-                  {currentLiabilities.length > 0 && (
-                    <>
-                      <tr className="bg-muted/30">
-                        <td colSpan={2} className="font-semibold text-foreground text-sm py-1.5 pl-2">Current Liabilities</td>
-                      </tr>
-                      <SectionRows items={currentLiabilities} sign="credit" />
-                      <tr className="border-t border-border/50">
-                        <td className="pl-4 text-sm text-muted-foreground italic">Total Current Liabilities</td>
-                        <td className="text-right font-mono font-semibold">{fmt(totalCurrentLiabilities)}</td>
-                      </tr>
-                    </>
-                  )}
                   {nonCurrentLiabilities.length > 0 && (
                     <>
-                      <tr className="bg-muted/30">
-                        <td colSpan={2} className="font-semibold text-foreground text-sm py-1.5 pl-2">Non-Current Liabilities</td>
-                      </tr>
-                      <SectionRows items={nonCurrentLiabilities} sign="credit" />
-                      <tr className="border-t border-border/50">
-                        <td className="pl-4 text-sm text-muted-foreground italic">Total Non-Current Liabilities</td>
-                        <td className="text-right font-mono font-semibold">{fmt(totalNonCurrentLiabilities)}</td>
-                      </tr>
+                      <SectionCaption label="Non-Current Liabilities" />
+                      <SectionRows items={nonCurrentLiabilities} />
+                      <SectionTotal label="Total Non-Current Liabilities" value={totalNonCurrentLiabilities} />
                     </>
                   )}
-                  {liabilities.length > 0 && <tr className="font-semibold border-t"><td className="pl-4">Total Liabilities</td><td className="text-right font-mono">{fmt(totalLiabilities)}</td></tr>}
 
-                  <tr><td colSpan={2} className="font-semibold text-foreground bg-muted/40 py-2">Equity</td></tr>
-                  <SectionRows items={equity} sign="credit" />
-                  {retainedEarnings !== 0 && (
-                    <tr><td className="pl-8 text-foreground italic">Net Income (Current Earnings)</td><td className="text-right font-mono">{fmt(retainedEarnings)}</td></tr>
-                  )}
-                  <tr className="font-semibold border-t"><td className="pl-4">Total Equity</td><td className="text-right font-mono">{fmt(totalEquity)}</td></tr>
+                  <SectionCaption label="Current Liabilities" />
+                  <SectionRows items={currentLiabilities} />
+                  <SectionTotal label="Total Current Liabilities" value={totalCurrentLiabilities} />
 
-                  <tr className="font-bold border-t-2 border-foreground/30 bg-primary/5">
-                    <td>Total Liabilities & Equity</td>
-                    <td className="text-right font-mono">{fmt(totalLiabEquity)}</td>
-                  </tr>
+                  <SectionTotal label="Total Liabilities" value={totalLiabilities} />
+
+                  <FaceTotal label="Total Equity and Liabilities" value={totalLiabEquity} />
                 </tbody>
               </table>
             )}
           <div className={`mt-4 px-4 py-2 rounded-md text-sm font-medium ${Math.abs(totalAssets - totalLiabEquity) < 0.01 ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
-            {Math.abs(totalAssets - totalLiabEquity) < 0.01 ? "✓ Balance sheet is balanced — Assets = Liabilities + Equity" : `✗ Out of balance by ${fmt(Math.abs(totalAssets - totalLiabEquity))}`}
+            {Math.abs(totalAssets - totalLiabEquity) < 0.01 ? "✓ Balanced — Total Assets = Total Equity and Liabilities" : `✗ Out of balance by ${fmt(Math.abs(totalAssets - totalLiabEquity))}`}
           </div>
         </div>
       </div>

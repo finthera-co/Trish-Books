@@ -158,8 +158,33 @@ export function useUpdateAsset() {
 export function useRunDepreciation() {
   const qc = useQueryClient();
   return useMutation({
+    // post_depreciation_period charges the whole month as one balanced journal
+    // with a debit and a credit line per asset. The per-asset edge function it
+    // replaces issued one journal per asset, which does not scale past a few
+    // dozen assets — a register of several hundred timed the function out.
     mutationFn: async (period: string) => {
-      return callAssetEngine({ event_type: "DEPRECIATION_POSTED", period });
+      const { data, error } = await supabase.rpc("post_depreciation_period", {
+        p_period: period,
+      });
+      if (error) throw error;
+      const r = (data ?? {}) as any;
+      const errors: string[] = [];
+      if (r.unresolved_accounts > 0) {
+        errors.push(
+          `${r.unresolved_accounts} asset(s) skipped — no depreciation expense or accumulated ` +
+          `depreciation account on their category. Set it under Assets → Asset Categories.`
+        );
+      }
+      return {
+        processed: Number(r.assets ?? 0),
+        skipped: Number(r.unresolved_accounts ?? 0),
+        amount: Number(r.amount ?? 0),
+        message: r.skipped_reason === "fiscal_period_closed"
+          ? "That month falls in a closed fiscal period — nothing was posted."
+          : undefined,
+        errors: errors.length ? errors : undefined,
+        journal_entry_ids: r.journal_entry_id ? [r.journal_entry_id] : [],
+      };
     },
     onSuccess: (result: any) => {
       invalidateAll(qc);
