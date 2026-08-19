@@ -196,7 +196,18 @@ export function isOpeningBalanceEquityAccount(account?: AccountIdentity | null):
   const name = account.account_name?.trim().toLowerCase();
   const subtype = account.account_subtype?.trim().toLowerCase();
 
-  return code === "3900" || name === "opening balance equity" || subtype === "opening balance equity";
+  // Code is the one identifier that can't collide with anything else, so it
+  // always wins outright. Name/subtype only count on a system-provisioned
+  // account (the real OBE account is always is_system) — otherwise a user
+  // naming or tagging their own account "Opening Balance Equity" (there's no
+  // "Share Capital" subtype to pick instead) gets treated as THE tenant's
+  // OBE account everywhere this helper is used: its own opening balance
+  // display gets silently overwritten with the real OBE account's balance
+  // (ChartOfAccounts.tsx), and it's excluded from the opening-balance form's
+  // account list (OpeningBalances.tsx).
+  if (code === "3900") return true;
+  if (!account.is_system) return false;
+  return name === "opening balance equity" || subtype === "opening balance equity";
 }
 
 // QuickBooks-style detail types (subtypes) per account type
