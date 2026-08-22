@@ -1,7 +1,9 @@
-import { useEffect } from "react";
-import { Outlet, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import GlobalTopNav from "./GlobalTopNav";
+import NavRail from "./NavRail";
+import AppsSidebar from "./AppsSidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { listVerifiedTotpFactors } from "@/hooks/useMfa";
 import { useIdleTimer } from "@/hooks/useIdleTimer";
@@ -9,7 +11,11 @@ import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import IdleWarningModal from "@/components/IdleWarningModal";
 import NetworkStatusOverlay from "@/components/NetworkStatusOverlay";
 import FullScreenLoader from "@/components/FullScreenLoader";
-import { useAppStore, useIsSwitching, useTenantId } from "@/stores/useAppStore";
+import KeyboardShortcutsDialog from "@/components/KeyboardShortcutsDialog";
+import { useGlobalKeyboard } from "@/hooks/useGlobalKeyboard";
+import { useAppStore, useHideSidebar, useIsSwitching, useTenantId } from "@/stores/useAppStore";
+import { useNavStore, moduleIdForPath } from "@/stores/useNavStore";
+import { MODULE_CONFIGS } from "@/config/modules";
 import { useQueryClient } from "@tanstack/react-query";
 
 export default function AppLayout() {
@@ -21,6 +27,22 @@ export default function AppLayout() {
   const tenantId = useTenantId();
   const setTenantId = useAppStore((s) => s.setTenantId);
   const queryClient = useQueryClient();
+  const location = useLocation();
+  const activeModule = useNavStore((s) => s.activeModule);
+  const setActiveModule = useNavStore((s) => s.setActiveModule);
+  const sidebarPinned = useNavStore((s) => s.sidebarPinned);
+  const hideSidebar = useHideSidebar();
+  const [sidebarHovered, setSidebarHovered] = useState(false);
+
+  useGlobalKeyboard();
+
+  // Derive the active module from the URL on every navigation — covers
+  // NavRail clicks, deep links, refreshes and back/forward.
+  useEffect(() => {
+    setActiveModule(moduleIdForPath(location.pathname));
+  }, [location.pathname, setActiveModule]);
+
+  const moduleConfig = activeModule ? MODULE_CONFIGS[activeModule] : null;
 
   // Keep global tenant store in sync with the authenticated user's tenant.
   // Passing queryClient triggers blocking prefetch of CRITICAL_QUERIES so
@@ -66,10 +88,31 @@ export default function AppLayout() {
     <div className="flex flex-col h-screen w-full overflow-hidden">
       <NetworkStatusOverlay isOffline={isOffline} isSlow={isSlow} />
       <GlobalTopNav />
-      <div className={`flex-1 flex flex-col min-w-0 overflow-hidden ${isSlow && !isOffline ? "mt-10" : ""}`}>
-        <Outlet />
+      <div className={`flex-1 flex flex-row min-w-0 overflow-hidden ${isSlow && !isOffline ? "mt-10" : ""}`}>
+        <NavRail />
+        {moduleConfig && !hideSidebar && (
+          sidebarPinned ? (
+            <AppsSidebar config={moduleConfig} />
+          ) : (
+            <div
+              className="relative w-3 shrink-0"
+              onMouseEnter={() => setSidebarHovered(true)}
+              onMouseLeave={() => setSidebarHovered(false)}
+            >
+              {sidebarHovered && (
+                <div className="absolute inset-y-0 left-0 z-40 shadow-xl">
+                  <AppsSidebar config={moduleConfig} />
+                </div>
+              )}
+            </div>
+          )
+        )}
+        <main className="flex-1 min-w-0 flex flex-col overflow-hidden bg-background">
+          <Outlet />
+        </main>
       </div>
       <IdleWarningModal open={isIdle && countdown > 0} countdown={countdown} onStayLoggedIn={resetIdle} />
+      <KeyboardShortcutsDialog />
       {(isSwitching || needsHydration) && <FullScreenLoader />}
     </div>
   );

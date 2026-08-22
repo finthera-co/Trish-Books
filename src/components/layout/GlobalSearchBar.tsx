@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, X } from "lucide-react";
-import { MODULE_CONFIGS } from "@/config/modules";
+import { Search, X, FileText, Receipt, CreditCard, DollarSign, BookText, Landmark } from "lucide-react";
+import { MODULE_CONFIGS, HOME_MODULES, SUPER_ADMIN_MODULES } from "@/config/modules";
 import { useAuth } from "@/contexts/AuthContext";
 
 type NavItem = {
+  kind: "page" | "action" | "module";
   label: string;
   path: string;
   icon: React.ElementType;
@@ -13,7 +14,16 @@ type NavItem = {
   moduleColor: string;
 };
 
-// Build flat list of all nav items from MODULE_CONFIGS
+const QUICK_ACTIONS: { label: string; path: string; icon: React.ElementType }[] = [
+  { label: "Create invoice", path: "/sales/invoices/new", icon: FileText },
+  { label: "Record expense", path: "/expenses/tracker", icon: Receipt },
+  { label: "New journal entry", path: "/accounting/journals", icon: BookText },
+  { label: "Reconcile bank", path: "/banking/reconciliation", icon: Landmark },
+  { label: "Run payroll", path: "/payroll/runs", icon: DollarSign },
+  { label: "Pay bills", path: "/accounting/pay-bills", icon: CreditCard },
+];
+
+// Build flat list of every searchable item — module sub-pages, quick actions, and the modules themselves.
 function buildNavItems(isSuperAdmin: boolean): NavItem[] {
   const items: NavItem[] = [];
   for (const mod of Object.values(MODULE_CONFIGS)) {
@@ -21,6 +31,7 @@ function buildNavItems(isSuperAdmin: boolean): NavItem[] {
     if (isSuperAdmin !== isSuperAdminModule) continue;
     for (const item of mod.sidebarItems) {
       items.push({
+        kind: "page",
         label: item.label,
         path: item.path,
         icon: item.icon,
@@ -30,8 +41,39 @@ function buildNavItems(isSuperAdmin: boolean): NavItem[] {
       });
     }
   }
+
+  if (!isSuperAdmin) {
+    for (const action of QUICK_ACTIONS) {
+      items.push({
+        kind: "action",
+        label: action.label,
+        path: action.path,
+        icon: action.icon,
+        moduleLabel: "Actions",
+        moduleIcon: action.icon,
+        moduleColor: "bg-primary",
+      });
+    }
+  }
+
+  const moduleCards = isSuperAdmin ? SUPER_ADMIN_MODULES : HOME_MODULES;
+  for (const mod of moduleCards) {
+    items.push({
+      kind: "module",
+      label: mod.label,
+      path: mod.path,
+      icon: mod.icon,
+      moduleLabel: "Modules",
+      moduleIcon: mod.icon,
+      moduleColor: mod.color,
+    });
+  }
+
   return items;
 }
+
+const KIND_ORDER: NavItem["kind"][] = ["module", "action", "page"];
+const KIND_LABEL: Record<NavItem["kind"], string> = { module: "Modules", action: "Actions", page: "Pages" };
 
 export default function GlobalSearchBar() {
   const navigate = useNavigate();
@@ -43,21 +85,32 @@ export default function GlobalSearchBar() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const allItems = buildNavItems(isSuperAdmin);
+  const hasQuery = query.trim().length > 0;
 
-  const filtered = query.trim()
+  const filtered = hasQuery
     ? allItems.filter(
         (item) =>
           item.label.toLowerCase().includes(query.toLowerCase()) ||
           item.moduleLabel.toLowerCase().includes(query.toLowerCase()) ||
           item.path.toLowerCase().includes(query.toLowerCase())
       )
-    : allItems;
+    : allItems.filter((item) => item.kind === "page");
 
-  // Group by module for the dropdown
-  const grouped: Record<string, NavItem[]> = {};
-  for (const item of filtered) {
-    if (!grouped[item.moduleLabel]) grouped[item.moduleLabel] = [];
-    grouped[item.moduleLabel].push(item);
+  // Searching: group by category (Modules / Actions / Pages).
+  // Browsing (no query): group by module, matching the sidebar's own structure.
+  const grouped: { heading: string; items: NavItem[] }[] = [];
+  if (hasQuery) {
+    for (const kind of KIND_ORDER) {
+      const items = filtered.filter((i) => i.kind === kind);
+      if (items.length) grouped.push({ heading: KIND_LABEL[kind], items });
+    }
+  } else {
+    const byModule = new Map<string, NavItem[]>();
+    for (const item of filtered) {
+      if (!byModule.has(item.moduleLabel)) byModule.set(item.moduleLabel, []);
+      byModule.get(item.moduleLabel)!.push(item);
+    }
+    for (const [heading, items] of byModule) grouped.push({ heading, items });
   }
 
   const flatFiltered = filtered; // for keyboard nav
@@ -117,17 +170,16 @@ export default function GlobalSearchBar() {
     }
   };
 
-  const groupEntries = Object.entries(grouped);
   const isEmpty = flatFiltered.length === 0;
 
   // Track flat index across groups for keyboard highlight
   let globalIdx = 0;
 
   return (
-    <div ref={containerRef} className="relative hidden sm:block">
+    <div ref={containerRef} className="relative hidden sm:block w-full max-w-xl">
       {/* Input */}
       <div
-        className={`flex items-center gap-2 bg-muted/60 border rounded-lg px-3.5 py-2 w-72 transition-all duration-200 ${
+        className={`flex items-center gap-2 bg-muted/60 border rounded-lg px-3.5 py-2 w-full transition-all duration-200 ${
           open
             ? "border-primary/50 shadow-sm bg-card"
             : "border-border focus-within:border-primary/40 focus-within:shadow-sm focus-within:bg-card"
@@ -163,7 +215,7 @@ export default function GlobalSearchBar() {
 
       {/* Dropdown */}
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 w-80 bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
+        <div className="absolute top-full left-0 mt-1.5 w-full min-w-[20rem] bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
           {isEmpty ? (
             <div className="py-10 text-center text-sm text-muted-foreground">
               No results for <span className="font-medium text-foreground">"{query}"</span>
@@ -180,9 +232,9 @@ export default function GlobalSearchBar() {
                   {flatFiltered.length} result{flatFiltered.length !== 1 ? "s" : ""}
                 </p>
               )}
-              {groupEntries.map(([modLabel, items]) => (
-                <div key={modLabel}>
-                  {/* Module group header */}
+              {grouped.map(({ heading, items }) => (
+                <div key={heading}>
+                  {/* Group header */}
                   <div className="flex items-center gap-2 px-3.5 py-1.5">
                     {(() => {
                       const first = items[0];
@@ -192,7 +244,7 @@ export default function GlobalSearchBar() {
                           <div className={`w-4 h-4 rounded flex items-center justify-center ${first.moduleColor} shrink-0`}>
                             <Icon className="w-2.5 h-2.5 text-primary-foreground" />
                           </div>
-                          <span className="text-[11px] font-semibold text-muted-foreground">{modLabel}</span>
+                          <span className="text-[11px] font-semibold text-muted-foreground">{heading}</span>
                         </>
                       );
                     })()}

@@ -1,7 +1,6 @@
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import WorkflowCanvas from "@/components/dashboard/workflow/WorkflowCanvas";
-import WorkflowRail from "@/components/dashboard/workflow/WorkflowRail";
 import { Loader2, ArrowRight, LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -53,10 +52,7 @@ function TenantHome() {
       </div>
 
       {/* Workflow Navigation */}
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-        <WorkflowCanvas />
-        <WorkflowRail />
-      </div>
+      <WorkflowCanvas />
     </div>
   );
 }

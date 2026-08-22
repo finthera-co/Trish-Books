@@ -3,16 +3,34 @@ import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useSubscriptionLimits } from "@/hooks/useSubscriptionLimits";
 import WorkflowChip from "./WorkflowChip";
+import { useWorkflowHover } from "./WorkflowHoverContext";
 import { WORKFLOW_RAILS, type RailItem } from "@/config/workflow";
 
 // Accent is neutral for rail items (they aren't tied to a process band), so
 // the chip renders in the app's primary token rather than a band color.
 const RAIL_ACCENT = "var(--primary)";
 
-function RailTile({ item, disabled, planName }: { item: RailItem; disabled: boolean; planName?: string | null }) {
+interface RailTileProps {
+  item: RailItem;
+  disabled: boolean;
+  planName?: string | null;
+  registerRef: (id: string, el: HTMLElement | null) => void;
+}
+
+function RailTile({ item, disabled, planName, registerRef }: RailTileProps) {
+  const { setHoveredId, isNodeActive } = useWorkflowHover();
+  const dimmed = !disabled && !isNodeActive(item.id);
+
   const content = (
     <div className="flex flex-col items-center gap-1">
-      <WorkflowChip icon={item.icon} accentVar={RAIL_ACCENT} size="sm" disabled={disabled} reason={disabled ? "locked" : undefined} />
+      <WorkflowChip
+        ref={(el) => registerRef(item.id, el)}
+        icon={item.icon}
+        accentVar={RAIL_ACCENT}
+        size="sm"
+        disabled={disabled}
+        reason={disabled ? "locked" : undefined}
+      />
       <span className="max-w-[76px] text-center text-[11px] font-medium leading-tight text-foreground">
         {item.label}
       </span>
@@ -20,16 +38,21 @@ function RailTile({ item, disabled, planName }: { item: RailItem; disabled: bool
   );
 
   const wrapperClassName = cn(
-    "inline-flex flex-col items-center rounded-md p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    "inline-flex flex-col items-center rounded-md p-1 transition-opacity duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
     disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer",
+    dimmed && "opacity-30",
   );
+  const hoverHandlers = {
+    onMouseEnter: () => setHoveredId(item.id),
+    onMouseLeave: () => setHoveredId(null),
+  };
 
   const inner = disabled ? (
-    <div role="button" aria-disabled="true" className={wrapperClassName}>
+    <div role="button" aria-disabled="true" className={wrapperClassName} {...hoverHandlers}>
       {content}
     </div>
   ) : (
-    <Link to={item.path} className={wrapperClassName}>
+    <Link to={item.path} className={wrapperClassName} {...hoverHandlers}>
       {content}
     </Link>
   );
@@ -44,7 +67,11 @@ function RailTile({ item, disabled, planName }: { item: RailItem; disabled: bool
   );
 }
 
-export default function WorkflowRail() {
+interface WorkflowRailProps {
+  registerRef: (id: string, el: HTMLElement | null) => void;
+}
+
+export default function WorkflowRail({ registerRef }: WorkflowRailProps) {
   const { isModuleAllowed, planName } = useSubscriptionLimits();
 
   return (
@@ -57,10 +84,11 @@ export default function WorkflowRail() {
           <div className="grid grid-cols-4 gap-2 p-3 lg:grid-cols-2">
             {group.items.map((item) => (
               <RailTile
-                key={item.path}
+                key={item.id}
                 item={item}
                 disabled={!isModuleAllowed(item.moduleId)}
                 planName={planName}
+                registerRef={registerRef}
               />
             ))}
           </div>

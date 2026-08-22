@@ -38,6 +38,12 @@ export interface WorkflowEdge {
   to: string; // node id
   fromSide: "right" | "bottom";
   toSide: "left" | "top";
+  /** "trunk" = the backbone connecting one band's process into the next; renders
+   *  bolder so the page reads as one continuous flow instead of separate bands.
+   *  "reveal" = hidden by default, drawn only while one of its two endpoints is
+   *  hovered — used for rail links, which would otherwise clutter the default
+   *  view. Defaults to "branch" (the ordinary lighter intra-band line). */
+  weight?: "trunk" | "branch" | "reveal";
 }
 
 export interface WorkflowBand {
@@ -49,6 +55,7 @@ export interface WorkflowBand {
 }
 
 export interface RailItem {
+  id: string; // stable, unique across the whole map — same id-space as WorkflowNode
   label: string;
   icon: LucideIcon;
   path: string;
@@ -90,6 +97,8 @@ export const WORKFLOW_BANDS: WorkflowBand[] = [
       { from: "vendors", to: "enter-bills", fromSide: "right", toSide: "left" },
       { from: "enter-bills", to: "pay-bills", fromSide: "right", toSide: "left" },
       { from: "procurement", to: "enter-bills", fromSide: "right", toSide: "left" },
+      // Closes the loop so AP Aging isn't a disconnected tile off to the side.
+      { from: "pay-bills", to: "ap-aging", fromSide: "right", toSide: "left" },
     ],
   },
   {
@@ -113,7 +122,12 @@ export const WORKFLOW_BANDS: WorkflowBand[] = [
       { from: "customers", to: "quotations", fromSide: "right", toSide: "left" },
       { from: "quotations", to: "create-invoice", fromSide: "right", toSide: "left" },
       { from: "create-invoice", to: "receive-payment", fromSide: "right", toSide: "left" },
+      // Bridges the "sell" chain into the "collect / adjust / report" chain so
+      // the whole band is one continuous line instead of two separate islands.
+      { from: "receive-payment", to: "invoices", fromSide: "right", toSide: "left" },
       { from: "invoices", to: "credit-notes", fromSide: "right", toSide: "left" },
+      { from: "credit-notes", to: "ar-aging", fromSide: "right", toSide: "left" },
+      { from: "ar-aging", to: "products-taxes", fromSide: "right", toSide: "left" },
     ],
   },
   {
@@ -134,14 +148,17 @@ export const WORKFLOW_BANDS: WorkflowBand[] = [
   },
 ];
 
+// The backbone of the whole canvas: each band's primary process chain feeds
+// into the next band's, so Purchases -> Sales -> Employees reads as one
+// continuous flow top-to-bottom rather than three separate diagrams. Source
+// nodes are each band's natural terminus (the end of its core chain), not
+// necessarily its rightmost column — e.g. AP Aging is a side report off
+// Purchases, so the trunk still leaves from Pay Bills.
 export const CROSS_BAND_EDGES: WorkflowEdge[] = [
-  { from: "pay-bills", to: "customers", fromSide: "bottom", toSide: "top" },
-  // Omitted: run-payroll -> receive-payment (top->bottom). Employees is the
-  // bottom-most band and Sales sits above it, so this edge would have to
-  // travel back up past the Employees band header and across the Purchases/
-  // Sales boundary — a long, crossing line with no real process meaning
-  // (payroll and AR collection aren't a workflow step into one another). It
-  // adds visual noise without adding information, so it stays out.
+  { from: "pay-bills", to: "customers", fromSide: "bottom", toSide: "top", weight: "trunk" },
+  // Cash collected from customers is what funds payroll — the natural link
+  // from the end of the core Sales chain into the start of Employees.
+  { from: "receive-payment", to: "employees", fromSide: "bottom", toSide: "top", weight: "trunk" },
 ];
 
 export const WORKFLOW_RAILS: RailGroup[] = [
@@ -149,27 +166,39 @@ export const WORKFLOW_RAILS: RailGroup[] = [
     id: "company",
     label: "Company",
     items: [
-      { label: "Chart of Accounts", icon: BookOpen, path: "/accounting/accounts", moduleId: "/accounting/accounts" },
-      { label: "Journal Entries", icon: FileText, path: "/accounting/journals", moduleId: "/accounting/journals" },
-      { label: "General Ledger", icon: Receipt, path: "/accounting/ledger", moduleId: "/accounting/ledger" },
-      { label: "Trial Balance", icon: FileText, path: "/accounting/trial-balance", moduleId: "/accounting/trial-balance" },
-      { label: "Fiscal Periods", icon: Calendar, path: "/accounting/fiscal-periods", moduleId: "/accounting/fiscal-periods" },
+      { id: "coa", label: "Chart of Accounts", icon: BookOpen, path: "/accounting/accounts", moduleId: "/accounting/accounts" },
+      { id: "journal-entries", label: "Journal Entries", icon: FileText, path: "/accounting/journals", moduleId: "/accounting/journals" },
+      { id: "general-ledger", label: "General Ledger", icon: Receipt, path: "/accounting/ledger", moduleId: "/accounting/ledger" },
+      { id: "trial-balance", label: "Trial Balance", icon: FileText, path: "/accounting/trial-balance", moduleId: "/accounting/trial-balance" },
+      { id: "fiscal-periods", label: "Fiscal Periods", icon: Calendar, path: "/accounting/fiscal-periods", moduleId: "/accounting/fiscal-periods" },
       // CONFIRM 2: /accounting/inventory no longer exists — the Inventory
       // feature was removed this session, not just this one route, so the
       // item is dropped from the rail rather than rendered disabled.
-      { label: "Fixed Assets", icon: Warehouse, path: "/assets/register", moduleId: "/assets/register" },
-      { label: "Settings", icon: Settings, path: "/settings/general", moduleId: "/settings/general" },
+      { id: "fixed-assets", label: "Fixed Assets", icon: Warehouse, path: "/assets/register", moduleId: "/assets/register" },
+      { id: "rail-settings", label: "Settings", icon: Settings, path: "/settings/general", moduleId: "/settings/general" },
     ],
   },
   {
     id: "banking",
     label: "Banking",
     items: [
-      { label: "Bank & Cards", icon: Landmark, path: "/accounting/bank-accounts", moduleId: "/accounting/bank-accounts" },
-      { label: "Reconcile", icon: Banknote, path: "/banking/reconciliation", moduleId: "/banking/reconciliation" },
-      { label: "Write Checks", icon: FileText, path: "/banking/write-checks", moduleId: "/banking/write-checks" },
-      { label: "Petty Cash", icon: Coins, path: "/banking/petty-cash", moduleId: "/banking/petty-cash" },
-      { label: "Replenishments", icon: RefreshCw, path: "/banking/petty-cash/replenishments", moduleId: "/banking/petty-cash/replenishments" },
+      { id: "bank-cards", label: "Bank & Cards", icon: Landmark, path: "/accounting/bank-accounts", moduleId: "/accounting/bank-accounts" },
+      { id: "reconcile", label: "Reconcile", icon: Banknote, path: "/banking/reconciliation", moduleId: "/banking/reconciliation" },
+      { id: "write-checks", label: "Write Checks", icon: FileText, path: "/banking/write-checks", moduleId: "/banking/write-checks" },
+      { id: "petty-cash", label: "Petty Cash", icon: Coins, path: "/banking/petty-cash", moduleId: "/banking/petty-cash" },
+      { id: "replenishments", label: "Replenishments", icon: RefreshCw, path: "/banking/petty-cash/replenishments", moduleId: "/banking/petty-cash/replenishments" },
     ],
   },
+];
+
+// Ties the utility rail into the same graph as the process bands — invisible
+// by default (weight: "reveal"), drawn only when hovering one of the two
+// endpoints, so the page shows "this step also touches the ledger/bank" on
+// demand without cluttering the default view with a dozen permanent lines.
+export const RAIL_EDGES: WorkflowEdge[] = [
+  { from: "enter-bills", to: "journal-entries", fromSide: "right", toSide: "left", weight: "reveal" },
+  { from: "create-invoice", to: "journal-entries", fromSide: "right", toSide: "left", weight: "reveal" },
+  { from: "run-payroll", to: "journal-entries", fromSide: "right", toSide: "left", weight: "reveal" },
+  { from: "pay-bills", to: "reconcile", fromSide: "right", toSide: "left", weight: "reveal" },
+  { from: "receive-payment", to: "reconcile", fromSide: "right", toSide: "left", weight: "reveal" },
 ];

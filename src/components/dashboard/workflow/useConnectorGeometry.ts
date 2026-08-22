@@ -34,15 +34,27 @@ function anchorPoint(rect: DOMRect, containerRect: DOMRect, side: WorkflowEdge["
   }
 }
 
-/** Orthogonal elbow with rounded corners between two anchor points. */
+/**
+ * Rounding a Z-shaped elbow (out - across - in) with two quarter-circles only
+ * looks right when there's enough room for both: the construction inherently
+ * overshoots the target's perpendicular coordinate by the corner radius, then
+ * curves back to it. With a full 8px radius that overshoot is invisible next
+ * to a normal elbow's travel distance, but when two nodes land only a few
+ * pixels apart on the axis perpendicular to travel (e.g. a band node and a
+ * rail item on nearly the same row), the overshoot is a large fraction of the
+ * whole gap and reads as a stray loop/S-curve. Below that threshold, corners
+ * go sharp (radius 0) instead of shrinking proportionally — a half-sized
+ * rounded corner still overshoots by half the gap, so there's no smooth
+ * middle ground; it's either a full radius or none.
+ */
 function buildPath(from: Point, to: Point, fromSide: WorkflowEdge["fromSide"], toSide: WorkflowEdge["toSide"]): string {
-  const r = CORNER_RADIUS;
-
   if (fromSide === "right" && toSide === "left") {
-    if (Math.abs(from.y - to.y) <= 2) {
+    const perpGap = Math.abs(from.y - to.y);
+    if (perpGap <= 2) {
       return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
     }
     const midX = from.x + (to.x - from.x) / 2;
+    const r = perpGap >= CORNER_RADIUS * 2 ? CORNER_RADIUS : 0;
     const dir1 = to.y > from.y ? 1 : -1;
     const dir2 = to.y > from.y ? -1 : 1;
     return [
@@ -56,10 +68,12 @@ function buildPath(from: Point, to: Point, fromSide: WorkflowEdge["fromSide"], t
   }
 
   if (fromSide === "bottom" && toSide === "top") {
-    if (Math.abs(from.x - to.x) <= 2) {
+    const perpGap = Math.abs(from.x - to.x);
+    if (perpGap <= 2) {
       return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
     }
     const midY = from.y + (to.y - from.y) / 2;
+    const r = perpGap >= CORNER_RADIUS * 2 ? CORNER_RADIUS : 0;
     const dir1 = to.x > from.x ? 1 : -1;
     const dir2 = to.x > from.x ? -1 : 1;
     return [

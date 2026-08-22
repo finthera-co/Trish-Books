@@ -29,7 +29,6 @@ import ModuleDashboard from "./pages/ModuleDashboard";
 import Home from "./pages/Home";
 import DashboardOverview from "./pages/DashboardOverview";
 import Notifications from "./pages/Notifications";
-import ShellPreview from "./pages/ShellPreview";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -187,9 +186,6 @@ const App = () => (
 
                 {/* Notifications feed (all alerts) — available to any signed-in user */}
                 <Route path="/notifications" element={<Notifications />} />
-
-                {/* Navigation shell v2 preview + toggle */}
-                <Route path="/preview/shell" element={<ShellPreview />} />
 
                 {/* ═══════════════════════════════════════════════════
                     SUPER ADMIN ONLY — Control Plane
