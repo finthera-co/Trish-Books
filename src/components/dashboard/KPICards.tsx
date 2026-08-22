@@ -4,7 +4,7 @@ import {
   Wallet, ShieldCheck, Activity, ArrowUpRight, ArrowDownRight,
   Layers, Gauge, Coins, Target, Clock, Zap,
   Settings2, X, Pin, PinOff, Check, CheckCircle2, AlertTriangle,
-  Users, Repeat, Package, RefreshCw, Banknote, Scale, PieChart, Receipt, Fuel,
+  Users, Repeat, Banknote, Scale, PieChart, Receipt, Fuel,
 } from "lucide-react";
 import { formatCurrencyShort } from "@/lib/currency";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -63,10 +63,7 @@ const KPI_COLORS: Record<string, string> = {
 
 function buildAllKPIs(m: DashboardMetrics): KPIItem[] {
   // Turnover ratios are annualized & use average balances (computed in the hook).
-  const inventoryTurnover = m.inventoryTurnover;
-  const daysInventory = inventoryTurnover ? 365 / inventoryTurnover : 0;
   const payablePeriod = m.apTurnover ? 365 / m.apTurnover : 0;
-  const cashConversionCycle = m.collectionPeriod + daysInventory - payablePeriod;
   const debtToEquity = safeDiv(m.totalLiabilities, m.equity);
   const debtRatio = safeDiv(m.totalLiabilities, m.totalAssets);
   const equityRatio = safeDiv(m.equity, m.totalAssets);
@@ -93,9 +90,6 @@ function buildAllKPIs(m: DashboardMetrics): KPIItem[] {
     { key: "collection_period", label: "Collection Period", value: days(m.collectionPeriod), formula: "365 \u00f7 AR Turnover", icon: Clock, status: m.collectionPeriod > 0 ? byTarget(m.collectionPeriod < 60) : "neutral", benchmark: "< 60 days", category: "Efficiency", color: C["Efficiency"] },
     { key: "ap_turnover", label: "AP Turnover", value: ratio(m.apTurnover), formula: "COGS \u00f7 Avg Accounts Payable", icon: Repeat, status: "neutral", category: "Efficiency", color: C["Efficiency"] },
     { key: "payable_period", label: "Payable Period", value: days(payablePeriod), formula: "365 \u00f7 AP Turnover", icon: Clock, status: "neutral", category: "Efficiency", color: C["Efficiency"] },
-    { key: "inventory_turnover", label: "Inventory Turnover", value: ratio(inventoryTurnover), formula: "COGS \u00f7 Avg Inventory (annualized)", icon: Package, status: "neutral", category: "Efficiency", color: C["Efficiency"] },
-    { key: "days_inventory", label: "Days Inventory", value: days(daysInventory), formula: "365 \u00f7 Inventory Turnover", icon: Clock, status: daysInventory > 0 ? byTarget(daysInventory < 90) : "neutral", benchmark: "< 90 days", category: "Efficiency", color: C["Efficiency"] },
-    { key: "cash_conversion_cycle", label: "Cash Conversion Cycle", value: days(cashConversionCycle), formula: "Collection + Days Inventory \u2212 Payable Period", icon: RefreshCw, status: byTarget(cashConversionCycle < 60), benchmark: "< 60 days", category: "Efficiency", color: C["Efficiency"] },
     { key: "total_inflows", label: "Total Inflows", value: fmt(m.totalInflows), formula: "Sum of cash debits", icon: ArrowUpRight, status: "neutral", category: "Cash Flow", color: C["Cash Flow"] },
     { key: "total_outflows", label: "Total Outflows", value: fmt(m.totalOutflows), formula: "Sum of cash credits", icon: ArrowDownRight, status: "neutral", category: "Cash Flow", color: C["Cash Flow"] },
     { key: "net_cash_flow", label: "Net Cash Flow", value: fmt(m.totalInflows - m.totalOutflows), formula: "Inflows \u2212 Outflows", icon: DollarSign, status: bySign(m.totalInflows - m.totalOutflows), benchmark: "positive", category: "Cash Flow", color: C["Cash Flow"] },
@@ -112,7 +106,7 @@ const ALL_KPI_KEYS = [
   "total_revenue", "gross_profit", "gross_margin", "operating_profit", "operating_margin", "net_profit", "net_profit_margin", "revenue_growth", "profit_per_employee",
   "current_ratio", "quick_ratio", "cash_ratio", "working_capital", "net_cash",
   "roa", "roe",
-  "asset_turnover", "ar_turnover", "collection_period", "ap_turnover", "payable_period", "inventory_turnover", "days_inventory", "cash_conversion_cycle",
+  "asset_turnover", "ar_turnover", "collection_period", "ap_turnover", "payable_period",
   "total_inflows", "total_outflows", "net_cash_flow", "cash_runway",
   "debt_to_equity", "debt_ratio", "equity_ratio",
   "budget_variance", "budget_variance_pct",

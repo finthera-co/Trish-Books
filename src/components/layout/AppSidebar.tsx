@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
+  Home,
   Building2,
   Users,
   UserCheck,
@@ -56,7 +57,8 @@ const navGroups: NavGroup[] = [
   {
     label: "Overview",
     items: [
-      { label: "Dashboard", path: "/home", icon: LayoutDashboard },
+      { label: "Home", path: "/home", icon: Home },
+      { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
     ],
   },
   {

@@ -15,14 +15,13 @@ import { generateRemainingLifeSchedule } from "@/lib/depreciation";
 
 // ─── Types ────────────────────────────────────────────────
 
-export type DocumentType = 
+export type DocumentType =
   | "invoice" | "payment_received" | "credit_note"
   | "bill" | "bill_payment" | "vendor_credit"
-  | "inventory_receipt" | "inventory_adjustment"
   | "asset_purchase" | "depreciation"
   | "opening_balance" | "manual";
 
-export type SubledgerType = "ar" | "ap" | "inventory" | "asset" | null;
+export type SubledgerType = "ar" | "ap" | "asset" | null;
 
 export interface PostingLine {
   account_id: string;
@@ -142,11 +141,6 @@ export async function validateSubledgerRequirements(
       case "ap":
         if (!line.vendor_id) {
           throw new Error("Subledger required for control account: Accounts Payable requires a vendor_id");
-        }
-        break;
-      case "inventory":
-        if (!line.item_id) {
-          throw new Error("Subledger required for control account: Inventory requires an item_id");
         }
         break;
       case "fixed_asset":
@@ -297,28 +291,6 @@ async function createSubledgerEntry(
       if (error) throw new Error(`AP subledger error: ${error.message}`);
       return data?.id || null;
     }
-    case "inventory": {
-      const { data, error } = await supabase
-        .from("inventory_subledger")
-        .insert({
-          tenant_id: tenantId,
-          item_id: entry.entity_id,
-          journal_line_id: journalLineId,
-          journal_id: journalEntryId,
-          document_type: entry.document_type,
-          document_id: entry.document_id,
-          debit: entry.debit || 0,
-          credit: entry.credit || 0,
-          balance,
-          amount: balance,
-          qty: entry.qty || 0,
-          rate: entry.rate || 0,
-        })
-        .select("id")
-        .single();
-      if (error) throw new Error(`Inventory subledger error: ${error.message}`);
-      return data?.id || null;
-    }
     case "asset": {
       const { data, error } = await supabase
         .from("asset_subledger")
@@ -352,7 +324,6 @@ function findMatchingLineIndex(entry: SubledgerEntry, lines: PostingLine[]): num
     const line = lines[i];
     if (entry.type === "ar" && line.customer_id === entry.entity_id) return i;
     if (entry.type === "ap" && line.vendor_id === entry.entity_id) return i;
-    if (entry.type === "inventory" && line.item_id === entry.entity_id) return i;
     if (entry.type === "asset" && line.asset_id === entry.entity_id) return i;
   }
   const isDebit = (entry.debit || 0) > 0;
@@ -555,7 +526,7 @@ export async function postCreditNote(params: {
 }
 
 /**
- * Post a bill: Dr Expense/Inventory / Cr AP + AP subledger
+ * Post a bill: Dr Expense / Cr AP + AP subledger
  */
 export async function postBill(params: {
   tenant_id: string;
@@ -612,20 +583,35 @@ export interface BillPaymentWht {
  * With WHT (settlement-based AIT): Dr AP (gross settled) / Cr Bank (net) /
  * Cr WHT Payable — and a wht_payable row in the tax sub-ledger linked to
  * the JE. Partial payments each carry their own WHT row.
+ *
+ * Multi-currency (foreign bills only — WHT is LKR-only, guarded by the
+ * caller): each settled bill was booked to AP at its OWN exchange_rate, but
+ * cash moves at the SETTLEMENT rate on the payment date. The difference is a
+ * realized FX gain/loss, plugged exactly like post-payment-received's AR
+ * mirror — Dr total vs Cr total, gain if debits exceed credits (paid less
+ * in base than AP was worth), loss otherwise.
  */
 export async function postBillPayment(params: {
   tenant_id: string;
   payment_id: string;
   vendor_id: string;
-  amount: number;          // gross AP settled
+  amount: number;          // gross AP settled, in base currency terms (sum of each allocation's amount_applied × its bill's exchange_rate)
   payment_date: string;
   bank_account_id: string;
   ap_account_id: string;
   reference?: string;
   wht?: BillPaymentWht | null;
+  /** Foreign-currency payment only: cash leg in base = gross_fc × settlement rate. */
+  fx?: {
+    net_bank_base: number;       // gross_fc converted at the settlement-date rate (before WHT, which is LKR-only)
+    fx_gain_account_id: string;
+    fx_loss_account_id: string;
+  } | null;
 }): Promise<PostingResult> {
   const wht = params.wht && params.wht.amount > 0 ? params.wht : null;
-  const netBank = Math.round((params.amount - (wht?.amount || 0)) * 100) / 100;
+  const netBank = params.fx
+    ? params.fx.net_bank_base
+    : Math.round((params.amount - (wht?.amount || 0)) * 100) / 100;
 
   const lines: PostingLine[] = [
     { account_id: params.ap_account_id, debit: params.amount, credit: 0, vendor_id: params.vendor_id },
@@ -633,6 +619,15 @@ export async function postBillPayment(params: {
   ];
   if (wht) {
     lines.push({ account_id: wht.wht_payable_account_id, debit: 0, credit: wht.amount });
+  }
+  if (params.fx) {
+    const fxDelta = Math.round(
+      (lines.reduce((s, l) => s + l.debit, 0) - lines.reduce((s, l) => s + l.credit, 0)) * 100,
+    ) / 100;
+    if (Math.abs(fxDelta) > 0.005) {
+      if (fxDelta > 0) lines.push({ account_id: params.fx.fx_gain_account_id, debit: 0, credit: fxDelta });
+      else lines.push({ account_id: params.fx.fx_loss_account_id, debit: -fxDelta, credit: 0 });
+    }
   }
 
   const result = await post({
@@ -663,7 +658,7 @@ export async function postBillPayment(params: {
       source_type: "bill_payment",
       source_id: params.payment_id,
       base_amount: wht.base_amount,
-      tax_amount: wht.amount, // TODO(multi-currency): convert at payment FX rate once FX infrastructure exists
+      tax_amount: wht.amount, // WHT is LKR-only — the caller never computes it for a foreign-currency bill payment
       tax_amount_txn_currency: wht.amount,
       currency: "LKR",
       fx_rate: 1,
@@ -795,48 +790,6 @@ export async function postVendorOpeningBalance(params: {
   });
 }
 
-/**
- * Post an inventory item opening balance:
- * Dr Inventory / Cr Opening Balance Equity + Inventory subledger
- */
-export async function postInventoryOpeningBalance(params: {
-  tenant_id: string;
-  item_id: string;
-  item_name: string;
-  amount: number;
-  qty: number;
-  rate: number;
-  inventory_account_id: string;
-  date: string;
-}): Promise<PostingResult> {
-  const obeAccountId = await getOBEAccountId(params.tenant_id);
-
-  return post({
-    tenant_id: params.tenant_id,
-    entry_date: params.date,
-    description: `Opening Balance - ${params.item_name}`,
-    source_type: "opening_balance",
-    source_id: params.item_id,
-    reference: `OB-INV-${params.item_name}`,
-    entry_type: "opening_balance",
-    lines: [
-      { account_id: params.inventory_account_id, debit: params.amount, credit: 0, item_id: params.item_id },
-      { account_id: obeAccountId, debit: 0, credit: params.amount },
-    ],
-    subledger_entries: [
-      {
-        type: "inventory",
-        entity_id: params.item_id,
-        document_type: "opening_balance",
-        document_id: params.item_id,
-        debit: params.amount,
-        credit: 0,
-        qty: params.qty,
-        rate: params.rate,
-      },
-    ],
-  });
-}
 
 /**
  * Post a fixed asset opening balance:
@@ -1063,7 +1016,6 @@ export function getSubledgerTypeFromAccount(accountSubtype: string | null | unde
   const lower = accountSubtype.toLowerCase();
   if (lower.includes("accounts receivable") || lower === "receivable") return "ar";
   if (lower.includes("accounts payable") || lower === "payable") return "ap";
-  if (lower.includes("inventory")) return "inventory";
   if (lower.includes("fixed asset") || lower.includes("accumulated depreciation")) return "asset";
   return null;
 }

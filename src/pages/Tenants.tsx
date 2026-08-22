@@ -553,7 +553,7 @@ export default function Tenants() {
               </p>
               <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
                 <li>All accounting data — chart of accounts, journals, ledgers, invoices, bills, payments</li>
-                <li>Customers, suppliers, inventory, fixed assets, budgets and reconciliations</li>
+                <li>Customers, suppliers, fixed assets, budgets and reconciliations</li>
                 <li>Employees, payroll history, attendance and leave records</li>
                 <li>Every user login for this company, including its admins</li>
                 <li>Uploaded files — invoice attachments, logos and employee photos</li>

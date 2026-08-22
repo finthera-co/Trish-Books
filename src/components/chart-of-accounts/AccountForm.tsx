@@ -15,13 +15,15 @@ import {
   suggestSubtypeFromCode,
 } from "@/lib/accountTypes";
 import { Sparkles } from "lucide-react";
-import { generateAccountCode, generateAccountCodeBanded } from "@/lib/accountCodeGenerator";
+import { useNextAccountCode } from "@/hooks/useData";
 import {
   buildAccountsMap,
   canCreateChildUnder,
   deriveAccountFlags,
   isDirectControl,
   canEditAccountType,
+  flattenAccountTree,
+  MAX_ACCOUNT_DEPTH,
 } from "@/lib/accountMappingEngine";
 import { usePersistedFormState } from "@/hooks/usePersistedFormState";
 
@@ -34,6 +36,8 @@ export interface Account {
   parent_account_id: string | null;
   category_id: string | null;
   is_active: boolean;
+  account_level?: number | null;
+  account_path?: string | null;
 }
 
 interface AccountFormProps {
@@ -68,6 +72,8 @@ interface AccountFormProps {
    * journal entry dialog) pass their own scope so drafts don't bleed across screens.
    */
   draftScope?: string;
+  /** Pre-seeds the parent when opened via "Add Sub-account". */
+  defaultParentId?: string | null;
 }
 
 type AccountDraft = {
@@ -104,6 +110,7 @@ export default function AccountForm({
   initialName,
   onUseExisting,
   draftScope = "coa",
+  defaultParentId,
 }: AccountFormProps) {
   // User-entered fields live in one persisted draft so a browser refresh
   // doesn't lose half-filled data. Scope the key per-record: the new-account
@@ -159,47 +166,66 @@ export default function AccountForm({
             }
           : d;
       });
-    } else if (initialName) {
-      // Opened from an account picker with text already typed: use it as the name,
-      // but never clobber a draft the user has already started.
-      setDraft((d) => (d.accountName ? d : { ...d, accountName: initialName }));
+    } else {
+      const seedParent = defaultParentId
+        ? accounts.find(a => a.id === defaultParentId)
+        : undefined;
+
+      if (seedParent) {
+        // Opened via "Add Sub-account": seed parent + inherited type, but
+        // never clobber a draft the user has already started.
+        setDraft((d) =>
+          d.parentId || d.accountName
+            ? d
+            : {
+                ...d,
+                accountType: seedParent.account_type,
+                parentId: seedParent.id,
+                categoryId: seedParent.category_id || "",
+              }
+        );
+      } else if (initialName) {
+        // Opened from an account picker with text already typed: use it as the name,
+        // but never clobber a draft the user has already started.
+        setDraft((d) => (d.accountName ? d : { ...d, accountName: initialName }));
+      }
     }
     setShowNewCategory(false);
     setNewCategoryName("");
     setShowNewSubtype(false);
     setNewSubtypeName("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editAccount, open]);
+  }, [editAccount, open, defaultParentId]);
 
-  // Auto-generate account code (new accounts only).
-  // Top-level → QuickBooks-style sub-band by subtype.
-  // Sub-account → preserve inherited child-stepping under the parent.
+  // Auto-generate account code (new accounts only) via the server-side
+  // next_account_code() RPC — the authoritative generator; see
+  // src/lib/accountCodeGenerator.ts for why client-side generation is retired.
+  // Root accounts band by subtype (mirrors the old generateAccountCodeBanded);
+  // children step numerically under the parent. Since the subtype starts
+  // empty on a fresh draft, this resolves in two hops: an un-banded/unstepped
+  // fallback code is fetched first, a subtype is guessed off it, and that
+  // subtype's presence in the query key triggers a second, correctly-banded
+  // fetch — converging without any manual orchestration.
+  const { data: suggestedCode, isFetching: codeLoading } = useNextAccountCode(
+    draft.accountType,
+    draft.parentId || null,
+    draft.accountSubtype || null,
+    open && !editAccount
+  );
+
   useEffect(() => {
-    if (editAccount) return;
-    if (!open) return;
-
+    if (editAccount || !open || !suggestedCode) return;
     setDraft((d) => {
-      let code: string;
-      let nextSubtype = d.accountSubtype;
-      if (d.parentId) {
-        // Child account: keep existing hierarchy stepping, unchanged.
-        code = generateAccountCode(d.accountType, d.parentId, accounts);
-        nextSubtype = d.accountSubtype || suggestSubtypeFromCode(code, d.accountType) || "";
-      } else {
-        // Top-level: band by subtype. First ensure we have a subtype to band on.
-        const effectiveSubtype =
-          d.accountSubtype || suggestSubtypeFromCode(
-            generateAccountCode(d.accountType, null, accounts),
-            d.accountType
-          ) || (ACCOUNT_SUBTYPES[d.accountType] || [])[0] || "";
-        nextSubtype = d.accountSubtype || effectiveSubtype;
-        code = generateAccountCodeBanded(d.accountType, effectiveSubtype, accounts);
-      }
-      if (d.accountCode === code && d.accountSubtype === nextSubtype) return d;
-      return { ...d, accountCode: code, accountSubtype: nextSubtype };
+      const nextSubtype =
+        d.accountSubtype ||
+        suggestSubtypeFromCode(suggestedCode, d.accountType) ||
+        (ACCOUNT_SUBTYPES[d.accountType] || [])[0] ||
+        "";
+      if (d.accountCode === suggestedCode && d.accountSubtype === nextSubtype) return d;
+      return { ...d, accountCode: suggestedCode, accountSubtype: nextSubtype };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft.accountType, draft.parentId, draft.accountSubtype, accounts, editAccount, open]);
+  }, [suggestedCode, editAccount, open]);
 
   const filteredCategories = categories.filter(c => c.account_type === draft.accountType);
   const subtypes = useMemo(
@@ -526,7 +552,7 @@ export default function AccountForm({
               </label>
               <input
                 type="text"
-                value={draft.accountCode}
+                value={codeLoading && !draft.accountCode ? "…" : draft.accountCode}
                 readOnly
                 className={`${inputClass} bg-muted/50 cursor-not-allowed ${isCodeDuplicate ? "!border-destructive !ring-destructive/20" : ""}`}
                 placeholder={numberRange ? `${numberRange.min}–${numberRange.max}` : ""}
@@ -537,7 +563,7 @@ export default function AccountForm({
                 </p>
               ) : (
                 <p className="text-[10px] text-muted-foreground mt-1">
-                  Auto-generated
+                  {codeLoading ? "Generating…" : "Auto-generated"}
                 </p>
               )}
             </div>
@@ -605,27 +631,30 @@ export default function AccountForm({
               className={inputClass}
             >
               <option value="">None (top-level)</option>
-              {accounts
-                ?.filter(a => {
-                  if (a.id === editAccount?.id) return false;
-                  if (a.account_type !== draft.accountType) return false;
-                  const acctMap = buildAccountsMap(accounts);
-                  const check = canCreateChildUnder(a, acctMap);
-                  return check.allowed;
-                })
-                .map(a => {
-                  const flags = deriveAccountFlags(a.account_subtype);
-                  return (
-                    <option key={a.id} value={a.id}>
-                      {a.account_code} — {a.account_name}
-                      {flags.is_control_account && flags.allow_sub_accounts ? " (allows sub-categories)" : ""}
-                    </option>
-                  );
-                })}
+              {flattenAccountTree(accounts, {
+                accountType: draft.accountType,
+                excludeSubtreeOf: editAccount?.id,
+              }).map(({ account: a, depth }) => {
+                const check = canCreateChildUnder(a, accountsMap);
+                const pad = "  ".repeat(depth);
+                const lvl = a.account_level ?? depth + 1;
+                return (
+                  <option key={a.id} value={a.id} disabled={!check.allowed}>
+                    {pad}{depth > 0 ? "└ " : ""}{a.account_code} — {a.account_name}
+                    {` · L${lvl}`}
+                    {!check.allowed ? " (max depth)" : ""}
+                  </option>
+                );
+              })}
             </select>
             {parentValidation && !parentValidation.allowed && (
               <p className="text-[10px] text-destructive mt-1 flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" /> {parentValidation.reason}
+              </p>
+            )}
+            {parentValidation?.warning && (
+              <p className="text-[10px] text-warning mt-1 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" /> {parentValidation.warning}
               </p>
             )}
             {missingRequiredParent && (
@@ -636,7 +665,9 @@ export default function AccountForm({
               </p>
             )}
             <p className="text-[10px] text-muted-foreground mt-1">
-              Control accounts (AR, AP, Inventory) cannot have sub-accounts — use their subledger modules instead.
+              Sub-accounts inherit the parent's account type and subledger routing.
+              Parents become summary accounts and can no longer be posted to directly.
+              Maximum depth is {MAX_ACCOUNT_DEPTH} levels.
             </p>
           </div>
 

@@ -5,6 +5,50 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { sortAccounts } from "@/lib/accountSort";
 
+// Maps the Postgres error codes raised by the deep-hierarchy COA constraints
+// (next_account_code, fn_set_account_level_path, fn_prevent_posting_non_postable,
+// fn_enforce_account_type_consistency — see 20260821000001_coa_deep_hierarchy.sql)
+// to messages a user can act on, instead of surfacing the raw "P000x: LABEL: ..." text.
+const ACCOUNT_ERROR_MESSAGES: Record<string, string> = {
+  P0002: "Maximum account depth (5 levels) reached. Choose a higher-level parent.",
+  P0003: "That account is a summary account. Post to one of its sub-accounts instead.",
+  P0004: "A sub-account must have the same account type as its parent.",
+  P0010: "Could not identify your organisation. Please sign out and back in.",
+  P0011: "No account number range is configured for that account type.",
+  P0012: "No account numbers remain in that range. Use a different parent or code.",
+  P0013: "The selected parent account is not available.",
+  "23505": "That account code is already in use. Choose a different code.",
+};
+
+export function friendlyAccountError(e: unknown): string {
+  const err = e as { code?: string; message?: string };
+  return (
+    (err?.code && ACCOUNT_ERROR_MESSAGES[err.code]) ||
+    err?.message?.replace(/^[A-Z_]+:\s*/, "") ||
+    "Could not save the account."
+  );
+}
+
+/** Server-generated account code — the client must never compute this itself. */
+export function useNextAccountCode(accountType: string, parentId: string | null, accountSubtype: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ["next_account_code", accountType, parentId, accountSubtype],
+    enabled: enabled && !!accountType,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("next_account_code", {
+        p_account_type: accountType,
+        p_parent_id: parentId,
+        p_account_subtype: accountSubtype,
+      });
+      if (error) throw error;
+      return data as string;
+    },
+  });
+}
+
 // Helper: Write audit log
 async function writeAuditLog(action: string, tableName: string, recordId?: string, details?: Record<string, any>) {
   try {
@@ -239,15 +283,7 @@ export function useCreateAccount() {
       queryClient.invalidateQueries({ queryKey: ["trial_balance"] });
       toast.success("Account created");
     },
-    onError: (e: any) => {
-      const code = e?.code;
-      const msg = String(e?.message || "");
-      if (code === "23505" || msg.includes("accounts_tenant_code_unique") || msg.toLowerCase().includes("duplicate key")) {
-        toast.error("That account code already exists. Please use a different code.");
-        return;
-      }
-      toast.error(e?.message || "Failed to create account");
-    },
+    onError: (e: unknown) => toast.error(friendlyAccountError(e)),
   });
 }
 
@@ -277,7 +313,7 @@ export function useUpdateAccount() {
       queryClient.invalidateQueries({ queryKey: ["balance_sheet"] });
       toast.success("Account updated");
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: unknown) => toast.error(friendlyAccountError(e)),
   });
 }
 
@@ -1372,7 +1408,7 @@ export function useProducts() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("products")
-        .select("*, taxes(tax_name, tax_rate), inventory_item:inventory_items(quantity_on_hand, selling_price, unit_cost, last_purchase_price)")
+        .select("*, taxes(tax_name, tax_rate)")
         .order("name");
       if (error) throw error;
       return data;
@@ -1384,7 +1420,7 @@ export function useCreateProduct() {
   const queryClient = useQueryClient();
   const { appUser } = useAuth();
   return useMutation({
-    mutationFn: async (product: { name: string; description?: string; price: number; tax_id?: string; default_tax_group_id?: string | null; default_tax_code_id?: string | null; income_account_id?: string; expense_account_id?: string; asset_account_id?: string; type?: string; inventory_item_id?: string; is_tracked?: never }) => {
+    mutationFn: async (product: { name: string; description?: string; sku?: string; price: number; tax_id?: string; default_tax_group_id?: string | null; default_tax_code_id?: string | null; income_account_id?: string; expense_account_id?: string; type?: string }) => {
       const { data, error } = await supabase.from("products").insert({
         ...product,
         tenant_id: appUser?.tenant_id,
@@ -1397,6 +1433,44 @@ export function useCreateProduct() {
       toast.success("Product created");
     },
     onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useProductSalesDetail(productId: string | undefined) {
+  return useQuery({
+    queryKey: ["product_sales_detail", productId],
+    queryFn: async () => {
+      const [productRes, itemsRes] = await Promise.all([
+        supabase.from("products").select("*, taxes(tax_name, tax_rate)").eq("id", productId!).single(),
+        supabase
+          .from("invoice_items")
+          .select("*, invoices(id, invoice_number, issue_date, status, customer_id, customers(name))")
+          .eq("product_id", productId!)
+          .order("issue_date", { foreignTable: "invoices", ascending: false }),
+      ]);
+      if (productRes.error) throw productRes.error;
+      if (itemsRes.error) throw itemsRes.error;
+
+      // invoice_items has no tenant_id of its own — RLS scopes rows via the
+      // parent invoice's tenant, so a null `invoices` join here just means the
+      // parent invoice was filtered out (shouldn't happen, but guard anyway).
+      const lines = (itemsRes.data || []).filter((l: any) => l.invoices);
+      const soldLines = lines.filter((l: any) => l.invoices.status !== "draft" && l.invoices.status !== "voided");
+
+      const totalQty = soldLines.reduce((s: number, l: any) => s + Number(l.quantity), 0);
+      const totalRevenue = soldLines.reduce((s: number, l: any) => s + Number(l.total), 0);
+      const invoiceCount = new Set(soldLines.map((l: any) => l.invoices.id)).size;
+
+      return {
+        product: productRes.data,
+        lines,
+        totalQty,
+        totalRevenue,
+        invoiceCount,
+        avgPrice: totalQty > 0 ? totalRevenue / totalQty : 0,
+      };
+    },
+    enabled: !!productId,
   });
 }
 

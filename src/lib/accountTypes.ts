@@ -223,7 +223,6 @@ export const ACCOUNT_SUBTYPES: Record<string, string[]> = {
     "Furniture & Equipment",
     "Vehicles",
     "Buildings",
-    "Inventory",
     "Prepaid Expenses",
     "Intangible Assets",
     "Accumulated Depreciation",
@@ -312,7 +311,6 @@ export const ACCOUNT_SUBTYPE_BANDS: Record<string, { min: number; max: number }>
   "Savings":                 { min: 1100, max: 1149 },
   "Bank":                    { min: 1100, max: 1149 },
   "Accounts Receivable":     { min: 1200, max: 1249 },
-  "Inventory":               { min: 1300, max: 1349 },
   "Prepaid Expenses":        { min: 1400, max: 1449 },
   "Other Current Assets":    { min: 1450, max: 1499 },
   // Long-term / fixed assets 1500–1999
@@ -443,7 +441,6 @@ export function suggestSubtypeFromCode(
     if (code >= 1100 && code <= 1149) return pick("Checking");
     if (code >= 1150 && code <= 1199) return pick("Savings");
     if (code >= 1200 && code <= 1299) return pick("Accounts Receivable");
-    if (code >= 1300 && code <= 1399) return pick("Inventory");
     if (code >= 1400 && code <= 1499) return pick("Prepaid Expenses");
     if (code >= 1500 && code <= 1599) return pick("Furniture & Equipment");
     if (code >= 1600 && code <= 1699) return pick("Vehicles");
@@ -538,7 +535,6 @@ export function suggestSubtypeFromCode(
 export const CONTROL_ACCOUNT_SUBTYPES = [
   "Accounts Receivable",
   "Accounts Payable",
-  "Inventory",
   "Fixed Assets",
   "Furniture & Equipment",
   "Vehicles",
@@ -549,7 +545,6 @@ export const CONTROL_ACCOUNT_SUBTYPES = [
 export const NO_SUB_ACCOUNTS_SUBTYPES = [
   "Accounts Receivable",
   "Accounts Payable",
-  "Inventory",
 ];
 
 /** Check if an account subtype allows sub-accounts underneath it */
@@ -574,7 +569,6 @@ export function getControlAccountModule(subledgerType: string | null | undefined
   switch (subledgerType) {
     case "customer": return "Customers";
     case "vendor": return "Vendors";
-    case "inventory": return "Inventory Items";
     case "fixed_asset": return "Fixed Assets";
     case "asset_depreciation": return "Depreciation Schedule";
     default: return null;
@@ -587,7 +581,6 @@ export function getControlAccountRoute(subledgerType: string | null | undefined)
   switch (subledgerType) {
     case "customer": return "/sales/customers";
     case "vendor": return "/accounting/vendors";
-    case "inventory": return "/accounting/inventory";
     case "fixed_asset": return "/assets/register";
     case "asset_depreciation": return "/assets/depreciation";
     default: return null;
@@ -598,7 +591,6 @@ export function getControlAccountRoute(subledgerType: string | null | undefined)
 export const SUBLEDGER_SUBTYPES = [
   "Accounts Receivable",
   "Accounts Payable",
-  "Inventory",
   "Fixed Assets",
 ];
 
@@ -619,9 +611,6 @@ export function deriveSubledgerFields(accountSubtype: string | null | undefined)
   }
   if (lower.includes("accounts payable") || lower === "payable") {
     return { requires_subledger: true, subledger_type: "vendor" };
-  }
-  if (lower.includes("inventory")) {
-    return { requires_subledger: true, subledger_type: "inventory" };
   }
   if (lower.includes("fixed asset") || lower.includes("furniture") || lower.includes("vehicle") || lower.includes("building")) {
     return { requires_subledger: true, subledger_type: "fixed_asset" };

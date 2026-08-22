@@ -549,11 +549,14 @@ function OBTable({
                       {formatCurrency(amt)}
                     </td>
                     <td className="px-4 py-2.5 text-center">
-                      <span className="text-xs">
-                        <span className={accountDR ? "text-info font-medium" : "text-muted-foreground"}>DR</span>
-                        {" / "}
-                        <span className={!accountDR ? "text-warning font-medium" : "text-muted-foreground"}>CR</span>
-                      </span>
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] font-semibold ${
+                          accountDR ? "border-info/30 bg-info/10 text-info" : "border-warning/30 bg-warning/10 text-warning"
+                        }`}
+                      >
+                        {accountDR ? "DR — Debit" : "CR — Credit"}
+                      </Badge>
                     </td>
                     <td className="px-4 py-2.5 text-center text-xs text-muted-foreground">
                       {entry.as_of_date || "—"}

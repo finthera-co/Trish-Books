@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { ChevronDown, ChevronRight, Plus, Trash2, Users, Package, Building2, AlertCircle } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Trash2, Users, Building2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/currency";
 import {
@@ -9,7 +9,7 @@ import {
   getSubledgerType,
 } from "@/hooks/useSubledger";
 import { useCustomers } from "@/hooks/useData";
-import { useVendors, useInventoryItems, useFixedAssets } from "@/hooks/useSubledger";
+import { useVendors, useFixedAssets } from "@/hooks/useSubledger";
 import {
   Tooltip,
   TooltipContent,
@@ -27,7 +27,6 @@ interface SubledgerExpansionProps {
 const ENTITY_LABELS: Record<string, { label: string; icon: typeof Users }> = {
   customer: { label: "Customer", icon: Users },
   vendor: { label: "Vendor", icon: Users },
-  inventory_item: { label: "Item", icon: Package },
   fixed_asset: { label: "Asset", icon: Building2 },
 };
 
@@ -88,7 +87,6 @@ function SubledgerTable({
   // Load entity options based on type
   const { data: customers } = useCustomers();
   const { data: vendors } = useVendors();
-  const { data: inventoryItems } = useInventoryItems();
   const { data: fixedAssets } = useFixedAssets();
 
   const entityOptions = useMemo(() => {
@@ -97,14 +95,12 @@ function SubledgerTable({
         return (customers || []).map((c: any) => ({ id: c.id, name: c.name }));
       case "vendor":
         return (vendors || []).map((v: any) => ({ id: v.id, name: v.name }));
-      case "inventory_item":
-        return (inventoryItems || []).map((i: any) => ({ id: i.id, name: i.item_name }));
       case "fixed_asset":
         return (fixedAssets || []).map((a: any) => ({ id: a.id, name: a.asset_name }));
       default:
         return [];
     }
-  }, [entityType, customers, vendors, inventoryItems, fixedAssets]);
+  }, [entityType, customers, vendors, fixedAssets]);
 
   const [newEntityId, setNewEntityId] = useState("");
   const [newAmount, setNewAmount] = useState("");

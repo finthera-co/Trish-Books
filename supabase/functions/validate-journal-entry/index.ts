@@ -28,6 +28,8 @@ interface JournalLine {
    */
   customer_id?: string | null;
   vendor_id?: string | null;
+  /** Optional Class tag -> journal_lines.cost_center_id (QuickBooks "Class" equivalent). */
+  cost_center_id?: string | null;
 }
 
 interface RequestBody {
@@ -36,6 +38,8 @@ interface RequestBody {
   reference?: string;
   /** Optional cheque / payment instrument number -> journal_entries.cheque_number. */
   cheque_number?: string | null;
+  /** Optional Location tag -> journal_entries.location_id (whole-transaction dimension). */
+  location_id?: string | null;
   lines: JournalLine[];
 }
 
@@ -102,7 +106,7 @@ Deno.serve(async (req) => {
     if (blocked) return blocked;
 
     const body: RequestBody = await req.json();
-    const { description, entry_date, reference, cheque_number, lines } = body;
+    const { description, entry_date, reference, cheque_number, location_id, lines } = body;
     const chequeNumber = (cheque_number ?? "").trim() || null;
 
     const errors: { field: string; message: string }[] = [];
@@ -236,7 +240,7 @@ Deno.serve(async (req) => {
           }
           // Control account check — allow but flag as needing subledger
           if (acc.account_subtype) {
-            const controlSubs = ["accounts receivable", "accounts payable", "inventory"];
+            const controlSubs = ["accounts receivable", "accounts payable"];
             const sub = acc.account_subtype.toLowerCase();
             if (controlSubs.some((c) => sub.includes(c))) {
               // Allow posting — subledger enforcement happens at UI level
@@ -282,6 +286,34 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ── 4c. Class / Location tags (QuickBooks dimension parity) ─────
+    const costCenterIds = [...new Set(activeLines.map((l) => l.cost_center_id).filter(Boolean))] as string[];
+    if (costCenterIds.length > 0) {
+      const { data: rows } = await adminClient
+        .from("cost_centers")
+        .select("id")
+        .in("id", costCenterIds)
+        .eq("tenant_id", appUser.tenant_id);
+      const found = new Set((rows || []).map((r) => r.id));
+      for (const ccid of costCenterIds) {
+        if (!found.has(ccid)) {
+          errors.push({ field: `cost_center_${ccid}`, message: "Class does not belong to your organization" });
+        }
+      }
+    }
+
+    if (location_id) {
+      const { data: locRow } = await adminClient
+        .from("locations")
+        .select("id")
+        .eq("id", location_id)
+        .eq("tenant_id", appUser.tenant_id)
+        .maybeSingle();
+      if (!locRow) {
+        errors.push({ field: "location_id", message: "Location does not belong to your organization" });
+      }
+    }
+
     // ── Return errors if any ────────────────────────────────────────
     if (errors.length > 0) {
       // Log the failed attempt
@@ -309,6 +341,7 @@ Deno.serve(async (req) => {
         entry_date,
         reference: reference?.trim() || null,
         cheque_number: chequeNumber,
+        location_id: location_id || null,
         created_by: appUser.id,
         status: "draft",
       })
@@ -332,6 +365,7 @@ Deno.serve(async (req) => {
       memo: (l.memo ?? "").trim() || null,
       customer_id: l.customer_id || null,
       vendor_id: l.vendor_id || null,
+      cost_center_id: l.cost_center_id || null,
     }));
 
     const { error: linesErr } = await adminClient.from("journal_lines").insert(journalLines);

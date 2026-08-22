@@ -1,12 +1,9 @@
 import { Plus, ArrowRight, Lock } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useProducts, useCreateProduct, useTaxes, useAccounts } from "@/hooks/useData";
-import { useUpsertInventoryItem } from "@/hooks/useProcurement";
 import { useTaxGroups, useTaxCodes } from "@/hooks/useTaxEngine";
-import { useInventoryRealtime } from "@/hooks/useInventoryRealtime";
-import { toast } from "sonner";
 import AccountSelector from "@/components/shared/AccountSelector";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,17 +15,17 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 type DefaultTaxValue = string;
 
 export default function ProductsTaxes() {
-  useInventoryRealtime();
+  const navigate = useNavigate();
   // Product form
   const [productOpen, setProductOpen] = useState(false);
   const [productName, setProductName] = useState("");
+  const [productSku, setProductSku] = useState("");
   const [productDesc, setProductDesc] = useState("");
   const [productPrice, setProductPrice] = useState(0);
   const [defaultTax, setDefaultTax] = useState<DefaultTaxValue>("");
   const [productAccountId, setProductAccountId] = useState("");
   const [productExpenseAccountId, setProductExpenseAccountId] = useState("");
-  const [productAssetAccountId, setProductAssetAccountId] = useState("");
-  const [productType, setProductType] = useState<"service" | "non_inventory" | "inventory">("service");
+  const [productType, setProductType] = useState<"service" | "non_inventory">("service");
 
   const { data: products, isLoading: productsLoading } = useProducts();
   const { data: taxes, isLoading: taxesLoading } = useTaxes();
@@ -36,7 +33,6 @@ export default function ProductsTaxes() {
   const { data: taxCodes } = useTaxCodes();
   const { data: accounts } = useAccounts();
   const createProduct = useCreateProduct();
-  const upsertInventoryItem = useUpsertInventoryItem();
 
   const revenueAccounts = accounts?.filter((a) => a.account_type === "Income" || a.account_type === "Other Income" || a.account_type === "Revenue") || [];
   const activeGroups = (taxGroups || []).filter((g) => g.is_active);
@@ -46,55 +42,26 @@ export default function ProductsTaxes() {
     const default_tax_group_id = defaultTax.startsWith("g:") ? defaultTax.slice(2) : null;
     const default_tax_code_id = defaultTax.startsWith("c:") ? defaultTax.slice(2) : null;
 
-    if (productType === "inventory") {
-      if (!productName || !productAssetAccountId || !productExpenseAccountId) {
-        toast.error("Inventory products require a name, an inventory asset account, and a COGS account.");
-        return;
-      }
-      // 1. Create the inventory_items master row (links asset + COGS accounts so the
-      //    activation trigger is satisfied and the post-invoice edge function can
-      //    resolve COGS/stock). 2. Create the products row linked to it.
-      const invId = await upsertInventoryItem.mutateAsync({
-        item_name: productName,
-        selling_price: productPrice,
-        unit_cost: 0,
-        account_id: productAssetAccountId,
-        cogs_account_id: productExpenseAccountId,
-        is_active: true,
-      });
-      await createProduct.mutateAsync({
-        name: productName,
-        description: productDesc || undefined,
-        price: productPrice,
-        default_tax_group_id,
-        default_tax_code_id,
-        income_account_id: productAccountId || undefined,
-        expense_account_id: productExpenseAccountId,
-        asset_account_id: productAssetAccountId,
-        type: "inventory",
-        inventory_item_id: invId,
-      });
-    } else {
-      await createProduct.mutateAsync({
-        name: productName,
-        description: productDesc || undefined,
-        price: productPrice,
-        default_tax_group_id,
-        default_tax_code_id,
-        income_account_id: productAccountId || undefined,
-        type: productType,
-        expense_account_id: productExpenseAccountId || undefined,
-      });
-    }
+    await createProduct.mutateAsync({
+      name: productName,
+      sku: productSku || undefined,
+      description: productDesc || undefined,
+      price: productPrice,
+      default_tax_group_id,
+      default_tax_code_id,
+      income_account_id: productAccountId || undefined,
+      type: productType,
+      expense_account_id: productExpenseAccountId || undefined,
+    });
     setProductOpen(false);
     setProductName("");
+    setProductSku("");
     setProductDesc("");
     setProductPrice(0);
     setDefaultTax("");
     setProductAccountId("");
     setProductType("service");
     setProductExpenseAccountId("");
-    setProductAssetAccountId("");
   };
 
   return (
@@ -121,10 +88,17 @@ export default function ProductsTaxes() {
               <DialogContent>
                 <DialogHeader><DialogTitle>Create Product/Service</DialogTitle></DialogHeader>
                 <div className="space-y-4 pt-4">
-                  <div>
-                    <label className="text-sm font-medium">Name</label>
-                    <input type="text" value={productName} onChange={(e) => setProductName(e.target.value)}
-                      className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" placeholder="Consulting Service" />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium">Name</label>
+                      <input type="text" value={productName} onChange={(e) => setProductName(e.target.value)}
+                        className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" placeholder="Consulting Service" />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium">SKU / Code</label>
+                      <input type="text" value={productSku} onChange={(e) => setProductSku(e.target.value)}
+                        className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground" placeholder="Optional" />
+                    </div>
                   </div>
                   <div>
                     <label className="text-sm font-medium">Description</label>
@@ -166,27 +140,18 @@ export default function ProductsTaxes() {
                   </div>
                   <div>
                     <label className="text-sm font-medium">Product Type</label>
-                    <select value={productType} onChange={(e) => setProductType(e.target.value as "service" | "non_inventory" | "inventory")}
+                    <select value={productType} onChange={(e) => setProductType(e.target.value as "service" | "non_inventory")}
                       className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground">
                       <option value="service">Service</option>
                       <option value="non_inventory">Non-Inventory</option>
-                      <option value="inventory">Inventory</option>
                     </select>
                   </div>
-                  {(productType === "non_inventory" || productType === "inventory") && (
+                  {productType === "non_inventory" && (
                     <div>
                       <label className="text-sm font-medium">COGS / Expense Account</label>
                       <p className="text-xs text-muted-foreground mt-0.5 mb-1">Debited when this product is sold</p>
                       <AccountSelector value={productExpenseAccountId} onChange={(id) => setProductExpenseAccountId(id)}
                         types={["Cost of Goods Sold", "Expense"]} placeholder="Search account…" />
-                    </div>
-                  )}
-                  {productType === "inventory" && (
-                    <div>
-                      <label className="text-sm font-medium">Inventory Asset Account</label>
-                      <p className="text-xs text-muted-foreground mt-0.5 mb-1">Stock-on-hand balance sheet account</p>
-                      <AccountSelector value={productAssetAccountId} onChange={(id) => setProductAssetAccountId(id)}
-                        types={["Asset"]} placeholder="Search account…" />
                     </div>
                   )}
                   <Button onClick={handleCreateProduct} disabled={!productName || createProduct.isPending} className="w-full">
@@ -204,11 +169,12 @@ export default function ProductsTaxes() {
               <p className="text-center py-8 text-muted-foreground">No products found. Create your first product.</p>
             ) : (
               <table className="data-table">
-                <thead><tr><th>Name</th><th>Description</th><th>Default Tax</th><th className="text-right">Price</th></tr></thead>
+                <thead><tr><th>Name</th><th>SKU</th><th>Description</th><th>Default Tax</th><th className="text-right">Price</th></tr></thead>
                 <tbody>
                   {products.map((p) => (
-                    <tr key={p.id}>
+                    <tr key={p.id} className="cursor-pointer hover:bg-muted/40" onClick={() => navigate(`/sales/products/${p.id}`)}>
                       <td className="font-medium text-foreground">{p.name}</td>
+                      <td className="text-muted-foreground">{(p as any).sku || "-"}</td>
                       <td className="text-muted-foreground">{p.description || "-"}</td>
                       <td>
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-secondary text-secondary-foreground">

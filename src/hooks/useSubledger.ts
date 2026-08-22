@@ -44,47 +44,6 @@ export function useCreateVendor() {
   });
 }
 
-// ─── Inventory Items ───────────────────────────────────────
-
-export function useInventoryItems() {
-  const { appUser } = useAuth();
-  return useQuery({
-    queryKey: ["inventory_items", appUser?.tenant_id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("inventory_items")
-        .select("*")
-        .eq("tenant_id", appUser!.tenant_id)
-        .order("item_name");
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!appUser?.tenant_id,
-  });
-}
-
-export function useCreateInventoryItem() {
-  const { appUser } = useAuth();
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (item: { item_name: string; sku?: string; description?: string; unit_cost?: number; quantity_on_hand?: number; account_id?: string }) => {
-      const { ...safeItem } = item as any;
-      const { data, error } = await supabase
-        .from("inventory_items")
-        .insert({ ...safeItem, tenant_id: appUser!.tenant_id })
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["inventory_items"] });
-      toast.success("Inventory item created");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-}
-
 // ─── Fixed Assets ──────────────────────────────────────────
 
 export function useFixedAssets() {
@@ -272,7 +231,6 @@ export function getSubledgerType(accountSubtype: string | null | undefined): str
   const lower = accountSubtype.toLowerCase();
   if (lower.includes("accounts receivable") || lower === "receivable") return "customer";
   if (lower.includes("accounts payable") || lower === "payable") return "vendor";
-  if (lower.includes("inventory")) return "inventory_item";
   if (lower.includes("fixed asset") || lower.includes("accumulated depreciation")) return "fixed_asset";
   return null;
 }

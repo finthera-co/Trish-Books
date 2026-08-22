@@ -6,8 +6,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
-import { useAccounts, useCreateAccount } from "@/hooks/useData";
-import { generateAccountCodeBanded } from "@/lib/accountCodeGenerator";
+import { useAccounts, useCreateAccount, useNextAccountCode } from "@/hooks/useData";
 import { ACCOUNT_TYPES, ACCOUNT_SUBTYPES, getSubtypesForType } from "@/lib/accountTypes";
 import { toast } from "sonner";
 
@@ -44,22 +43,10 @@ export default function QuickAddAccount({
   const [type, setType] = useState(accountType);
   const [subtype, setSubtype] = useState("");
 
-  const accountsForCodeGen = useMemo(
-    () =>
-      (allAccounts || []).map((a: { id: string; account_code: string; account_type: string; parent_account_id: string | null }) => ({
-        id: a.id,
-        account_code: a.account_code,
-        account_type: a.account_type,
-        parent_account_id: a.parent_account_id,
-      })),
-    [allAccounts]
-  );
-
-  // Auto-generated, top-level code inside the sub-band for the CURRENT type + subtype.
-  const autoCode = useMemo(
-    () => generateAccountCodeBanded(type, subtype, accountsForCodeGen),
-    [type, subtype, accountsForCodeGen]
-  );
+  // Auto-generated, top-level code inside the sub-band for the CURRENT type +
+  // subtype — server-generated via next_account_code(), the single source of
+  // truth for account numbering (see src/lib/accountCodeGenerator.ts header).
+  const { data: autoCode = "" } = useNextAccountCode(type, null, subtype || null, open);
 
   const existingCodes = useMemo(
     () => new Set(

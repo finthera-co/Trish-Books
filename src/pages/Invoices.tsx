@@ -220,13 +220,6 @@ export default function Invoices() {
       });
     }
 
-    // COGS / Inventory rows for tracked products
-    const trackedItems = (inv.invoice_items || []).filter((i: any) => i.inventory_item_id);
-    if (trackedItems.length > 0) {
-      lines.push({ side: "Dr", role: "COGS", note: "Per product — fallback to Default COGS", isMissing: false });
-      lines.push({ side: "Cr", role: "Inventory Asset", note: "Per product — fallback to Default Inventory Asset", isMissing: false });
-    }
-
     return lines;
   }, [postConfirmInvoice, settings, arAccountData, salesAccountData, taxPayableAccountData]);
 

@@ -11,10 +11,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/currency";
 import { useVendorsWithBalance, useCreateVendorWithOB, useUpdateVendor, useDeleteVendor } from "@/hooks/useSubledgerData";
+import { CURRENCIES } from "@/lib/currencies";
 
 const PAYEE_TYPES = ["resident_individual", "resident_company", "non_resident"];
 const NATURES = ["service_fee", "rent", "interest", "dividend", "royalty", "contractor", "other"];
 const prettify = (s: string) => s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+const PAYMENT_TERMS = [
+  { value: "due_on_receipt", label: "Due on receipt" },
+  { value: "net_15", label: "Net 15" },
+  { value: "net_30", label: "Net 30" },
+  { value: "net_45", label: "Net 45" },
+  { value: "net_60", label: "Net 60" },
+];
 
 export default function VendorsPage() {
   const navigate = useNavigate();
@@ -27,12 +35,14 @@ export default function VendorsPage() {
   const [form, setForm] = useState({
     name: "", email: "", phone: "", address: "", opening_balance: "",
     payee_type: "", default_payment_nature: "", tin: "", wht_exempt: false, wht_exemption_ref: "",
+    payment_terms: "net_30", currency: "LKR",
   });
 
   const resetForm = () => {
     setForm({
       name: "", email: "", phone: "", address: "", opening_balance: "",
       payee_type: "", default_payment_nature: "", tin: "", wht_exempt: false, wht_exemption_ref: "",
+      payment_terms: "net_30", currency: "LKR",
     });
     setEditId(null);
   };
@@ -51,6 +61,8 @@ export default function VendorsPage() {
       phone: form.phone || undefined,
       address: form.address || undefined,
       opening_balance: parseFloat(form.opening_balance) || 0,
+      payment_terms: form.payment_terms,
+      currency: form.currency,
       ...taxFields,
     };
     if (editId) {
@@ -67,6 +79,7 @@ export default function VendorsPage() {
       opening_balance: String(v.opening_balance || ""),
       payee_type: v.payee_type || "", default_payment_nature: v.default_payment_nature || "",
       tin: v.tin || "", wht_exempt: !!v.wht_exempt, wht_exemption_ref: v.wht_exemption_ref || "",
+      payment_terms: v.payment_terms || "net_30", currency: v.currency || "LKR",
     });
     setOpen(true);
   };
@@ -95,7 +108,27 @@ export default function VendorsPage() {
                 <div><Label>Phone</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
               </div>
               <div><Label>Address</Label><Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></div>
-              <div><Label>Opening Balance</Label><Input type="number" step="0.01" value={form.opening_balance} onChange={(e) => setForm({ ...form, opening_balance: e.target.value })} placeholder="0.00" /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><Label>Opening Balance</Label><Input type="number" step="0.01" value={form.opening_balance} onChange={(e) => setForm({ ...form, opening_balance: e.target.value })} placeholder="0.00" /></div>
+                <div>
+                  <Label>Payment Terms</Label>
+                  <Select value={form.payment_terms} onValueChange={(v) => setForm({ ...form, payment_terms: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {PAYMENT_TERMS.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Currency</Label>
+                  <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {CURRENCIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
 
               {/* Tax / withholding (AIT) attributes */}
               <div className="border-t pt-3 space-y-3">

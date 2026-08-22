@@ -30,7 +30,6 @@ import {
 import InlineOpeningBalance from "@/components/chart-of-accounts/InlineOpeningBalance";
 import { useSystemSetting } from "@/hooks/useOpeningBalanceSettings";
 import { useFiscalPeriods, usePeriodOpeningBalances, usePeriodAccountMovements, useCumulativeAccountMovements, useEnsureCurrentFiscalPeriod } from "@/hooks/useFiscalPeriodBalances";
-import { useInventoryAccountBalanceMap } from "@/hooks/useComputedInventoryValue";
 import { netAccountBalance } from "@/lib/accountBalances";
 import FiscalPeriodSelector from "@/components/FiscalPeriodSelector";
 
@@ -119,15 +118,8 @@ type PostedMovement = { debit: number; credit: number };
 function getAccountDisplayBalance(
   account: Account,
   periodOBMap?: Map<string, PostedMovement>,
-  computedBalanceMap?: Map<string, number>,
   movementsMap?: Map<string, PostedMovement>
 ): { balance: number; type: string } {
-  // Inventory (or any explicitly computed) control account overrides everything.
-  const computedVal = computedBalanceMap?.get(account.id);
-  if (computedVal !== undefined) {
-    return { balance: computedVal, type: "debit" };
-  }
-
   const isContra = isContraAccount(account);
 
   // Posted journal movement contribution. For balance-sheet accounts this map
@@ -174,15 +166,14 @@ function getAccountDisplayBalance(
 function computeRollupBalance(
   account: Account,
   periodOBMap?: Map<string, PostedMovement>,
-  computedBalanceMap?: Map<string, number>,
   movementsMap?: Map<string, PostedMovement>
 ): { balance: number; type: string } {
   // Own balance, expressed as a signed debit-positive number.
-  const own = getAccountDisplayBalance(account, periodOBMap, computedBalanceMap, movementsMap);
+  const own = getAccountDisplayBalance(account, periodOBMap, movementsMap);
   let signedDebitNet = own.type === "debit" ? own.balance : -own.balance;
 
   for (const child of account.children ?? []) {
-    const childRes = computeRollupBalance(child, periodOBMap, computedBalanceMap, movementsMap);
+    const childRes = computeRollupBalance(child, periodOBMap, movementsMap);
     signedDebitNet += childRes.type === "debit" ? childRes.balance : -childRes.balance;
   }
 
@@ -199,12 +190,12 @@ function AccountRow({
   onToggleActive,
   onDelete,
   onGenerateReport,
+  onAddChild,
   periodOBMap,
   isPeriodClosed,
   canEdit,
   parentIsControl,
   globalAccountsMap,
-  computedBalanceMap,
   movementsMap,
 }: {
   account: Account;
@@ -213,47 +204,57 @@ function AccountRow({
   onToggleActive: (a: Account) => void;
   onDelete: (a: Account) => void;
   onGenerateReport: (a: Account) => void;
+  onAddChild: (a: Account) => void;
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
   canEdit?: boolean;
   parentIsControl?: boolean;
   globalAccountsMap?: Map<string, MappableAccount>;
-  computedBalanceMap?: Map<string, number>;
   movementsMap?: Map<string, { debit: number; credit: number }>;
 }) {
   const [expanded, setExpanded] = useState(true);
   const navigate = useNavigate();
   const hasChildren = account.children && account.children.length > 0;
-  
+
   // Use global accounts map for full hierarchy resolution
   // useMemo must be called unconditionally (Rules of Hooks); fall back to it
   // only when no shared map is supplied.
   const fallbackAccountsMap = useMemo(() => buildAccountsMap([account]), [account]);
   const accountsMap = globalAccountsMap ?? fallbackAccountsMap;
-  
+
   const controlAcct = isDirectControl(account);
   const isControlled = isAccountControlled(account, accountsMap);
   const subledgerRoute = isControlled ? mapAccountRoute(account, accountsMap) : null;
   const subledgerModule = getModuleLabel(account, accountsMap);
-  const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap, computedBalanceMap, movementsMap);
-  const isComputedBalance = computedBalanceMap?.has(account.id) ?? false;
+  const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap, movementsMap);
 
   // Any account with children shows a rolled-up figure. computeRollupBalance
   // already folds in the account's OWN posted balance, so this is correct even
   // for postable control accounts (e.g. 1650 Accumulated Depreciation) that
   // both receive postings and sit above child accounts.
   const isParentAccount = (account.children?.length ?? 0) > 0;
-  const rollupResult = isParentAccount ? computeRollupBalance(account, periodOBMap, computedBalanceMap, movementsMap) : null;
+  const rollupResult = isParentAccount ? computeRollupBalance(account, periodOBMap, movementsMap) : null;
 
   // Determine if this account inherits control status from parent
   const isInheritedControl = !controlAcct && parentIsControl;
+
+  const childCheck = canCreateChildUnder(account, accountsMap);
 
   return (
     <>
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <tr className={`hover:bg-muted/20 transition-colors ${!account.is_active ? "opacity-50" : ""}`}>
-            <td style={{ paddingLeft: `${depth * 20 + 16}px` }}>
+          <tr className={`hover:!bg-muted/20 transition-colors ${!account.is_active ? "opacity-50" : ""}`}>
+            <td className="relative" style={{ paddingLeft: `${depth * 28 + 16}px` }}>
+              {depth > 0 &&
+                Array.from({ length: depth }).map((_, i) => (
+                  <span
+                    key={i}
+                    aria-hidden="true"
+                    className="absolute top-0 bottom-0 border-l border-border/50"
+                    style={{ left: `${i * 28 + 24}px` }}
+                  />
+                ))}
               <div className="flex items-center gap-2">
                 {hasChildren ? (
                   <button onClick={() => setExpanded(!expanded)} className="p-0.5 rounded hover:bg-muted">
@@ -328,25 +329,7 @@ function AccountRow({
               {getNormalBalance(account.account_type)}
             </td>
             <td className="text-right">
-              {isComputedBalance ? (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        onClick={() => subledgerRoute && navigate(subledgerRoute)}
-                        className="text-sm font-mono text-primary hover:underline cursor-pointer inline-flex items-center gap-1"
-                      >
-                        {formatCurrency(displayBalance)}
-                        <span className="text-[9px] font-sans text-muted-foreground bg-muted px-1 py-0.5 rounded">computed</span>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="left" className="max-w-[280px] text-xs">
-                      <p className="font-medium mb-1">Dynamically Computed</p>
-                      <p>This value is calculated in real-time from inventory items (qty × unit cost). It is never stored in the Chart of Accounts.</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              ) : (controlAcct || isInheritedControl) && subledgerRoute ? (
+              {(controlAcct || isInheritedControl) && subledgerRoute ? (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -392,6 +375,15 @@ function AccountRow({
               <div className="flex items-center justify-end gap-1">
                 {canEdit && (
                   <>
+                    {childCheck.allowed && (
+                      <button
+                        onClick={() => onAddChild(account)}
+                        className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-primary"
+                        title="Add sub-account"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     <button
                       onClick={() => onEdit(account)}
                       className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
@@ -436,6 +428,15 @@ function AccountRow({
           <ContextMenuItem onClick={() => onEdit(account)}>
             <Edit2 className="w-4 h-4 mr-2" /> Edit Account
           </ContextMenuItem>
+          {canEdit && (
+            <ContextMenuItem
+              onClick={() => onAddChild(account)}
+              disabled={!childCheck.allowed}
+              title={childCheck.reason ?? childCheck.warning ?? undefined}
+            >
+              <Plus className="w-4 h-4 mr-2" /> Add Sub-account
+            </ContextMenuItem>
+          )}
           {!(account as any).is_system && (
             <ContextMenuItem onClick={() => onDelete(account)} className="text-destructive focus:text-destructive">
               <Trash2 className="w-4 h-4 mr-2" /> Delete Account
@@ -452,12 +453,12 @@ function AccountRow({
           onToggleActive={onToggleActive}
           onDelete={onDelete}
           onGenerateReport={onGenerateReport}
+          onAddChild={onAddChild}
           periodOBMap={periodOBMap}
           isPeriodClosed={isPeriodClosed}
           canEdit={canEdit}
           parentIsControl={controlAcct || parentIsControl}
           globalAccountsMap={accountsMap}
-          computedBalanceMap={computedBalanceMap}
           movementsMap={movementsMap}
         />
       ))}
@@ -476,7 +477,6 @@ function FlatAccountRow({
   isPeriodClosed,
   canEdit,
   globalAccountsMap,
-  computedBalanceMap,
   movementsMap,
 }: {
   account: Account;
@@ -488,7 +488,6 @@ function FlatAccountRow({
   isPeriodClosed?: boolean;
   canEdit?: boolean;
   globalAccountsMap?: Map<string, MappableAccount>;
-  computedBalanceMap?: Map<string, number>;
   movementsMap?: Map<string, { debit: number; credit: number }>;
 }) {
   const navigate = useNavigate();
@@ -500,13 +499,12 @@ function FlatAccountRow({
   const isControlled = isAccountControlled(account, accountsMap);
   const subledgerRoute = isControlled ? mapAccountRoute(account, accountsMap) : null;
   const subledgerModule = getModuleLabel(account, accountsMap);
-  const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap, computedBalanceMap, movementsMap);
-  const isComputedBalance = computedBalanceMap?.has(account.id) ?? false;
+  const { balance: displayBalance, type: displayType } = getAccountDisplayBalance(account, periodOBMap, movementsMap);
 
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <tr className={`hover:bg-muted/20 transition-colors ${!account.is_active ? "opacity-50" : ""}`}>
+        <tr className={`hover:!bg-muted/20 transition-colors ${!account.is_active ? "opacity-50" : ""}`}>
           <td className="pl-4">
             <span className="font-mono text-xs text-muted-foreground">{account.account_code}</span>
           </td>
@@ -560,25 +558,7 @@ function FlatAccountRow({
             {getNormalBalance(account.account_type)}
           </td>
           <td className="text-right">
-            {isComputedBalance ? (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={() => subledgerRoute && navigate(subledgerRoute)}
-                      className="text-sm font-mono text-primary hover:underline cursor-pointer inline-flex items-center gap-1"
-                    >
-                      {formatCurrency(displayBalance)}
-                      <span className="text-[9px] font-sans text-muted-foreground bg-muted px-1 py-0.5 rounded">computed</span>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="left" className="max-w-[280px] text-xs">
-                    <p className="font-medium mb-1">Dynamically Computed</p>
-                    <p>This value is calculated in real-time from inventory items (qty × unit cost). It is never stored in the Chart of Accounts.</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            ) : (controlAcct || isControlled) && subledgerRoute ? (
+            {(controlAcct || isControlled) && subledgerRoute ? (
               <button
                 onClick={() => navigate(subledgerRoute)}
                 className="text-sm font-mono text-primary hover:underline cursor-pointer"
@@ -651,11 +631,11 @@ function TypeSection({
   onToggleActive,
   onDelete,
   onGenerateReport,
+  onAddChild,
   periodOBMap,
   isPeriodClosed,
   canEdit,
   globalAccountsMap,
-  computedBalanceMap,
   movementsMap,
 }: {
   typeGroup: TypeGroup;
@@ -663,11 +643,11 @@ function TypeSection({
   onToggleActive: (a: Account) => void;
   onDelete: (a: Account) => void;
   onGenerateReport: (a: Account) => void;
+  onAddChild: (a: Account) => void;
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
   canEdit?: boolean;
   globalAccountsMap?: Map<string, MappableAccount>;
-  computedBalanceMap?: Map<string, number>;
   movementsMap?: Map<string, { debit: number; credit: number }>;
 }) {
   const [expanded, setExpanded] = useState(true);
@@ -703,11 +683,11 @@ function TypeSection({
           onToggleActive={onToggleActive}
           onDelete={onDelete}
           onGenerateReport={onGenerateReport}
+          onAddChild={onAddChild}
           periodOBMap={periodOBMap}
           isPeriodClosed={isPeriodClosed}
           canEdit={canEdit}
           globalAccountsMap={globalAccountsMap}
-          computedBalanceMap={computedBalanceMap}
           movementsMap={movementsMap}
         />
       ))}
@@ -727,11 +707,11 @@ function TypeSection({
               onToggleActive={onToggleActive}
               onDelete={onDelete}
               onGenerateReport={onGenerateReport}
+              onAddChild={onAddChild}
               periodOBMap={periodOBMap}
               isPeriodClosed={isPeriodClosed}
               canEdit={canEdit}
               globalAccountsMap={globalAccountsMap}
-              computedBalanceMap={computedBalanceMap}
               movementsMap={movementsMap}
             />
           ))}
@@ -748,11 +728,11 @@ function CategorySection({
   onToggleActive,
   onDelete,
   onGenerateReport,
+  onAddChild,
   periodOBMap,
   isPeriodClosed,
   canEdit,
   globalAccountsMap,
-  computedBalanceMap,
   movementsMap,
 }: {
   category: CategoryGroup;
@@ -761,11 +741,11 @@ function CategorySection({
   onToggleActive: (a: Account) => void;
   onDelete: (a: Account) => void;
   onGenerateReport: (a: Account) => void;
+  onAddChild: (a: Account) => void;
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
   canEdit?: boolean;
   globalAccountsMap?: Map<string, MappableAccount>;
-  computedBalanceMap?: Map<string, number>;
   movementsMap?: Map<string, { debit: number; credit: number }>;
 }) {
   const [expanded, setExpanded] = useState(true);
@@ -774,7 +754,7 @@ function CategorySection({
   return (
     <>
       <tr
-        className="cursor-pointer hover:bg-muted/20 transition-colors bg-muted/5"
+        className="cursor-pointer hover:!bg-muted/20 transition-colors bg-muted/5"
         onClick={() => setExpanded(!expanded)}
       >
         <td colSpan={4} style={{ paddingLeft: "32px" }}>
@@ -794,11 +774,11 @@ function CategorySection({
           onToggleActive={onToggleActive}
           onDelete={onDelete}
           onGenerateReport={onGenerateReport}
+          onAddChild={onAddChild}
           periodOBMap={periodOBMap}
           isPeriodClosed={isPeriodClosed}
           canEdit={canEdit}
           globalAccountsMap={globalAccountsMap}
-          computedBalanceMap={computedBalanceMap}
           movementsMap={movementsMap}
         />
       ))}
@@ -835,6 +815,13 @@ export default function ChartOfAccounts() {
       setEditUi({ editId: null });
       clearEditUi();
     }
+  };
+
+  const [parentSeedId, setParentSeedId] = useState<string | null>(null);
+  const handleAddChild = (a: Account) => {
+    setEditAccount(null);
+    setParentSeedId(a.id);
+    setFormOpen(true);
   };
 
   const [deleteAccount, setDeleteAccount] = useState<Account | null>(null);
@@ -921,9 +908,6 @@ export default function ChartOfAccounts() {
   const globalAccountsMap = useMemo(() => {
     return buildAccountsMap(((accounts as any[]) || []) as MappableAccount[]);
   }, [accounts]);
-
-  // Computed inventory balance — never stored, always derived
-  const computedBalanceMap = useInventoryAccountBalanceMap(accounts as any[]);
 
   // Posted journal movement per account WITHIN the selected period — used for
   // P&L accounts, which reset each fiscal year. Server-side filtered by period
@@ -1061,6 +1045,7 @@ export default function ChartOfAccounts() {
   const handleCreate = async (data: any) => {
     await createAccount.mutateAsync(data);
     setFormOpen(false);
+    setParentSeedId(null);
   };
 
   const handleEdit = async (data: any) => {
@@ -1133,7 +1118,7 @@ export default function ChartOfAccounts() {
             <Download className="w-4 h-4 mr-1" /> Export
           </Button>
           <COAHealthCheck accounts={(accounts as any[]) || []} />
-          {hasEditPermission && <Button onClick={() => setFormOpen(true)}>
+          {hasEditPermission && <Button onClick={() => { setParentSeedId(null); setFormOpen(true); }}>
             <Plus className="w-4 h-4" /> Add Account
           </Button>}
         </div>
@@ -1212,11 +1197,11 @@ export default function ChartOfAccounts() {
               <tr>
                 <th>Account</th>
                 <th className="w-24">Normal Bal.</th>
-                <th className="w-36 text-right">Opening Balance</th>
+                <th className="w-36 text-right">Closing Balance</th>
                 <th className="w-24 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="[&>tr:nth-child(odd)]:!bg-[hsl(var(--success)/16%)] [&>tr:nth-child(even)]:!bg-background">
               {typeGroups.map((tg) => (
                 <TypeSection
                   key={tg.type}
@@ -1225,11 +1210,11 @@ export default function ChartOfAccounts() {
                   onToggleActive={handleToggleActive}
                   onDelete={(a) => setDeleteAccount(a)}
                   onGenerateReport={(a) => navigate(`/accounting/accounts/${a.id}/report`)}
+                  onAddChild={handleAddChild}
                   periodOBMap={periodOBMap}
                   isPeriodClosed={isPeriodClosed}
                   canEdit={hasEditPermission}
                   globalAccountsMap={globalAccountsMap}
-                  computedBalanceMap={computedBalanceMap}
                   movementsMap={movementsMap}
                 />
               ))}
@@ -1246,11 +1231,11 @@ export default function ChartOfAccounts() {
                 <th className="w-36">Category</th>
                 <th className="w-36">Detail Type</th>
                 <th className="w-24">Normal Bal.</th>
-                <th className="w-32 text-right">Opening Balance</th>
+                <th className="w-32 text-right">Closing Balance</th>
                 <th className="w-24 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="[&>tr:nth-child(odd)]:!bg-[hsl(var(--success)/16%)] [&>tr:nth-child(even)]:!bg-background">
               {filteredAccounts
                 .sort((a, b) => a.account_code.localeCompare(b.account_code))
                 .map(account => (
@@ -1265,7 +1250,6 @@ export default function ChartOfAccounts() {
                     isPeriodClosed={isPeriodClosed}
                     canEdit={hasEditPermission}
                     globalAccountsMap={globalAccountsMap}
-                    computedBalanceMap={computedBalanceMap}
                     movementsMap={movementsMap}
                   />
                 ))}
@@ -1277,12 +1261,13 @@ export default function ChartOfAccounts() {
       {/* Create form */}
       <AccountForm
         open={formOpen}
-        onOpenChange={setFormOpen}
+        onOpenChange={(o) => { setFormOpen(o); if (!o) setParentSeedId(null); }}
         onSubmit={handleCreate}
         accounts={(accounts as Account[]) || []}
         categories={categories || []}
         isPending={createAccount.isPending}
         existingCodes={existingCodes}
+        defaultParentId={parentSeedId}
         onCreateCategory={async (data) => {
           const result = await createCategory.mutateAsync(data);
           return result;

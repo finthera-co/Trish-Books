@@ -11,6 +11,8 @@ import {
 import { useAccountCategories, useCreateAccountCategory } from "@/hooks/useAccountCategories";
 import { useVendors } from "@/hooks/useSubledger";
 import SubledgerTagPicker from "@/components/journal/SubledgerTagPicker";
+import { useAccountSettings } from "@/hooks/useAccountSettings";
+import { useCostCenters, useLocations } from "@/hooks/useDimensions";
 import { useSearchParams } from "react-router-dom";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
@@ -58,12 +60,13 @@ interface CreateLine {
   memo: string;
   customer_id: string | null;
   vendor_id: string | null;
+  cost_center_id: string | null;
 }
 
 /* One definition of "an untouched form", used both to reset it and to decide
  * whether there is a draft worth keeping. They must not drift apart. */
 const blankLine = (): CreateLine =>
-  ({ account_id: "", debit: 0, credit: 0, memo: "", customer_id: null, vendor_id: null });
+  ({ account_id: "", debit: 0, credit: 0, memo: "", customer_id: null, vendor_id: null, cost_center_id: null });
 const today = () => new Date().toISOString().split("T")[0];
 const emptyForm = () => ({
   entryDate: today(),
@@ -117,6 +120,14 @@ export default function JournalEntries() {
   // Register's "Cheque No" column — the same column a bank import fills in.
   const [chequeNumber, setChequeNumber] = useState("");
   const [lines, setLines] = useState<CreateLine[]>(() => [blankLine(), blankLine()]);
+  // Raw text mid-edit for a debit/credit cell, e.g. "500+300" before it's
+  // resolved into a number. Keyed by `${lineIndex}-${field}`; a cell falls
+  // back to the line's numeric value once its draft is cleared on blur/Enter.
+  const [amountDrafts, setAmountDrafts] = useState<Record<string, string>>({});
+
+  // The auto-filled JV reference appears on its own the moment the dialog
+  // opens; only a line the user actually typed makes this worth keeping.
+  const formHasContent = lines.some((l) => l.account_id || Number(l.debit) > 0 || Number(l.credit) > 0 || l.memo.trim());
 
   // A typed-but-unposted entry survives anything that stops it from reaching
   // the server: a dropped connection, an expired token, a closed tab. The draft
@@ -126,9 +137,7 @@ export default function JournalEntries() {
     scope: appUser ? `${appUser.tenant_id}:${appUser.id}` : null,
     value: { entryDate, reference, chequeNumber, lines },
     baseline: emptyForm(),
-    // The auto-filled JV reference appears on its own the moment the dialog
-    // opens; only a line the user actually typed makes this worth keeping.
-    hasContent: lines.some((l) => l.account_id || Number(l.debit) > 0 || Number(l.credit) > 0 || l.memo.trim()),
+    hasContent: formHasContent,
     ready: open,
     onRestore: useCallback((draft) => {
       setEntryDate(draft.entryDate || today());
@@ -163,6 +172,13 @@ export default function JournalEntries() {
   const { data: accounts } = useAccounts();
   const { data: customers } = useCustomers();
   const { data: vendors } = useVendors();
+  const { data: accountSettings } = useAccountSettings();
+  const { data: costCenters } = useCostCenters();
+  const { data: locations } = useLocations();
+  const classTrackingEnabled = !!accountSettings?.class_tracking_enabled;
+  const locationTrackingEnabled = !!accountSettings?.location_tracking_enabled;
+  const locationLabel = accountSettings?.location_label || "Location";
+  const [locationId, setLocationId] = useState("");
   const { data: accountCategories } = useAccountCategories();
   const createAccount = useCreateAccount();
   const createAccountCategory = useCreateAccountCategory();
@@ -330,9 +346,14 @@ export default function JournalEntries() {
   const totalPosted = stats?.posted ?? 0;
   const totalVoided = stats?.voided ?? 0;
 
-  const addLine = () => setLines([...lines, { account_id: "", debit: 0, credit: 0, memo: "", customer_id: null as string | null, vendor_id: null as string | null }]);
+  const addLine = () => setLines([...lines, blankLine()]);
   const removeLine = (index: number) => {
-    if (lines.length > 2) setLines(lines.filter((_, i) => i !== index));
+    if (lines.length > 2) {
+      setLines(lines.filter((_, i) => i !== index));
+      // Drafts are keyed by index; removing a line shifts everything after
+      // it, so any in-progress expression would land on the wrong row.
+      setAmountDrafts({});
+    }
   };
 
   const updateLine = (index: number, field: string, value: any) => {
@@ -351,7 +372,43 @@ export default function JournalEntries() {
       (newLines[index] as any)["debit"] = 0;
     }
     (newLines[index] as any)[field] = value;
+
+    // With exactly two lines it's a simple debit/credit pair — mirror the
+    // amount onto the other line's opposite side so it balances automatically.
+    if (newLines.length === 2 && (field === "debit" || field === "credit")) {
+      const otherIndex = index === 0 ? 1 : 0;
+      const otherField = field === "debit" ? "credit" : "debit";
+      (newLines[otherIndex] as any)[otherField] = value;
+      (newLines[otherIndex] as any)[field] = 0;
+    }
     setLines(newLines);
+  };
+
+  // Resolves a typed amount expression like "500+300" or "1000-200.50" into
+  // a single non-negative number. Unrecognized characters are dropped rather
+  // than rejected, so a stray paste doesn't dead-end the cell.
+  const evaluateAmountExpression = (raw: string): number => {
+    const cleaned = raw.replace(/[^0-9.+-]/g, "");
+    const tokens = cleaned.match(/[+-]?\d*\.?\d+/g);
+    if (!tokens) return 0;
+    const total = tokens.reduce((sum, t) => sum + parseFloat(t), 0);
+    return Number.isFinite(total) ? Math.max(0, total) : 0;
+  };
+
+  const amountDraftKey = (index: number, field: "debit" | "credit") => `${index}-${field}`;
+
+  // While typing, the cell shows the raw expression untouched. On blur/Enter
+  // it resolves to a number and hands off to updateLine like any other edit.
+  const resolveAmountDraft = (index: number, field: "debit" | "credit") => {
+    const key = amountDraftKey(index, field);
+    const draft = amountDrafts[key];
+    if (draft === undefined) return;
+    setAmountDrafts((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    updateLine(index, field, draft.trim() === "" ? 0 : evaluateAmountExpression(draft));
   };
 
   // Inline notice for a line. Only an inactive account is an actual problem;
@@ -368,7 +425,6 @@ export default function JournalEntries() {
       const subledgerType = requiresSubledgerBreakdown(acc);
       if (subledgerType === "customer") return { text: "AR control account — posts fine; tag a customer to keep the aging tied", blocking: false };
       if (subledgerType === "vendor") return { text: "AP control account — posts fine; tag a vendor to keep the aging tied", blocking: false };
-      if (subledgerType === "inventory") return { text: "Inventory control account — posts fine; quantities stay untouched", blocking: false };
       if (subledgerType === "fixed_asset") return { text: "Fixed asset control account — posts fine; the asset register stays untouched", blocking: false };
       return null;
     },
@@ -387,6 +443,7 @@ export default function JournalEntries() {
           memo: normalizeLineMemo(l.memo),
           customer_id: l.customer_id || null,
           vendor_id: l.vendor_id || null,
+          cost_center_id: l.cost_center_id || null,
         }));
 
       let data: { valid?: boolean; errors?: { message: string }[] } | null = null;
@@ -399,6 +456,7 @@ export default function JournalEntries() {
           entry_date: entryDate,
           reference: reference.trim() || undefined,
           cheque_number: chequeNumber.trim() || undefined,
+          location_id: locationId || undefined,
           lines: activeLines,
         });
       } catch (e) {
@@ -440,6 +498,8 @@ export default function JournalEntries() {
     setChequeNumber(blank.chequeNumber);
     setEntryDate(blank.entryDate);
     setLines(blank.lines);
+    setAmountDrafts({});
+    setLocationId("");
   };
 
   const handleCreate = async () => {
@@ -578,12 +638,23 @@ export default function JournalEntries() {
           <DialogTrigger asChild>
             <Button><Plus className="w-4 h-4" /> New Entry</Button>
           </DialogTrigger>
-          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Create Journal Entry</DialogTitle>
-              <DialogDescription>
-                Double-entry validated. Describe each line — control accounts (AR/AP) are excluded, use Invoices or Bills for those.
-              </DialogDescription>
+          <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
+            <DialogHeader className="flex-row items-start justify-between space-y-0 pr-8">
+              <div>
+                <DialogTitle>Create Journal Entry</DialogTitle>
+                <DialogDescription>
+                  Double-entry validated. Describe each line — control accounts (AR/AP) are excluded, use Invoices or Bills for those.
+                </DialogDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { clearDraft(); resetForm(); setReference(nextJvReference ?? ""); }}
+                disabled={!formHasContent}
+                className="shrink-0"
+              >
+                Clear
+              </Button>
             </DialogHeader>
             <div className="space-y-4 pt-4">
               {restoredAt !== null && (
@@ -597,7 +668,7 @@ export default function JournalEntries() {
                 />
               )}
               {/* Header fields. No entry-level description: each line carries its own. */}
-              <div className="grid grid-cols-3 gap-4 max-w-2xl">
+              <div className={`grid gap-4 max-w-2xl ${locationTrackingEnabled ? "grid-cols-2 md:grid-cols-4" : "grid-cols-3"}`}>
                 <div>
                   <label className="text-sm font-medium text-foreground">
                     Date <span className="text-destructive">*</span>
@@ -637,6 +708,21 @@ export default function JournalEntries() {
                   />
                   <p className="text-[10px] text-muted-foreground mt-0.5">Shows in the Account Register</p>
                 </div>
+                {locationTrackingEnabled && (
+                  <div>
+                    <label className="text-sm font-medium text-foreground">{locationLabel}</label>
+                    <select
+                      value={locationId}
+                      onChange={(e) => setLocationId(e.target.value)}
+                      className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+                    >
+                      <option value="">Not set</option>
+                      {(locations || []).map((l) => (
+                        <option key={l.id} value={l.id}>{l.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               {/* Journal Lines */}
@@ -669,22 +755,26 @@ export default function JournalEntries() {
                               onCreateNew={(q) => setNewAccountFor({ lineIndex: i, name: q })}
                             />
                             <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={line.debit || ""}
-                              onChange={(e) => updateLine(i, "debit", Number(e.target.value))}
+                              type="text"
+                              inputMode="decimal"
+                              value={amountDrafts[amountDraftKey(i, "debit")] ?? (line.debit || "")}
+                              onChange={(e) => setAmountDrafts((prev) => ({ ...prev, [amountDraftKey(i, "debit")]: e.target.value }))}
+                              onBlur={() => resolveAmountDraft(i, "debit")}
+                              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
                               className="text-sm border border-input rounded-md px-2.5 py-1.5 bg-background text-foreground text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
                               placeholder="0.00"
+                              title="You can type an expression, e.g. 500+300"
                             />
                             <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={line.credit || ""}
-                              onChange={(e) => updateLine(i, "credit", Number(e.target.value))}
+                              type="text"
+                              inputMode="decimal"
+                              value={amountDrafts[amountDraftKey(i, "credit")] ?? (line.credit || "")}
+                              onChange={(e) => setAmountDrafts((prev) => ({ ...prev, [amountDraftKey(i, "credit")]: e.target.value }))}
+                              onBlur={() => resolveAmountDraft(i, "credit")}
+                              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
                               className="text-sm border border-input rounded-md px-2.5 py-1.5 bg-background text-foreground text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
                               placeholder="0.00"
+                              title="You can type an expression, e.g. 500+300"
                             />
                             <input
                               type="text"
@@ -735,6 +825,22 @@ export default function JournalEntries() {
                                   : (vendors || []).map((v) => ({ id: v.id, name: v.name }))
                               }
                             />
+                          )}
+                          {classTrackingEnabled && (
+                            <div className="flex items-center gap-2 pl-1">
+                              <span className="text-[11px] text-muted-foreground shrink-0">Class</span>
+                              <select
+                                value={line.cost_center_id ?? ""}
+                                onChange={(e) => updateLine(i, "cost_center_id", e.target.value || null)}
+                                aria-label={`Class for line ${i + 1}`}
+                                className="text-xs border border-input rounded-md px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors max-w-[16rem]"
+                              >
+                                <option value="">Not set</option>
+                                {(costCenters || []).map((cc) => (
+                                  <option key={cc.id} value={cc.id}>{cc.name}</option>
+                                ))}
+                              </select>
+                            </div>
                           )}
                           {lineNotice && (
                             <div
@@ -812,7 +918,7 @@ export default function JournalEntries() {
                 <span>
                   Every line carries its own description, which is what the General Ledger and Account Register show
                   against that account; the entry is filed under the first line's description. Entries are validated
-                  both client-side and server-side. Control accounts (A/R, A/P, Inventory) are automatically
+                  both client-side and server-side. Control accounts (A/R, A/P) are automatically
                   excluded — post to those via Invoices, Bills, or Payments.
                 </span>
               </div>

@@ -1,6 +1,7 @@
 import type { GLAccountNode, GLTransactionRow } from "@/hooks/useGeneralLedger";
+import { isPeriodBasedAccount } from "@/lib/accountTypes";
 
-export type GLRowKind = "account-header" | "txn" | "account-total" | "grand-total";
+export type GLRowKind = "account-header" | "opening-balance" | "txn" | "account-total" | "grand-total";
 
 export interface GLReportRow {
   kind: GLRowKind;
@@ -26,6 +27,14 @@ export interface BuildGLOptions {
    * descendants and its "- Other" row). Used by the Trial Balance drill-through.
    */
   focusAccountId?: string | null;
+  /**
+   * Pre-formatted p_date_from label. When set, every leaf / "- Other" account
+   * section starts with an explicit "Opening Balance" row (own_opening),
+   * matching the Account Register and standard General Ledger practice.
+   * Omitted for period-based (P&L) accounts, which never carry an opening
+   * balance — see isPeriodBasedAccount.
+   */
+  openingBalanceDate?: string;
 }
 
 interface BuildGLResult {
@@ -231,7 +240,19 @@ export function buildGeneralLedgerRows(
       continue;
     }
 
-    // Leaf or "- Other" node: render its own transactions, then its own total.
+    // Leaf or "- Other" node: opening balance, then its own transactions, then its own total.
+    if (options?.openingBalanceDate && !isPeriodBasedAccount(node.account_type)) {
+      rows.push({
+        kind: "opening-balance",
+        depth: node.depth,
+        key: `opening:${node.node_key}`,
+        nodeKey: node.node_key,
+        accountId: node.account_id,
+        label: `Opening Balance — ${options.openingBalanceDate}`,
+        balance: node.own_opening,
+      });
+    }
+
     const txns = txnsByAccount.get(node.account_id);
     if (txns === undefined) {
       rows.push({ kind: "txn", depth: node.depth, key: `loading:${node.node_key}`, nodeKey: node.node_key, isLoadingTxns: true });

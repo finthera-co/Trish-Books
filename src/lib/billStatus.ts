@@ -1,6 +1,6 @@
 import { differenceInCalendarDays } from "date-fns";
 
-export type BillStatus = "draft" | "posted" | "partial" | "paid" | "overdue";
+export type BillStatus = "draft" | "posted" | "partial" | "paid" | "overdue" | "voided";
 
 export interface BillWithStatus {
   id: string;
@@ -16,6 +16,7 @@ export function computeBillStatus(bill: BillWithStatus): BillStatus {
   const amountPaid = Number(bill.amount_paid ?? 0);
   const balanceDue = totalAmount - amountPaid;
 
+  if (bill.status === "voided") return "voided";
   if (bill.status === "draft") return "draft";
   if (balanceDue <= 0.005 || bill.status === "paid") return "paid";
 
@@ -38,4 +39,5 @@ export const BILL_STATUS_BADGE: Record<
   partial: { label: "Partial", variant: "outline" },
   paid:    { label: "Paid",    variant: "default" },
   overdue: { label: "Overdue", variant: "destructive" },
+  voided:  { label: "Voided",  variant: "secondary" },
 };

@@ -74,7 +74,7 @@ export default function QuoteDocument({ quote, company }: Props) {
           {items.map((it: any, idx: number) => (
             <tr key={it.id || idx} className="border-b border-neutral-100 align-top">
               <td className="py-2.5 px-3 text-neutral-400">{idx + 1}</td>
-              <td className="py-2.5 px-3">{it.description || "—"}</td>
+              <td className="py-2.5 px-3 whitespace-pre-line">{it.description || "—"}</td>
               <td className="py-2.5 px-3 text-right tabular-nums">{Number(it.quantity)}</td>
               <td className="py-2.5 px-3 text-right tabular-nums">{formatCurrency(Number(it.unit_price))}</td>
               {hasLineDiscount && <td className="py-2.5 px-3 text-right tabular-nums text-neutral-500">{discountCell(it)}</td>}

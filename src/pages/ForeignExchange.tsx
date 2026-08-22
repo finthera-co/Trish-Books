@@ -11,21 +11,24 @@ import { formatCurrency } from "@/lib/currency";
 import { useAccountSettings } from "@/hooks/useAccountSettings";
 import {
   useExchangeRates, useUpsertExchangeRate, useFxRevaluations, useRunFxRevaluation,
+  useApFxRevaluations, useRunApFxRevaluation,
 } from "@/hooks/useForeignExchange";
 import { formatDate } from "@/lib/format";
-
-const CURRENCIES = ["USD", "EUR", "GBP", "INR", "AUD", "SGD", "JPY", "AED"];
+import { FOREIGN_CURRENCIES as CURRENCIES } from "@/lib/currencies";
 
 export default function ForeignExchange() {
   const navigate = useNavigate();
   const { data: settings } = useAccountSettings();
   const { data: rates, isLoading } = useExchangeRates();
   const { data: revals } = useFxRevaluations();
+  const { data: apRevals } = useApFxRevaluations();
   const upsertRate = useUpsertExchangeRate();
   const runReval = useRunFxRevaluation();
+  const runApReval = useRunApFxRevaluation();
 
   const [rateForm, setRateForm] = useState({ currency: "USD", rate_date: new Date().toISOString().split("T")[0], rate_to_base: "" });
   const [periodEnd, setPeriodEnd] = useState(new Date().toISOString().split("T")[0]);
+  const [apPeriodEnd, setApPeriodEnd] = useState(new Date().toISOString().split("T")[0]);
 
   const fxConfigured = !!settings?.fx_gain_account_id && !!settings?.fx_loss_account_id;
 
@@ -42,7 +45,7 @@ export default function ForeignExchange() {
         <Button variant="ghost" size="icon" onClick={() => navigate(-1)}><ArrowLeft className="w-4 h-4" /></Button>
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2"><Coins className="w-6 h-6 text-primary" /> Foreign Exchange</h1>
-          <p className="text-sm text-muted-foreground">Maintain rates and run period-end AR revaluation (base currency: LKR)</p>
+          <p className="text-sm text-muted-foreground">Maintain rates and run period-end AR/AP revaluation (base currency: LKR)</p>
         </div>
       </div>
 
@@ -78,9 +81,9 @@ export default function ForeignExchange() {
           </CardContent>
         </Card>
 
-        {/* Period-end revaluation */}
+        {/* AR period-end revaluation */}
         <Card className="lg:col-span-2">
-          <CardHeader><CardTitle className="text-base">Period-end revaluation</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">AR period-end revaluation</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
               Revalues all open foreign-currency invoices to the closing rate, posts one net FX adjustment dated the period end, and an
@@ -93,6 +96,29 @@ export default function ForeignExchange() {
               </div>
               <Button onClick={() => runReval.mutate(periodEnd)} disabled={!fxConfigured || runReval.isPending}>
                 <RefreshCw className="w-4 h-4 mr-1.5" /> {runReval.isPending ? "Running…" : "Run revaluation"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        <div className="hidden lg:block lg:col-span-1" />
+        {/* AP period-end revaluation */}
+        <Card className="lg:col-span-2">
+          <CardHeader><CardTitle className="text-base">AP period-end revaluation</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Revalues all open foreign-currency bills to the closing rate, posts one net FX adjustment dated the period end, and an
+              automatic reversal the next day. Since AP is a liability, a foreign bill costing MORE in base is a loss (the mirror image of AR).
+            </p>
+            <div className="flex items-end gap-3">
+              <div>
+                <Label>Period end date</Label>
+                <Input type="date" value={apPeriodEnd} onChange={(e) => setApPeriodEnd(e.target.value)} />
+              </div>
+              <Button onClick={() => runApReval.mutate(apPeriodEnd)} disabled={!fxConfigured || runApReval.isPending}>
+                <RefreshCw className="w-4 h-4 mr-1.5" /> {runApReval.isPending ? "Running…" : "Run revaluation"}
               </Button>
             </div>
           </CardContent>
@@ -124,10 +150,10 @@ export default function ForeignExchange() {
         </CardContent>
       </Card>
 
-      {/* Revaluation history */}
+      {/* AR revaluation history */}
       {(revals || []).length > 0 && (
         <Card>
-          <CardHeader><CardTitle className="text-base">Revaluation history</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">AR revaluation history</CardTitle></CardHeader>
           <CardContent className="p-0">
             <Table>
               <TableHeader><TableRow><TableHead>Period end</TableHead><TableHead>Invoice</TableHead><TableHead>Currency</TableHead><TableHead className="text-right">Open (FC)</TableHead><TableHead className="text-right">FX delta (LKR)</TableHead></TableRow></TableHeader>
@@ -136,6 +162,31 @@ export default function ForeignExchange() {
                   <TableRow key={r.id}>
                     <TableCell className="text-muted-foreground">{formatDate(r.period_end)}</TableCell>
                     <TableCell className="font-medium">{(r.invoices as any)?.invoice_number || "—"}</TableCell>
+                    <TableCell>{r.currency}</TableCell>
+                    <TableCell className="text-right tabular-nums font-mono">{Number(r.open_amount_fc).toFixed(2)}</TableCell>
+                    <TableCell className={`text-right tabular-nums font-semibold ${Number(r.fx_delta) >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>
+                      {Number(r.fx_delta) >= 0 ? "+" : ""}{formatCurrency(Number(r.fx_delta))}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* AP revaluation history */}
+      {(apRevals || []).length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">AP revaluation history</CardTitle></CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader><TableRow><TableHead>Period end</TableHead><TableHead>Bill</TableHead><TableHead>Currency</TableHead><TableHead className="text-right">Open (FC)</TableHead><TableHead className="text-right">FX delta (LKR)</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {(apRevals || []).map((r: any) => (
+                  <TableRow key={r.id}>
+                    <TableCell className="text-muted-foreground">{formatDate(r.period_end)}</TableCell>
+                    <TableCell className="font-medium">{(r.supplier_bills as any)?.bill_number || "—"}</TableCell>
                     <TableCell>{r.currency}</TableCell>
                     <TableCell className="text-right tabular-nums font-mono">{Number(r.open_amount_fc).toFixed(2)}</TableCell>
                     <TableCell className={`text-right tabular-nums font-semibold ${Number(r.fx_delta) >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>

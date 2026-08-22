@@ -565,15 +565,6 @@ export const PACK_GROUPS = [
     ],
   },
   {
-    title: "Inventory & Stock",
-    packs: [
-      ["Inventory Core — WAC/FIFO, single location", 2400],
-      ["Multi-Warehouse & Stock Transfers", 2400],
-      ["Batch / Serial / Expiry Tracking", 1900],
-      ["Reorder Levels & Stock Alerts", 900],
-    ],
-  },
-  {
     title: "Assets",
     packs: [
       ["Fixed Assets & PPE Schedule", 2400],
@@ -632,7 +623,6 @@ export const PAYROLL_ADDONS = [
 /* Discounted bundles — list is the à-la-carte sum, price is the bundle. */
 export const BUNDLES = [
   ["Finance Essentials", "Receivables, Payables, Bank Rec, Petty Cash", 6100, 4900],
-  ["Trading", "Inventory Core, Multi-Warehouse, PO/GRN, Reorder", 7100, 5400],
   ["Compliance", "Period Close, Audit, IFRS Pack, Tax Engine, Approvals", 8300, 5900],
   ["Payroll Suite", "All five payroll add-ons", 6500, 4400],
   ["Complete Finance", "All 30 accounting packs", 56600, 24900],
@@ -642,10 +632,7 @@ export const BUNDLES = [
 /* Pre-configured base + packs by industry. */
 const INDUSTRY_BUNDLES = [
   ["Services & Consulting", "Standard + Finance Essentials + Projects", 11900],
-  ["Retail & Trading", "Standard + Trading + Finance Essentials", 13900],
-  ["Restaurant & F&B", "Standard + Inventory Core + Batch/Expiry + Petty Cash + Payroll (30)", 14900],
   ["Construction & Contracting", "Pro + Projects + Payables + Fixed Assets + Approvals", 15900],
-  ["Manufacturing", "Pro + Trading + Batch/Serial + Fixed Assets", 16900],
   ["NGO / Donor-Funded", "Standard + Cost Centres + Budgeting + Multi-Currency + Audit", 10900],
 ];
 

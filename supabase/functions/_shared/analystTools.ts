@@ -599,34 +599,6 @@ export const ANALYST_TOOLS: AnalystTool[] = [
     },
   },
   {
-    name: "get_inventory_valuation",
-    description:
-      "Stock on hand per item with FIFO and weighted-average valuations. Use for inventory value, " +
-      "slow-moving stock and any question about what is sitting in the warehouse.",
-    input_schema: { type: "object", properties: {} },
-    async run(_input, ctx) {
-      const rows = unwrap(
-        await ctx.supabase.rpc("inventory_valuation_report", { p_tenant_id: ctx.tenantId }),
-        "get_inventory_valuation",
-      ) as any[];
-
-      return {
-        items: cap(
-          rows.map((r) => ({
-            code: r.item_code,
-            name: r.item_name,
-            qty_on_hand: num(r.qty_on_hand),
-            unit_cost: num(r.unit_cost),
-            value: num(r.reported_value),
-            method: r.valuation_method,
-          })),
-          300,
-        ),
-        total_value: rows.reduce((s, r) => s + num(r.reported_value), 0),
-      };
-    },
-  },
-  {
     name: "get_fiscal_context",
     description:
       "Today's date, the company's fiscal periods and which ones are closed, plus the reporting " +

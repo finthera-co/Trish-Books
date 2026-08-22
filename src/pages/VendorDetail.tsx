@@ -1,15 +1,22 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Building2, FileText, CreditCard, Receipt, TrendingUp } from "lucide-react";
+import { ArrowLeft, Building2, FileText, CreditCard, Receipt, TrendingUp, Ban } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { formatCurrency } from "@/lib/currency";
-import { useVendorDetail } from "@/hooks/useAPModule";
+import { useVendorDetail, useVoidBillPayment, useVoidVendorRefund } from "@/hooks/useAPModule";
 import PayBillsDialog from "@/components/ap/PayBillsDialog";
 import VendorCreditNoteDialog from "@/components/ap/VendorCreditNoteDialog";
+import VendorRefundDialog from "@/components/ap/VendorRefundDialog";
 import { formatDate } from "@/lib/format";
 
 function getBillStatus(bill: any): { label: string; variant: "default" | "secondary" | "destructive" | "outline" } {
@@ -19,6 +26,7 @@ function getBillStatus(bill: any): { label: string; variant: "default" | "second
   const total = Number(bill.total_amount ?? 0);
   const isOverdue = bill.due_date && new Date(bill.due_date) < today && balanceDue > 0.005;
 
+  if (bill.status === "voided") return { label: "Voided", variant: "secondary" };
   if (bill.status === "draft") return { label: "Draft", variant: "secondary" };
   if (balanceDue <= 0.005 || bill.status === "paid") return { label: "Paid", variant: "default" };
   if (isOverdue) return { label: "Overdue", variant: "destructive" };
@@ -32,11 +40,18 @@ export default function VendorDetail() {
   const { data, isLoading } = useVendorDetail(id);
   const [payOpen, setPayOpen] = useState(false);
   const [cnOpen, setCnOpen] = useState(false);
+  const [voidPaymentTarget, setVoidPaymentTarget] = useState<{ id: string; reference: string } | null>(null);
+  const [voidPaymentReason, setVoidPaymentReason] = useState("");
+  const voidPayment = useVoidBillPayment();
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [voidRefundTarget, setVoidRefundTarget] = useState<{ id: string; reference: string } | null>(null);
+  const [voidRefundReason, setVoidRefundReason] = useState("");
+  const voidRefund = useVoidVendorRefund();
 
   if (isLoading) return <div className="p-8 text-muted-foreground">Loading vendor…</div>;
   if (!data) return <div className="p-8 text-muted-foreground">Vendor not found</div>;
 
-  const { vendor, bills, payments, creditNotes, apEntries } = data;
+  const { vendor, bills, payments, creditNotes, apEntries, refunds } = data;
 
   // AP balance: sum of (credit - debit) entries — positive = we owe
   const apBalance = (apEntries ?? []).reduce(
@@ -203,12 +218,14 @@ export default function VendorDetail() {
                     <TableHead>Bank Account</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
                     <TableHead>Journal Entry</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-10"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {payments.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground py-8">No payments recorded</TableCell>
+                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">No payments recorded</TableCell>
                     </TableRow>
                   ) : (
                     payments.map((p: any) => (
@@ -230,6 +247,24 @@ export default function VendorDetail() {
                               View JE
                             </Button>
                           ) : "—"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={p.status === "voided" ? "secondary" : "outline"}>
+                            {p.status === "voided" ? "Voided" : "Posted"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {p.status !== "voided" && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Void payment"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => { setVoidPaymentTarget({ id: p.id, reference: p.reference || p.id }); setVoidPaymentReason(""); }}
+                            >
+                              <Ban className="w-4 h-4" />
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))
@@ -278,6 +313,63 @@ export default function VendorDetail() {
                           <Badge variant={cn.status === "posted" ? "default" : "secondary"}>
                             {cn.status}
                           </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          <Card className="mt-4">
+            <CardHeader className="pb-3 flex flex-row items-center justify-between">
+              <CardTitle className="text-base">Vendor Refunds</CardTitle>
+              <Button size="sm" variant="outline" onClick={() => setRefundOpen(true)}>
+                <CreditCard className="w-4 h-4 mr-1" /> Record Refund
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Reference</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-10"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {refunds.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground py-8">No refunds recorded</TableCell>
+                    </TableRow>
+                  ) : (
+                    refunds.map((r: any) => (
+                      <TableRow key={r.id}>
+                        <TableCell className="text-muted-foreground">{formatDate(r.refund_date)}</TableCell>
+                        <TableCell className="text-muted-foreground">{r.reference || "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums font-medium text-primary">
+                          {formatCurrency(Number(r.amount))}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={r.status === "voided" ? "secondary" : "outline"}>
+                            {r.status === "voided" ? "Voided" : "Posted"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {r.status !== "voided" && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Void refund"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => { setVoidRefundTarget({ id: r.id, reference: r.reference || r.id }); setVoidRefundReason(""); }}
+                            >
+                              <Ban className="w-4 h-4" />
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))
@@ -373,6 +465,76 @@ export default function VendorDetail() {
           vendorName={vendor.name}
         />
       )}
+      {refundOpen && (
+        <VendorRefundDialog
+          open={refundOpen}
+          onOpenChange={setRefundOpen}
+          vendorId={vendor.id}
+          vendorName={vendor.name}
+          creditNotes={creditNotes.filter((cn: any) => cn.status === "posted")}
+        />
+      )}
+
+      <AlertDialog open={!!voidPaymentTarget} onOpenChange={(v) => { if (!v) { setVoidPaymentTarget(null); setVoidPaymentReason(""); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Void payment {voidPaymentTarget?.reference}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This posts a reversing journal entry and restores the balance on every bill this payment was applied to.
+              This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="px-1">
+            <Label className="text-xs text-muted-foreground">Reason (optional)</Label>
+            <Input value={voidPaymentReason} onChange={(e) => setVoidPaymentReason(e.target.value)} placeholder="e.g. Recorded in error" className="mt-1" />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={voidPayment.isPending}
+              onClick={async () => {
+                if (!voidPaymentTarget) return;
+                await voidPayment.mutateAsync({ payment_id: voidPaymentTarget.id, reason: voidPaymentReason.trim() || undefined });
+                setVoidPaymentTarget(null);
+                setVoidPaymentReason("");
+              }}
+            >
+              {voidPayment.isPending ? "Voiding…" : "Void Payment"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!voidRefundTarget} onOpenChange={(v) => { if (!v) { setVoidRefundTarget(null); setVoidRefundReason(""); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Void refund {voidRefundTarget?.reference}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This posts a reversing journal entry. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="px-1">
+            <Label className="text-xs text-muted-foreground">Reason (optional)</Label>
+            <Input value={voidRefundReason} onChange={(e) => setVoidRefundReason(e.target.value)} placeholder="e.g. Recorded in error" className="mt-1" />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={voidRefund.isPending}
+              onClick={async () => {
+                if (!voidRefundTarget) return;
+                await voidRefund.mutateAsync({ refund_id: voidRefundTarget.id, reason: voidRefundReason.trim() || undefined });
+                setVoidRefundTarget(null);
+                setVoidRefundReason("");
+              }}
+            >
+              {voidRefund.isPending ? "Voiding…" : "Void Refund"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

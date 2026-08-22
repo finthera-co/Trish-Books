@@ -21,7 +21,7 @@ export default function PaymentVoucherDetails({ voucherId }: Props) {
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
     printWindow.document.write(`
-      <html><head><title>Payment Voucher ${voucher?.voucher_number}</title>
+      <html><head><title>Check ${voucher?.voucher_number}</title>
       <style>
         body { font-family: Arial, sans-serif; padding: 40px; color: #333; }
         h1 { text-align: center; margin-bottom: 4px; }
@@ -54,7 +54,14 @@ export default function PaymentVoucherDetails({ voucherId }: Props) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold">Payment Voucher</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-xl font-bold">Check</h2>
+          {voucher.print_later && (
+            <Badge variant="outline" className="gap-1">
+              <Printer className="w-3 h-3" /> To Print
+            </Badge>
+          )}
+        </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={handlePrint}>
             <Printer className="w-4 h-4 mr-1" /> Print
@@ -67,26 +74,29 @@ export default function PaymentVoucherDetails({ voucherId }: Props) {
 
       {/* Printable content */}
       <div ref={printRef}>
-        <h1 style={{ textAlign: "center", fontSize: 22, fontWeight: 700, marginBottom: 4 }}>PAYMENT VOUCHER</h1>
+        <h1 style={{ textAlign: "center", fontSize: 22, fontWeight: 700, marginBottom: 4 }}>CHECK</h1>
         <p style={{ textAlign: "center", fontSize: 13, color: "#888", marginBottom: 16 }}>{voucher.voucher_number}</p>
 
         <div className="header-info" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 14 }}>
-          <div><span className="label" style={{ fontWeight: 600, color: "#555" }}>Payee: </span>{(voucher as any).customers?.name || "—"}</div>
+          <div><span className="label" style={{ fontWeight: 600, color: "#555" }}>Pay to the Order of: </span>{(voucher as any).customers?.name || "—"}</div>
           <div><span className="label" style={{ fontWeight: 600, color: "#555" }}>Date: </span>{formatDate(voucher.payment_date)}</div>
-          <div><span className="label" style={{ fontWeight: 600, color: "#555" }}>Payment Account: </span>{(voucher as any).accounts?.account_name || "—"}</div>
+          <div><span className="label" style={{ fontWeight: 600, color: "#555" }}>Bank Account: </span>{(voucher as any).accounts?.account_name || "—"}</div>
           <div><span className="label" style={{ fontWeight: 600, color: "#555" }}>Method: </span>{voucher.payment_method}</div>
           {voucher.account_number && <div><span className="label" style={{ fontWeight: 600, color: "#555" }}>Account #: </span>{voucher.account_number}</div>}
-          {voucher.cheque_number && <div><span className="label" style={{ fontWeight: 600, color: "#555" }}>Cheque #: </span>{voucher.cheque_number}</div>}
+          {voucher.cheque_number && <div><span className="label" style={{ fontWeight: 600, color: "#555" }}>No.: </span>{voucher.cheque_number}</div>}
           {voucher.reference_number && <div><span className="label" style={{ fontWeight: 600, color: "#555" }}>Reference: </span>{voucher.reference_number}</div>}
           {voucher.memo && <div><span className="label" style={{ fontWeight: 600, color: "#555" }}>Memo: </span>{voucher.memo}</div>}
           {voucher.bills_attached ? <div><span className="label" style={{ fontWeight: 600, color: "#555" }}>Bills Attached: </span>{voucher.bills_attached}</div> : null}
+          {voucher.address_block && <div style={{ whiteSpace: "pre-line" }}><span className="label" style={{ fontWeight: 600, color: "#555" }}>Address: </span>{voucher.address_block}</div>}
         </div>
 
         <table style={{ width: "100%", borderCollapse: "collapse", margin: "20px 0" }}>
           <thead>
             <tr>
-              <th style={{ border: "1px solid #ddd", padding: "8px 12px", background: "#f5f5f5", textAlign: "left" }}>Category</th>
-              <th style={{ border: "1px solid #ddd", padding: "8px 12px", background: "#f5f5f5", textAlign: "left" }}>Description</th>
+              <th style={{ border: "1px solid #ddd", padding: "8px 12px", background: "#f5f5f5", textAlign: "left" }}>Account</th>
+              <th style={{ border: "1px solid #ddd", padding: "8px 12px", background: "#f5f5f5", textAlign: "left" }}>Memo</th>
+              <th style={{ border: "1px solid #ddd", padding: "8px 12px", background: "#f5f5f5", textAlign: "left" }}>Customer:Job</th>
+              <th style={{ border: "1px solid #ddd", padding: "8px 12px", background: "#f5f5f5", textAlign: "center" }}>Billable</th>
               <th style={{ border: "1px solid #ddd", padding: "8px 12px", background: "#f5f5f5", textAlign: "right" }}>Amount</th>
             </tr>
           </thead>
@@ -97,11 +107,13 @@ export default function PaymentVoucherDetails({ voucherId }: Props) {
                   {l.accounts?.account_code} – {l.accounts?.account_name}
                 </td>
                 <td style={{ border: "1px solid #ddd", padding: "8px 12px" }}>{l.description || "—"}</td>
+                <td style={{ border: "1px solid #ddd", padding: "8px 12px" }}>{l.customers?.name || "—"}</td>
+                <td style={{ border: "1px solid #ddd", padding: "8px 12px", textAlign: "center" }}>{l.is_billable ? "Yes" : "—"}</td>
                 <td style={{ border: "1px solid #ddd", padding: "8px 12px", textAlign: "right" }}>{formatCurrency(Number(l.amount))}</td>
               </tr>
             ))}
             <tr className="total-row">
-              <td colSpan={2} style={{ border: "1px solid #ddd", padding: "8px 12px", fontWeight: 700, textAlign: "right" }}>Total:</td>
+              <td colSpan={4} style={{ border: "1px solid #ddd", padding: "8px 12px", fontWeight: 700, textAlign: "right" }}>Total:</td>
               <td style={{ border: "1px solid #ddd", padding: "8px 12px", fontWeight: 700, textAlign: "right", fontSize: 16 }}>{formatCurrency(Number(voucher.total_amount))}</td>
             </tr>
           </tbody>

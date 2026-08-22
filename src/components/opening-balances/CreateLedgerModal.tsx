@@ -10,12 +10,10 @@ import {
   getNormalBalance,
   getStatementPlacement,
   isOpeningBalanceEligible,
-  suggestSubtypeFromCode,
 } from "@/lib/accountTypes";
-import { generateAccountCode, generateAccountCodeBanded } from "@/lib/accountCodeGenerator";
-import { useAccounts, useCreateAccount } from "@/hooks/useData";
-import { sortAccounts } from "@/lib/accountSort";
+import { useAccounts, useCreateAccount, useNextAccountCode } from "@/hooks/useData";
 import { useAccountCategories, useCreateAccountCategory } from "@/hooks/useAccountCategories";
+import { buildAccountsMap, canCreateChildUnder, flattenAccountTree, MAX_ACCOUNT_DEPTH } from "@/lib/accountMappingEngine";
 import { toast } from "sonner";
 
 interface CreateLedgerModalProps {
@@ -64,29 +62,9 @@ export default function CreateLedgerModal({ open, onOpenChange, onCreated }: Cre
     setBalanceType(getNormalBalance(accountType) === "Debit" ? "debit" : "credit");
   }, [accountType]);
 
-  const accountsForCodeGen = useMemo(() => {
-    return (allAccounts || []).map((a: any) => ({
-      id: a.id,
-      account_code: a.account_code,
-      account_type: a.account_type,
-      parent_account_id: a.parent_account_id,
-    }));
-  }, [allAccounts]);
-
-  const autoCode = useMemo(() => {
-    if (parentId) {
-      return generateAccountCode(accountType, parentId, accountsForCodeGen);
-    }
-    const effectiveSubtype =
-      accountSubtype ||
-      suggestSubtypeFromCode(
-        generateAccountCode(accountType, null, accountsForCodeGen),
-        accountType
-      ) ||
-      (ACCOUNT_SUBTYPES[accountType] || [])[0] ||
-      "";
-    return generateAccountCodeBanded(accountType, effectiveSubtype, accountsForCodeGen);
-  }, [accountType, parentId, accountSubtype, accountsForCodeGen]);
+  // Server-generated via next_account_code() — the single source of truth
+  // for account numbering (see src/lib/accountCodeGenerator.ts header).
+  const { data: autoCode = "" } = useNextAccountCode(accountType, parentId || null, accountSubtype || null, open);
 
   const filteredCategories = useMemo(() => {
     return (categories || []).filter(c => c.account_type === accountType);
@@ -99,9 +77,16 @@ export default function CreateLedgerModal({ open, onOpenChange, onCreated }: Cre
   );
   const numberRange = ACCOUNT_NUMBER_RANGES[accountType];
 
-  const parentAccounts = useMemo(() => {
-    return sortAccounts((allAccounts || []).filter((a: any) => a.account_type === accountType && a.is_active));
-  }, [allAccounts, accountType]);
+  const accountsMap = useMemo(() => buildAccountsMap((allAccounts || []) as any[]), [allAccounts]);
+  const parentRows = useMemo(
+    () => flattenAccountTree((allAccounts || []) as any[], { accountType }),
+    [allAccounts, accountType]
+  );
+  const parentValidation = useMemo(() => {
+    if (!parentId) return null;
+    const parent = (allAccounts || []).find((a: any) => a.id === parentId);
+    return parent ? canCreateChildUnder(parent, accountsMap) : null;
+  }, [parentId, allAccounts, accountsMap]);
 
   const existingCodes = useMemo(() => {
     return new Set((allAccounts || []).map((a: any) => a.account_code));
@@ -242,10 +227,28 @@ export default function CreateLedgerModal({ open, onOpenChange, onCreated }: Cre
             <label className="text-sm font-medium">Parent Account (optional)</label>
             <select value={parentId} onChange={(e) => setParentId(e.target.value)} className={inputClass}>
               <option value="">None (top-level)</option>
-              {parentAccounts.map((a: any) => (
-                <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>
-              ))}
+              {parentRows.map(({ account: a, depth }) => {
+                const check = canCreateChildUnder(a, accountsMap);
+                const pad = "  ".repeat(depth);
+                const lvl = a.account_level ?? depth + 1;
+                return (
+                  <option key={a.id} value={a.id} disabled={!check.allowed}>
+                    {pad}{depth > 0 ? "└ " : ""}{a.account_code} — {a.account_name}
+                    {` · L${lvl}`}
+                    {!check.allowed ? " (max depth)" : ""}
+                  </option>
+                );
+              })}
             </select>
+            {parentValidation && !parentValidation.allowed && (
+              <p className="text-[10px] text-destructive mt-1">{parentValidation.reason}</p>
+            )}
+            {parentValidation?.warning && (
+              <p className="text-[10px] text-warning mt-1">{parentValidation.warning}</p>
+            )}
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Maximum depth is {MAX_ACCOUNT_DEPTH} levels.
+            </p>
           </div>
 
           {/* Opening Balance (only for eligible types) */}

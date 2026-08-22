@@ -29,13 +29,12 @@ export type ResolvedAccount = {
 
 export type ResolvedProfiles = Record<string, ResolvedAccount>;
 
-export const MODULES = ["AR", "AP", "INVENTORY", "FIXED_ASSETS", "BANK"] as const;
+export const MODULES = ["AR", "AP", "FIXED_ASSETS", "BANK"] as const;
 export type Module = (typeof MODULES)[number];
 
 export const TRANSACTION_TYPES_BY_MODULE: Record<Module, string[]> = {
   AR:           ["INVOICE", "PAYMENT", "CREDIT_NOTE"],
   AP:           ["BILL", "BILL_PAYMENT", "DEBIT_NOTE"],
-  INVENTORY:    ["GOODS_RECEIPT", "INV_ADJUSTMENT", "STOCK_WRITE_OFF"],
   FIXED_ASSETS: ["ASSET_ACQUISITION", "DEPRECIATION", "DISPOSAL", "ASSET_WRITE_OFF", "ASSET_ADJUSTMENT"],
   BANK:         ["BANK_TRANSFER", "BANK_FEE", "BANK_INTEREST"],
 };
@@ -66,7 +65,6 @@ export const ACCOUNT_ROLE_LABELS: Record<AccountRole, string> = {
 export const MODULE_LABELS: Record<Module, string> = {
   AR:           "Accounts Receivable",
   AP:           "Accounts Payable",
-  INVENTORY:    "Inventory",
   FIXED_ASSETS: "Fixed Assets",
   BANK:         "Bank",
 };
@@ -78,9 +76,6 @@ export const TRANSACTION_TYPE_LABELS: Record<string, string> = {
   BILL:             "Supplier Bill",
   BILL_PAYMENT:     "Bill Payment",
   DEBIT_NOTE:       "Debit Note",
-  GOODS_RECEIPT:    "Goods Receipt",
-  INV_ADJUSTMENT:   "Inventory Adjustment",
-  STOCK_WRITE_OFF:  "Stock Write-Off",
   ASSET_ACQUISITION:"Asset Acquisition",
   DEPRECIATION:     "Depreciation",
   DISPOSAL:         "Asset Disposal",

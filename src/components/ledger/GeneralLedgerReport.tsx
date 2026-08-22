@@ -79,7 +79,12 @@ function cellsFor(row: GLReportRow): RowCells {
   };
 }
 
-function rowClassName(kind: GLReportRow["kind"]): string {
+// `index` is each row's absolute position in the full (unvirtualized) data
+// set, not its DOM position — the main view only mounts a scroll window of
+// rows, so CSS nth-child parity would flip a row between white and green as
+// that window slides during scroll. Only plain transaction rows stripe;
+// header/total/opening-balance rows keep their own distinct styling.
+function rowClassName(kind: GLReportRow["kind"], index: number): string {
   switch (kind) {
     case "account-header":
       return "font-semibold";
@@ -87,8 +92,10 @@ function rowClassName(kind: GLReportRow["kind"]): string {
       return "font-semibold border-t border-border";
     case "grand-total":
       return "font-bold border-t-2 border-border";
+    case "opening-balance":
+      return "text-muted-foreground italic bg-muted/10";
     default:
-      return "border-b border-border/40 hover:bg-muted/20";
+      return `border-b border-border/40 hover:bg-muted/20 ${index % 2 === 0 ? "bg-[hsl(var(--success)/16%)]" : "bg-background"}`;
   }
 }
 
@@ -192,8 +199,11 @@ export default function GeneralLedgerReport({
   }, [initialDateFrom, initialDateTo]);
 
   const buildOptions = useMemo(
-    () => ({ includeZeroActivity, includeOtherRows, showAccountCodes, collapsed, focusAccountId }),
-    [includeZeroActivity, includeOtherRows, showAccountCodes, collapsed, focusAccountId]
+    () => ({
+      includeZeroActivity, includeOtherRows, showAccountCodes, collapsed, focusAccountId,
+      openingBalanceDate: glDate(dateFrom),
+    }),
+    [includeZeroActivity, includeOtherRows, showAccountCodes, collapsed, focusAccountId, dateFrom]
   );
 
   const visibleAccountIds = useMemo(() => {
@@ -327,6 +337,7 @@ export default function GeneralLedgerReport({
           showAccountCodes,
           focusAccountId,
           collapsed: new Set(),
+          openingBalanceDate: glDate(dateFrom),
         });
 
         const params = {
@@ -607,6 +618,7 @@ export default function GeneralLedgerReport({
                     <GridRow
                       key={row.key}
                       row={row}
+                      index={vi.index}
                       collapsed={collapsed}
                       onToggle={toggleCollapse}
                       gridTemplateColumns={gridTemplateColumns}
@@ -640,9 +652,9 @@ function Banner({ tone, icon: Icon, children, onDismiss }: { tone: "error" | "wa
 }
 
 function GridRow({
-  row, collapsed, onToggle, style, gridTemplateColumns,
+  row, index, collapsed, onToggle, style, gridTemplateColumns,
 }: {
-  row: GLReportRow; collapsed: Set<string>; onToggle: (k: string) => void;
+  row: GLReportRow; index: number; collapsed: Set<string>; onToggle: (k: string) => void;
   style: React.CSSProperties; gridTemplateColumns: string;
 }) {
   const c = cellsFor(row);
@@ -655,7 +667,7 @@ function GridRow({
       role="row"
       aria-level={row.kind !== "txn" ? row.depth || undefined : undefined}
       aria-expanded={isCollapsible ? !isCollapsed : undefined}
-      className={`grid text-sm ${rowClassName(row.kind)}`}
+      className={`grid text-sm ${rowClassName(row.kind, index)}`}
       style={{ ...style, gridTemplateColumns, columnGap: COL_GAP }}
     >
       <div role="cell" className="px-3.5 py-2 flex items-center gap-1.5 truncate" style={{ paddingLeft: row.kind !== "txn" ? row.depth * 16 + 14 : 14 }}>
@@ -705,13 +717,13 @@ function FullTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => {
+          {rows.map((row, idx) => {
             const c = cellsFor(row);
             const isHeader = row.kind === "account-header";
             const isCollapsible = isHeader && !!row.nodeKey;
             const isCollapsed = row.nodeKey ? collapsed.has(row.nodeKey) : false;
             return (
-              <tr key={row.key} className={rowClassName(row.kind)} aria-level={row.kind !== "txn" ? row.depth || undefined : undefined}>
+              <tr key={row.key} className={rowClassName(row.kind, idx)} aria-level={row.kind !== "txn" ? row.depth || undefined : undefined}>
                 <td className="px-3.5 py-2 truncate" style={{ paddingLeft: (row.kind !== "txn" ? row.depth * 16 : 0) + 14 }}>
                   <span className="inline-flex items-center gap-1.5">
                     {isCollapsible && (

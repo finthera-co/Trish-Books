@@ -5,7 +5,7 @@
  * the `resolve_posting_profile` PostgreSQL RPC function.
  *
  * POST body: {
- *   module:           "AR" | "AP" | "INVENTORY" | "FIXED_ASSETS" | "BANK"
+ *   module:           "AR" | "AP" | "FIXED_ASSETS" | "BANK"
  *   transaction_type: string (e.g. "INVOICE", "DEPRECIATION")
  *   date?:            "YYYY-MM-DD" (defaults to today)
  *   entity_scope?:    { customer_id?: string, vendor_id?: string } | null

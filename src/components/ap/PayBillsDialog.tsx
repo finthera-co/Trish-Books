@@ -18,6 +18,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import AccountCombobox from "@/components/shared/AccountCombobox";
 import { formatDate } from "@/lib/format";
+import { PAYMENT_METHODS } from "@/lib/paymentMethods";
 
 const NATURES = ["service_fee", "rent", "interest", "dividend", "royalty", "contractor", "other"];
 const prettify = (s: string) => s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -40,6 +41,9 @@ export default function PayBillsDialog({ open, onOpenChange, vendorId, vendorNam
   const today = format(new Date(), "yyyy-MM-dd");
   const [paymentDate, setPaymentDate] = useState(today);
   const [bankAccountId, setBankAccountId] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<string>("Cheque");
+  const [printLater, setPrintLater] = useState(false);
+  const [checkNumber, setCheckNumber] = useState("");
   const [reference, setReference] = useState("");
   const [paymentNature, setPaymentNature] = useState("");
   const [overrideOn, setOverrideOn] = useState(false);
@@ -63,22 +67,35 @@ export default function PayBillsDialog({ open, onOpenChange, vendorId, vendorNam
   );
 
   const openBills = useMemo(() =>
-    (bills ?? []).filter((b) => b.balance_due > 0.005 && b.status !== "draft"),
+    (bills ?? []).filter((b) =>
+      b.balance_due > 0.005 && !["draft", "cancelled", "reversed"].includes(b.status)
+    ),
     [bills]
   );
 
   const totalOutstanding = openBills.reduce((s, b) => s + b.balance_due, 0);
+
+  // A payment run must settle one currency at a time (mirrors AR's
+  // payments_received) — once a bill is checked, bills in a different
+  // currency are disabled until the selection is cleared.
+  const selectedCurrency = useMemo(() => {
+    const first = openBills.find((b) => selectedBillIds.has(b.id));
+    return first ? (first.currency || "LKR") : null;
+  }, [openBills, selectedBillIds]);
 
   const totalApplied = useMemo(() =>
     Array.from(selectedBillIds).reduce((s, id) => s + (parseFloat(appliedAmounts[id] || "0") || 0), 0),
     [selectedBillIds, appliedAmounts]
   );
 
+  const isForeignPayment = !!selectedCurrency && selectedCurrency !== "LKR";
+
   // Live WHT (AIT) preview — recomputed by the shared engine. Display-only;
-  // the hook recomputes server-side on submit. Disabled while overriding.
+  // the hook recomputes server-side on submit. Disabled while overriding, and
+  // for foreign-currency bills — WHT is LKR-only and the server skips it.
   const { data: whtPreview } = useQuery({
     queryKey: ["wht_preview", appUser?.tenant_id, vendorId, totalApplied, paymentDate, paymentNature],
-    enabled: !!appUser?.tenant_id && totalApplied > 0 && !overrideOn,
+    enabled: !!appUser?.tenant_id && totalApplied > 0 && !overrideOn && !isForeignPayment,
     queryFn: () => computeBillPaymentWht({
       tenantId: appUser!.tenant_id,
       vendorId,
@@ -135,6 +152,11 @@ export default function PayBillsDialog({ open, onOpenChange, vendorId, vendorNam
       return;
     }
 
+    if (paymentMethod === "Cheque" && !printLater && !checkNumber.trim()) {
+      toast.error("Enter a check number, or check \"Print Later\"");
+      return;
+    }
+
     await recordPayment.mutateAsync({
       vendor_id: vendorId,
       payment_date: paymentDate,
@@ -147,6 +169,9 @@ export default function PayBillsDialog({ open, onOpenChange, vendorId, vendorNam
       wht_override: overrideOn
         ? { amount: parseFloat(overrideAmount || "0") || 0, reason: overrideReason.trim() }
         : null,
+      payment_method: paymentMethod,
+      print_later: paymentMethod === "Cheque" ? printLater : false,
+      check_number: paymentMethod === "Cheque" ? checkNumber.trim() : null,
     });
 
     setAppliedAmounts({});
@@ -156,6 +181,9 @@ export default function PayBillsDialog({ open, onOpenChange, vendorId, vendorNam
     setOverrideOn(false);
     setOverrideAmount("");
     setOverrideReason("");
+    setPaymentMethod("Cheque");
+    setPrintLater(false);
+    setCheckNumber("");
     onOpenChange(false);
   };
 
@@ -186,12 +214,35 @@ export default function PayBillsDialog({ open, onOpenChange, vendorId, vendorNam
                 placeholder="Select account"
               />
             </div>
+            <div>
+              <Label>Payment Method</Label>
+              <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_METHODS.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Reference</Label>
+              <Input placeholder="Transfer ref, memo…" value={reference} onChange={(e) => setReference(e.target.value)} />
+            </div>
           </div>
 
-          <div>
-            <Label>Reference</Label>
-            <Input placeholder="Cheque no., transfer ref…" value={reference} onChange={(e) => setReference(e.target.value)} />
-          </div>
+          {paymentMethod === "Cheque" && (
+            <div className="grid grid-cols-2 gap-4 items-end p-3 rounded-lg border bg-muted/20">
+              <div className="flex items-center gap-2">
+                <Checkbox id="pb-print-later" checked={printLater} onCheckedChange={(v) => setPrintLater(!!v)} />
+                <Label htmlFor="pb-print-later" className="cursor-pointer font-normal">Print Later</Label>
+              </div>
+              {!printLater && (
+                <div>
+                  <Label>Check Number *</Label>
+                  <Input placeholder="e.g. 1001" value={checkNumber} onChange={(e) => setCheckNumber(e.target.value)} />
+                </div>
+              )}
+            </div>
+          )}
 
           <div>
             <Label className="mb-2 block">Open Bills</Label>
@@ -212,22 +263,26 @@ export default function PayBillsDialog({ open, onOpenChange, vendorId, vendorNam
                   {openBills.map((bill) => {
                     const isSelected = selectedBillIds.has(bill.id);
                     const isOverdue = bill.due_date && new Date(bill.due_date) < new Date();
+                    const billCurrency = bill.currency || "LKR";
+                    const currencyMismatch = !!selectedCurrency && billCurrency !== selectedCurrency;
                     return (
                       <TableRow key={bill.id} className={isSelected ? "bg-primary/5" : ""}>
                         <TableCell>
                           <Checkbox
                             checked={isSelected}
                             onCheckedChange={() => toggleBill(bill.id)}
+                            disabled={currencyMismatch}
                           />
                         </TableCell>
                         <TableCell className="font-mono text-sm">
                           {bill.bill_number}
                           {isOverdue && <Badge variant="destructive" className="ml-2 text-xs">Overdue</Badge>}
+                          {billCurrency !== "LKR" && <Badge variant="outline" className="ml-2 text-xs">{billCurrency}</Badge>}
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">
                           {bill.due_date ? formatDate(bill.due_date) : "—"}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">{formatCurrency(bill.balance_due)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatCurrency(bill.balance_due, billCurrency)}</TableCell>
                         <TableCell className="text-right">
                           <Input
                             type="number"
@@ -263,15 +318,15 @@ export default function PayBillsDialog({ open, onOpenChange, vendorId, vendorNam
           {/* WHT computed panel: Gross / WHT / Net bank */}
           {(effectiveWht > 0 || overrideOn) && (
             <div className="p-3 rounded-lg border bg-muted/30 space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Gross settled</span><span className="font-mono">{formatCurrency(totalApplied)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Gross settled</span><span className="font-mono">{formatCurrency(totalApplied, selectedCurrency || "LKR")}</span></div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">
                   WHT {whtPreview && !overrideOn ? `(${whtPreview.rate}%)` : "(manual)"}
                 </span>
-                <span className="font-mono text-destructive">-{formatCurrency(effectiveWht)}</span>
+                <span className="font-mono text-destructive">-{formatCurrency(effectiveWht, selectedCurrency || "LKR")}</span>
               </div>
               <div className="flex justify-between font-semibold border-t pt-1">
-                <span>Net bank amount</span><span className="font-mono">{formatCurrency(netBank)}</span>
+                <span>Net bank amount</span><span className="font-mono">{formatCurrency(netBank, selectedCurrency || "LKR")}</span>
               </div>
               {whtPreview?.certificate_no && !overrideOn && (
                 <p className="text-xs text-muted-foreground">WHT certificate {whtPreview.certificate_no} will be issued.</p>
@@ -292,7 +347,7 @@ export default function PayBillsDialog({ open, onOpenChange, vendorId, vendorNam
 
           <div className="flex items-center justify-between p-3 rounded-lg bg-muted/40 border">
             <span className="font-medium">Total Being Paid</span>
-            <span className="text-xl font-bold text-primary">{formatCurrency(totalApplied)}</span>
+            <span className="text-xl font-bold text-primary">{formatCurrency(totalApplied, selectedCurrency || "LKR")}</span>
           </div>
 
           <div className="flex gap-3 justify-end">

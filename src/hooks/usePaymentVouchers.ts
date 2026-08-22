@@ -8,12 +8,17 @@ export interface VoucherLine {
   account_id: string;
   description: string;
   amount: number;
+  customer_id?: string | null;
+  is_billable?: boolean;
+  cost_center_id?: string | null;
 }
 
 export interface PaymentVoucherFormData {
   account_number?: string;
   cheque_number?: string;
   payee_id?: string;
+  payee_vendor_id?: string;
+  permit_no?: string;
   payment_account_id: string;
   payment_method: string;
   reference_number?: string;
@@ -24,6 +29,9 @@ export interface PaymentVoucherFormData {
   accountant?: string;
   checked_by?: string;
   made_by?: string;
+  print_later?: boolean;
+  address_block?: string;
+  location_id?: string | null;
   lines: VoucherLine[];
 }
 
@@ -33,7 +41,7 @@ export function usePaymentVouchers() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("payment_vouchers")
-        .select("*, customers(name), accounts!payment_vouchers_payment_account_id_fkey(account_name, account_code)")
+        .select("*, customers(name), vendors(name), accounts!payment_vouchers_payment_account_id_fkey(account_name, account_code)")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
@@ -48,7 +56,7 @@ export function usePaymentVoucher(id: string | undefined) {
       if (!id) return null;
       const { data, error } = await supabase
         .from("payment_vouchers")
-        .select("*, customers(name), accounts!payment_vouchers_payment_account_id_fkey(account_name, account_code), payment_voucher_lines(*, accounts(account_name, account_code))")
+        .select("*, customers(name), vendors(name, address, email), accounts!payment_vouchers_payment_account_id_fkey(account_name, account_code), payment_voucher_lines(*, accounts(account_name, account_code), customers(name))")
         .eq("id", id)
         .single();
       if (error) throw error;
@@ -77,8 +85,12 @@ export function useCreatePaymentVoucher() {
           account_id: l.account_id,
           description: l.description ?? null,
           amount: Number(l.amount),
+          customer_id: l.customer_id || null,
+          is_billable: l.is_billable ?? false,
+          cost_center_id: l.cost_center_id || null,
         })),
         p_payee_id: formData.payee_id || null,
+        p_payee_vendor_id: formData.payee_vendor_id || null,
         p_account_number: formData.account_number || null,
         p_cheque_number: formData.cheque_number || null,
         p_reference_number: formData.reference_number || null,
@@ -88,6 +100,10 @@ export function useCreatePaymentVoucher() {
         p_accountant: formData.accountant || null,
         p_checked_by: formData.checked_by || null,
         p_made_by: formData.made_by || null,
+        p_print_later: formData.print_later ?? false,
+        p_address_block: formData.address_block || null,
+        p_location_id: formData.location_id || null,
+        p_permit_no: formData.permit_no || null,
       });
       if (error) throw error;
       return data as string;
@@ -128,6 +144,8 @@ export function useUpdatePaymentVoucher() {
           account_number: formData.account_number || null,
           cheque_number: formData.cheque_number || null,
           payee_id: formData.payee_id || null,
+          payee_vendor_id: formData.payee_vendor_id || null,
+          permit_no: formData.permit_no || null,
           payment_account_id: formData.payment_account_id,
           payment_method: formData.payment_method,
           reference_number: formData.reference_number || null,
@@ -139,6 +157,9 @@ export function useUpdatePaymentVoucher() {
           checked_by: formData.checked_by || null,
           made_by: formData.made_by || null,
           total_amount: totalAmount,
+          print_later: formData.print_later ?? false,
+          address_block: formData.address_block || null,
+          location_id: formData.location_id || null,
         })
         .eq("id", id);
       if (error) throw error;
@@ -149,6 +170,9 @@ export function useUpdatePaymentVoucher() {
         account_id: l.account_id,
         description: l.description || null,
         amount: l.amount,
+        customer_id: l.customer_id || null,
+        is_billable: l.is_billable ?? false,
+        cost_center_id: l.cost_center_id || null,
       }));
       const { error: linesError } = await supabase.from("payment_voucher_lines").insert(lines);
       if (linesError) throw linesError;

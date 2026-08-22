@@ -26,7 +26,7 @@ const PATH_TO_MODULE: Record<string, string> = {
   "/expenses/tracker": "expenses",
   "/banking/petty-cash": "expenses",
   "/banking/reconciliation": "accounts",
-  "/banking/payment-vouchers": "expenses",
+  "/banking/write-checks": "expenses",
   "/reports/budgets": "budgeting",
   "/payroll/runs": "payroll",
   "/payroll/employees": "payroll",
@@ -38,6 +38,8 @@ const PATH_TO_MODULE: Record<string, string> = {
 // These paths are always accessible regardless of plan
 const ALWAYS_ALLOWED_PATHS = [
   "/",
+  "/home",
+  "/dashboard",
   "/admin",
   "/admin/tenants",
   "/admin/users",
@@ -82,16 +84,15 @@ export function useSubscriptionLimits(): PlanLimits {
   const currentUserCount = data?.userCount || 0;
   const canAddUser = isSuperAdmin || currentUserCount < maxUsers;
 
-  const isModuleAllowed = (pathOrModule: string): boolean => {
-    // Super admins bypass all restrictions
-    if (isSuperAdmin) return true;
-    // Always-allowed paths
-    if (ALWAYS_ALLOWED_PATHS.includes(pathOrModule)) return true;
-    // No plan = no restrictions (fallback)
-    if (!planName || allowedModules.length === 0) return true;
-
-    const module = PATH_TO_MODULE[pathOrModule] || pathOrModule;
-    return allowedModules.includes(module);
+  const isModuleAllowed = (_pathOrModule: string): boolean => {
+    // TEMPORARY: plan-based module restrictions disabled for all plans.
+    // Revert to the commented logic below to re-enable gating.
+    return true;
+    // if (isSuperAdmin) return true;
+    // if (ALWAYS_ALLOWED_PATHS.includes(pathOrModule)) return true;
+    // if (!planName || allowedModules.length === 0) return true;
+    // const module = PATH_TO_MODULE[pathOrModule] || pathOrModule;
+    // return allowedModules.includes(module);
   };
 
   return {

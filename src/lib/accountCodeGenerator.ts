@@ -1,3 +1,10 @@
+/**
+ * @deprecated for runtime use. The authoritative generator is the
+ * public.next_account_code() RPC — client-side generation cannot see
+ * other sessions and produced duplicate codes at level 4+.
+ * Retained for unit tests of the numbering scheme.
+ */
+
 import { ACCOUNT_NUMBER_RANGES, getSubtypeBand } from "./accountTypes";
 
 interface AccountForCodeGen {

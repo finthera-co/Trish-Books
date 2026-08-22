@@ -19,7 +19,7 @@ export interface QuoteItemInput {
 }
 
 export interface CreateQuoteInput {
-  customer_id: string;
+  customer_id: string | null;
   issue_date: string;
   expiry_date?: string | null;
   branch_code?: string | null;
@@ -122,6 +122,53 @@ export function useCreateQuote() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["quotes"] });
       toast.success("Quote created");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// Edits header + fully replaces the line items (delete + reinsert, same
+// pattern CreateInvoice uses for its draft-edit path). Status/quote_number
+// are untouched — this only updates the priced content of the estimate.
+export function useUpdateQuote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, input }: { id: string; input: CreateQuoteInput }) => {
+      const { items, ...header } = input;
+      const { error } = await (supabase as any)
+        .from("quotes")
+        .update({ ...header, updated_at: new Date().toISOString() })
+        .eq("id", id);
+      if (error) throw error;
+
+      const { error: delErr } = await (supabase as any).from("quote_items").delete().eq("quote_id", id);
+      if (delErr) throw delErr;
+
+      if (items.length) {
+        const { error: itemErr } = await (supabase as any)
+          .from("quote_items")
+          .insert(items.map((it, i) => ({
+            quote_id: id,
+            description: it.description,
+            quantity: it.quantity,
+            unit_price: it.unit_price,
+            total: it.total,
+            product_id: it.product_id || null,
+            account_id: it.account_id || null,
+            discount_amount: it.discount_amount || 0,
+            discount_percent: it.discount_percent || 0,
+            is_tax_inclusive: !!it.is_tax_inclusive,
+            tax_code_id: it.tax_code_id || null,
+            tax_group_id: it.tax_group_id || null,
+            sort_order: i,
+          })));
+        if (itemErr) throw itemErr;
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["quotes"] });
+      qc.invalidateQueries({ queryKey: ["quote_document"] });
+      toast.success("Quote updated");
     },
     onError: (e: Error) => toast.error(e.message),
   });

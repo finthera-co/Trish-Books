@@ -10,7 +10,6 @@
 export type SubledgerType =
   | "customer"
   | "vendor"
-  | "inventory"
   | "fixed_asset"
   | "asset_depreciation"
   | "none";
@@ -26,13 +25,21 @@ export interface MappableAccount {
   requires_subledger?: boolean;
   is_system?: boolean;
   is_locked?: boolean;
+  account_level?: number | null;
+  account_path?: string | null;
+  is_postable?: boolean | null;
+  // Optional — only present when the caller's query selected them. flattenAccountTree
+  // needs both to render/sort rows; call sites that only fetch mapping-engine fields
+  // (e.g. useData.ts's inheritance lookup) don't select these and stay unaffected.
+  account_code?: string;
+  account_name?: string;
+  category_id?: string | null;
 }
 
 // ─── Route Map (no hardcoded names) ───────────────────────
 const SUBLEDGER_ROUTES: Record<string, string> = {
   customer: "/sales/customers",
   vendor: "/accounting/vendors",
-  inventory: "/accounting/inventory",
   fixed_asset: "/assets/register",
   asset_depreciation: "/assets/depreciation",
 };
@@ -40,7 +47,6 @@ const SUBLEDGER_ROUTES: Record<string, string> = {
 const SUBLEDGER_MODULE_LABELS: Record<string, string> = {
   customer: "Customers",
   vendor: "Vendors",
-  inventory: "Inventory Items",
   fixed_asset: "Fixed Assets",
   asset_depreciation: "Depreciation Schedule",
 };
@@ -48,7 +54,6 @@ const SUBLEDGER_MODULE_LABELS: Record<string, string> = {
 const SUBLEDGER_JE_HINTS: Record<string, string> = {
   customer: "Use an invoice or receive payment instead",
   vendor: "Use a bill or payment voucher instead",
-  inventory: "Use an inventory adjustment instead",
   fixed_asset: "Use the asset module instead",
   asset_depreciation: "Use the depreciation run instead",
 };
@@ -61,7 +66,6 @@ export function detectSubledgerType(subtype: string | null | undefined): Subledg
   const lower = subtype.toLowerCase();
   if (lower.includes("accounts receivable") || lower === "receivable") return "customer";
   if (lower.includes("accounts payable") || lower === "payable") return "vendor";
-  if (lower.includes("inventory")) return "inventory";
   if (lower.includes("accumulated depreciation")) return "asset_depreciation";
   if (
     lower.includes("fixed asset") ||
@@ -87,8 +91,8 @@ export function deriveAccountFlags(subtype: string | null | undefined): {
   // account: it takes a direct opening balance and accepts manual postings
   // (depreciation runs, impairments, disposals).
   const isControl = stype !== "none" && stype !== "asset_depreciation";
-  // AR, AP, Inventory cannot have GL sub-accounts
-  const noSubAccounts = ["customer", "vendor", "inventory"].includes(stype);
+  // AR, AP cannot have GL sub-accounts
+  const noSubAccounts = ["customer", "vendor"].includes(stype);
   return {
     is_control_account: isControl,
     requires_subledger: isControl,
@@ -186,18 +190,83 @@ export function isDirectControl(account: MappableAccount): boolean {
 }
 
 // ─── Validation: Can Create Child ─────────────────────────
+export const MAX_ACCOUNT_DEPTH = 5;
+
+export interface ChildCheck {
+  allowed: boolean;
+  reason?: string;
+  /** Non-blocking advisory shown next to the parent picker. */
+  warning?: string;
+}
+
 export function canCreateChildUnder(
   parent: MappableAccount,
   _accountsMap: Map<string, MappableAccount>
-): { allowed: boolean; reason?: string } {
-  const stype = effectiveSubledgerType(parent);
-  if (["customer", "vendor", "inventory"].includes(stype)) {
+): ChildCheck {
+  const level = parent.account_level ?? 1;
+
+  if (level >= MAX_ACCOUNT_DEPTH) {
     return {
       allowed: false,
-      reason: `Sub-accounts are not allowed under ${SUBLEDGER_MODULE_LABELS[stype] || "this"} control accounts. Use the subledger module instead.`,
+      reason: `Maximum hierarchy depth (${MAX_ACCOUNT_DEPTH} levels) reached. Add the sub-account under a higher-level parent instead.`,
     };
   }
+
+  const stype = effectiveSubledgerType(parent);
+
+  // customer/vendor control accounts still allow grouping sub-accounts (e.g.
+  // "1200 Accounts Receivable -> 1210 Trade Receivables - Local"). What must
+  // not happen — one COA row per customer — is already prevented elsewhere:
+  // fn_flip_parent_postable makes the parent non-postable once it gains a
+  // child, and canPostJournalTo still demands a customer_id/vendor_id on any
+  // posting to a controlled account.
+  if (["customer", "vendor"].includes(stype)) {
+    const label = SUBLEDGER_MODULE_LABELS[stype] || "subledger";
+    return {
+      allowed: true,
+      warning:
+        `This creates a grouping sub-account under a ${label} control account. ` +
+        `Individual records still belong in the ${label} module — do not create one account per ${stype}. ` +
+        `The new account inherits control status and cannot be posted to directly.`,
+    };
+  }
+
   return { allowed: true };
+}
+
+/** Depth-first flatten of an account list into render order, with depth. */
+export function flattenAccountTree(
+  accounts: MappableAccount[],
+  opts?: { accountType?: string; excludeSubtreeOf?: string }
+): Array<{ account: MappableAccount; depth: number }> {
+  const byParent = new Map<string | null, MappableAccount[]>();
+
+  for (const a of accounts) {
+    if (opts?.accountType && a.account_type !== opts.accountType) continue;
+    const key = a.parent_account_id ?? null;
+    const bucket = byParent.get(key);
+    if (bucket) bucket.push(a);
+    else byParent.set(key, [a]);
+  }
+
+  for (const list of byParent.values()) {
+    list.sort((x, y) =>
+      (x.account_code || "").localeCompare(y.account_code || "", undefined, { numeric: true })
+    );
+  }
+
+  const out: Array<{ account: MappableAccount; depth: number }> = [];
+
+  const walk = (parentId: string | null, depth: number) => {
+    for (const a of byParent.get(parentId) ?? []) {
+      if (opts?.excludeSubtreeOf && a.id === opts.excludeSubtreeOf) continue; // prunes cycles
+      out.push({ account: a, depth });
+      walk(a.id, depth + 1);
+    }
+  };
+
+  walk(null, 0);
+  return out;
 }
 
 // ─── Validation: Can Post Journal Entry ───────────────────
@@ -213,7 +282,6 @@ export function canPostJournalTo(
   const entityMap: Record<string, string> = {
     customer: "customer_id",
     vendor: "vendor_id",
-    inventory: "item_id",
     fixed_asset: "asset_id",
     asset_depreciation: "asset_id",
   };
@@ -243,7 +311,6 @@ export function canSetOpeningBalance(
   const entityLabel: Record<string, string> = {
     customer: "customer",
     vendor: "vendor",
-    inventory: "inventory item",
     fixed_asset: "asset",
     asset_depreciation: "asset",
   };
@@ -336,7 +403,6 @@ export function detectSubledgerFromImportType(importType: string): SubledgerType
   const lower = importType.toLowerCase().trim();
   if (lower.includes("receivable") || lower === "ar") return "customer";
   if (lower.includes("payable") || lower === "ap") return "vendor";
-  if (lower.includes("inventory") || lower === "stock") return "inventory";
   if (lower.includes("depreciation") || lower.includes("accum")) return "asset_depreciation";
   if (lower.includes("fixed asset") || lower.includes("property") || lower.includes("equipment")) return "fixed_asset";
   return "none";
@@ -364,7 +430,6 @@ export const GLOBAL_INVALIDATION_KEYS = [
 export const SUBLEDGER_INVALIDATION_MAP: Record<string, string[]> = {
   customer: ["customers", "customers_with_balance", "ar_subledger", "ar_aging"],
   vendor: ["vendors", "vendors_with_balance", "ap_subledger", "ap_aging"],
-  inventory: ["inventory_items", "inventory_items_enhanced", "inventory_subledger"],
   fixed_asset: ["fixed_assets", "asset_subledger"],
   asset_depreciation: ["fixed_assets", "asset_depreciation", "asset_subledger"],
 };

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, FileText, Plus, Trash2, MoreHorizontal, Send, Check, X, ArrowRightCircle, Eye, Printer, Download, Loader2 } from "lucide-react";
+import { ArrowLeft, FileText, Plus, Trash2, MoreHorizontal, Send, Check, X, ArrowRightCircle, Eye, Pencil, Printer, Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,11 +14,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { formatCurrency } from "@/lib/currency";
 import { useCustomers, useAccounts } from "@/hooks/useData";
+import { QuickCustomerDialog } from "@/components/invoices/QuickCustomerDialog";
 import { useTaxGroups, useTaxCodes, useTaxProfile, currentRate } from "@/hooks/useTaxEngine";
 import { calculateLineTax, type TaxMemberInput } from "@/lib/taxEngine";
 import { discountFromPercent, percentFromDiscount } from "@/lib/lineDiscount";
 import {
-  useQuotes, useCreateQuote, useSetQuoteStatus, useDeleteQuote, useConvertQuoteToInvoice, useQuoteDocument,
+  useQuotes, useCreateQuote, useUpdateQuote, useSetQuoteStatus, useDeleteQuote, useConvertQuoteToInvoice, useQuoteDocument,
   type QuoteItemInput,
 } from "@/hooks/useQuotes";
 import QuoteDocument from "@/components/quotes/QuoteDocument";
@@ -26,6 +27,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { downloadQuotePdf } from "@/lib/quotePdf";
 import AccountCombobox from "@/components/shared/AccountCombobox";
 import { formatDate } from "@/lib/format";
+import { supabase } from "@/integrations/supabase/client";
 
 const TERMS = [
   { value: "due_on_receipt", label: "Due on receipt" },
@@ -64,11 +66,14 @@ export default function Quotes() {
 
   const { data: quotes, isLoading } = useQuotes();
   const createQuote = useCreateQuote();
+  const updateQuote = useUpdateQuote();
   const setStatus = useSetQuoteStatus();
   const delQuote = useDeleteQuote();
   const convert = useConvertQuoteToInvoice();
 
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [loadingEdit, setLoadingEdit] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const { data: previewDoc } = useQuoteDocument(previewId);
@@ -142,11 +147,38 @@ export default function Quotes() {
   const resetForm = () => {
     setForm({ customer_id: "", issue_date: new Date().toISOString().split("T")[0], expiry_date: "", branch_code: "", payment_terms: "net_30", notes: "", terms: "" });
     setLines([emptyLine()]);
+    setEditingId(null);
   };
 
-  const canSubmit = !!form.customer_id && lines.some((l) => l.rate > 0) && !createQuote.isPending;
+  const isSaving = createQuote.isPending || updateQuote.isPending;
+  const canSubmit = lines.some((l) => l.rate > 0) && !isSaving;
 
-  const handleCreate = async () => {
+  // Pull a quote's header + lines back into the form and reopen the same
+  // dialog in edit mode — tax_group_id/tax_code_id round-trip into the
+  // combined tax_sel selector the line rows use.
+  const openEdit = async (q: any) => {
+    setLoadingEdit(true);
+    const { data, error } = await (supabase as any)
+      .from("quotes").select("*, quote_items(*)").eq("id", q.id).single();
+    setLoadingEdit(false);
+    if (error || !data) return toast.error(error?.message || "Failed to load quote");
+
+    setForm({
+      customer_id: data.customer_id || "", issue_date: data.issue_date, expiry_date: data.expiry_date || "",
+      branch_code: data.branch_code || "", payment_terms: data.payment_terms, notes: data.notes || "", terms: data.terms || "",
+    });
+    const items = [...(data.quote_items ?? [])].sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    setLines(items.length ? items.map((it: any): LineDraft => ({
+      id: crypto.randomUUID(), description: it.description || "", qty: Number(it.quantity), rate: Number(it.unit_price),
+      discount_pct: Number(it.discount_percent || 0), discount: Number(it.discount_amount || 0),
+      tax_sel: it.tax_group_id ? `g:${it.tax_group_id}` : it.tax_code_id ? `c:${it.tax_code_id}` : "",
+      inclusive: !!it.is_tax_inclusive, account_id: it.account_id || "",
+    })) : [emptyLine()]);
+    setEditingId(q.id);
+    setOpen(true);
+  };
+
+  const handleSubmit = async () => {
     const items: QuoteItemInput[] = lines.filter((l) => l.rate > 0 || l.description).map((l, idx) => ({
       description: l.description, quantity: l.qty, unit_price: l.rate,
       discount_amount: l.discount, discount_percent: l.discount_pct,
@@ -155,12 +187,14 @@ export default function Quotes() {
       tax_group_id: l.tax_sel.startsWith("g:") ? l.tax_sel.slice(2) : null,
       tax_code_id: l.tax_sel.startsWith("c:") ? l.tax_sel.slice(2) : null,
     }));
-    await createQuote.mutateAsync({
-      customer_id: form.customer_id, issue_date: form.issue_date, expiry_date: form.expiry_date || null,
+    const input = {
+      customer_id: form.customer_id || null, issue_date: form.issue_date, expiry_date: form.expiry_date || null,
       branch_code: form.branch_code.trim() || null, payment_terms: form.payment_terms,
       notes: form.notes || null, terms: form.terms || null,
       subtotal, tax_amount: totalTax, discount_amount: totalDiscount, total_amount: total, items,
-    });
+    };
+    if (editingId) await updateQuote.mutateAsync({ id: editingId, input });
+    else await createQuote.mutateAsync(input);
     setOpen(false); resetForm();
   };
 
@@ -185,6 +219,7 @@ export default function Quotes() {
   };
 
   const handleConvert = async (q: any) => {
+    if (!q.customer_id) return toast.error("Add a customer to this quote before converting it to an invoice");
     const inv = await convert.mutateAsync(q.id);
     if (inv?.id) navigate(`/sales/invoices/${inv.id}/edit`);
   };
@@ -202,15 +237,21 @@ export default function Quotes() {
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
           <DialogTrigger asChild><Button><Plus className="w-4 h-4 mr-2" /> New Quote</Button></DialogTrigger>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader><DialogTitle>New Quote</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>{editingId ? "Edit Quote" : "New Quote"}</DialogTitle></DialogHeader>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Customer *</Label>
-                  <Select value={form.customer_id} onValueChange={(v) => setForm({ ...form, customer_id: v })}>
-                    <SelectTrigger><SelectValue placeholder="Select customer" /></SelectTrigger>
-                    <SelectContent>{(customers || []).map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
-                  </Select>
+                  <Label>Customer</Label>
+                  <div className="flex gap-2">
+                    <Select value={form.customer_id || "none"} onValueChange={(v) => setForm({ ...form, customer_id: v === "none" ? "" : v })}>
+                      <SelectTrigger><SelectValue placeholder="No customer" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No customer</SelectItem>
+                        {(customers || []).map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <QuickCustomerDialog onCreated={(id) => setForm({ ...form, customer_id: id })} />
+                  </div>
                 </div>
                 <div>
                   <Label>Branch / Entity code (QQQQ)</Label>
@@ -234,9 +275,19 @@ export default function Quotes() {
                 <div className="space-y-2 rounded-lg border border-border p-3">
                   {lines.map((l, idx) => (
                     <div key={l.id} className="space-y-2 rounded-md border border-border/60 p-2.5">
-                      <div className="flex items-center gap-2">
-                        <span className="w-4 shrink-0 text-[11px] text-muted-foreground">{idx + 1}</span>
-                        <Input className="h-9 min-w-0 flex-1 text-sm" placeholder="Description" value={l.description} onChange={(e) => updateLine(l.id, "description", e.target.value)} />
+                      <div className="flex items-start gap-2">
+                        <span className="mt-2 w-4 shrink-0 text-[11px] text-muted-foreground">{idx + 1}</span>
+                        <textarea
+                          className="h-9 min-h-9 min-w-0 flex-1 resize-none overflow-hidden rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          rows={1}
+                          placeholder="Description"
+                          value={l.description}
+                          onChange={(e) => {
+                            updateLine(l.id, "description", e.target.value);
+                            e.target.style.height = "auto";
+                            e.target.style.height = `${e.target.scrollHeight}px`;
+                          }}
+                        />
                         <AccountCombobox
                           options={revenueAccounts}
                           value={l.account_id}
@@ -324,7 +375,9 @@ export default function Quotes() {
                 </div>
               </div>
 
-              <Button className="w-full" onClick={handleCreate} disabled={!canSubmit}>{createQuote.isPending ? "Creating…" : "Create Quote"}</Button>
+              <Button className="w-full" onClick={handleSubmit} disabled={!canSubmit}>
+                {isSaving ? (editingId ? "Saving…" : "Creating…") : editingId ? "Save Changes" : "Create Quote"}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
@@ -367,6 +420,9 @@ export default function Quotes() {
                           <DropdownMenuTrigger asChild><button className="p-1 rounded hover:bg-accent"><MoreHorizontal className="w-4 h-4 text-muted-foreground" /></button></DropdownMenuTrigger>
                           <DropdownMenuContent>
                             <DropdownMenuItem onClick={() => setPreviewId(q.id)}><Eye className="w-4 h-4 mr-2" /> Preview</DropdownMenuItem>
+                            {!isConverted && (
+                              <DropdownMenuItem onClick={() => openEdit(q)} disabled={loadingEdit}><Pencil className="w-4 h-4 mr-2" /> Edit</DropdownMenuItem>
+                            )}
                             <DropdownMenuItem onClick={() => handleDownload(q.id)} disabled={downloadingId === q.id}>
                               {downloadingId === q.id
                                 ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />

@@ -2,15 +2,14 @@
 //
 //  action "post": recomputes line tax server-side at the CREDIT DATE's rates
 //    (never trusting client totals), reverses output VAT/SSCL in the tax
-//    sub-ledger (negative direction='output' rows), optionally returns credited
-//    goods to stock (Dr Inventory / Cr COGS + 'return' movement), enforces the
+//    sub-ledger (negative direction='output' rows), enforces the
 //    tiered approval gate and closed/filed-period guards, caps an
 //    invoice-linked note at that invoice's outstanding balance, and books:
 //      Dr Revenue (net, per line account)
 //      Dr VAT/SSCL output liability (per tax code)
 //      Cr Accounts Receivable (customer-tagged)
 //    plus ar_transactions (CREDIT_NOTE) and the legacy ar_subledger mirror.
-//  action "void": reversal JE, tax rows mirrored back, stock re-issued,
+//  action "void": reversal JE, tax rows mirrored back,
 //    CREDIT_NOTE_REVERSAL restores the invoice outstanding.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
@@ -78,7 +77,7 @@ Deno.serve(async (req) => {
     // ── Fetch credit note + lines ─────────────────────────────────────
     const { data: cn } = await admin
       .from("ar_credit_notes")
-      .select("*, ar_credit_note_items(*, products(id, is_tracked, inventory_item_id, expense_account_id, asset_account_id, name))")
+      .select("*, ar_credit_note_items(*)")
       .eq("id", credit_note_id)
       .eq("tenant_id", appUser.tenant_id)
       .single();
@@ -172,28 +171,6 @@ Deno.serve(async (req) => {
         p_reversal_date: today,
       });
 
-      // Re-issue any restocked goods.
-      const { data: restockMoves } = await admin
-        .from("stock_movements")
-        .select("id, item_id, quantity, unit_cost")
-        .eq("reference_type", "credit_note")
-        .eq("reference_id", credit_note_id);
-      if (restockMoves?.length) {
-        await admin.from("stock_movements").insert(
-          restockMoves.map((m: any) => ({
-            tenant_id: appUser.tenant_id,
-            item_id: m.item_id,
-            movement_type: "sale",
-            quantity: -Number(m.quantity),
-            unit_cost: Number(m.unit_cost),
-            reference_type: "credit_note_reversal",
-            reference_id: credit_note_id,
-            notes: `Reversal of credit-note restock ${m.id}`,
-            movement_date: today,
-          })),
-        );
-      }
-
       // Restore the linked invoice's outstanding (trigger-driven).
       const baseTotal = round2(Number(cn.amount) * (Number(cn.exchange_rate) || 1));
       let relatedTxnId: string | null = null;
@@ -281,7 +258,7 @@ Deno.serve(async (req) => {
     // ── Settings + accounts ───────────────────────────────────────────
     const { data: settings } = await admin
       .from("account_settings")
-      .select("ar_account_id, sales_account_id, tax_payable_account_id, vat_output_payable_account_id, cogs_account_id, inventory_asset_account_id, invoice_approval_threshold, credit_note_approval_threshold")
+      .select("ar_account_id, sales_account_id, tax_payable_account_id, vat_output_payable_account_id, invoice_approval_threshold, credit_note_approval_threshold")
       .eq("tenant_id", appUser.tenant_id)
       .maybeSingle();
 
@@ -528,39 +505,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ── Restock validation (tracked products flagged for return) ──────
-    type RestockItem = { item_id: string; qty: number; avg_cost: number; cogs_acct: string; asset_acct: string; line_total: number; name: string };
-    const restockItems: RestockItem[] = [];
-    for (const it of itemsAll) {
-      if (!it.restock) continue;
-      const product = it.products;
-      const invItemId = it.inventory_item_id || product?.inventory_item_id;
-      if (!product?.is_tracked || !invItemId) {
-        errors.push(`Line "${it.description || product?.name || it.id}" is flagged for restock but is not an inventory-tracked product`);
-        continue;
-      }
-      const { data: invRow } = await admin
-        .from("inventory_items")
-        .select("id, item_name, unit_cost, account_id")
-        .eq("id", invItemId)
-        .eq("tenant_id", appUser.tenant_id)
-        .single();
-      if (!invRow) {
-        errors.push(`Inventory item not found for product "${product?.name}"`);
-        continue;
-      }
-      const cogsAcct = product.expense_account_id ?? settings?.cogs_account_id;
-      const assetAcct = product.asset_account_id ?? invRow.account_id ?? settings?.inventory_asset_account_id;
-      if (!cogsAcct) errors.push(`Product "${product.name}" missing COGS account for restock`);
-      if (!assetAcct) errors.push(`Product "${product.name}" missing Inventory Asset account for restock`);
-      const qty = Number(it.quantity) || 0;
-      const avgCost = Number(invRow.unit_cost) || 0;
-      const lineTotal = round2(qty * avgCost);
-      if (cogsAcct && assetAcct && qty > 0 && lineTotal > 0) {
-        restockItems.push({ item_id: invItemId, qty, avg_cost: avgCost, cogs_acct: cogsAcct, asset_acct: assetAcct, line_total: lineTotal, name: invRow.item_name });
-      }
-    }
-
     // ── Revenue distribution ──────────────────────────────────────────
     const revenueByAccount = new Map<string, number>();
     if (hasLines) {
@@ -579,7 +523,6 @@ Deno.serve(async (req) => {
     if (arAccountId) accountIdsToCheck.add(arAccountId);
     for (const [id] of revenueByAccount) accountIdsToCheck.add(id);
     for (const [, agg] of taxByCode) accountIdsToCheck.add(agg.account);
-    for (const r of restockItems) { accountIdsToCheck.add(r.cogs_acct); accountIdsToCheck.add(r.asset_acct); }
     if (accountIdsToCheck.size > 0) {
       const { data: accs } = await admin
         .from("accounts")
@@ -620,10 +563,6 @@ Deno.serve(async (req) => {
       if (agg.amount > 0) journalLines.push({ account_id: agg.account, debit: toBase(agg.amount), credit: 0 });
     }
     journalLines.push({ account_id: arAccountId!, debit: 0, credit: toBase(total), customer_id: cn.customer_id });
-    for (const r of restockItems) {
-      journalLines.push({ account_id: r.asset_acct, debit: r.line_total, credit: 0 });
-      journalLines.push({ account_id: r.cogs_acct, debit: 0, credit: r.line_total });
-    }
 
     const totalDr = round2(journalLines.reduce((s, l) => s + l.debit, 0));
     const totalCr = round2(journalLines.reduce((s, l) => s + l.credit, 0));
@@ -725,24 +664,6 @@ Deno.serve(async (req) => {
       document_id: credit_note_id,
     });
 
-    // ── Stock returns ─────────────────────────────────────────────────
-    if (restockItems.length > 0) {
-      const { error: smErr } = await admin.from("stock_movements").insert(
-        restockItems.map((r) => ({
-          tenant_id: appUser.tenant_id,
-          item_id: r.item_id,
-          movement_type: "return",
-          quantity: r.qty,
-          unit_cost: r.avg_cost,
-          reference_type: "credit_note",
-          reference_id: credit_note_id,
-          notes: `Returned via credit note ${cn.credit_note_number}`,
-          movement_date: creditDate,
-        })),
-      );
-      if (smErr) console.error("Restock movement insert failed:", smErr.message);
-    }
-
     await admin
       .from("ar_credit_notes")
       .update({
@@ -767,7 +688,6 @@ Deno.serve(async (req) => {
         total_debit: totalDr,
         total_credit: totalCr,
         tax_reversed: usesTaxEngine ? computedTax : 0,
-        restocked: restockItems.map((r) => ({ item: r.name, qty: r.qty })),
         linked_invoice: cn.invoice_id || null,
       },
     });

@@ -51,7 +51,7 @@ export default function GlobalTopNav() {
               <DropdownMenuItem onClick={() => navigate("/accounting/journals")}>Journal Entry</DropdownMenuItem>
               <DropdownMenuItem onClick={() => navigate("/sales/invoices")}>Invoice</DropdownMenuItem>
               <DropdownMenuItem onClick={() => navigate("/expenses/tracker")}>Expense</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate("/banking/payment-vouchers")}>Payment Voucher</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/banking/write-checks")}>Write Check</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         )}

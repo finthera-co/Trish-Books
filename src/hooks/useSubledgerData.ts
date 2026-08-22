@@ -29,18 +29,6 @@ async function findAPAccountId(tenantId: string): Promise<string | null> {
   return data?.id || null;
 }
 
-async function findInventoryControlAccountId(tenantId: string): Promise<string | null> {
-  const { data } = await supabase
-    .from("accounts")
-    .select("id")
-    .eq("tenant_id", tenantId)
-    .eq("is_control_account", true)
-    .ilike("account_subtype", "%inventory%")
-    .limit(1)
-    .maybeSingle();
-  return data?.id || null;
-}
-
 async function findFixedAssetControlAccountId(tenantId: string): Promise<string | null> {
   const { data } = await supabase
     .from("accounts")
@@ -312,6 +300,8 @@ export function useCreateVendorWithOB() {
       tin?: string | null;
       wht_exempt?: boolean;
       wht_exemption_ref?: string | null;
+      payment_terms?: string;
+      currency?: string;
     }) => {
       const tenantId = appUser!.tenant_id;
 
@@ -328,6 +318,8 @@ export function useCreateVendorWithOB() {
           tin: vendor.tin || null,
           wht_exempt: vendor.wht_exempt ?? false,
           wht_exemption_ref: vendor.wht_exemption_ref || null,
+          payment_terms: vendor.payment_terms || "net_30",
+          currency: vendor.currency || "LKR",
           tenant_id: tenantId,
         } as any)
         .select()
@@ -365,7 +357,7 @@ export function useCreateVendorWithOB() {
 export function useUpdateVendor() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...updates }: { id: string; name?: string; email?: string; phone?: string; address?: string; payee_type?: string | null; default_payment_nature?: string | null; tin?: string | null; wht_exempt?: boolean; wht_exemption_ref?: string | null }) => {
+    mutationFn: async ({ id, ...updates }: { id: string; name?: string; email?: string; phone?: string; address?: string; payee_type?: string | null; default_payment_nature?: string | null; tin?: string | null; wht_exempt?: boolean; wht_exemption_ref?: string | null; payment_terms?: string; currency?: string }) => {
       const { opening_balance, ...safeUpdates } = updates as any;
       const { error } = await supabase.from("vendors").update(safeUpdates).eq("id", id);
       if (error) throw error;
@@ -401,179 +393,6 @@ export function useDeleteVendor() {
       qc.invalidateQueries({ queryKey: ["vendors"] });
       COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
       toast.success("Vendor deleted");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-}
-
-// ─── Inventory Items (enhanced) ───────────────────────────
-export function useInventoryItemsEnhanced() {
-  const { appUser } = useAuth();
-  return useQuery({
-    queryKey: ["inventory_items_enhanced", appUser?.tenant_id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("inventory_items")
-        .select("*")
-        .eq("tenant_id", appUser!.tenant_id)
-        .order("item_name");
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!appUser?.tenant_id,
-  });
-}
-
-export function useCreateInventoryItemEnhanced() {
-  const { appUser } = useAuth();
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (item: {
-      item_name: string;
-      sku?: string;
-      description?: string;
-      unit_cost?: number;
-      quantity_on_hand?: number;
-      account_id?: string;
-      cogs_account_id?: string;
-      tax_id?: string;
-      default_purchase_tax_code_id?: string | null;
-      default_purchase_tax_group_id?: string | null;
-    }) => {
-      const tenantId = appUser!.tenant_id;
-      const qty = item.quantity_on_hand || 0;
-      const cost = item.unit_cost || 0;
-
-      // The validate_inventory_item_mappings trigger requires BOTH an Inventory
-      // Asset account and a COGS account whenever is_active = true. Resolve both
-      // from the tenant's GL Account Mapping so the create form never has to
-      // surface them. Three-tier fallback: explicit → account_settings → COA.
-      const { data: settings } = await supabase
-        .from("account_settings")
-        .select("inventory_account_id, cogs_account_id")
-        .eq("tenant_id", tenantId)
-        .maybeSingle();
-
-      // Inventory Asset account
-      let accountId =
-        item.account_id ||
-        settings?.inventory_account_id ||
-        (await findInventoryControlAccountId(tenantId));
-
-      // COGS account
-      let cogsAccountId = item.cogs_account_id || settings?.cogs_account_id || null;
-      if (!cogsAccountId) {
-        const { data: cogsAccount } = await supabase
-          .from("accounts")
-          .select("id")
-          .eq("tenant_id", tenantId)
-          .in("account_code", ["5000", "5010"])
-          .limit(1)
-          .maybeSingle();
-        cogsAccountId = cogsAccount?.id || null;
-      }
-
-      if (!accountId || !cogsAccountId) {
-        throw new Error(
-          "Configure the Inventory Asset and COGS accounts in Settings → GL Account Mapping before creating items.",
-        );
-      }
-
-      const { data, error } = await supabase
-        .from("inventory_items")
-        .insert({
-          item_name: item.item_name,
-          sku: item.sku || null,
-          description: item.description || null,
-          unit_cost: cost,
-          quantity_on_hand: qty,
-          account_id: accountId,
-          cogs_account_id: cogsAccountId,
-          tax_id: item.tax_id || null,
-          default_purchase_tax_code_id: item.default_purchase_tax_code_id || null,
-          default_purchase_tax_group_id: item.default_purchase_tax_group_id || null,
-          tenant_id: tenantId,
-        } as any)
-        .select()
-        .single();
-      if (error) throw error;
-
-      // Create the matching sales-side product so this item shows up on invoices
-      // and decrements stock when posted. The products validation trigger sets
-      // is_tracked=true for type='inventory'. Asset/COGS accounts mirror the
-      // inventory item so the post-invoice edge function can resolve COGS.
-      // Price seeds from unit cost (no selling price on this form); editable on
-      // the product or the invoice line.
-      const { error: prodErr } = await supabase
-        .from("products")
-        .insert({
-          name: item.item_name,
-          description: item.description || null,
-          price: cost,
-          type: "inventory",
-          inventory_item_id: data.id,
-          expense_account_id: cogsAccountId,
-          asset_account_id: accountId,
-          tenant_id: tenantId,
-        } as any);
-      if (prodErr) {
-        // Roll back the inventory item so we never leave an orphan that can't
-        // reach invoices (the original bug state).
-        await supabase.from("inventory_items").delete().eq("id", data.id);
-        throw prodErr;
-      }
-      return data;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["inventory_items_enhanced"] });
-      qc.invalidateQueries({ queryKey: ["inventory_items"] });
-      qc.invalidateQueries({ queryKey: ["inventory_subledger"] });
-      qc.invalidateQueries({ queryKey: ["products"] });
-      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
-      toast.success("Inventory item created");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-}
-
-export function useUpdateInventoryItem() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id, ...updates }: { id: string; item_name?: string; sku?: string; description?: string; unit_cost?: number; quantity_on_hand?: number; default_purchase_tax_code_id?: string | null; default_purchase_tax_group_id?: string | null }) => {
-      const { error } = await supabase.from("inventory_items").update(updates as any).eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["inventory_items_enhanced"] });
-      qc.invalidateQueries({ queryKey: ["inventory_items"] });
-      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
-      toast.success("Inventory item updated");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-}
-
-export function useDeleteInventoryItem() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const { count } = await supabase
-        .from("inventory_subledger")
-        .select("id", { count: "exact", head: true })
-        .eq("item_id", id);
-
-      if (count && count > 0) {
-        throw new Error("Cannot delete inventory item with existing subledger transactions.");
-      }
-
-      const { error } = await supabase.from("inventory_items").delete().eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["inventory_items_enhanced"] });
-      qc.invalidateQueries({ queryKey: ["inventory_items"] });
-      COA_QUERY_KEYS.forEach(k => qc.invalidateQueries({ queryKey: [k] }));
-      toast.success("Inventory item deleted");
     },
     onError: (e: Error) => toast.error(e.message),
   });

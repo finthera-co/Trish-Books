@@ -12,7 +12,7 @@ import { invokeEdgeFunction } from "@/lib/edgeFunction";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
-// ─── AccountSettings — all 19 mappable GL control fields ─────────────────────
+// ─── AccountSettings — mappable GL control fields ─────────────────────────────
 
 export interface AccountSettings {
   id?: string;
@@ -25,11 +25,6 @@ export interface AccountSettings {
   vat_input_receivable_account_id:      string | null;   // Dr on purchases (asset)
   ap_account_id:                        string | null;
   bank_account_id:                      string | null;
-  // Inventory & Procurement
-  inventory_account_id:                 string | null;
-  cogs_account_id:                      string | null;
-  grni_clearing_account_id:             string | null;
-  purchase_price_variance_account_id:   string | null;
   // Fixed Assets — global fallback (asset category takes priority)
   depreciation_expense_account_id:      string | null;
   accumulated_depreciation_account_id:  string | null;
@@ -62,6 +57,12 @@ export interface AccountSettings {
   bank_import_unrecognized_payment_account_id?: string | null;
   bank_import_posting_mode?:            "auto_post" | "draft" | null;
   bank_import_amount_ceiling?:          number | null;
+  // Class/Location tracking (QuickBooks dimension parity). Class reuses the
+  // pre-existing cost_centers table; Location's label is user-customizable
+  // (QB lets you rename it "Branch"/"Store"/"Division"/"Property").
+  class_tracking_enabled?:              boolean;
+  location_tracking_enabled?:           boolean;
+  location_label?:                      string;
 }
 
 // ─── AccountSettingsCompleteness — shape returned by get_account_settings_completeness RPC

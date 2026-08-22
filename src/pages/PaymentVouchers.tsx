@@ -16,7 +16,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { sortAccounts } from "@/lib/accountSort";
-import { Plus, Search, Trash2, Eye, Edit, FileText, CalendarIcon, X, SlidersHorizontal } from "lucide-react";
+import { Plus, Search, Trash2, Eye, Edit, FileText, CalendarIcon, X, SlidersHorizontal, Printer } from "lucide-react";
 import { useMyPermissions } from "@/hooks/usePermissions";
 import PaymentVoucherForm from "@/components/payment-vouchers/PaymentVoucherForm";
 import PaymentVoucherDetails from "@/components/payment-vouchers/PaymentVoucherDetails";
@@ -154,12 +154,12 @@ export default function PaymentVouchers() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Payment Vouchers</h1>
-          <p className="text-sm text-muted-foreground">Manage payment vouchers and track disbursements</p>
+          <h1 className="text-2xl font-bold text-foreground">Write Checks</h1>
+          <p className="text-sm text-muted-foreground">Write and track checks against your bank accounts</p>
         </div>
         {canEditBanking("banking") && (
           <Button onClick={() => { setEditId(null); setShowForm(true); }}>
-            <Plus className="w-4 h-4 mr-2" /> New Voucher
+            <Plus className="w-4 h-4 mr-2" /> Write Checks
           </Button>
         )}
       </div>
@@ -329,17 +329,18 @@ export default function PaymentVouchers() {
                   <TableHead>Method</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead className="text-center">Print</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filtered.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                       <FileText className="w-8 h-8 mx-auto mb-2 opacity-50" />
                       {activeFilterCount > 0 || search
-                        ? "No vouchers match your filters"
-                        : "No payment vouchers found"}
+                        ? "No checks match your filters"
+                        : "No checks written yet"}
                     </TableCell>
                   </TableRow>
                 )}
@@ -355,6 +356,13 @@ export default function PaymentVouchers() {
                     <TableCell className="text-right font-mono">{formatCurrency(Number(v.total_amount))}</TableCell>
                     <TableCell>
                       <Badge variant={v.status === "posted" ? "default" : "secondary"}>{v.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {v.print_later && (
+                        <Badge variant="outline" className="gap-1">
+                          <Printer className="w-3 h-3" /> To Print
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -388,9 +396,9 @@ export default function PaymentVouchers() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editId ? "Edit Payment Voucher" : "Create Payment Voucher"}</DialogTitle>
+            <DialogTitle>{editId ? "Edit Check" : "Write Checks"}</DialogTitle>
           </DialogHeader>
           <PaymentVoucherForm
             editId={editId}
@@ -410,9 +418,9 @@ export default function PaymentVouchers() {
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Payment Voucher?</AlertDialogTitle>
+            <AlertDialogTitle>Delete Check?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. The voucher and its line items will be permanently deleted.
+              This action cannot be undone. The check and its line items will be permanently deleted.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

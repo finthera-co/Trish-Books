@@ -210,7 +210,7 @@ export function validateAccountStatus(
  * Which sub-ledger tag a line against this account can carry, if any.
  *
  * Only customer (AR) and vendor (AP) are offered on the manual entry forms —
- * inventory and fixed assets move through their own modules, which post the
+ * fixed assets move through their own module, which posts the
  * quantity and cost side the GL alone cannot reconstruct.
  */
 export function controlEntityFor(
@@ -541,7 +541,6 @@ export function requiresSubledgerBreakdown(account: AccountInfo): string | null 
   const labelMap: Record<string, string> = {
     customer: "customer",
     vendor: "vendor",
-    inventory: "inventory",
     fixed_asset: "fixed_asset",
   };
   return labelMap[stype] || null;

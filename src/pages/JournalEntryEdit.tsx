@@ -30,6 +30,8 @@ import { typeColors, getTypeLabel } from "@/lib/accountTypes";
 import AccountCombobox from "@/components/shared/AccountCombobox";
 import { useJournalEntryDraft } from "@/hooks/useJournalEntryDraft";
 import DraftRestoredNotice from "@/components/journal/DraftRestoredNotice";
+import { useAccountSettings } from "@/hooks/useAccountSettings";
+import { useCostCenters, useLocations } from "@/hooks/useDimensions";
 
 const fmt = (n: number) =>
   n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -63,6 +65,12 @@ export default function JournalEntryEdit() {
   const { data: accounts } = useAccounts();
   const { data: customers } = useCustomers();
   const { data: vendors } = useVendors();
+  const { data: accountSettings } = useAccountSettings();
+  const { data: costCenters } = useCostCenters();
+  const { data: locations } = useLocations();
+  const classTrackingEnabled = !!accountSettings?.class_tracking_enabled;
+  const locationTrackingEnabled = !!accountSettings?.location_tracking_enabled;
+  const locationLabel = accountSettings?.location_label || "Location";
 
   const { data: entry, isLoading, error } = useQuery({
     queryKey: ["journal_entry", id],
@@ -98,6 +106,7 @@ export default function JournalEntryEdit() {
   // Editable, unlike the reference: a cheque number is often only known (or
   // corrected) after the entry has been posted.
   const [chequeNumber, setChequeNumber] = useState("");
+  const [locationId, setLocationId] = useState("");
   const [lines, setLines] = useState<EditLine[]>([]);
   const [initialized, setInitialized] = useState(false);
   // The entry exactly as it was loaded. Edits are only worth keeping as a draft
@@ -112,6 +121,7 @@ export default function JournalEntryEdit() {
       setEntryDate(entry.entry_date);
       setReference(entry.reference || "");
       setChequeNumber(entry.cheque_number || "");
+      setLocationId((entry as any).location_id || "");
       const entryLines = ((entry.journal_lines as any[]) || [])
         // Match the order the lines post and report in, not whatever order the
         // embedded select happened to return.
@@ -286,6 +296,7 @@ export default function JournalEntryEdit() {
           description: derivedDescription,
           entry_date: entryDate,
           cheque_number: chequeNumber.trim() || null,
+          location_id: locationId || null,
           // reference stays the same (not editable in edit mode)
         })
         .eq("id", id);
@@ -461,7 +472,7 @@ export default function JournalEntryEdit() {
             />
           )}
           {/* Header fields. No entry-level description: each line carries its own. */}
-          <div className="grid grid-cols-3 gap-4 max-w-2xl">
+          <div className={`grid gap-4 max-w-2xl ${locationTrackingEnabled ? "grid-cols-2 md:grid-cols-4" : "grid-cols-3"}`}>
             <div>
               <label className="text-sm font-medium text-foreground">
                 Date <span className="text-destructive">*</span>
@@ -501,6 +512,21 @@ export default function JournalEntryEdit() {
               />
               <p className="text-[10px] text-muted-foreground mt-0.5">Shows in the Account Register</p>
             </div>
+            {locationTrackingEnabled && (
+              <div>
+                <label className="text-sm font-medium text-foreground">{locationLabel}</label>
+                <select
+                  value={locationId}
+                  onChange={(e) => setLocationId(e.target.value)}
+                  className="mt-1 w-full text-sm border border-input rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+                >
+                  <option value="">Not set</option>
+                  {(locations || []).map((l) => (
+                    <option key={l.id} value={l.id}>{l.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           {/* Journal Lines */}
@@ -596,6 +622,22 @@ export default function JournalEntryEdit() {
                               : (vendors || []).map((v) => ({ id: v.id, name: v.name }))
                           }
                         />
+                      )}
+                      {classTrackingEnabled && (
+                        <div className="flex items-center gap-2 pl-1">
+                          <span className="text-[11px] text-muted-foreground shrink-0">Class</span>
+                          <select
+                            value={line.cost_center_id ?? ""}
+                            onChange={(e) => updateLine(i, "cost_center_id", e.target.value || null)}
+                            aria-label={`Class for line ${i + 1}`}
+                            className="text-xs border border-input rounded-md px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors max-w-[16rem]"
+                          >
+                            <option value="">Not set</option>
+                            {(costCenters || []).map((cc) => (
+                              <option key={cc.id} value={cc.id}>{cc.name}</option>
+                            ))}
+                          </select>
+                        </div>
                       )}
                       {lineNotice && (
                         <div

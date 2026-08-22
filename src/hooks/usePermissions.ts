@@ -13,7 +13,6 @@ export const PERMISSION_MODULES = [
   { key: "accounts", label: "Chart of Accounts", icon: "BookOpen" },
   { key: "journals", label: "Journal Entries", icon: "FileText" },
   { key: "payroll", label: "Payroll", icon: "DollarSign" },
-  { key: "inventory", label: "Inventory", icon: "Package" },
   { key: "reports", label: "Reports", icon: "BarChart3" },
   { key: "banking", label: "Banking", icon: "Building2" },
   { key: "settings", label: "Settings", icon: "Settings" },

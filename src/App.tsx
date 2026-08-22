@@ -27,6 +27,7 @@ import ModuleDashboard from "./pages/ModuleDashboard";
 
 // Pages
 import Home from "./pages/Home";
+import DashboardOverview from "./pages/DashboardOverview";
 import Notifications from "./pages/Notifications";
 import ShellPreview from "./pages/ShellPreview";
 import Landing from "./pages/Landing";
@@ -70,6 +71,7 @@ import RecurringInvoices from "./pages/RecurringInvoices";
 import Quotes from "./pages/Quotes";
 import ForeignExchange from "./pages/ForeignExchange";
 import ProductsTaxes from "./pages/ProductsTaxes";
+import ProductDetail from "./pages/ProductDetail";
 import TaxCenter from "./pages/TaxCenter";
 import TaxSettings from "./pages/TaxSettings";
 import Expenses from "./pages/Expenses";
@@ -98,6 +100,7 @@ import DepreciationRun from "./pages/DepreciationRun";
 import AssetCategories from "./pages/AssetCategories";
 import SettingsPage from "./pages/SettingsPage";
 import AccountMapping from "./pages/AccountMapping";
+import ClassLocationSettings from "./pages/ClassLocationSettings";
 import PostingProfiles from "./pages/PostingProfiles";
 import UsersPage from "./pages/UsersPage";
 import Tenants from "./pages/Tenants";
@@ -126,9 +129,9 @@ import APAgingReport from "./pages/APAgingReport";
 import VendorsPage from "./pages/VendorsPage";
 import VendorDetail from "./pages/VendorDetail";
 import BillsPage from "./pages/BillsPage";
+import EnterBill from "./pages/EnterBill";
 import PayBillsPage from "./pages/PayBillsPage";
-import InventoryPage from "./pages/InventoryPage";
-import Procurement from "./pages/Procurement";
+import RecurringBills from "./pages/RecurringBills";
 import BankAccountsPage from "./pages/BankAccountsPage";
 
 // Super Admin pages
@@ -176,8 +179,11 @@ const App = () => (
               </Route>
 
               <Route element={<AppLayout />}>
-                {/* Home — renders different dashboard based on role */}
+                {/* Home — navigation landing page, role-aware redirect */}
                 <Route path="/home" element={<Home />} />
+
+                {/* Dashboard — stats, KPIs, charts, moved off the home page */}
+                <Route path="/dashboard" element={<DashboardOverview />} />
 
                 {/* Notifications feed (all alerts) — available to any signed-in user */}
                 <Route path="/notifications" element={<Notifications />} />
@@ -229,10 +235,11 @@ const App = () => (
                     <Route path="/accounting/vendors" element={<VendorsPage />} />
                     <Route path="/accounting/vendors/:id" element={<VendorDetail />} />
                     <Route path="/accounting/bills" element={<BillsPage />} />
+                    <Route path="/accounting/bills/new" element={<EnterBill />} />
+                    <Route path="/accounting/bills/:id" element={<EnterBill />} />
                     <Route path="/accounting/pay-bills" element={<PayBillsPage />} />
+                    <Route path="/accounting/recurring-bills" element={<RecurringBills />} />
                     <Route path="/accounting/ap-aging" element={<APAgingReport />} />
-                    <Route path="/accounting/inventory" element={<InventoryPage />} />
-                    <Route path="/accounting/procurement" element={<Procurement />} />
                     <Route path="/accounting/bank-accounts" element={<BankAccountsPage />} />
                   </Route>
 
@@ -244,7 +251,8 @@ const App = () => (
                     <Route path="/banking/suspense-clearing" element={<SuspenseClearing />} />
                     <Route path="/banking/held-rows" element={<HeldRows />} />
                     <Route path="/banking/import-rules" element={<BankImportRules />} />
-                    <Route path="/banking/payment-vouchers" element={<PaymentVouchers />} />
+                    <Route path="/banking/write-checks" element={<PaymentVouchers />} />
+                    <Route path="/banking/payment-vouchers" element={<Navigate to="/banking/write-checks" replace />} />
                     <Route path="/banking/petty-cash" element={<PettyCash />} />
                     <Route path="/banking/petty-cash/voucher/new" element={<PettyCashVoucherForm />} />
                     <Route path="/banking/petty-cash/voucher/:id" element={<PettyCashVoucherDetail />} />
@@ -279,6 +287,7 @@ const App = () => (
                     <Route path="/sales/customers/:id/statement" element={<CustomerStatement />} />
                     <Route path="/sales/notifications" element={<Notifications />} />
                     <Route path="/sales/products-taxes" element={<ProductsTaxes />} />
+                    <Route path="/sales/products/:id" element={<ProductDetail />} />
                   </Route>
 
                   {/* Expenses module */}
@@ -335,6 +344,7 @@ const App = () => (
                     <Route path="/settings/general" element={<SettingsPage />} />
                     <Route path="/settings/users" element={<UsersPage />} />
                     <Route path="/settings/account-mapping" element={<AccountMapping />} />
+                    <Route path="/settings/classes-locations" element={<ClassLocationSettings />} />
                     <Route path="/settings/posting-profiles" element={<PostingProfiles />} />
                     <Route path="/settings/payroll-gl-mapping" element={<PayrollGLMapping />} />
                     <Route path="/settings/tax" element={<TaxSettings />} />

@@ -452,7 +452,7 @@ export default function Ledger() {
     if (!row.transaction_id) return;
     switch (row.transaction_type) {
       case "payment_voucher":
-        navigate(`/banking/payment-vouchers?highlight=${row.transaction_id}`);
+        navigate(`/banking/write-checks?highlight=${row.transaction_id}`);
         break;
       case "payroll":
         navigate(`/payroll/runs?highlight=${row.transaction_id}`);
@@ -907,7 +907,7 @@ export default function Ledger() {
                         <tr
                           key={row.id}
                           onClick={() => handleDrillDown(row)}
-                          className={`border-b border-border/50 cursor-pointer transition-colors hover:bg-primary/5 ${row.isReversal ? "bg-destructive/5" : ""}`}
+                          className={`border-b border-border/50 cursor-pointer transition-colors hover:bg-primary/5 ${row.isReversal ? "bg-destructive/5" : i % 2 === 0 ? "bg-[hsl(var(--success)/16%)]" : "bg-background"}`}
                         >
                           <td className="px-3 py-2 print:hidden" onClick={(e) => e.stopPropagation()}>
                             <Checkbox

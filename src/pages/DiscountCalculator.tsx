@@ -22,7 +22,7 @@ function calc(gross: number, discType: DiscType, discVal: number, taxPct: number
   return { discount, afterDiscount, tax, total };
 }
 
-const productPrice = (p: any) => Number(p?.inventory_item?.selling_price ?? p?.price) || 0;
+const productPrice = (p: any) => Number(p?.price) || 0;
 
 interface Row { id: string; product_id: string; name: string; qty: number; price: number; discType: DiscType; discVal: number; taxPct: number; }
 const emptyRow = (): Row => ({ id: crypto.randomUUID(), product_id: "", name: "", qty: 1, price: 0, discType: "pct", discVal: 0, taxPct: 0 });

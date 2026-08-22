@@ -75,3 +75,38 @@ export function useRunFxRevaluation() {
     onError: (e: Error) => toast.error(e.message.replace(/^.*?:\s*/, "")),
   });
 }
+
+export function useApFxRevaluations() {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["ap_fx_revaluations", appUser?.tenant_id],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("ap_fx_revaluations")
+        .select("*, supplier_bills(bill_number)")
+        .eq("tenant_id", appUser!.tenant_id)
+        .order("period_end", { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      return data as any[];
+    },
+    enabled: !!appUser?.tenant_id,
+  });
+}
+
+export function useRunApFxRevaluation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (periodEnd: string) => {
+      const { data, error } = await supabase.rpc("revalue_ap_fx" as any, { p_period_end: periodEnd });
+      if (error) throw error;
+      return data as { ok: boolean; bills: number; net_fx: number; message?: string };
+    },
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["ap_fx_revaluations"] });
+      qc.invalidateQueries({ queryKey: ["supplier_bills"] });
+      toast.success(res?.message || `Revaluation posted (${res?.bills ?? 0} bills, net ${res?.net_fx ?? 0})`);
+    },
+    onError: (e: Error) => toast.error(e.message.replace(/^.*?:\s*/, "")),
+  });
+}

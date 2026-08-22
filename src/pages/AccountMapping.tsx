@@ -195,7 +195,7 @@ export default function AccountMapping() {
         <div className="flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
           <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
           <p className="text-sm font-medium text-emerald-800">
-            All 19 accounts mapped — posting engines have full coverage.
+            All accounts mapped — posting engines have full coverage.
           </p>
         </div>
       );
@@ -275,7 +275,6 @@ export default function AccountMapping() {
       <Tabs defaultValue="core">
         <TabsList>
           <TabsTrigger value="core">Core</TabsTrigger>
-          <TabsTrigger value="inventory">Inventory &amp; Procurement</TabsTrigger>
           <TabsTrigger value="assets">Fixed Assets</TabsTrigger>
           <TabsTrigger value="equity">Equity &amp; FX</TabsTrigger>
           <TabsTrigger value="payroll">Payroll</TabsTrigger>
@@ -342,51 +341,7 @@ export default function AccountMapping() {
           </Card>
         </TabsContent>
 
-        {/* ── Tab 2: Inventory & Procurement ────────────────────────────── */}
-        <TabsContent value="inventory" className="mt-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Inventory &amp; Procurement</CardTitle>
-              <CardDescription>
-                Stock movements, cost of sales, and the three-way match clearing cycle.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <FieldRow fieldKey="inventory_account_id" label="Inventory / Stock Control" badge={<Dr />}
-                types={["Asset"]}
-                hint="Debited on GRN receipt; credited on COGS entry at sale."
-                quickType="Asset" quickSubtype="Inventory" quickName="Inventory"
-                {...sharedProps} />
-              <FieldRow fieldKey="cogs_account_id" label="Cost of Goods Sold" badge={<Dr />}
-                types={["Cost of Goods Sold", "Expense"]}
-                hint="Debited when an invoiced tracked product is issued from stock."
-                quickType="Cost of Goods Sold" quickSubtype="Cost of Materials" quickName="Cost of Goods Sold"
-                {...sharedProps} />
-              <FieldRow fieldKey="grni_clearing_account_id" label="Goods Received Not Invoiced" badge={<DrCr />}
-                types={["Liability"]}
-                hint="Credited on GRN (accrual); debited when supplier bill is posted."
-                quickType="Liability" quickSubtype="Other Current Liability" quickName="GRNI Clearing"
-                {...sharedProps} />
-              <FieldRow fieldKey="purchase_price_variance_account_id" label="Purchase Price Variance (PPV)" badge={<DrCr />}
-                types={["Expense", "Cost of Goods Sold"]}
-                hint="Captures cost difference between PO/GRN cost and actual bill cost."
-                quickType="Cost of Goods Sold" quickSubtype="Other COGS" quickName="Purchase Price Variance"
-                {...sharedProps} />
-              <SampleJournal
-                tabKey="inventory"
-                title="Sample journal entry — GRN Receipt"
-                rows={[
-                  { account: "Inventory / Stock", dr: "500.00" },
-                  { account: "GRNI Clearing", cr: "500.00", indent: true },
-                ]}
-                previewOpen={previewOpen}
-                setPreviewOpen={setPreviewOpen}
-              />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* ── Tab 3: Fixed Assets ───────────────────────────────────────── */}
+        {/* ── Tab 2: Fixed Assets ───────────────────────────────────────── */}
         <TabsContent value="assets" className="mt-4">
           <Card>
             <CardHeader className="pb-2">
@@ -431,7 +386,7 @@ export default function AccountMapping() {
           </Card>
         </TabsContent>
 
-        {/* ── Tab 4: Equity & FX ────────────────────────────────────────── */}
+        {/* ── Tab 3: Equity & FX ────────────────────────────────────────── */}
         <TabsContent value="equity" className="mt-4">
           <Card>
             <CardHeader className="pb-2">
@@ -468,7 +423,7 @@ export default function AccountMapping() {
           </Card>
         </TabsContent>
 
-        {/* ── Tab 5: Payroll ────────────────────────────────────────────── */}
+        {/* ── Tab 4: Payroll ────────────────────────────────────────────── */}
         <TabsContent value="payroll" className="mt-4">
           <Card>
             <CardHeader className="pb-2">

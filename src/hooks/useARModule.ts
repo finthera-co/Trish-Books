@@ -134,11 +134,8 @@ export interface CreditNoteItemInput {
   is_tax_inclusive?: boolean;
   account_id?: string | null;
   product_id?: string | null;
-  inventory_item_id?: string | null;
   tax_code_id?: string | null;
   tax_group_id?: string | null;
-  /** Return the credited goods to stock (inventory-tracked products only). */
-  restock?: boolean;
   sort_order?: number;
 }
 
@@ -202,10 +199,8 @@ export function useCreateCreditNote() {
             is_tax_inclusive: it.is_tax_inclusive ?? false,
             account_id: it.account_id || null,
             product_id: it.product_id || null,
-            inventory_item_id: it.inventory_item_id || null,
             tax_code_id: it.tax_code_id || null,
             tax_group_id: it.tax_group_id || null,
-            restock: it.restock ?? false,
             sort_order: it.sort_order ?? idx,
           })),
         );
@@ -225,7 +220,7 @@ export function useCreateCreditNote() {
 }
 
 /** Post a draft credit note: server recomputes tax, reverses output VAT/SSCL,
- *  restocks flagged lines, enforces approval + period guards, books the GL. */
+ *  enforces approval + period guards, books the GL. */
 export function usePostCreditNote() {
   const qc = useQueryClient();
   return useMutation({

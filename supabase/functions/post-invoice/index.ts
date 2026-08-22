@@ -94,10 +94,10 @@ Deno.serve(async (req) => {
       rlHeaders = headers;
     }
 
-    // ── Fetch invoice + lines (with product inventory linkage) ────────
+    // ── Fetch invoice + lines ──────────────────────────────────────────
     const { data: invoice, error: invErr } = await admin
       .from("invoices")
-      .select("*, invoice_items(*, products(id, is_tracked, inventory_item_id, expense_account_id, asset_account_id, name))")
+      .select("*, invoice_items(*)")
       .eq("id", invoice_id)
       .eq("tenant_id", appUser.tenant_id)
       .single();
@@ -168,27 +168,6 @@ Deno.serve(async (req) => {
         credit: Number(l.debit) || 0,
       }));
       await admin.from("journal_lines").insert(revLines);
-
-      // Reverse stock movements (re-add stock that was issued on sale)
-      const { data: salesMovements } = await admin
-        .from("stock_movements")
-        .select("id, item_id, quantity, unit_cost")
-        .eq("reference_type", "invoice")
-        .eq("reference_id", invoice_id);
-      if (salesMovements && salesMovements.length > 0) {
-        const reversals = salesMovements.map((m: any) => ({
-          tenant_id: appUser.tenant_id,
-          item_id: m.item_id,
-          movement_type: "return",
-          quantity: -Number(m.quantity), // original was negative (issue) → reversal positive
-          unit_cost: Number(m.unit_cost),
-          reference_type: "invoice_reversal",
-          reference_id: invoice_id,
-          notes: `Reversal of sale movement ${m.id}`,
-          movement_date: new Date().toISOString().slice(0, 10),
-        }));
-        await admin.from("stock_movements").insert(reversals);
-      }
 
       // Tax sub-ledger: mirror every original row with negated amounts
       // (source_type='reversal', reversal_of_id set); originals flagged
@@ -263,7 +242,6 @@ Deno.serve(async (req) => {
     // Multi-currency: document amounts (total/subtotal/tax) are in invoice.currency;
     // the GL is booked in BASE (LKR) at the invoice's exchange_rate. For LKR
     // invoices fx === 1 and toBase() is a no-op, so existing behavior is unchanged.
-    // COGS/Inventory are already in base (inventory cost is held in LKR) and are NOT scaled.
     const fx = Number((invoice as any).exchange_rate) || 1;
     const toBase = (n: number) => Math.round(n * fx * 100) / 100;
 
@@ -283,7 +261,7 @@ Deno.serve(async (req) => {
     // ── Resolve account settings ────────────────────────────────────
     const { data: settings } = await admin
       .from("account_settings")
-      .select("ar_account_id, sales_account_id, tax_payable_account_id, vat_output_payable_account_id, cogs_account_id, inventory_asset_account_id, enforce_credit_limit, invoice_approval_threshold")
+      .select("ar_account_id, sales_account_id, tax_payable_account_id, vat_output_payable_account_id, enforce_credit_limit, invoice_approval_threshold")
       .eq("tenant_id", appUser.tenant_id)
       .maybeSingle();
 
@@ -604,71 +582,6 @@ Deno.serve(async (req) => {
 
     const taxAmount = usesTaxEngine ? 0 : Number(invoice.tax_amount || 0);
 
-    // ── COGS / Inventory validation for tracked products ────────────
-    type CogsItem = { item_id: string; qty: number; avg_cost: number; cogs_acct: string; asset_acct: string; line_total: number; name: string };
-    const cogsItems: CogsItem[] = [];
-    for (const item of items) {
-      const product = (item as any).products;
-      const invItemId = item.inventory_item_id || product?.inventory_item_id;
-      if (!product?.is_tracked || !invItemId) continue;
-
-      // Resolve avg cost + asset account from inventory_items
-      const { data: invRow, error: invRowErr } = await admin
-        .from("inventory_items")
-        .select("id, item_name, unit_cost, account_id, quantity_on_hand")
-        .eq("id", invItemId)
-        .eq("tenant_id", appUser.tenant_id)
-        .single();
-      if (invRowErr || !invRow) {
-        errors.push(`Inventory item ${invItemId} not found for product "${product?.name}"`);
-        continue;
-      }
-
-      // Three-tier: product-level → inventory item's account → global settings fallback
-      const cogsAcct =
-        product.expense_account_id
-        ?? settings?.cogs_account_id;
-
-      const assetAcct =
-        product.asset_account_id
-        ?? invRow.account_id
-        ?? settings?.inventory_asset_account_id;
-
-      if (!cogsAcct) errors.push(
-        `Product "${product.name}" missing COGS account. ` +
-        `Set it on the product or configure a Default COGS in Settings → Account Mapping.`
-      );
-      if (!assetAcct) errors.push(
-        `Product "${product.name}" missing Inventory Asset account. ` +
-        `Set it on the product or configure a Default Inventory Asset in Settings → Account Mapping.`
-      );
-
-      // Stock availability check (default: block negative)
-      const qty = Number(item.quantity) || 0;
-      const onHand = Number(invRow.quantity_on_hand) || 0;
-      if (qty > onHand) {
-        errors.push(`Insufficient stock for "${invRow.item_name}": on hand ${onHand}, required ${qty}`);
-      }
-
-      const avgCost = Number(invRow.unit_cost) || 0;
-      const lineTotal = Math.round(qty * avgCost * 100) / 100;
-      if (cogsAcct && assetAcct && lineTotal > 0) {
-        cogsItems.push({
-          item_id: invItemId,
-          qty,
-          avg_cost: avgCost,
-          cogs_acct: cogsAcct,
-          asset_acct: assetAcct,
-          line_total: lineTotal,
-          name: invRow.item_name,
-        });
-      }
-    }
-
-    if (errors.length > 0) {
-      return json({ ok: false, error: "Cannot post invoice. Issues found:\n• " + errors.join("\n• "), errors }, 200);
-    }
-
     const journalLines: { account_id: string; debit: number; credit: number }[] = [];
 
     // Dr AR (single line, customer-tagged via subledger) — in base currency
@@ -691,16 +604,6 @@ Deno.serve(async (req) => {
         journalLines.push({ account_id: agg.account, debit: 0, credit: toBase(agg.amount) });
       }
     }
-
-    // Dr COGS / Cr Inventory (grouped by accounts)
-    const cogsByAcct = new Map<string, number>();
-    const invByAcct = new Map<string, number>();
-    for (const c of cogsItems) {
-      cogsByAcct.set(c.cogs_acct, (cogsByAcct.get(c.cogs_acct) || 0) + c.line_total);
-      invByAcct.set(c.asset_acct, (invByAcct.get(c.asset_acct) || 0) + c.line_total);
-    }
-    for (const [acct, amt] of cogsByAcct) journalLines.push({ account_id: acct, debit: amt, credit: 0 });
-    for (const [acct, amt] of invByAcct) journalLines.push({ account_id: acct, debit: 0, credit: amt });
 
     // ── Balance check ───────────────────────────────────────────────
     const totalDr = journalLines.reduce((s, l) => s + l.debit, 0);
@@ -839,25 +742,6 @@ Deno.serve(async (req) => {
       ar_account_id:    arAccountId,
     });
 
-    // ── Stock movements for tracked products (issue / sale) ─────────
-    if (cogsItems.length > 0) {
-      const movements = cogsItems.map((c) => ({
-        tenant_id: appUser.tenant_id,
-        item_id: c.item_id,
-        movement_type: "sale",
-        quantity: -c.qty, // negative = issue
-        unit_cost: c.avg_cost,
-        reference_type: "invoice",
-        reference_id: invoice_id,
-        notes: `Sold via invoice ${invoice.invoice_number}`,
-        movement_date: invoice.issue_date,
-      }));
-      const { error: smErr } = await admin.from("stock_movements").insert(movements);
-      if (smErr) {
-        // Best-effort: surface the error but JE is already posted; admin can reconcile.
-        console.error("Stock movement insert failed:", smErr.message);
-      }
-    }
     await admin
       .from("invoices")
       .update({

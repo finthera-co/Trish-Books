@@ -22,6 +22,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { usePostInvoice } from "@/hooks/useAccountSettings";
 import { useInvoiceTemplates } from "@/hooks/useInvoiceTemplates";
 import { QuickCustomerDialog } from "@/components/invoices/QuickCustomerDialog";
+import { QuickProductDialog } from "@/components/invoices/QuickProductDialog";
 import { useSetHideSidebar } from "@/stores/useAppStore";
 import { useLegacyInvoiceNumbering } from "@/hooks/useTenantFeature";
 import { useCompanyProfile } from "@/hooks/useCompanyProfile";
@@ -283,25 +284,11 @@ export default function CreateInvoice() {
     [products]
   );
 
-  // Inventory-awareness helpers for invoice lines. A product is stock-moving only
-  // when it's an inventory type, tracked, and linked to an inventory_items row.
-  const isTracked = useCallback((p: any) =>
-    !!p && p.type === "inventory" && p.is_tracked && !!p.inventory_item_id, []);
-  const onHandOf = useCallback((p: any) =>
-    isTracked(p) ? Number(p.inventory_item?.quantity_on_hand) || 0 : null, [isTracked]);
-  // Current unit cost for a stocked item (moving-average), falling back to the
-  // last purchase price. Null for services / non-inventory items.
-  const costOf = useCallback((p: any) => {
-    if (!isTracked(p)) return null;
-    const c = p.inventory_item?.unit_cost ?? p.inventory_item?.last_purchase_price;
-    return c == null ? null : Number(c) || 0;
-  }, [isTracked]);
   const typeLabel = useCallback((p: any) => {
     if (!p) return null;
-    if (isTracked(p)) return "Stock";
     if (p.type === "service") return "Service";
     return "Non-inv";
-  }, [isTracked]);
+  }, []);
 
   const codesById = useMemo(() => new Map((taxCodes || []).map((c) => [c.id, c])), [taxCodes]);
   const vatRegistered = !!taxProfile?.is_vat_registered;
@@ -372,10 +359,7 @@ export default function CreateInvoice() {
           const product: any = products.find((p: any) => p.id === value);
           if (product) {
             updated.description = product.description || product.name;
-            // Stocked goods default to inventory selling_price when set; otherwise
-            // the product master price (current behavior for services/non-inventory).
-            const sellPrice = product.inventory_item?.selling_price;
-            updated.rate = Number(sellPrice ?? product.price) || 0;
+            updated.rate = Number(product.price) || 0;
             // Inherit the product's revenue account onto this line.
             updated.account_id = product.income_account_id || "";
             // Default tax from the product (group preferred, then code)
@@ -571,7 +555,7 @@ export default function CreateInvoice() {
 
       if (isEdit) {
         // Edit an existing draft in place: update the header, then fully
-        // replace its line items (drafts have no dependent GL/stock rows yet).
+        // replace its line items (drafts have no dependent GL rows yet).
         // A blank number here means "keep the one it already has" rather than
         // renumber the draft — only a typed change moves it.
         const renumber = typedNumber && typedNumber !== originalNumber
@@ -635,8 +619,6 @@ export default function CreateInvoice() {
           total: lineCalcs[lines.indexOf(l)]?.lineTotal ?? l.qty * l.rate - l.discount,
           product_id: l.product_id || null,
           // Revenue account for this line; null → post-invoice falls back to defaultSalesId.
-          // Do NOT set inventory_item_id here — the DB trigger snapshots it from the product
-          // only when the product is tracked, so service lines correctly stay null.
           account_id: l.account_id || null,
           // Own discount plus this line's share of the invoice-level one: the
           // server recomputes tax and revenue from this figure, so the discount
@@ -905,18 +887,11 @@ export default function CreateInvoice() {
               <div className="divide-y divide-border border-y border-border">
                 {lines.map((line, idx) => {
                   const lineProduct = line.product_id ? productsById.get(line.product_id) : null;
-                  const lineOnHand = onHandOf(lineProduct);
-                  const lineCost = costOf(lineProduct);
                   const lineBadge = typeLabel(lineProduct);
                   // A line with no product is a service / ad-hoc line: it bills a flat
                   // amount against a chosen revenue account — no qty, no unit cost, no
                   // COGS leg. Selecting a product switches it back to a goods line.
                   const isService = !line.product_id;
-                  const overStock = lineOnHand !== null && line.qty > lineOnHand;
-                  // Gross margin % on the entered rate vs unit cost (stocked items only)
-                  const marginPct = lineCost && line.rate > 0
-                    ? Math.round(((line.rate - lineCost) / line.rate) * 100)
-                    : null;
                   return (
                     <div key={line.id} className="group/line relative px-5 py-6 transition-colors hover:bg-muted/20">
                       {/* Row 1 — line number, description and product picker */}
@@ -929,21 +904,21 @@ export default function CreateInvoice() {
                             {/* Description, product picker and revenue account share the top row. */}
                             <Input className="h-10 min-w-0 flex-1 text-sm" placeholder="Description" value={line.description}
                               onChange={(e) => updateLine(line.id, "description", e.target.value)} />
-                            <Select value={line.product_id || "none"}
-                              onValueChange={(v) => updateLine(line.id, "product_id", v === "none" ? "" : v)}>
-                              <SelectTrigger className="h-10 w-full shrink-0 text-xs sm:w-[170px]"><SelectValue placeholder="Link a product" /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">— No product (service) —</SelectItem>
-                                {products?.map((p: any) => {
-                                  const oh = onHandOf(p);
-                                  return (
+                            <div className="flex gap-2 w-full shrink-0 sm:w-[220px]">
+                              <Select value={line.product_id || "none"}
+                                onValueChange={(v) => updateLine(line.id, "product_id", v === "none" ? "" : v)}>
+                                <SelectTrigger className="h-10 min-w-0 flex-1 text-xs"><SelectValue placeholder="Link a product" /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">— No product (service) —</SelectItem>
+                                  {products?.map((p: any) => (
                                     <SelectItem key={p.id} value={p.id}>
-                                      {p.name}{oh !== null ? ` — ${oh} in stock` : ""}
+                                      {p.name}
                                     </SelectItem>
-                                  );
-                                })}
-                              </SelectContent>
-                            </Select>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <QuickProductDialog onCreated={(id) => updateLine(line.id, "product_id", id)} />
+                            </div>
                             {/* Revenue account — auto-filled from the product's income account,
                                 or pick one for an ad-hoc service line. */}
                             <AccountCombobox
@@ -954,18 +929,11 @@ export default function CreateInvoice() {
                               className="h-10 w-full shrink-0 text-xs sm:w-[190px]"
                             />
                           </div>
-                          {(lineBadge || lineOnHand !== null) && (
+                          {lineBadge && (
                             <div className="flex items-center gap-2">
-                              {lineBadge && (
-                                <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                                  {lineBadge}
-                                </span>
-                              )}
-                              {lineOnHand !== null && (
-                                <span className={`text-[10px] ${overStock ? "text-destructive" : "text-muted-foreground"}`}>
-                                  {lineOnHand} in stock
-                                </span>
-                              )}
+                              <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                                {lineBadge}
+                              </span>
                             </div>
                           )}
                         </div>
@@ -989,7 +957,7 @@ export default function CreateInvoice() {
                             </div>
                           ) : (
                             <Input type="number"
-                              className={`h-10 text-sm text-center font-mono${overStock ? " border-destructive focus-visible:ring-destructive" : ""}`}
+                              className="h-10 text-sm text-center font-mono"
                               value={line.qty || ""}
                               onChange={(e) => updateLine(line.id, "qty", Number(e.target.value))} min={1} />
                           )}
@@ -999,11 +967,6 @@ export default function CreateInvoice() {
                           <Input type="number" className="h-10 text-sm text-right font-mono" placeholder="0.00"
                             value={line.rate || ""}
                             onChange={(e) => updateLine(line.id, "rate", Number(e.target.value))} min={0} />
-                          {marginPct !== null && (
-                            <p className={`text-[10px] text-right ${marginPct < 0 ? "text-destructive" : "text-muted-foreground"}`}>
-                              {marginPct}% margin
-                            </p>
-                          )}
                         </div>
                         {/* Discount — type a % and the money value is calculated from
                             qty × rate, or type the money value and the % follows. */}

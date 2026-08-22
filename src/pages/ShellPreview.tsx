@@ -54,7 +54,7 @@ export default function ShellPreview() {
         <ChangeRow
           icon={Layers}
           title="Grouped module menus"
-          body={`Accounting's ${MODULE_CONFIGS.accounting.sidebarItems.length} links are split into General Ledger, Receivables, Payables, Inventory & Cash and Period Control. Banking, Sales, Payroll, Reports, Assets and Settings are grouped too.`}
+          body={`Accounting's ${MODULE_CONFIGS.accounting.sidebarItems.length} links are split into General Ledger, Receivables, Payables, Cash & FX and Period Control. Banking, Sales, Payroll, Reports, Assets and Settings are grouped too.`}
         />
         <ChangeRow
           icon={Palette}

@@ -46,7 +46,6 @@ const TOOL_LABELS: Record<string, string> = {
   get_monthly_summary: "Summarising recent months",
   get_budget_vs_actual: "Comparing budget to actual",
   get_customer_statement: "Reading the customer statement",
-  get_inventory_valuation: "Valuing inventory",
   get_fiscal_context: "Checking the fiscal calendar",
 };
 

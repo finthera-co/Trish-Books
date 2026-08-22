@@ -2,8 +2,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { postBillPayment, post, type BillPaymentWht } from "@/lib/postingEngine";
+import { post, type BillPaymentWht } from "@/lib/postingEngine";
 import { calculateWht, type WhtRuleInput } from "@/lib/taxEngine";
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
  * Settlement-based AIT computation for a bill payment. Pure data assembly
@@ -314,96 +316,109 @@ export function useRecordBillPayment() {
       payment_nature?: string;
       /** Manual WHT override — requires a reason, audited in the sub-ledger. */
       wht_override?: { amount: number; reason: string } | null;
+      payment_method: string;
+      /** Cheque only: queue for batch printing instead of assigning a number now. */
+      print_later?: boolean;
+      check_number?: string | null;
     }) => {
       const tenantId = appUser!.tenant_id;
 
-      // 0. WHT at settlement (AIT). Computed per PAYMENT amount with the
-      //    vendor's month-to-date paid (threshold semantics live in the
-      //    shared engine). Skipped when the tenant is not a WHT agent.
-      const wht = await computeBillPaymentWht({
-        tenantId,
-        vendorId: params.vendor_id,
-        amount: params.amount,
-        paymentDate: params.payment_date,
-        paymentNature: params.payment_nature,
-        override: params.wht_override ?? null,
-      });
-
-      // 1. Insert payment record
-      const { data: payment, error: pmtErr } = await supabase
-        .from("bill_payments" as any)
-        .insert({
-          tenant_id: tenantId,
-          vendor_id: params.vendor_id,
-          payment_date: params.payment_date,
-          amount: params.amount,
-          bank_account_id: params.bank_account_id,
-          ap_account_id: params.ap_account_id,
-          reference: params.reference || null,
-          notes: params.notes || null,
-          status: "posted",
-          wht_amount: wht?.amount ?? 0,
-          wht_rule_id: wht?.rule_id ?? null,
-          wht_certificate_no: wht?.certificate_no ?? null,
-          wht_override_reason: wht?.override_reason ?? null,
-          payment_nature: params.payment_nature ?? null,
-        } as any)
-        .select()
-        .single();
-      if (pmtErr) throw pmtErr;
-
-      const pmtId = (payment as any).id as string;
-
-      // 2. Insert allocations (trigger auto-updates amount_paid on each bill)
-      if (params.allocations.length > 0) {
-        const { error: allocErr } = await supabase
-          .from("bill_payment_allocations" as any)
-          .insert(
-            params.allocations.map((a) => ({
-              tenant_id: tenantId,
-              payment_id: pmtId,
-              bill_id: a.bill_id,
-              amount_applied: a.amount_applied,
-            })) as any
-          );
-        if (allocErr) throw allocErr;
+      // 0a. Resolve the currency this payment settles in from the bills being
+      //     paid — a single payment run must be one currency (mirrors AR's
+      //     payments_received, which is also one currency per receipt).
+      const billIds = params.allocations.map((a) => a.bill_id);
+      const { data: billRows, error: billErr } = await supabase
+        .from("supplier_bills" as any)
+        .select("id, currency, exchange_rate")
+        .in("id", billIds);
+      if (billErr) throw billErr;
+      const billMap = new Map((billRows ?? []).map((b: any) => [b.id, b]));
+      const currencies = new Set((billRows ?? []).map((b: any) => b.currency || "LKR"));
+      if (currencies.size > 1) {
+        throw new Error("All bills in one payment run must share the same currency.");
       }
+      const currency = currencies.size > 0 ? [...currencies][0] : "LKR";
+      const isForeign = currency !== "LKR";
 
-      // 3. Post GL: Dr AP (gross) / Cr Bank (net) / Cr WHT Payable
-      const result = await postBillPayment({
-        tenant_id: tenantId,
-        payment_id: pmtId,
-        vendor_id: params.vendor_id,
-        amount: params.amount,
-        payment_date: params.payment_date,
-        bank_account_id: params.bank_account_id,
-        ap_account_id: params.ap_account_id,
-        reference: params.reference,
-        wht,
-      });
+      // 0b. WHT at settlement (AIT) — LKR only. Withholding tax is a domestic
+      //     SL concept; combining it with FX conversion is out of scope here.
+      const wht = isForeign
+        ? null
+        : await computeBillPaymentWht({
+            tenantId,
+            vendorId: params.vendor_id,
+            amount: params.amount,
+            paymentDate: params.payment_date,
+            paymentNature: params.payment_nature,
+            override: params.wht_override ?? null,
+          });
 
-      // 4. Link journal entry to payment
-      await supabase
-        .from("bill_payments" as any)
-        .update({ journal_entry_id: result.journal_entry_id } as any)
-        .eq("id", pmtId);
+      // 0c. Foreign-currency settlement rate + FX accounts, and the AP relief
+      //     amount in base (each bill's OWN exchange_rate, not today's rate).
+      let fx: { net_bank_base: number; fx_gain_account_id: string; fx_loss_account_id: string } | null = null;
+      let apReliefBase = params.amount;
+      if (isForeign) {
+        const { data: rateData, error: rateErr } = await supabase.rpc("fx_rate" as any, {
+          p_tenant_id: tenantId,
+          p_currency: currency,
+          p_date: params.payment_date,
+        });
+        if (rateErr) throw rateErr;
+        const settlementRate = Number(rateData) || 1;
 
-      // 5. Mark fully-paid bills as 'paid' (amount_paid updated by trigger above)
-      for (const alloc of params.allocations) {
-        const { data: bill } = await supabase
-          .from("supplier_bills" as any)
-          .select("total_amount, amount_paid")
-          .eq("id", alloc.bill_id)
-          .single();
-        if (bill && Number((bill as any).amount_paid) >= Number((bill as any).total_amount)) {
-          await supabase
-            .from("supplier_bills" as any)
-            .update({ status: "paid" } as any)
-            .eq("id", alloc.bill_id);
+        const { data: settingsRow, error: settingsErr } = await supabase
+          .from("account_settings")
+          .select("fx_gain_account_id, fx_loss_account_id")
+          .eq("tenant_id", tenantId)
+          .maybeSingle();
+        if (settingsErr) throw settingsErr;
+        if (!settingsRow?.fx_gain_account_id || !settingsRow?.fx_loss_account_id) {
+          throw new Error("FX Gain/Loss accounts are not configured (Settings → Account Mapping) — required to pay a foreign-currency bill.");
         }
+
+        apReliefBase = round2(
+          params.allocations.reduce((s, a) => {
+            const bill = billMap.get(a.bill_id) as any;
+            return s + a.amount_applied * Number(bill?.exchange_rate ?? 1);
+          }, 0),
+        );
+        fx = {
+          net_bank_base: round2(params.amount * settlementRate),
+          fx_gain_account_id: settingsRow.fx_gain_account_id,
+          fx_loss_account_id: settingsRow.fx_loss_account_id,
+        };
       }
 
-      return payment;
+      // 1. Atomic write: payment + allocations + journal entry + AP subledger
+      //    + WHT/FX + bill status, all inside one DB transaction. Previously
+      //    this was five separate client-side writes with no rollback — a
+      //    failure partway through (e.g. the GL post step) could leave a
+      //    bill_payments row + allocations committed, and the bill's
+      //    amount_paid already reduced, with no journal entry ever created.
+      //    The RPC also takes row locks on the bills being paid, so two
+      //    concurrent payments can't jointly over-allocate the same bill —
+      //    the client-side balance_due check alone couldn't guarantee that.
+      const { data: result, error: rpcErr } = await supabase.rpc("record_bill_payment" as any, {
+        p_vendor_id: params.vendor_id,
+        p_payment_date: params.payment_date,
+        p_amount: params.amount,
+        p_bank_account_id: params.bank_account_id,
+        p_ap_account_id: params.ap_account_id,
+        p_allocations: params.allocations,
+        p_reference: params.reference || null,
+        p_notes: params.notes || null,
+        p_payment_nature: params.payment_nature || null,
+        p_wht: wht ?? null,
+        p_payment_method: params.payment_method,
+        p_print_later: params.print_later ?? false,
+        p_check_number: params.print_later ? null : (params.check_number || null),
+        p_currency: currency,
+        p_ap_amount_base: apReliefBase,
+        p_fx: fx,
+      });
+      if (rpcErr) throw rpcErr;
+
+      return result as { payment_id: string; journal_entry_id: string; wht_certificate_no: string | null; net_bank_amount: number };
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["supplier_bills"] });
@@ -412,6 +427,55 @@ export function useRecordBillPayment() {
       qc.invalidateQueries({ queryKey: ["bill_payments"] });
       qc.invalidateQueries({ queryKey: ["vendor_detail"] });
       toast.success("Payment recorded and posted to GL");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ─── Void a posted bill (requires amount_paid = 0) ────────
+export function useVoidSupplierBill() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ bill_id, reason }: { bill_id: string; reason?: string }) => {
+      const { data, error } = await supabase.rpc("void_supplier_bill" as any, {
+        p_bill_id: bill_id,
+        p_reason: reason || null,
+      });
+      if (error) throw error;
+      return data as { ok: boolean; reversal_journal_id: string };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["supplier_bills"] });
+      qc.invalidateQueries({ queryKey: ["ap_subledger"] });
+      qc.invalidateQueries({ queryKey: ["vendors_with_balance"] });
+      qc.invalidateQueries({ queryKey: ["vendor_detail"] });
+      qc.invalidateQueries({ queryKey: ["journal_entries"] });
+      toast.success("Bill voided");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ─── Void a posted bill payment (restores bill balances) ──
+export function useVoidBillPayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ payment_id, reason }: { payment_id: string; reason?: string }) => {
+      const { data, error } = await supabase.rpc("void_bill_payment" as any, {
+        p_payment_id: payment_id,
+        p_reason: reason || null,
+      });
+      if (error) throw error;
+      return data as { ok: boolean; reversal_journal_id: string; bills_restored: number };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["supplier_bills"] });
+      qc.invalidateQueries({ queryKey: ["ap_subledger"] });
+      qc.invalidateQueries({ queryKey: ["vendors_with_balance"] });
+      qc.invalidateQueries({ queryKey: ["bill_payments"] });
+      qc.invalidateQueries({ queryKey: ["vendor_detail"] });
+      qc.invalidateQueries({ queryKey: ["journal_entries"] });
+      toast.success("Payment voided");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -518,6 +582,66 @@ export function useCreateVendorCreditNote() {
   });
 }
 
+// ─── Vendor refunds (cash received back from a vendor) ────
+export function useRecordVendorRefund() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: {
+      vendor_id: string;
+      refund_date: string;
+      amount: number;
+      bank_account_id: string;
+      ap_account_id: string;
+      reference?: string;
+      memo?: string;
+      credit_note_id?: string | null;
+    }) => {
+      const { data, error } = await supabase.rpc("record_vendor_refund" as any, {
+        p_vendor_id: params.vendor_id,
+        p_refund_date: params.refund_date,
+        p_amount: params.amount,
+        p_bank_account_id: params.bank_account_id,
+        p_ap_account_id: params.ap_account_id,
+        p_reference: params.reference || null,
+        p_memo: params.memo || null,
+        p_credit_note_id: params.credit_note_id || null,
+      });
+      if (error) throw error;
+      return data as { ok: boolean; refund_id: string; journal_entry_id: string };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["vendor_refunds"] });
+      qc.invalidateQueries({ queryKey: ["ap_subledger"] });
+      qc.invalidateQueries({ queryKey: ["vendors_with_balance"] });
+      qc.invalidateQueries({ queryKey: ["vendor_detail"] });
+      toast.success("Vendor refund recorded and posted to GL");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useVoidVendorRefund() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ refund_id, reason }: { refund_id: string; reason?: string }) => {
+      const { data, error } = await supabase.rpc("void_vendor_refund" as any, {
+        p_refund_id: refund_id,
+        p_reason: reason || null,
+      });
+      if (error) throw error;
+      return data as { ok: boolean; reversal_journal_id: string };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["vendor_refunds"] });
+      qc.invalidateQueries({ queryKey: ["ap_subledger"] });
+      qc.invalidateQueries({ queryKey: ["vendors_with_balance"] });
+      qc.invalidateQueries({ queryKey: ["vendor_detail"] });
+      toast.success("Refund voided");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
 // ─── Post a draft supplier bill ───────────────────────────
 export function usePostSupplierBill() {
   const qc = useQueryClient();
@@ -530,10 +654,12 @@ export function usePostSupplierBill() {
       if ((data as any)?.error) throw new Error((data as any).error);
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, billId) => {
       qc.invalidateQueries({ queryKey: ["supplier_bills"] });
+      qc.invalidateQueries({ queryKey: ["supplier_bill", billId] });
       qc.invalidateQueries({ queryKey: ["ap_subledger"] });
       qc.invalidateQueries({ queryKey: ["vendor_detail"] });
+      qc.invalidateQueries({ queryKey: ["vendors_with_balance"] });
       toast.success("Bill posted to GL");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -549,7 +675,7 @@ export function useVendorDetail(vendorId: string | undefined) {
     queryFn: async () => {
       const tid = appUser!.tenant_id;
 
-      const [vendorRes, billsRes, paymentsRes, creditNotesRes, apRes] = await Promise.all([
+      const [vendorRes, billsRes, paymentsRes, creditNotesRes, apRes, refundsRes] = await Promise.all([
         supabase.from("vendors").select("*").eq("id", vendorId!).single(),
         supabase
           .from("supplier_bills" as any)
@@ -575,6 +701,12 @@ export function useVendorDetail(vendorId: string | undefined) {
           .eq("vendor_id", vendorId!)
           .eq("tenant_id", tid)
           .order("created_at"),
+        supabase
+          .from("vendor_refunds" as any)
+          .select("*")
+          .eq("vendor_id", vendorId!)
+          .eq("tenant_id", tid)
+          .order("refund_date", { ascending: false }),
       ]);
 
       if (vendorRes.error) throw vendorRes.error;
@@ -591,6 +723,7 @@ export function useVendorDetail(vendorId: string | undefined) {
         payments: (paymentsRes.data as any[]) ?? [],
         creditNotes: (creditNotesRes.data as any[]) ?? [],
         apEntries: apRes.data ?? [],
+        refunds: (refundsRes.data as any[]) ?? [],
       };
     },
   });

@@ -1,0 +1,3 @@
+-- Superseded by 20260820075032_remove_inventory_feature_v2.sql. Kept only so
+-- local migration history mirrors what is actually recorded as applied on
+-- the remote project; this version's own effect was a no-op placeholder.

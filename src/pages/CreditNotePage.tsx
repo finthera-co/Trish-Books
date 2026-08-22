@@ -46,9 +46,6 @@ interface CNLine {
   inclusive: boolean;
   account_id: string | null;
   product_id: string | null;
-  inventory_item_id: string | null;
-  is_tracked: boolean;
-  restock: boolean;
 }
 
 const emptyLine = (): CNLine => ({
@@ -61,9 +58,6 @@ const emptyLine = (): CNLine => ({
   inclusive: false,
   account_id: null,
   product_id: null,
-  inventory_item_id: null,
-  is_tracked: false,
-  restock: false,
 });
 
 const statusBadge = (cn: any) => {
@@ -228,12 +222,12 @@ export default function CreditNotePage() {
   const updateLine = (id: string, patch: Partial<CNLine>) =>
     setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
 
-  // Copy the linked invoice's lines (incl. products for restock eligibility).
+  // Copy the linked invoice's lines.
   const prefillFromInvoice = async () => {
     if (form.invoice_id === NO_INVOICE) return;
     const { data, error } = await supabase
       .from("invoice_items")
-      .select("*, products(id, name, is_tracked, inventory_item_id)")
+      .select("*, products(id, name)")
       .eq("invoice_id", form.invoice_id);
     if (error) return toast.error(error.message);
     if (!data?.length) return toast.error("The invoice has no line items to copy");
@@ -248,9 +242,6 @@ export default function CreditNotePage() {
         inclusive: !!it.is_tax_inclusive,
         account_id: it.account_id || null,
         product_id: it.product_id || null,
-        inventory_item_id: it.inventory_item_id || it.products?.inventory_item_id || null,
-        is_tracked: !!it.products?.is_tracked && !!(it.inventory_item_id || it.products?.inventory_item_id),
-        restock: false,
       })),
     );
   };
@@ -266,10 +257,8 @@ export default function CreditNotePage() {
         is_tax_inclusive: l.inclusive,
         account_id: l.account_id,
         product_id: l.product_id,
-        inventory_item_id: l.inventory_item_id,
         tax_code_id: l.tax_sel.startsWith("c:") ? l.tax_sel.slice(2) : null,
         tax_group_id: l.tax_sel.startsWith("g:") ? l.tax_sel.slice(2) : null,
-        restock: l.restock && l.is_tracked,
         sort_order: idx,
       }));
 
@@ -349,7 +338,7 @@ export default function CreditNotePage() {
               <Receipt className="w-6 h-6 text-warning" /> Credit Notes
             </h1>
             <p className="text-sm text-muted-foreground">
-              Line-level credits with VAT/SSCL reversal, optional restock, and the same approval controls as invoices
+              Line-level credits with VAT/SSCL reversal and the same approval controls as invoices
             </p>
           </div>
         </div>
@@ -421,7 +410,6 @@ export default function CreditNotePage() {
                       <TableHead className="w-28 text-right">Unit price</TableHead>
                       <TableHead className="w-24 text-right">Discount</TableHead>
                       <TableHead className="w-40">Tax</TableHead>
-                      <TableHead className="w-20 text-center" title="Return the goods to stock (tracked products from a linked invoice)">Restock</TableHead>
                       <TableHead className="w-28 text-right">Line total</TableHead>
                       <TableHead className="w-10"></TableHead>
                     </TableRow>
@@ -470,13 +458,6 @@ export default function CreditNotePage() {
                               )}
                             </SelectContent>
                           </Select>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Checkbox
-                            checked={l.restock}
-                            disabled={!l.is_tracked}
-                            onCheckedChange={(v) => updateLine(l.id, { restock: !!v })}
-                          />
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-sm">
                           {formatCurrency(lineCalcs[idx]?.lineTotal ?? 0, cnCurrency)}
@@ -559,7 +540,7 @@ export default function CreditNotePage() {
                 </Button>
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Posting reverses output VAT/SSCL in the tax sub-ledger, restores stock for restocked lines, and books
+                Posting reverses output VAT/SSCL in the tax sub-ledger and books
                 Dr Revenue / Dr Tax Payable / Cr Accounts Receivable. Notes at or above the approval threshold need
                 sign-off before they can post.
               </p>
@@ -657,8 +638,8 @@ export default function CreditNotePage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Void credit note {voidTarget?.credit_note_number}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This posts a reversing journal, restores the output VAT/SSCL that the note reversed, re-issues any
-              restocked goods, and restores the customer balance. This cannot be undone.
+              This posts a reversing journal, restores the output VAT/SSCL that the note reversed, and restores the
+              customer balance. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="px-1">

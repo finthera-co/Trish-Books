@@ -41,14 +41,12 @@ export interface DashboardMetrics {
   roa: number;
   roe: number;
   assetTurnover: number;
-  // AR/AP/Inventory — annualized, using average balances (audit-grade)
+  // AR/AP — annualized, using average balances (audit-grade)
   arTurnover: number;
   collectionPeriod: number;
   apTurnover: number;
-  inventoryTurnover: number;
   avgAccountsReceivable: number;
   avgAccountsPayable: number;
-  avgInventory: number;
   // Cash flow
   totalInflows: number;
   totalOutflows: number;
@@ -466,37 +464,32 @@ export function useDashboardMetrics(period: PeriodFilter) {
 
     // ── Audit-grade turnover ratios ──────────────────────────────────────────
     // Use AVERAGE balances [(opening + closing) / 2] and normalise for period
-    // length so a non-annual range doesn't distort turnover / DSO / DPO / DIO.
+    // length so a non-annual range doesn't distort turnover / DSO / DPO.
     const arIds = new Set(accounts.filter(a => assetIds.has(a.id) && isAR(a)).map(a => a.id));
     const apIds = new Set(accounts.filter(a => liabilityIds.has(a.id) && isAP(a)).map(a => a.id));
-    const invIds = new Set(accounts.filter(a => assetIds.has(a.id) && isInventory(a)).map(a => a.id));
 
-    let openingAR = 0, openingAP = 0, openingInv = 0;
+    let openingAR = 0, openingAP = 0;
     openingJournals.forEach(entry => {
       const lines = (entry.journal_lines as any[]) || [];
       lines.forEach(line => {
         const debit = Number(line.debit) || 0;
         const credit = Number(line.credit) || 0;
         if (arIds.has(line.account_id)) openingAR += debit - credit;   // asset, debit-normal
-        if (invIds.has(line.account_id)) openingInv += debit - credit; // asset, debit-normal
         if (apIds.has(line.account_id)) openingAP += credit - debit;   // liability, credit-normal
       });
     });
 
-    // accountsReceivable / accountsPayable / inventory above are the in-period
-    // movement; closing = opening + movement.
+    // accountsReceivable / accountsPayable above are the in-period movement;
+    // closing = opening + movement.
     const closingAR = openingAR + accountsReceivable;
     const closingAP = openingAP + accountsPayable;
-    const closingInv = openingInv + inventory;
     const avgAccountsReceivable = (openingAR + closingAR) / 2;
     const avgAccountsPayable = (openingAP + closingAP) / 2;
-    const avgInventory = (openingInv + closingInv) / 2;
 
     const periodDays = Math.max(1, differenceInCalendarDays(parseISO(period.to), parseISO(period.from)) + 1);
     const annualFactor = 365 / periodDays;
     const arTurnover = safe(totalRevenue, avgAccountsReceivable) * annualFactor;
     const apTurnover = safe(totalCOGS, avgAccountsPayable) * annualFactor;
-    const inventoryTurnover = safe(totalCOGS, avgInventory) * annualFactor;
     const collectionPeriod = arTurnover ? 365 / arTurnover : 0;
 
     // Budget variance
@@ -536,10 +529,8 @@ export function useDashboardMetrics(period: PeriodFilter) {
       arTurnover,
       collectionPeriod,
       apTurnover,
-      inventoryTurnover,
       avgAccountsReceivable,
       avgAccountsPayable,
-      avgInventory,
       totalInflows,
       totalOutflows,
       monthlyData,
