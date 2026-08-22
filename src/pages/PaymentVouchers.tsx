@@ -31,7 +31,7 @@ export default function PaymentVouchers() {
   const deleteMutation = useDeletePaymentVoucher();
   const { canEdit: canEditBanking, canDelete: canDeleteBanking } = useMyPermissions();
   const { isSuperAdmin } = useAuth();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const highlightId = searchParams.get("highlight");
 
   // Search + filter state
@@ -49,12 +49,28 @@ export default function PaymentVouchers() {
   const [editId, setEditId] = useState<string | null>(null);
   const [viewId, setViewId] = useState<string | null>(highlightId);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [initialAccountId, setInitialAccountId] = useState<string | null>(null);
 
   useEffect(() => {
     if (highlightId && vouchers?.some((v) => v.id === highlightId)) {
       setViewId(highlightId);
     }
   }, [highlightId, vouchers]);
+
+  // Deep-linked from an account's context menu ("Quick Create → Make Payment").
+  useEffect(() => {
+    const fromAccount = searchParams.get("from_account");
+    if (searchParams.get("action") !== "new" || !fromAccount) return;
+    setEditId(null);
+    setInitialAccountId(fromAccount);
+    setShowForm(true);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("action");
+      next.delete("from_account");
+      return next;
+    }, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // Distinct payment accounts present in current voucher set (for the dropdown)
   const paymentAccountOptions = useMemo(() => {
@@ -158,7 +174,7 @@ export default function PaymentVouchers() {
           <p className="text-sm text-muted-foreground">Write and track checks against your bank accounts</p>
         </div>
         {canEditBanking("banking") && (
-          <Button onClick={() => { setEditId(null); setShowForm(true); }}>
+          <Button onClick={() => { setEditId(null); setInitialAccountId(null); setShowForm(true); }}>
             <Plus className="w-4 h-4 mr-2" /> Write Checks
           </Button>
         )}
@@ -402,7 +418,8 @@ export default function PaymentVouchers() {
           </DialogHeader>
           <PaymentVoucherForm
             editId={editId}
-            onClose={() => { setShowForm(false); setEditId(null); }}
+            initialAccountId={initialAccountId}
+            onClose={() => { setShowForm(false); setEditId(null); setInitialAccountId(null); }}
           />
         </DialogContent>
       </Dialog>

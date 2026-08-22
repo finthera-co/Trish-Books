@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -91,6 +91,10 @@ export default function CreateInvoice() {
   // in place (same form, no new serial). Posted/voided invoices are not editable.
   const { id: editId } = useParams<{ id: string }>();
   const isEdit = !!editId;
+  // Deep-linked from an account's context menu ("Quick Create → New Invoice"):
+  // pre-fills the income account on line 1. Not applied when editing an
+  // existing draft — that invoice's own lines take priority.
+  const [searchParams] = useSearchParams();
   const { appUser } = useAuth();
   const queryClient = useQueryClient();
   const { data: customers } = useCustomers();
@@ -137,7 +141,10 @@ export default function CreateInvoice() {
   const [exchangeRate, setExchangeRate] = useState(1);
   const [notes, setNotes] = useState("");
   const [terms, setTerms] = useState("");
-  const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
+  const [lines, setLines] = useState<LineItem[]>(() => {
+    const incomeAccount = !isEdit ? searchParams.get("income_account") : null;
+    return incomeAccount ? [{ ...emptyLine(), account_id: incomeAccount }] : [emptyLine()];
+  });
   // Invoice-level discount — one figure off the whole invoice, entered as a %
   // of the net line total or as money. Apportioned across the lines at save
   // time so tax and revenue land on the discounted value (see apportionDiscount).

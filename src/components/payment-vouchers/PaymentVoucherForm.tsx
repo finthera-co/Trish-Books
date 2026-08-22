@@ -52,6 +52,14 @@ const PAYMENT_ACCOUNT_TYPES = ["Asset"];
 interface Props {
   editId: string | null;
   onClose: () => void;
+  /**
+   * Deep-linked from an account's context menu ("Quick Create → Make
+   * Payment"). Seeds the "pay from" bank account when it's an Asset, or
+   * line 1's expense/liability account otherwise — whichever side of
+   * PAYMENT_ACCOUNT_TYPES / LINE_ACCOUNT_TYPES it falls on. Ignored when
+   * editing an existing check.
+   */
+  initialAccountId?: string | null;
 }
 
 function buildAddressBlock(addr: {
@@ -67,7 +75,7 @@ function buildAddressBlock(addr: {
   return [addr.address_line1, addr.address_line2, cityLine, addr.country].filter(Boolean).join("\n");
 }
 
-export default function PaymentVoucherForm({ editId, onClose }: Props) {
+export default function PaymentVoucherForm({ editId, onClose, initialAccountId }: Props) {
   const { appUser } = useAuth();
   const { data: customers } = useCustomers();
   const { data: vendors } = useVendorsWithBalance();
@@ -193,6 +201,17 @@ export default function PaymentVoucherForm({ editId, onClose }: Props) {
       }
     }
   }, [existing, editId]);
+
+  useEffect(() => {
+    if (isEditing || !initialAccountId || !accounts) return;
+    const acct = (accounts as any[]).find((a) => a.id === initialAccountId);
+    if (!acct) return;
+    if (PAYMENT_ACCOUNT_TYPES.includes(acct.account_type)) {
+      setPaymentAccountId((prev) => prev || initialAccountId);
+    } else if (LINE_ACCOUNT_TYPES.includes(acct.account_type)) {
+      setLines((prev) => (prev.length === 1 && !prev[0].account_id ? [{ ...prev[0], account_id: initialAccountId }] : prev));
+    }
+  }, [isEditing, initialAccountId, accounts]);
 
   // Address auto-populates from the selected payee. Vendors only have a flat
   // `address` column; customers have a dedicated primary-billing-address

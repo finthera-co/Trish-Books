@@ -38,6 +38,7 @@ export interface Account {
   is_active: boolean;
   account_level?: number | null;
   account_path?: string | null;
+  description?: string | null;
 }
 
 interface AccountFormProps {
@@ -52,6 +53,7 @@ interface AccountFormProps {
     category_id?: string;
     normal_balance?: string;
     is_contra?: boolean;
+    description?: string;
   }) => Promise<void>;
   accounts: Account[];
   categories: AccountCategory[];
@@ -61,6 +63,13 @@ interface AccountFormProps {
   onCreateCategory?: (data: { name: string; account_type: string }) => Promise<AccountCategory | undefined>;
   /** Prefill the name on a fresh new-account draft (e.g. text typed in an account picker) */
   initialName?: string;
+  /**
+   * "Duplicate Account": pre-fills a fresh create-mode draft from an existing
+   * account's type/subtype/parent/category/description, with the name seeded
+   * as "Copy of {name}". Opening balance and transaction history are
+   * deliberately not carried over. Ignored when `editAccount` is set.
+   */
+  duplicateFrom?: Account | null;
   /**
    * When provided, name matches against the existing chart become clickable so the
    * user can pick the account that already exists instead of creating a duplicate.
@@ -83,6 +92,7 @@ type AccountDraft = {
   accountSubtype: string;
   parentId: string;
   categoryId: string;
+  description: string;
 };
 
 /** Case/space-insensitive name key used for the duplicate-account check */
@@ -95,6 +105,7 @@ const emptyDraft: AccountDraft = {
   accountSubtype: "",
   parentId: "",
   categoryId: "",
+  description: "",
 };
 
 export default function AccountForm({
@@ -111,6 +122,7 @@ export default function AccountForm({
   onUseExisting,
   draftScope = "coa",
   defaultParentId,
+  duplicateFrom,
 }: AccountFormProps) {
   // User-entered fields live in one persisted draft so a browser refresh
   // doesn't lose half-filled data. Scope the key per-record: the new-account
@@ -163,6 +175,7 @@ export default function AccountForm({
               accountSubtype: editAccount.account_subtype || "",
               parentId: editAccount.parent_account_id || "",
               categoryId: editAccount.category_id || "",
+              description: editAccount.description || "",
             }
           : d;
       });
@@ -184,6 +197,23 @@ export default function AccountForm({
                 categoryId: seedParent.category_id || "",
               }
         );
+      } else if (duplicateFrom) {
+        // Opened via "Duplicate Account": copy type/subtype/parent/category/
+        // description, never opening balance or history — but never clobber
+        // a draft the user has already started.
+        setDraft((d) =>
+          d.accountName
+            ? d
+            : {
+                ...d,
+                accountName: `Copy of ${duplicateFrom.account_name}`,
+                accountType: duplicateFrom.account_type,
+                accountSubtype: duplicateFrom.account_subtype || "",
+                parentId: duplicateFrom.parent_account_id || "",
+                categoryId: duplicateFrom.category_id || "",
+                description: duplicateFrom.description || "",
+              }
+        );
       } else if (initialName) {
         // Opened from an account picker with text already typed: use it as the name,
         // but never clobber a draft the user has already started.
@@ -195,7 +225,7 @@ export default function AccountForm({
     setShowNewSubtype(false);
     setNewSubtypeName("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editAccount, open, defaultParentId]);
+  }, [editAccount, open, defaultParentId, duplicateFrom?.id]);
 
   // Auto-generate account code (new accounts only) via the server-side
   // next_account_code() RPC — the authoritative generator; see
@@ -343,6 +373,7 @@ export default function AccountForm({
       category_id: draft.categoryId || undefined,
       normal_balance: getNormalBalance(draft.accountType, isContraSubtype(draft.accountSubtype)).toLowerCase(),
       is_contra: isContraSubtype(draft.accountSubtype),
+      description: draft.description || undefined,
     });
     clearDraft();
     setDraft(emptyDraft);
@@ -354,9 +385,13 @@ export default function AccountForm({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{editAccount ? "Edit Account" : "Create New Account"}</DialogTitle>
+          <DialogTitle>{editAccount ? "Edit Account" : duplicateFrom ? "Duplicate Account" : "Create New Account"}</DialogTitle>
           <DialogDescription>
-            {editAccount ? "Update account details" : "Add a new account to your chart of accounts"}
+            {editAccount
+              ? "Update account details"
+              : duplicateFrom
+                ? `Same setup as ${duplicateFrom.account_code} — ${duplicateFrom.account_name}, without its balance or history`
+                : "Add a new account to your chart of accounts"}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 pt-2">
@@ -669,6 +704,18 @@ export default function AccountForm({
               Parents become summary accounts and can no longer be posted to directly.
               Maximum depth is {MAX_ACCOUNT_DEPTH} levels.
             </p>
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="text-sm font-medium">Description (optional)</label>
+            <textarea
+              value={draft.description}
+              onChange={(e) => setField("description", e.target.value)}
+              rows={2}
+              className={`${inputClass} resize-none`}
+              placeholder="Internal note about what this account is used for"
+            />
           </div>
 
           {/* Info panel */}

@@ -106,6 +106,19 @@ export function isNonCurrentLiabilitySubtype(subtype: string | null | undefined)
   return matchesAny(subtype, NON_CURRENT_LIABILITY_SUBTYPES);
 }
 
+/**
+ * True for Asset accounts whose detail type is a bank/cash subtype (Cash on
+ * Hand, Checking, Savings, Bank). This same substring match is duplicated ad
+ * hoc across payment forms and reconciliation setup — centralised here as the
+ * one place new callers (e.g. the account context menu's Quick Create
+ * resolution) should use instead of re-deriving it.
+ */
+export function isBankOrCashAccount(account?: { account_type?: string | null; account_subtype?: string | null } | null): boolean {
+  if (!account || account.account_type !== "Asset") return false;
+  const sub = (account.account_subtype || "").toLowerCase();
+  return sub.includes("cash") || sub.includes("bank") || sub.includes("checking") || sub.includes("savings");
+}
+
 export function getNormalBalance(accountType: string, isContra = false): "Debit" | "Credit" {
   const debit = isDebitNormal(accountType);
   const effective = isContra ? !debit : debit;

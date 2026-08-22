@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { format } from "date-fns";
 import {
   ArrowLeft, Plus, Trash2, Copy, Paperclip, Printer, Download, AlertTriangle,
@@ -78,6 +78,10 @@ export default function EnterBill() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const isNew = !id;
+  // Deep-linked from an account's context menu ("Quick Create → New Bill"):
+  // pre-fills the expense account on line 1. Not applied when editing an
+  // existing bill — that bill's own lines take priority.
+  const [searchParams] = useSearchParams();
 
   const { appUser } = useAuth();
   const { data: existing, isLoading: loadingExisting } = useSupplierBill(id);
@@ -129,7 +133,10 @@ export default function EnterBill() {
   const [locationId, setLocationId] = useState("");
   const [currency, setCurrency] = useState("LKR");
   const [exchangeRate, setExchangeRate] = useState(1);
-  const [lines, setLines] = useState<LineRow[]>([newLine()]);
+  const [lines, setLines] = useState<LineRow[]>(() => {
+    const expenseAccount = isNew ? searchParams.get("expense_account") : null;
+    return expenseAccount ? [{ ...newLine(), account_id: expenseAccount }] : [newLine()];
+  });
 
   const [showAddVendor, setShowAddVendor] = useState(false);
   const [newVendorName, setNewVendorName] = useState("");

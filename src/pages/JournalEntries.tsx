@@ -216,6 +216,24 @@ export default function JournalEntries() {
     }
   }, [open, nextJvReference]);
 
+  // Deep-linked from an account's context menu ("Enter Journal Entry" /
+  // Quick Create): open the dialog with that account pre-filled on line 1.
+  // The param is stripped immediately so it can't reapply on a later manual
+  // reopen of the same URL.
+  const prefillApplied = useRef(false);
+  useEffect(() => {
+    const prefillAccountId = searchParams.get("prefill_account");
+    if (!prefillAccountId || prefillApplied.current) return;
+    prefillApplied.current = true;
+    setLines((prev) => {
+      const next = [...prev];
+      next[0] = { ...blankLine(), account_id: prefillAccountId };
+      return next;
+    });
+    setOpen(true);
+    setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete("prefill_account"); return next; }, { replace: true });
+  }, [searchParams, setSearchParams]);
+
   // An entry linked from elsewhere (?highlight=…) is usually not on page 1 and may
   // not match the active filters, so fetch it directly and pin it above the page.
   const { data: highlightedEntry } = useQuery({

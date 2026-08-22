@@ -50,7 +50,7 @@ export function useNextAccountCode(accountType: string, parentId: string | null,
 }
 
 // Helper: Write audit log
-async function writeAuditLog(action: string, tableName: string, recordId?: string, details?: Record<string, any>) {
+export async function writeAuditLog(action: string, tableName: string, recordId?: string, details?: Record<string, any>) {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -238,7 +238,7 @@ export function useCreateAccount() {
   const queryClient = useQueryClient();
   const { appUser } = useAuth();
   return useMutation({
-    mutationFn: async (account: { account_name: string; account_code: string; account_type: string; account_subtype?: string; parent_account_id?: string; category_id?: string; created_from?: string }) => {
+    mutationFn: async (account: { account_name: string; account_code: string; account_type: string; account_subtype?: string; parent_account_id?: string; category_id?: string; created_from?: string; description?: string }) => {
       const { deriveAccountFlags, inheritParentFlags, buildAccountsMap, getInvalidationKeys } = await import("@/lib/accountMappingEngine");
       const flags = deriveAccountFlags(account.account_subtype);
 
@@ -290,7 +290,7 @@ export function useCreateAccount() {
 export function useUpdateAccount() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...updates }: { id: string; account_name?: string; account_code?: string; account_type?: string; account_subtype?: string | null; parent_account_id?: string | null; category_id?: string | null; is_active?: boolean }) => {
+    mutationFn: async ({ id, ...updates }: { id: string; account_name?: string; account_code?: string; account_type?: string; account_subtype?: string | null; parent_account_id?: string | null; category_id?: string | null; is_active?: boolean; description?: string | null }) => {
       // Auto-derive subledger fields if subtype is being updated
       if ('account_subtype' in updates) {
         const { deriveAccountFlags } = await import("@/lib/accountMappingEngine");
@@ -1248,6 +1248,33 @@ export function useAuditLogs() {
         .limit(100);
       if (error) throw error;
       return data;
+    },
+  });
+}
+
+export interface AccountAuditLogRow {
+  id: string;
+  action: string;
+  details: Record<string, any> | null;
+  created_at: string;
+  users: { first_name: string | null; last_name: string | null } | null;
+}
+
+/** Change history for one account's own record (not transactions posted to it — see useAccountLedgerPage for that). */
+export function useAccountAuditHistory(accountId: string | undefined, limit = 50) {
+  return useQuery({
+    queryKey: ["audit_logs", "account", accountId, limit],
+    enabled: !!accountId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("audit_logs")
+        .select("id, action, details, created_at, users(first_name, last_name)")
+        .eq("table_name", "accounts")
+        .eq("record_id", accountId!)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+      if (error) throw error;
+      return (data ?? []) as unknown as AccountAuditLogRow[];
     },
   });
 }

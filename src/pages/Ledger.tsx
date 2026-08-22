@@ -151,7 +151,11 @@ export default function Ledger() {
   });
 
   // State
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  // Seeded once from ?account= on mount (e.g. "Open Ledger" from the Chart of
+  // Accounts context menu) — not kept in sync afterwards, so a manual pick
+  // from the account dropdown isn't clobbered by an unrelated searchParams
+  // change (like the tab switching).
+  const [selectedAccountId, setSelectedAccountId] = useState<string>(() => searchParams.get("account") ?? "");
   const [periodFilter, setPeriodFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");

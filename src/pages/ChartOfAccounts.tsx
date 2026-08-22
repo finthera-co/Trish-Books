@@ -1,4 +1,4 @@
-import { Plus, Search, Download, BookOpen, ChevronRight, Edit2, Power, Trash2, LayoutList, LayoutGrid, FileText, ExternalLink, Lock, ShieldCheck } from "lucide-react";
+import { Plus, Search, Download, BookOpen, ChevronRight, Edit2, Power, Trash2, LayoutList, LayoutGrid, Lock, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
@@ -10,16 +10,18 @@ import { useMyPermissions } from "@/hooks/usePermissions";
 import { useOBEBalance } from "@/hooks/useOpeningBalanceEquity";
 import {
   ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
   ContextMenuTrigger,
-  ContextMenuSeparator,
 } from "@/components/ui/context-menu";
 
 import AccountForm from "@/components/chart-of-accounts/AccountForm";
 import { usePersistedFormState } from "@/hooks/usePersistedFormState";
 import COAHealthCheck from "@/components/chart-of-accounts/COAHealthCheck";
 import DeleteAccountDialog from "@/components/chart-of-accounts/DeleteAccountDialog";
+import AccountContextMenu from "@/components/chart-of-accounts/AccountContextMenu";
+import AccountTransactionsSheet from "@/components/chart-of-accounts/AccountTransactionsSheet";
+import SetOpeningBalanceDialog from "@/components/chart-of-accounts/SetOpeningBalanceDialog";
+import MoveAccountDialog from "@/components/chart-of-accounts/MoveAccountDialog";
+import AccountHistorySheet from "@/components/chart-of-accounts/AccountHistorySheet";
 import {
   Tooltip,
   TooltipContent,
@@ -52,13 +54,12 @@ import {
   mapAccountRoute,
   getModuleLabel,
   canCreateChildUnder,
-  canSetOpeningBalance,
   canEditAccountType,
   canDeleteAccount,
   type MappableAccount,
 } from "@/lib/accountMappingEngine";
 
-interface Account {
+export interface Account {
   id: string;
   account_code: string;
   account_name: string;
@@ -73,8 +74,25 @@ interface Account {
   control_account_type?: string;
   opening_balance?: number;
   opening_balance_type?: string;
+  description?: string | null;
   account_categories?: { name: string } | null;
   children?: Account[];
+}
+
+/** Callbacks shared by every account-row context menu, grouped so adding one
+ * doesn't mean threading a new prop through AccountRow/FlatAccountRow/
+ * TypeSection/CategorySection individually. */
+interface AccountRowActions {
+  onEdit: (a: Account) => void;
+  onToggleActive: (a: Account) => void;
+  onDelete: (a: Account) => void;
+  onGenerateReport: (a: Account) => void;
+  onViewTransactions: (a: Account) => void;
+  onAddChild: (a: Account) => void;
+  onSetOpeningBalance: (a: Account) => void;
+  onMoveAccount: (a: Account) => void;
+  onDuplicate: (a: Account) => void;
+  onViewHistory: (a: Account) => void;
 }
 
 function buildTree(accounts: Account[]): Account[] {
@@ -186,13 +204,10 @@ function computeRollupBalance(
 function AccountRow({
   account,
   depth = 0,
-  onEdit,
-  onToggleActive,
-  onDelete,
-  onGenerateReport,
-  onAddChild,
+  actions,
   periodOBMap,
   isPeriodClosed,
+  hasFiscalPeriod,
   canEdit,
   parentIsControl,
   globalAccountsMap,
@@ -200,13 +215,10 @@ function AccountRow({
 }: {
   account: Account;
   depth?: number;
-  onEdit: (a: Account) => void;
-  onToggleActive: (a: Account) => void;
-  onDelete: (a: Account) => void;
-  onGenerateReport: (a: Account) => void;
-  onAddChild: (a: Account) => void;
+  actions: AccountRowActions;
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
+  hasFiscalPeriod?: boolean;
   canEdit?: boolean;
   parentIsControl?: boolean;
   globalAccountsMap?: Map<string, MappableAccount>;
@@ -377,7 +389,7 @@ function AccountRow({
                   <>
                     {childCheck.allowed && (
                       <button
-                        onClick={() => onAddChild(account)}
+                        onClick={() => actions.onAddChild(account)}
                         className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-primary"
                         title="Add sub-account"
                       >
@@ -385,14 +397,14 @@ function AccountRow({
                       </button>
                     )}
                     <button
-                      onClick={() => onEdit(account)}
+                      onClick={() => actions.onEdit(account)}
                       className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
                       title="Edit"
                     >
                       <Edit2 className="w-3.5 h-3.5" />
                     </button>
                     <button
-                      onClick={() => onToggleActive(account)}
+                      onClick={() => actions.onToggleActive(account)}
                       className={`p-1 rounded hover:bg-muted ${account.is_active ? "text-muted-foreground hover:text-destructive" : "text-success hover:text-success"}`}
                       title={account.is_active ? "Deactivate" : "Activate"}
                     >
@@ -400,7 +412,7 @@ function AccountRow({
                     </button>
                     {!(account as any).is_system && (
                       <button
-                        onClick={() => onDelete(account)}
+                        onClick={() => actions.onDelete(account)}
                         className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-destructive"
                         title="Delete"
                       >
@@ -413,49 +425,33 @@ function AccountRow({
             </td>
           </tr>
         </ContextMenuTrigger>
-        <ContextMenuContent className="w-52">
-          <ContextMenuItem onClick={() => onGenerateReport(account)}>
-            <FileText className="w-4 h-4 mr-2" /> Generate Report
-          </ContextMenuItem>
-          {(controlAcct || isInheritedControl) && subledgerRoute && (
-            <>
-              <ContextMenuItem onClick={() => navigate(subledgerRoute)}>
-                <ExternalLink className="w-4 h-4 mr-2" /> View {subledgerModule} Subledger
-              </ContextMenuItem>
-            </>
-          )}
-          <ContextMenuSeparator />
-          <ContextMenuItem onClick={() => onEdit(account)}>
-            <Edit2 className="w-4 h-4 mr-2" /> Edit Account
-          </ContextMenuItem>
-          {canEdit && (
-            <ContextMenuItem
-              onClick={() => onAddChild(account)}
-              disabled={!childCheck.allowed}
-              title={childCheck.reason ?? childCheck.warning ?? undefined}
-            >
-              <Plus className="w-4 h-4 mr-2" /> Add Sub-account
-            </ContextMenuItem>
-          )}
-          {!(account as any).is_system && (
-            <ContextMenuItem onClick={() => onDelete(account)} className="text-destructive focus:text-destructive">
-              <Trash2 className="w-4 h-4 mr-2" /> Delete Account
-            </ContextMenuItem>
-          )}
-        </ContextMenuContent>
+        <AccountContextMenu
+          account={account}
+          accountsMap={accountsMap}
+          canEdit={canEdit}
+          onEdit={actions.onEdit}
+          onDelete={actions.onDelete}
+          onToggleActive={actions.onToggleActive}
+          onGenerateReport={actions.onGenerateReport}
+          onViewTransactions={actions.onViewTransactions}
+          onAddChild={actions.onAddChild}
+          onSetOpeningBalance={actions.onSetOpeningBalance}
+          onMoveAccount={actions.onMoveAccount}
+          onDuplicate={actions.onDuplicate}
+          onViewHistory={actions.onViewHistory}
+          hasFiscalPeriod={hasFiscalPeriod}
+          isPeriodClosed={isPeriodClosed}
+        />
       </ContextMenu>
       {expanded && account.children?.sort((a, b) => a.account_code.localeCompare(b.account_code)).map((child) => (
         <AccountRow
           key={child.id}
           account={child}
           depth={depth + 1}
-          onEdit={onEdit}
-          onToggleActive={onToggleActive}
-          onDelete={onDelete}
-          onGenerateReport={onGenerateReport}
-          onAddChild={onAddChild}
+          actions={actions}
           periodOBMap={periodOBMap}
           isPeriodClosed={isPeriodClosed}
+          hasFiscalPeriod={hasFiscalPeriod}
           canEdit={canEdit}
           parentIsControl={controlAcct || parentIsControl}
           globalAccountsMap={accountsMap}
@@ -469,23 +465,19 @@ function AccountRow({
 // ─── Flat row for Classic view ──────────────────────────────
 function FlatAccountRow({
   account,
-  onEdit,
-  onToggleActive,
-  onDelete,
-  onGenerateReport,
+  actions,
   periodOBMap,
   isPeriodClosed,
+  hasFiscalPeriod,
   canEdit,
   globalAccountsMap,
   movementsMap,
 }: {
   account: Account;
-  onEdit: (a: Account) => void;
-  onToggleActive: (a: Account) => void;
-  onDelete: (a: Account) => void;
-  onGenerateReport: (a: Account) => void;
+  actions: AccountRowActions;
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
+  hasFiscalPeriod?: boolean;
   canEdit?: boolean;
   globalAccountsMap?: Map<string, MappableAccount>;
   movementsMap?: Map<string, { debit: number; credit: number }>;
@@ -581,18 +573,18 @@ function FlatAccountRow({
             <div className="flex items-center justify-end gap-1">
               {canEdit && (
                 <>
-                  <button onClick={() => onEdit(account)} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title="Edit">
+                  <button onClick={() => actions.onEdit(account)} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title="Edit">
                     <Edit2 className="w-3.5 h-3.5" />
                   </button>
                   <button
-                    onClick={() => onToggleActive(account)}
+                    onClick={() => actions.onToggleActive(account)}
                     className={`p-1 rounded hover:bg-muted ${account.is_active ? "text-muted-foreground hover:text-destructive" : "text-success hover:text-success"}`}
                     title={account.is_active ? "Deactivate" : "Activate"}
                   >
                     <Power className="w-3.5 h-3.5" />
                   </button>
                   {!(account as any).is_system && (
-                    <button onClick={() => onDelete(account)} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-destructive" title="Delete">
+                    <button onClick={() => actions.onDelete(account)} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-destructive" title="Delete">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   )}
@@ -602,50 +594,41 @@ function FlatAccountRow({
           </td>
         </tr>
       </ContextMenuTrigger>
-      <ContextMenuContent className="w-48">
-        <ContextMenuItem onClick={() => onGenerateReport(account)}>
-          <FileText className="w-4 h-4 mr-2" /> Generate Report
-        </ContextMenuItem>
-        {(controlAcct || isControlled) && subledgerRoute && (
-          <ContextMenuItem onClick={() => navigate(subledgerRoute)}>
-            <ExternalLink className="w-4 h-4 mr-2" /> View {subledgerModule} Subledger
-          </ContextMenuItem>
-        )}
-        <ContextMenuSeparator />
-        <ContextMenuItem onClick={() => onEdit(account)}>
-          <Edit2 className="w-4 h-4 mr-2" /> Edit Account
-        </ContextMenuItem>
-        {!(account as any).is_system && (
-          <ContextMenuItem onClick={() => onDelete(account)} className="text-destructive focus:text-destructive">
-            <Trash2 className="w-4 h-4 mr-2" /> Delete Account
-          </ContextMenuItem>
-        )}
-      </ContextMenuContent>
+      <AccountContextMenu
+        account={account}
+        accountsMap={accountsMap}
+        canEdit={canEdit}
+        onEdit={actions.onEdit}
+        onDelete={actions.onDelete}
+        onToggleActive={actions.onToggleActive}
+        onGenerateReport={actions.onGenerateReport}
+        onViewTransactions={actions.onViewTransactions}
+        onSetOpeningBalance={actions.onSetOpeningBalance}
+        onMoveAccount={actions.onMoveAccount}
+        onDuplicate={actions.onDuplicate}
+        onViewHistory={actions.onViewHistory}
+        hasFiscalPeriod={hasFiscalPeriod}
+        isPeriodClosed={isPeriodClosed}
+      />
     </ContextMenu>
   );
 }
 
 function TypeSection({
   typeGroup,
-  onEdit,
-  onToggleActive,
-  onDelete,
-  onGenerateReport,
-  onAddChild,
+  actions,
   periodOBMap,
   isPeriodClosed,
+  hasFiscalPeriod,
   canEdit,
   globalAccountsMap,
   movementsMap,
 }: {
   typeGroup: TypeGroup;
-  onEdit: (a: Account) => void;
-  onToggleActive: (a: Account) => void;
-  onDelete: (a: Account) => void;
-  onGenerateReport: (a: Account) => void;
-  onAddChild: (a: Account) => void;
+  actions: AccountRowActions;
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
+  hasFiscalPeriod?: boolean;
   canEdit?: boolean;
   globalAccountsMap?: Map<string, MappableAccount>;
   movementsMap?: Map<string, { debit: number; credit: number }>;
@@ -679,13 +662,10 @@ function TypeSection({
           key={cat.id}
           category={cat}
           accountType={typeGroup.type}
-          onEdit={onEdit}
-          onToggleActive={onToggleActive}
-          onDelete={onDelete}
-          onGenerateReport={onGenerateReport}
-          onAddChild={onAddChild}
+          actions={actions}
           periodOBMap={periodOBMap}
           isPeriodClosed={isPeriodClosed}
+          hasFiscalPeriod={hasFiscalPeriod}
           canEdit={canEdit}
           globalAccountsMap={globalAccountsMap}
           movementsMap={movementsMap}
@@ -703,13 +683,10 @@ function TypeSection({
               key={account.id}
               account={account}
               depth={2}
-              onEdit={onEdit}
-              onToggleActive={onToggleActive}
-              onDelete={onDelete}
-              onGenerateReport={onGenerateReport}
-              onAddChild={onAddChild}
+              actions={actions}
               periodOBMap={periodOBMap}
               isPeriodClosed={isPeriodClosed}
+              hasFiscalPeriod={hasFiscalPeriod}
               canEdit={canEdit}
               globalAccountsMap={globalAccountsMap}
               movementsMap={movementsMap}
@@ -724,26 +701,20 @@ function TypeSection({
 function CategorySection({
   category,
   accountType,
-  onEdit,
-  onToggleActive,
-  onDelete,
-  onGenerateReport,
-  onAddChild,
+  actions,
   periodOBMap,
   isPeriodClosed,
+  hasFiscalPeriod,
   canEdit,
   globalAccountsMap,
   movementsMap,
 }: {
   category: CategoryGroup;
   accountType: string;
-  onEdit: (a: Account) => void;
-  onToggleActive: (a: Account) => void;
-  onDelete: (a: Account) => void;
-  onGenerateReport: (a: Account) => void;
-  onAddChild: (a: Account) => void;
+  actions: AccountRowActions;
   periodOBMap?: Map<string, { debit: number; credit: number }>;
   isPeriodClosed?: boolean;
+  hasFiscalPeriod?: boolean;
   canEdit?: boolean;
   globalAccountsMap?: Map<string, MappableAccount>;
   movementsMap?: Map<string, { debit: number; credit: number }>;
@@ -770,13 +741,10 @@ function CategorySection({
           key={account.id}
           account={account}
           depth={2}
-          onEdit={onEdit}
-          onToggleActive={onToggleActive}
-          onDelete={onDelete}
-          onGenerateReport={onGenerateReport}
-          onAddChild={onAddChild}
+          actions={actions}
           periodOBMap={periodOBMap}
           isPeriodClosed={isPeriodClosed}
+          hasFiscalPeriod={hasFiscalPeriod}
           canEdit={canEdit}
           globalAccountsMap={globalAccountsMap}
           movementsMap={movementsMap}
@@ -824,7 +792,19 @@ export default function ChartOfAccounts() {
     setFormOpen(true);
   };
 
+  const handleDuplicate = (a: Account) => {
+    setEditAccount(null);
+    setParentSeedId(null);
+    setDuplicateFromAccount(a);
+    setFormOpen(true);
+  };
+
   const [deleteAccount, setDeleteAccount] = useState<Account | null>(null);
+  const [viewTransactionsAccount, setViewTransactionsAccount] = useState<Account | null>(null);
+  const [openingBalanceAccount, setOpeningBalanceAccount] = useState<Account | null>(null);
+  const [moveAccount, setMoveAccount] = useState<Account | null>(null);
+  const [duplicateFromAccount, setDuplicateFromAccount] = useState<Account | null>(null);
+  const [historyAccount, setHistoryAccount] = useState<Account | null>(null);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [showInactive, setShowInactive] = useState(false);
@@ -1046,6 +1026,7 @@ export default function ChartOfAccounts() {
     await createAccount.mutateAsync(data);
     setFormOpen(false);
     setParentSeedId(null);
+    setDuplicateFromAccount(null);
   };
 
   const handleEdit = async (data: any) => {
@@ -1081,6 +1062,19 @@ export default function ChartOfAccounts() {
 
   const activeCount = (accounts as Account[] | undefined)?.filter(a => a.is_active).length || 0;
   const hasEditPermission = canEditAccounts("accounts");
+
+  const accountRowActions: AccountRowActions = {
+    onEdit: (a) => setEditAccount(a),
+    onToggleActive: handleToggleActive,
+    onDelete: (a) => setDeleteAccount(a),
+    onGenerateReport: (a) => navigate(`/accounting/accounts/${a.id}/report`),
+    onViewTransactions: (a) => setViewTransactionsAccount(a),
+    onAddChild: handleAddChild,
+    onSetOpeningBalance: (a) => setOpeningBalanceAccount(a),
+    onMoveAccount: (a) => setMoveAccount(a),
+    onDuplicate: handleDuplicate,
+    onViewHistory: (a) => setHistoryAccount(a),
+  };
 
   return (
     <div className="space-y-6">
@@ -1118,7 +1112,7 @@ export default function ChartOfAccounts() {
             <Download className="w-4 h-4 mr-1" /> Export
           </Button>
           <COAHealthCheck accounts={(accounts as any[]) || []} />
-          {hasEditPermission && <Button onClick={() => { setParentSeedId(null); setFormOpen(true); }}>
+          {hasEditPermission && <Button onClick={() => { setParentSeedId(null); setDuplicateFromAccount(null); setFormOpen(true); }}>
             <Plus className="w-4 h-4" /> Add Account
           </Button>}
         </div>
@@ -1206,13 +1200,10 @@ export default function ChartOfAccounts() {
                 <TypeSection
                   key={tg.type}
                   typeGroup={tg}
-                  onEdit={(a) => setEditAccount(a)}
-                  onToggleActive={handleToggleActive}
-                  onDelete={(a) => setDeleteAccount(a)}
-                  onGenerateReport={(a) => navigate(`/accounting/accounts/${a.id}/report`)}
-                  onAddChild={handleAddChild}
+                  actions={accountRowActions}
                   periodOBMap={periodOBMap}
                   isPeriodClosed={isPeriodClosed}
+                  hasFiscalPeriod={!!selectedPeriodId}
                   canEdit={hasEditPermission}
                   globalAccountsMap={globalAccountsMap}
                   movementsMap={movementsMap}
@@ -1242,12 +1233,10 @@ export default function ChartOfAccounts() {
                   <FlatAccountRow
                     key={account.id}
                     account={account}
-                    onEdit={(a) => setEditAccount(a)}
-                    onToggleActive={handleToggleActive}
-                    onDelete={(a) => setDeleteAccount(a)}
-                    onGenerateReport={(a) => navigate(`/accounting/accounts/${a.id}/report`)}
+                    actions={accountRowActions}
                     periodOBMap={periodOBMap}
                     isPeriodClosed={isPeriodClosed}
+                    hasFiscalPeriod={!!selectedPeriodId}
                     canEdit={hasEditPermission}
                     globalAccountsMap={globalAccountsMap}
                     movementsMap={movementsMap}
@@ -1261,13 +1250,14 @@ export default function ChartOfAccounts() {
       {/* Create form */}
       <AccountForm
         open={formOpen}
-        onOpenChange={(o) => { setFormOpen(o); if (!o) setParentSeedId(null); }}
+        onOpenChange={(o) => { setFormOpen(o); if (!o) { setParentSeedId(null); setDuplicateFromAccount(null); } }}
         onSubmit={handleCreate}
         accounts={(accounts as Account[]) || []}
         categories={categories || []}
         isPending={createAccount.isPending}
         existingCodes={existingCodes}
         defaultParentId={parentSeedId}
+        duplicateFrom={duplicateFromAccount}
         onCreateCategory={async (data) => {
           const result = await createCategory.mutateAsync(data);
           return result;
@@ -1298,6 +1288,40 @@ export default function ChartOfAccounts() {
         onOpenChange={(open) => { if (!open) setDeleteAccount(null); }}
         account={deleteAccount}
         allAccounts={(accounts as Account[]) || []}
+      />
+
+      {/* View Transactions slide-over */}
+      <AccountTransactionsSheet
+        account={viewTransactionsAccount}
+        open={!!viewTransactionsAccount}
+        onOpenChange={(open) => { if (!open) setViewTransactionsAccount(null); }}
+      />
+
+      {/* Set Opening Balance */}
+      <SetOpeningBalanceDialog
+        account={openingBalanceAccount}
+        open={!!openingBalanceAccount}
+        onOpenChange={(open) => { if (!open) setOpeningBalanceAccount(null); }}
+        fiscalPeriodLabel={selectedPeriod?.name}
+        isPeriodClosed={isPeriodClosed}
+      />
+
+      {/* Move Account */}
+      <MoveAccountDialog
+        account={moveAccount}
+        accounts={(accounts as Account[]) || []}
+        accountsMap={globalAccountsMap}
+        open={!!moveAccount}
+        onOpenChange={(open) => { if (!open) setMoveAccount(null); }}
+      />
+
+      {/* Account History */}
+      <AccountHistorySheet
+        account={historyAccount}
+        open={!!historyAccount}
+        onOpenChange={(open) => { if (!open) setHistoryAccount(null); }}
+        accountsMap={globalAccountsMap}
+        categories={categories}
       />
     </div>
   );

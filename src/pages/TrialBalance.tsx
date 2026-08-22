@@ -1,5 +1,5 @@
-import { useState, useMemo, Fragment, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useMemo, Fragment, useCallback, useEffect, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Download, FileText, Printer, ChevronDown, ChevronRight, AlertTriangle, FileSpreadsheet, Loader2, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,10 @@ export default function TrialBalance() {
   const { appUser } = useAuth();
   const navigate = useNavigate();
   const { data: fiscalPeriods } = useFiscalPeriods();
+  // Drill-through from an account's context menu ("Run Report → Trial Balance").
+  const [searchParams] = useSearchParams();
+  const highlightAccountId = searchParams.get("highlight");
+  const highlightScrolledRef = useRef<string | null>(null);
 
   const [dateFrom, setDateFrom] = useState(defaultDateFrom);
   const [dateTo, setDateTo] = useState(() => new Date().toISOString().slice(0, 10));
@@ -110,6 +114,21 @@ export default function TrialBalance() {
     });
   const collapseAll = () => setCollapsed(new Set(groups.map((g) => g.key)));
   const expandAll = () => setCollapsed(new Set());
+
+  // Ensure the highlighted account's group is expanded, then scroll to and
+  // flash its row. Runs once per highlight id (not on every collapse toggle).
+  useEffect(() => {
+    if (!highlightAccountId || highlightScrolledRef.current === highlightAccountId) return;
+    const ownerGroup = groups.find((g) => g.rows.some((r) => r.account_id === highlightAccountId));
+    if (!ownerGroup) return;
+    if (collapsed.has(ownerGroup.key)) {
+      setCollapsed((prev) => { const next = new Set(prev); next.delete(ownerGroup.key); return next; });
+    }
+    highlightScrolledRef.current = highlightAccountId;
+    setTimeout(() => {
+      document.querySelector(`[data-account-id="${highlightAccountId}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 200);
+  }, [highlightAccountId, groups, collapsed]);
 
   const closingDiff = closingDifference(grand);
   const isUnbalanced = Math.abs(closingDiff) > 0.005;
@@ -338,7 +357,7 @@ export default function TrialBalance() {
             </thead>
             <tbody>
               {groups.map((g) => (
-                <GroupRows key={g.key} group={g} isCollapsed={collapsed.has(g.key)} onToggle={() => toggleCollapse(g.key)} onOpenLedger={openLedger} />
+                <GroupRows key={g.key} group={g} isCollapsed={collapsed.has(g.key)} onToggle={() => toggleCollapse(g.key)} onOpenLedger={openLedger} highlightAccountId={highlightAccountId} />
               ))}
               <tr className="border-t-2 border-foreground/30 font-bold">
                 <td></td>
@@ -382,8 +401,8 @@ function OpeningBasisNote({ basis, dateFrom }: { basis: ReturnType<typeof openin
 }
 
 function GroupRows({
-  group, isCollapsed, onToggle, onOpenLedger,
-}: { group: GroupBlock; isCollapsed: boolean; onToggle: () => void; onOpenLedger: (accountId: string) => void }) {
+  group, isCollapsed, onToggle, onOpenLedger, highlightAccountId,
+}: { group: GroupBlock; isCollapsed: boolean; onToggle: () => void; onOpenLedger: (accountId: string) => void; highlightAccountId?: string | null }) {
   return (
     <Fragment>
       <tr className="bg-muted/40">
@@ -394,7 +413,9 @@ function GroupRows({
         </td>
         <td colSpan={7} className="px-3 py-2 font-semibold text-foreground text-xs uppercase tracking-wide">{group.label}</td>
       </tr>
-      {!isCollapsed && group.rows.map((r) => <AccountRow key={r.account_id} row={r} onOpenLedger={onOpenLedger} />)}
+      {!isCollapsed && group.rows.map((r) => (
+        <AccountRow key={r.account_id} row={r} onOpenLedger={onOpenLedger} isHighlighted={r.account_id === highlightAccountId} />
+      ))}
       <tr className="border-t border-border font-semibold">
         <td></td>
         <td className="px-3 py-1.5 text-foreground text-xs">Total {group.label}</td>
@@ -410,7 +431,7 @@ function GroupRows({
   );
 }
 
-function AccountRow({ row, onOpenLedger }: { row: TrialBalanceRow; onOpenLedger: (accountId: string) => void }) {
+function AccountRow({ row, onOpenLedger, isHighlighted }: { row: TrialBalanceRow; onOpenLedger: (accountId: string) => void; isHighlighted?: boolean }) {
   const open = openingSplit(row);
   const close = closingSplit(row);
   const hasVariance = row.has_audit_row && Math.abs(row.opening_variance) > 0.005;
@@ -433,7 +454,10 @@ function AccountRow({ row, onOpenLedger }: { row: TrialBalanceRow; onOpenLedger:
     );
 
   return (
-    <tr className={`border-b border-border/40 hover:bg-primary/5 ${hasVariance ? "border-l-2 border-l-amber-500" : ""}`}>
+    <tr
+      data-account-id={row.account_id}
+      className={`border-b border-border/40 hover:bg-primary/5 ${hasVariance ? "border-l-2 border-l-amber-500" : ""} ${isHighlighted ? "bg-primary/10 ring-1 ring-inset ring-primary/40" : ""}`}
+    >
       <td className="px-3 py-1.5 font-mono text-xs text-muted-foreground">
         <button onClick={drill} title={title} className={linkClass}>{row.account_code}</button>
       </td>

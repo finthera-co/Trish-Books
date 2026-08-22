@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { isDebitNormal } from "@/lib/accountTypes";
+import { writeAuditLog } from "@/hooks/useData";
 
 // Get a system setting
 export function useSystemSetting(key: string) {
@@ -176,6 +177,7 @@ export function useSaveAccountOpeningBalance() {
         .eq("id", accountId)
         .eq("tenant_id", appUser.tenant_id);
       if (error) throw error;
+      writeAuditLog("Opening Balance Updated", "accounts", accountId, { opening_balance: openingBalance, opening_balance_type: openingBalanceType });
 
       // 2. Void ALL existing OB journal entries for this account (inline + OB-page)
       const { data: existingEntries } = await supabase

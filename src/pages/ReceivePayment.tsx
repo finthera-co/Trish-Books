@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, CreditCard, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,9 +22,11 @@ export default function ReceivePayment() {
   const { data: invoices } = useInvoices();
   const { data: accounts } = useARAccounts();
   const receivePayment = useReceiveCustomerPayment();
+  // Deep-linked from a bank/cash account's context menu ("Quick Create → Receive Payment").
+  const [searchParams] = useSearchParams();
 
   const [customerId, setCustomerId] = useState("");
-  const [bankAccountId, setBankAccountId] = useState("");
+  const [bankAccountId, setBankAccountId] = useState(() => searchParams.get("deposit_to") ?? "");
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
   const [paymentMethod, setPaymentMethod] = useState("bank_transfer");
   const [reference, setReference] = useState("");

@@ -417,6 +417,7 @@ export type Database = {
           control_account_type: string
           created_at: string
           created_from: string | null
+          description: string | null
           id: string
           is_active: boolean
           is_contra: boolean
@@ -445,6 +446,7 @@ export type Database = {
           control_account_type?: string
           created_at?: string
           created_from?: string | null
+          description?: string | null
           id?: string
           is_active?: boolean
           is_contra?: boolean
@@ -473,6 +475,7 @@ export type Database = {
           control_account_type?: string
           created_at?: string
           created_from?: string | null
+          description?: string | null
           id?: string
           is_active?: boolean
           is_contra?: boolean
