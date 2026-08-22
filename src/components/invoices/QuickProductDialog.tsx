@@ -131,8 +131,8 @@ export function QuickProductDialog({ onCreated }: Props) {
           </div>
           {form.type === "non_inventory" && (
             <div>
-              <Label>COGS / Expense Account</Label>
-              <p className="text-xs text-muted-foreground mt-0.5 mb-1">Debited when this product is sold</p>
+              <Label>Expense Account</Label>
+              <p className="text-xs text-muted-foreground mt-0.5 mb-1">Default account when this product is purchased on a bill</p>
               <AccountSelector value={form.expense_account_id} onChange={(id) => set({ expense_account_id: id })}
                 types={["Cost of Goods Sold", "Expense"]} placeholder="Search account…" />
             </div>

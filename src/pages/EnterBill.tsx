@@ -33,7 +33,8 @@ import { computeBillStatus, BILL_STATUS_BADGE } from "@/lib/billStatus";
 import { calculateLineTax, type TaxMemberInput } from "@/lib/taxEngine";
 import { useTaxProfile, useTaxGroups, useTaxCodes, currentRate } from "@/hooks/useTaxEngine";
 import { useVendorsWithBalance, useCreateVendorWithOB } from "@/hooks/useSubledgerData";
-import { useAccounts, useCustomers } from "@/hooks/useData";
+import { useAccounts, useCustomers, useProducts } from "@/hooks/useData";
+import { QuickProductDialog } from "@/components/invoices/QuickProductDialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useAccountSettings } from "@/hooks/useAccountSettings";
@@ -52,6 +53,7 @@ interface LineRow {
   account_id: string;
   description: string;
   sku: string;
+  product_id: string;
   qty: string;
   unit_cost: string;
   /** Derived = qty × unit_cost, kept in sync by updateLine. Every totals/tax/payload
@@ -68,7 +70,7 @@ const EXPENSE_ACCOUNT_TYPES = ["Expense", "Cost of Goods Sold", "Other Expense",
 
 let keySeq = 0;
 const newLine = (): LineRow => ({
-  key: `l${++keySeq}`, account_id: "", description: "", sku: "", qty: "1", unit_cost: "", amount: "", tax_sel: "",
+  key: `l${++keySeq}`, account_id: "", description: "", sku: "", product_id: "", qty: "1", unit_cost: "", amount: "", tax_sel: "",
   is_tax_inclusive: false, customer_id: null, is_billable: false, cost_center_id: null,
 });
 
@@ -82,6 +84,7 @@ export default function EnterBill() {
   const { data: vendors } = useVendorsWithBalance();
   const { data: accounts } = useAccounts();
   const { data: customers } = useCustomers();
+  const { data: products } = useProducts();
   const { data: accountSettings } = useAccountSettings();
   const { data: costCenters } = useCostCenters();
   const { data: locations } = useLocations();
@@ -186,6 +189,7 @@ export default function EnterBill() {
           account_id: l.account_id || "",
           description: l.description || "",
           sku: l.sku || "",
+          product_id: l.product_id || "",
           qty: String(l.qty ?? 1),
           unit_cost: String(l.unit_cost ?? 0),
           amount: String((Number(l.qty ?? 1)) * (Number(l.unit_cost ?? 0))),
@@ -347,6 +351,26 @@ export default function EnterBill() {
       if (l.key !== key) return l;
       const next = { ...l, ...patch };
       if (!next.customer_id) next.is_billable = false;
+      if ("product_id" in patch) {
+        const product: any = (products ?? []).find((p: any) => p.id === patch.product_id);
+        if (product) {
+          next.description = product.description || product.name;
+          next.sku = product.sku || next.sku;
+          next.unit_cost = String(Number(product.price) || 0);
+          // Non-inventory products carry a purchase-side account; service
+          // products only have income_account_id, so leave account_id for
+          // the user to pick manually in that case.
+          if (product.expense_account_id) next.account_id = product.expense_account_id;
+        } else {
+          next.account_id = "";
+        }
+      }
+      // Picking an account by hand on a product-linked line detaches the
+      // product — same rule CreateInvoice.tsx uses — so the manual choice
+      // sticks instead of being silently overwritten by a later product edit.
+      if ("account_id" in patch && patch.account_id && l.product_id) {
+        next.product_id = "";
+      }
       if ("qty" in patch || "unit_cost" in patch) {
         next.amount = String((parseFloat(next.qty) || 0) * (parseFloat(next.unit_cost) || 0));
       }
@@ -397,6 +421,7 @@ export default function EnterBill() {
       account_id: l.account_id,
       description: l.description,
       sku: l.sku || undefined,
+      product_id: l.product_id || null,
       qty: parseFloat(l.qty) || 1,
       unit_cost: parseFloat(l.unit_cost) || 0,
       tax_group_id: l.tax_sel.startsWith("g:") ? l.tax_sel.slice(2) : null,
@@ -810,7 +835,8 @@ export default function EnterBill() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="min-w-[300px]">Account</TableHead>
+                  <TableHead className="min-w-[180px]">Product</TableHead>
+                  <TableHead className="min-w-[260px]">Account</TableHead>
                   <TableHead className="min-w-[100px]">SKU</TableHead>
                   <TableHead className="min-w-[180px]">Description</TableHead>
                   <TableHead className="w-32 text-right">Qty</TableHead>
@@ -826,6 +852,26 @@ export default function EnterBill() {
               <TableBody>
                 {lines.map((line, idx) => (
                   <TableRow key={line.key}>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Select
+                          value={line.product_id || "__none__"}
+                          onValueChange={(v) => updateLine(line.key, { product_id: v === "__none__" ? "" : v })}
+                          disabled={!isEditable}
+                        >
+                          <SelectTrigger className="h-9 min-w-0 flex-1 text-xs"><SelectValue placeholder="Link a product" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">— No product —</SelectItem>
+                            {(products ?? []).map((p: any) => (
+                              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {isEditable && (
+                          <QuickProductDialog onCreated={(pid) => updateLine(line.key, { product_id: pid })} />
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <AccountCombobox
                         options={expenseAccounts}

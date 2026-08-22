@@ -11,6 +11,7 @@ export interface BillLineInput {
   account_id?: string | null;
   description?: string;
   sku?: string;
+  product_id?: string | null;
   qty: number;
   unit_cost: number;
   tax_code_id?: string | null;
@@ -133,6 +134,7 @@ export function useCreateSupplierBill() {
         is_billable: l.is_billable ?? false,
         cost_center_id: l.cost_center_id || null,
         sku: l.sku || null,
+        product_id: l.product_id || null,
       }));
       const { error: le } = await supabase.from("supplier_bill_lines" as any).insert(lines as any);
       if (le) throw le;
@@ -230,6 +232,7 @@ export function useUpdateSupplierBill() {
         is_billable: l.is_billable ?? false,
         cost_center_id: l.cost_center_id || null,
         sku: l.sku || null,
+        product_id: l.product_id || null,
       }));
       const { error: le } = await supabase.from("supplier_bill_lines" as any).insert(lines as any);
       if (le) throw le;

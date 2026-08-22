@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       account_categories: {
@@ -11366,6 +11341,7 @@ export type Database = {
           is_billable: boolean
           is_tax_inclusive: boolean
           line_total: number
+          product_id: string | null
           qty: number
           sku: string | null
           tax_amount_line: number
@@ -11385,6 +11361,7 @@ export type Database = {
           is_billable?: boolean
           is_tax_inclusive?: boolean
           line_total?: number
+          product_id?: string | null
           qty?: number
           sku?: string | null
           tax_amount_line?: number
@@ -11404,6 +11381,7 @@ export type Database = {
           is_billable?: boolean
           is_tax_inclusive?: boolean
           line_total?: number
+          product_id?: string | null
           qty?: number
           sku?: string | null
           tax_amount_line?: number
@@ -11439,6 +11417,13 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_bill_lines_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
             referencedColumns: ["id"]
           },
           {
@@ -14760,9 +14745,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       ap_transaction_status: ["OPEN", "PARTIALLY_PAID", "PAID", "WRITTEN_OFF"],
