@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { usePaymentVouchers, useDeletePaymentVoucher } from "@/hooks/usePaymentVouchers";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,28 +10,25 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { sortAccounts } from "@/lib/accountSort";
-import { Plus, Search, Trash2, Eye, Edit, FileText, CalendarIcon, X, SlidersHorizontal, Printer } from "lucide-react";
+import { Plus, Search, Trash2, Eye, FileText, CalendarIcon, X, SlidersHorizontal, Printer } from "lucide-react";
 import { useMyPermissions } from "@/hooks/usePermissions";
-import PaymentVoucherForm from "@/components/payment-vouchers/PaymentVoucherForm";
-import PaymentVoucherDetails from "@/components/payment-vouchers/PaymentVoucherDetails";
 import { formatCurrency } from "@/lib/currency";
-import { useSearchParams } from "react-router-dom";
 import { formatDate } from "@/lib/format";
 
-const STATUS_OPTIONS = ["all", "draft", "posted", "reversed", "voided"] as const;
+const STATUS_OPTIONS = ["all", "draft", "posted", "voided"] as const;
 
 export default function PaymentVouchers() {
   const { data: vouchers, isLoading } = usePaymentVouchers();
   const deleteMutation = useDeletePaymentVoucher();
   const { canEdit: canEditBanking, canDelete: canDeleteBanking } = useMyPermissions();
   const { isSuperAdmin } = useAuth();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const highlightId = searchParams.get("highlight");
 
@@ -43,34 +41,12 @@ export default function PaymentVouchers() {
   const [fromDate, setFromDate] = useState<Date | undefined>();
   const [toDate, setToDate] = useState<Date | undefined>();
   const [showFilters, setShowFilters] = useState(false);
-
-  // Modal state
-  const [showForm, setShowForm] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
-  const [viewId, setViewId] = useState<string | null>(highlightId);
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [initialAccountId, setInitialAccountId] = useState<string | null>(null);
 
+  // A highlighted check (e.g. from the Ledger) opens straight into its page.
   useEffect(() => {
-    if (highlightId && vouchers?.some((v) => v.id === highlightId)) {
-      setViewId(highlightId);
-    }
-  }, [highlightId, vouchers]);
-
-  // Deep-linked from an account's context menu ("Quick Create → Make Payment").
-  useEffect(() => {
-    const fromAccount = searchParams.get("from_account");
-    if (searchParams.get("action") !== "new" || !fromAccount) return;
-    setEditId(null);
-    setInitialAccountId(fromAccount);
-    setShowForm(true);
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.delete("action");
-      next.delete("from_account");
-      return next;
-    }, { replace: true });
-  }, [searchParams, setSearchParams]);
+    if (highlightId) navigate(`/checks/${highlightId}`, { replace: true });
+  }, [highlightId, navigate]);
 
   // Distinct payment accounts present in current voucher set (for the dropdown)
   const paymentAccountOptions = useMemo(() => {
@@ -118,6 +94,7 @@ export default function PaymentVouchers() {
           v.reference_number,
           v.memo,
           v.customers?.name,
+          v.vendors?.name,
         ]
           .filter(Boolean)
           .join(" ")
@@ -174,7 +151,7 @@ export default function PaymentVouchers() {
           <p className="text-sm text-muted-foreground">Write and track checks against your bank accounts</p>
         </div>
         {canEditBanking("banking") && (
-          <Button onClick={() => { setEditId(null); setInitialAccountId(null); setShowForm(true); }}>
+          <Button onClick={() => navigate("/checks/new")}>
             <Plus className="w-4 h-4 mr-2" /> Write Checks
           </Button>
         )}
@@ -361,9 +338,13 @@ export default function PaymentVouchers() {
                   </TableRow>
                 )}
                 {filtered.map((v: any) => (
-                  <TableRow key={v.id} className={highlightId === v.id ? "bg-accent/40" : ""}>
+                  <TableRow
+                    key={v.id}
+                    className={cn("cursor-pointer", highlightId === v.id && "bg-accent/40")}
+                    onClick={() => navigate(`/checks/${v.id}`)}
+                  >
                     <TableCell className="font-mono font-medium">{v.voucher_number}</TableCell>
-                    <TableCell>{v.customers?.name || "—"}</TableCell>
+                    <TableCell>{v.vendors?.name || v.customers?.name || "—"}</TableCell>
                     <TableCell>{formatDate(v.payment_date)}</TableCell>
                     <TableCell>{v.accounts?.account_name || "—"}</TableCell>
                     <TableCell>{v.cheque_number || "—"}</TableCell>
@@ -371,7 +352,9 @@ export default function PaymentVouchers() {
                     <TableCell><Badge variant="outline">{v.payment_method}</Badge></TableCell>
                     <TableCell className="text-right font-mono">{formatCurrency(Number(v.total_amount))}</TableCell>
                     <TableCell>
-                      <Badge variant={v.status === "posted" ? "default" : "secondary"}>{v.status}</Badge>
+                      <Badge variant={v.status === "posted" ? "default" : v.status === "voided" ? "destructive" : "secondary"}>
+                        {v.status}
+                      </Badge>
                     </TableCell>
                     <TableCell className="text-center">
                       {v.print_later && (
@@ -380,22 +363,12 @@ export default function PaymentVouchers() {
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => setViewId(v.id)}>
+                        <Button variant="ghost" size="icon" onClick={() => navigate(`/checks/${v.id}`)}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        {canEditBanking("banking") && v.status === "draft" && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => { setEditId(v.id); setShowForm(true); }}
-                            title="Edit draft voucher"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                        )}
-                        {canDeleteBanking("banking") && (
+                        {canDeleteBanking("banking") && v.status === "draft" && (
                           <Button variant="ghost" size="icon" onClick={() => setDeleteId(v.id)}>
                             <Trash2 className="w-4 h-4 text-destructive" />
                           </Button>
@@ -410,28 +383,7 @@ export default function PaymentVouchers() {
         </CardContent>
       </Card>
 
-      {/* Create/Edit Dialog */}
-      <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editId ? "Edit Check" : "Write Checks"}</DialogTitle>
-          </DialogHeader>
-          <PaymentVoucherForm
-            editId={editId}
-            initialAccountId={initialAccountId}
-            onClose={() => { setShowForm(false); setEditId(null); setInitialAccountId(null); }}
-          />
-        </DialogContent>
-      </Dialog>
-
-      {/* View Details Dialog */}
-      <Dialog open={!!viewId} onOpenChange={() => setViewId(null)}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <PaymentVoucherDetails voucherId={viewId} />
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Confirmation */}
+      {/* Delete Confirmation (draft checks only — posted checks are voided, not deleted) */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

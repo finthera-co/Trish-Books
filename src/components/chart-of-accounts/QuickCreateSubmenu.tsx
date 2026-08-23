@@ -38,7 +38,7 @@ function resolveItems(account: MappableAccount & { id: string }, accountsMap: Ma
   if (subledgerType === "vendor") {
     return [
       { key: "bill", label: "New Bill", icon: FileText, route: `/accounting/bills/new?expense_account=${account.id}` },
-      { key: "make_payment", label: "Make Payment", icon: Banknote, route: `/banking/write-checks?action=new&from_account=${account.id}`, requires: "banking" },
+      { key: "make_payment", label: "Make Payment", icon: Banknote, route: `/checks/new?from_account=${account.id}`, requires: "banking" },
     ];
   }
   // Fixed-asset / depreciation control accounts are entirely managed by the
@@ -50,7 +50,7 @@ function resolveItems(account: MappableAccount & { id: string }, accountsMap: Ma
   if (account.account_type === "Asset" && isBankOrCashAccount(account)) {
     return [
       { key: "receive_payment", label: "Receive Payment", icon: HandCoins, route: `/accounting/receive-payment?deposit_to=${account.id}` },
-      { key: "make_payment", label: "Make Payment", icon: Banknote, route: `/banking/write-checks?action=new&from_account=${account.id}`, requires: "banking" },
+      { key: "make_payment", label: "Make Payment", icon: Banknote, route: `/checks/new?from_account=${account.id}`, requires: "banking" },
       journalEntry,
     ];
   }

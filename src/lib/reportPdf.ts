@@ -125,3 +125,97 @@ export function downloadReportPdf(container: HTMLElement, meta: ReportPdfMeta) {
   doc.save(meta.fileName);
   return true;
 }
+
+export interface DataColumnPdf<T> {
+  header: string;
+  /** Right-aligned amount columns. */
+  numeric?: boolean;
+  value: (row: T) => string | number | null;
+}
+
+/**
+ * Export from the report's own data rather than the DOM — the PDF
+ * counterpart to `downloadDataExcel`. Use it where the rendered page is only
+ * part of the report (paginated or virtualised tables).
+ */
+export function downloadDataPdf<T>(
+  meta: ReportPdfMeta,
+  columns: DataColumnPdf<T>[],
+  rows: T[],
+  totalRow?: (string | number | null)[]
+): boolean {
+  if (rows.length === 0) return false;
+
+  const doc = new jsPDF({ unit: "pt", format: "a4", orientation: columns.length > 7 ? "landscape" : "portrait" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 40;
+
+  let y = drawStatementHeading(doc, {
+    companyName: meta.companyName,
+    address: meta.address,
+    phone: meta.phone,
+    taxId: meta.taxId,
+    registrationNumber: meta.registrationNumber,
+    title: meta.title,
+    subtitle: meta.subtitle,
+    periodLine: meta.dateLine,
+    basisLine: "Accrual basis  ·  All amounts in LKR",
+    generatedLine: generatedSentence(meta.preparedBy),
+  }, margin);
+
+  const fmtCell = (raw: string | number | null, numeric?: boolean): string => {
+    if (raw == null || raw === "") return "";
+    if (typeof raw === "number") {
+      return numeric ? raw.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(raw);
+    }
+    return raw;
+  };
+
+  const head = [columns.map((c) => c.header)];
+  const body = rows.map((row) => columns.map((c) => fmtCell(c.value(row), c.numeric)));
+  if (totalRow) body.push(totalRow.map((raw, i) => fmtCell(raw, columns[i]?.numeric)));
+
+  const columnStyles: Record<number, { halign: "right" | "left" }> = {};
+  columns.forEach((c, i) => { if (c.numeric) columnStyles[i] = { halign: "right" }; });
+
+  autoTable(doc, {
+    head,
+    body,
+    startY: y,
+    margin: { left: margin, right: margin, top: margin, bottom: margin + 14 },
+    theme: "grid",
+    styles: {
+      font: "helvetica",
+      fontSize: 8,
+      textColor: INK as unknown as [number, number, number],
+      lineColor: RULE as unknown as [number, number, number],
+      lineWidth: 0.5,
+      cellPadding: { top: 3.5, bottom: 3.5, left: 5, right: 5 },
+    },
+    headStyles: {
+      fillColor: HEAD_BG as unknown as [number, number, number],
+      textColor: INK as unknown as [number, number, number],
+      fontStyle: "bold",
+    },
+    columnStyles,
+    didParseCell: (data) => {
+      if (totalRow && data.section === "body" && data.row.index === body.length - 1) {
+        data.cell.styles.fontStyle = "bold";
+        data.cell.styles.fillColor = SECTION_BG as unknown as [number, number, number];
+      }
+    },
+  });
+
+  const generated = `Generated on ${formatDateTime(new Date())}`;
+  const pageCount = doc.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFont("helvetica", "normal").setFontSize(7.5).setTextColor(...MUTED);
+    doc.text(generated, margin, pageHeight - 18);
+    doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin, pageHeight - 18, { align: "right" });
+  }
+
+  doc.save(meta.fileName);
+  return true;
+}

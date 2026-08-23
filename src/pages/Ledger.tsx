@@ -15,11 +15,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {
-  Download, Printer, Search, BookOpen, Filter, FileText, Users, Building2,
+  Download, Search, BookOpen, Filter, FileText, Users, Building2,
   ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, X,
   ChevronsLeft, ChevronsRight, AlertCircle, FileSpreadsheet,
 } from "lucide-react";
 import { downloadDataExcel } from "@/lib/reportExcel";
+import { downloadDataPdf } from "@/lib/reportPdf";
 import { toast } from "sonner";
 import { isDebitNormal as checkDebitNormal, isPeriodBasedAccount, getTypeLabel, ACCOUNT_TYPES, typeColors } from "@/lib/accountTypes";
 import { formatCurrency } from "@/lib/currency";
@@ -99,6 +100,20 @@ const txnTypeBadge: Record<string, string> = {
   "Transfer": "bg-info/10 text-info",
   "Depreciation": "bg-muted text-muted-foreground",
 };
+
+/** Ledger register columns offered in the export customizer (Excel and PDF). */
+const EXPORT_COLUMN_DEFS: { key: string; label: string; numeric?: boolean }[] = [
+  { key: "date", label: "Date" },
+  { key: "type", label: "Type" },
+  { key: "ref", label: "Ref No" },
+  { key: "chequeNo", label: "Cheque No" },
+  { key: "name", label: "Name" },
+  { key: "account", label: "Account" },
+  { key: "memo", label: "Memo" },
+  { key: "debit", label: "Debit", numeric: true },
+  { key: "credit", label: "Credit", numeric: true },
+  { key: "balance", label: "Balance", numeric: true },
+];
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -180,6 +195,42 @@ export default function Ledger() {
   const [drillDownEntry, setDrillDownEntry] = useState<RegisterRow | null>(null);
   const [selectedLineIds, setSelectedLineIds] = useState<Set<string>>(new Set());
   const [bulkAccountDialogOpen, setBulkAccountDialogOpen] = useState(false);
+  // Export column customizer, shared by the Excel and PDF downloads — which
+  // register columns to include and in what order. Lives at page scope (not
+  // per-export) so a customization sticks across repeated downloads in the
+  // same session.
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<"excel" | "pdf">("excel");
+  const [columnOrder, setColumnOrder] = useState<string[]>(EXPORT_COLUMN_DEFS.map(c => c.key));
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
+
+  const toggleColumn = (key: string) => {
+    setHiddenColumns(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const moveColumn = (index: number, dir: -1 | 1) => {
+    setColumnOrder(prev => {
+      const target = index + dir;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  };
+
+  const openExportDialog = (format: "excel" | "pdf") => {
+    setExportFormat(format);
+    setExportDialogOpen(true);
+  };
+
+  const activeColumnKeys = useMemo(
+    () => columnOrder.filter(k => !hiddenColumns.has(k)),
+    [columnOrder, hiddenColumns]
+  );
 
   // Keystrokes shouldn't immediately re-run filter→sort→balance over the
   // account's register.
@@ -346,6 +397,50 @@ export default function Ledger() {
     [buildRows, ledgerPage]
   );
 
+  // A live sample for the export column customizer — the currently loaded
+  // page's own rows, so the preview always shows real ledger data rather than
+  // a re-fetch just to populate a dialog.
+  const PREVIEW_ROW_LIMIT = 20;
+  const exportPreviewRows = useMemo(() => {
+    if (!selectedAccount) return [];
+    const openingRow: RegisterRow | null = isPeriodBased ? null : {
+      id: "__opening__",
+      date: effectiveDateFrom || "",
+      transactionType: "Opening Balance",
+      refNumber: "",
+      chequeNo: "",
+      entityName: "",
+      contraAccount: "",
+      memo: "Carried forward from prior period",
+      debit: 0,
+      credit: 0,
+      balance: openingBalance,
+      entryId: "",
+      isReversal: false,
+      isOpeningBalance: true,
+      transaction_id: null,
+      transaction_type: "journal_entry",
+    };
+    const rows = openingRow ? [openingRow, ...pagedRows] : pagedRows;
+    return rows.slice(0, PREVIEW_ROW_LIMIT);
+  }, [selectedAccount, isPeriodBased, effectiveDateFrom, openingBalance, pagedRows]);
+
+  const exportPreviewValue = useCallback((key: string, row: RegisterRow): string => {
+    switch (key) {
+      case "date": return formatDate(row.date);
+      case "type": return row.transactionType;
+      case "ref": return row.refNumber || "—";
+      case "chequeNo": return row.chequeNo || "—";
+      case "name": return row.entityName || "—";
+      case "account": return row.contraAccount || "—";
+      case "memo": return row.memo || "—";
+      case "debit": return row.debit > 0 ? row.debit.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—";
+      case "credit": return row.credit > 0 ? row.credit.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—";
+      case "balance": return row.balance.toLocaleString(undefined, { minimumFractionDigits: 2 });
+      default: return "—";
+    }
+  }, []);
+
   // Bulk selection is scoped to the rows on screen — whenever the account,
   // window, filters or sort change (or the page turns), the ids on screen are
   // no longer what's selected, so start clean rather than carry over a
@@ -456,7 +551,7 @@ export default function Ledger() {
     if (!row.transaction_id) return;
     switch (row.transaction_type) {
       case "payment_voucher":
-        navigate(`/banking/write-checks?highlight=${row.transaction_id}`);
+        navigate(`/checks/${row.transaction_id}`);
         break;
       case "payroll":
         navigate(`/payroll/runs?highlight=${row.transaction_id}`);
@@ -489,45 +584,11 @@ export default function Ledger() {
     return buildRows(lines);
   }, [selectedAccount, effectiveDateFrom, effectiveDateTo, debouncedSearchTerm, typeFilter, sortField, sortDir, buildRows]);
 
-  // CSV Export
-  const handleExportCSV = useCallback(async () => {
-    if (!selectedAccount) return;
-    setExporting(true);
-    try {
-      const exportRows = await fetchExportRows();
-      // 10 columns. The opening and TOTALS rows used to carry only 9 cells, which
-      // shifted every figure one column left — the closing balance landed under
-      // Credit and the debit total under Memo.
-      const header = ["Date", "Type", "Ref No", "Cheque No", "Name", "Account", "Memo", "Debit (LKR)", "Credit (LKR)", "Balance (LKR)"];
-      const rows = [
-        [effectiveDateFrom ? formatDate(effectiveDateFrom) : "", "Opening Balance", "", "", "", "", "Carried forward from prior period", "", "", openingBalance.toFixed(2)],
-        ...exportRows.map(r => [
-          formatDate(r.date), r.transactionType, r.refNumber, r.chequeNo, r.entityName,
-          r.contraAccount, r.memo.replace(/"/g, '""'),
-          r.debit > 0 ? r.debit.toFixed(2) : "",
-          r.credit > 0 ? r.credit.toFixed(2) : "",
-          r.balance.toFixed(2),
-        ]),
-        ["", "TOTALS", "", "", "", "", "", totalDebit.toFixed(2), totalCredit.toFixed(2), closingBalance.toFixed(2)],
-      ];
-      const csv = [header, ...rows].map(r => r.map(c => `"${c}"`).join(",")).join("\n");
-      const blob = new Blob([csv], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `register-${selectedAccount.account_code}-${selectedAccount.account_name.replace(/\s+/g, "_")}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      toast.error(`Export failed: ${errorMessage(e)}`);
-    } finally {
-      setExporting(false);
-    }
-  }, [selectedAccount, fetchExportRows, openingBalance, totalDebit, totalCredit, closingBalance, effectiveDateFrom]);
-
-  // Excel Export — built from the full filtered register, not the current
-  // page, so the workbook covers every transaction in the selection.
-  const handleExportExcel = useCallback(async () => {
+  // Excel/PDF export — built from the full filtered register, not the
+  // current page, so the download covers every transaction in the selection.
+  // Columns come from the customizer dialog (columnOrder/hiddenColumns), so
+  // both formats always reflect the same picked-and-ordered set.
+  const handleExportRegister = useCallback(async (format: "excel" | "pdf") => {
     if (!selectedAccount) return;
     type ExportRow = {
       date: string; type: string; ref: string; chequeNo: string; name: string;
@@ -556,39 +617,58 @@ export default function Ledger() {
         })),
       ];
 
-      downloadDataExcel<ExportRow>(
-        {
-          title: `Account Register — ${selectedAccount.account_code} ${selectedAccount.account_name}`,
-          subtitle: getTypeLabel(selectedAccount.account_type),
-          dateLine: (effectiveDateFrom || dateTo)
-            ? `${effectiveDateFrom ? formatDate(effectiveDateFrom) : "Inception"} → ${dateTo ? formatDate(dateTo) : "Today"}`
-            : undefined,
-          sheetName: `${selectedAccount.account_code} Register`,
-          fileName: `Register ${selectedAccount.account_code} ${selectedAccount.account_name}.xlsx`,
-        },
-        [
-          { header: "Date", value: r => r.date },
-          { header: "Type", value: r => r.type },
-          { header: "Ref No", value: r => r.ref },
-          { header: "Cheque No", value: r => r.chequeNo || "" },
-          { header: "Name", value: r => r.name },
-          { header: "Account", value: r => r.account },
-          { header: "Memo", value: r => r.memo },
-          { header: "Debit", numeric: true, value: r => r.debit },
-          { header: "Credit", numeric: true, value: r => r.credit },
-          { header: "Balance", numeric: true, value: r => r.balance },
-        ],
-        exportRows,
-        // One cell per column (10) — a short row silently shifted the totals into
-        // the Memo/Debit/Credit columns and lost their currency format.
-        ["", "TOTALS", "", "", "", "", "", totalDebit, totalCredit, closingBalance],
-      );
+      // Header/value/total per column key, so the customizer dialog can pick a
+      // subset and reorder them without touching the export shape below.
+      const columnConfig: Record<string, {
+        header: string; numeric?: boolean; value: (r: ExportRow) => string | number | null; total: number | null;
+      }> = {
+        date: { header: "Date", value: r => r.date, total: null },
+        type: { header: "Type", value: r => r.type, total: null },
+        ref: { header: "Ref No", value: r => r.ref, total: null },
+        chequeNo: { header: "Cheque No", value: r => r.chequeNo || "", total: null },
+        name: { header: "Name", value: r => r.name, total: null },
+        account: { header: "Account", value: r => r.account, total: null },
+        memo: { header: "Memo", value: r => r.memo, total: null },
+        debit: { header: "Debit", numeric: true, value: r => r.debit, total: totalDebit },
+        credit: { header: "Credit", numeric: true, value: r => r.credit, total: totalCredit },
+        balance: { header: "Balance", numeric: true, value: r => r.balance, total: closingBalance },
+      };
+      const activeKeys = columnOrder.filter(k => !hiddenColumns.has(k));
+      // The TOTALS label lands on whichever text column survived the
+      // customizer, rather than a fixed position — a short row silently
+      // shifts totals into the wrong column and loses their currency format.
+      const firstTextKeyIdx = activeKeys.findIndex(k => !columnConfig[k].numeric);
+      const columns = activeKeys.map(k => ({ header: columnConfig[k].header, numeric: columnConfig[k].numeric, value: columnConfig[k].value }));
+      const totalRow = activeKeys.map((k, i) => columnConfig[k].total ?? (i === firstTextKeyIdx ? "TOTALS" : ""));
+
+      const dateLine = (effectiveDateFrom || dateTo)
+        ? `${effectiveDateFrom ? formatDate(effectiveDateFrom) : "Inception"} → ${dateTo ? formatDate(dateTo) : "Today"}`
+        : undefined;
+      const title = `Account Register — ${selectedAccount.account_code} ${selectedAccount.account_name}`;
+      const subtitle = getTypeLabel(selectedAccount.account_type);
+      const fileBase = `Register ${selectedAccount.account_code} ${selectedAccount.account_name}`;
+
+      if (format === "excel") {
+        downloadDataExcel<ExportRow>(
+          { title, subtitle, dateLine, sheetName: `${selectedAccount.account_code} Register`, fileName: `${fileBase}.xlsx` },
+          columns,
+          exportRows,
+          totalRow,
+        );
+      } else {
+        downloadDataPdf<ExportRow>(
+          { title, subtitle, dateLine: dateLine ?? "All periods to date", fileName: `${fileBase}.pdf` },
+          columns,
+          exportRows,
+          totalRow,
+        );
+      }
     } catch (e) {
       toast.error(`Export failed: ${errorMessage(e)}`);
     } finally {
       setExporting(false);
     }
-  }, [selectedAccount, fetchExportRows, openingBalance, totalDebit, totalCredit, closingBalance, effectiveDateFrom, dateTo]);
+  }, [selectedAccount, fetchExportRows, openingBalance, totalDebit, totalCredit, closingBalance, effectiveDateFrom, dateTo, columnOrder, hiddenColumns]);
 
   // Reset filters
   const clearFilters = () => {
@@ -665,14 +745,11 @@ export default function Ledger() {
                     Filters
                     {hasActiveFilters && <span className="ml-1 w-2 h-2 rounded-full bg-primary" />}
                   </Button>
-                  <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={matchingRows === 0 || exporting}>
-                    <Download className="w-4 h-4 mr-1" /> Export
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={matchingRows === 0 || exporting}>
+                  <Button variant="outline" size="sm" onClick={() => openExportDialog("excel")} disabled={matchingRows === 0 || exporting}>
                     <FileSpreadsheet className="w-4 h-4 mr-1" /> Excel
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => window.print()}>
-                    <Printer className="w-4 h-4 mr-1" /> Print
+                  <Button variant="outline" size="sm" onClick={() => openExportDialog("pdf")} disabled={matchingRows === 0 || exporting}>
+                    <FileText className="w-4 h-4 mr-1" /> PDF
                   </Button>
                 </div>
               </div>
@@ -1032,6 +1109,111 @@ export default function Ledger() {
         onConfirm={(accountId) => bulkChangeAccountMutation.mutate(accountId)}
         isPending={bulkChangeAccountMutation.isPending}
       />
+
+      {/* ═══ Export Column Customizer ═══ */}
+      <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+        <DialogContent className="max-w-6xl w-[95vw] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {exportFormat === "excel" ? <FileSpreadsheet className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+              Customize {exportFormat === "excel" ? "Excel" : "PDF"} Columns
+            </DialogTitle>
+            <DialogDescription>
+              Choose which register columns to include, and reorder them, before downloading.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4">
+            {/* ── Column checklist ── */}
+            <div className="space-y-1 max-h-[65vh] overflow-y-auto md:border-r md:border-border md:pr-3">
+              {columnOrder.map((key, i) => {
+                const def = EXPORT_COLUMN_DEFS.find(c => c.key === key)!;
+                const checked = !hiddenColumns.has(key);
+                return (
+                  <div key={key} className="flex items-center gap-1.5 px-1.5 py-1.5 rounded-md hover:bg-muted/50">
+                    <Checkbox checked={checked} onCheckedChange={() => toggleColumn(key)} aria-label={`Include ${def.label} column`} />
+                    <span className={`flex-1 text-sm truncate ${checked ? "text-foreground" : "text-muted-foreground line-through"}`}>{def.label}</span>
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0 shrink-0" disabled={i === 0} onClick={() => moveColumn(i, -1)} aria-label={`Move ${def.label} up`}>
+                      <ArrowUp className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0 shrink-0" disabled={i === columnOrder.length - 1} onClick={() => moveColumn(i, 1)} aria-label={`Move ${def.label} down`}>
+                      <ArrowDown className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* ── Live preview: real register rows, in the picked columns/order ── */}
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                Preview
+                {matchingRows > 0 && (
+                  <span className="normal-case font-normal text-muted-foreground/80">
+                    {" "}— showing {exportPreviewRows.length} of {matchingRows.toLocaleString()} transactions
+                  </span>
+                )}
+              </p>
+              <div className="border border-border rounded-lg overflow-auto max-h-[65vh]">
+                {activeColumnKeys.length === 0 ? (
+                  <div className="p-6 text-center text-sm text-muted-foreground">No columns selected</div>
+                ) : exportPreviewRows.length === 0 ? (
+                  <div className="p-6 text-center text-sm text-muted-foreground">No data to preview</div>
+                ) : (
+                  <table className="w-full text-xs report-table report-table--grid">
+                    <thead className="sticky top-0 bg-muted/60 z-10">
+                      <tr>
+                        {activeColumnKeys.map(k => {
+                          const def = EXPORT_COLUMN_DEFS.find(c => c.key === k)!;
+                          return (
+                            <th key={k} className={`px-2 py-1.5 whitespace-nowrap font-semibold text-muted-foreground ${def.numeric ? "text-right" : "text-left"}`}>
+                              {def.label}
+                            </th>
+                          );
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {exportPreviewRows.map((row, i) => (
+                        <tr key={row.id} className={row.isOpeningBalance ? "bg-muted/20" : i % 2 === 0 ? "bg-background" : "bg-muted/10"}>
+                          {activeColumnKeys.map(k => {
+                            const def = EXPORT_COLUMN_DEFS.find(c => c.key === k)!;
+                            return (
+                              <td key={k} className={`px-2 py-1.5 whitespace-nowrap font-mono text-foreground ${def.numeric ? "text-right" : "text-left"}`}>
+                                {exportPreviewValue(k, row)}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-border">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setColumnOrder(EXPORT_COLUMN_DEFS.map(c => c.key)); setHiddenColumns(new Set()); }}
+            >
+              Reset to Default
+            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setExportDialogOpen(false)}>Cancel</Button>
+              <Button
+                size="sm"
+                disabled={activeColumnKeys.length === 0 || exporting}
+                onClick={async () => { await handleExportRegister(exportFormat); setExportDialogOpen(false); }}
+              >
+                <Download className="w-4 h-4 mr-1" /> Download {exportFormat === "excel" ? "Excel" : "PDF"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ═══ Drill-Down Dialog ═══ */}
       <Dialog open={!!drillDownEntry} onOpenChange={() => setDrillDownEntry(null)}>

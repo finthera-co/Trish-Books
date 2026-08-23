@@ -293,6 +293,29 @@ export interface BillAttachment {
 
 const BILL_ATTACHMENTS_BUCKET = "invoice-attachments";
 
+/** Count of payments and credit notes applied against this bill — the "X linked transactions" line under the bill title. */
+export function useBillLinkedTransactionsCount(billId?: string) {
+  return useQuery({
+    queryKey: ["bill_linked_transactions_count", billId],
+    enabled: !!billId,
+    queryFn: async () => {
+      const [{ count: paymentCount, error: payErr }, { count: creditCount, error: crErr }] = await Promise.all([
+        supabase
+          .from("bill_payment_allocations" as any)
+          .select("id", { count: "exact", head: true })
+          .eq("bill_id", billId!),
+        supabase
+          .from("vendor_credit_notes" as any)
+          .select("id", { count: "exact", head: true })
+          .eq("bill_id", billId!),
+      ]);
+      if (payErr) throw payErr;
+      if (crErr) throw crErr;
+      return (paymentCount ?? 0) + (creditCount ?? 0);
+    },
+  });
+}
+
 export function useBillAttachments(billId?: string) {
   return useQuery({
     queryKey: ["bill_attachments", billId],

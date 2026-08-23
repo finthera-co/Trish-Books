@@ -31,6 +31,7 @@ export default function AppLayout() {
   const activeModule = useNavStore((s) => s.activeModule);
   const setActiveModule = useNavStore((s) => s.setActiveModule);
   const sidebarPinned = useNavStore((s) => s.sidebarPinned);
+  const setNavTenantScope = useNavStore((s) => s.setTenantScope);
   const hideSidebar = useHideSidebar();
   const [sidebarHovered, setSidebarHovered] = useState(false);
 
@@ -50,6 +51,13 @@ export default function AppLayout() {
   useEffect(() => {
     setTenantId(appUser?.tenant_id ?? null, queryClient);
   }, [appUser?.tenant_id, setTenantId, queryClient]);
+
+  // Bookmarks and pinned modules are per-tenant preferences — re-hydrate them
+  // from this tenant's own storage whenever the authenticated tenant changes,
+  // so one tenant's nav customization never leaks into another's.
+  useEffect(() => {
+    setNavTenantScope(appUser?.tenant_id ?? null);
+  }, [appUser?.tenant_id, setNavTenantScope]);
 
   // Block render until the tenant's critical data is hydrated.
   // Without this gate, child pages would render against an empty cache.

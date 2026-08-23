@@ -51,6 +51,8 @@ import SuspenseClearing from "./pages/SuspenseClearing";
 import HeldRows from "./pages/HeldRows";
 import BankImportRules from "./pages/BankImportRules";
 import PaymentVouchers from "./pages/PaymentVouchers";
+import WriteCheck from "./pages/WriteCheck";
+import RecurringChecks from "./pages/RecurringChecks";
 import PettyCash from "./pages/PettyCash";
 import PettyCashVoucherForm from "./pages/PettyCashVoucherForm";
 import PettyCashVoucherDetail from "./pages/PettyCashVoucherDetail";
@@ -209,6 +211,12 @@ const App = () => (
                     TENANT USERS ONLY — Business Modules
                     ═══════════════════════════════════════════════════ */}
                 <Route element={<TenantRoute />}>
+                  {/* Write Checks — full-page, no ModuleLayout: the page provides
+                      its own chrome (back button, title, hero amount) per the
+                      QBO-parity check form design. */}
+                  <Route path="/checks/new" element={<WriteCheck />} />
+                  <Route path="/checks/:id" element={<WriteCheck />} />
+
                   {/* Accounting module */}
                   <Route element={<ModuleLayout config={MODULE_CONFIGS.accounting} />}>
                     <Route path="/accounting" element={<ModuleDashboard config={MODULE_CONFIGS.accounting} />} />
@@ -248,6 +256,7 @@ const App = () => (
                     <Route path="/banking/held-rows" element={<HeldRows />} />
                     <Route path="/banking/import-rules" element={<BankImportRules />} />
                     <Route path="/banking/write-checks" element={<PaymentVouchers />} />
+                    <Route path="/banking/recurring-checks" element={<RecurringChecks />} />
                     <Route path="/banking/payment-vouchers" element={<Navigate to="/banking/write-checks" replace />} />
                     <Route path="/banking/petty-cash" element={<PettyCash />} />
                     <Route path="/banking/petty-cash/voucher/new" element={<PettyCashVoucherForm />} />

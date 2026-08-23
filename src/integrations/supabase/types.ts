@@ -3687,6 +3687,48 @@ export type Database = {
           },
         ]
       }
+      check_number_sequences: {
+        Row: {
+          id: string
+          last_seq: number
+          payment_account_id: string
+          prefix: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          last_seq?: number
+          payment_account_id: string
+          prefix?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          last_seq?: number
+          payment_account_id?: string
+          prefix?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "check_number_sequences_payment_account_id_fkey"
+            columns: ["payment_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "check_number_sequences_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_visits: {
         Row: {
           check_in_address: string | null
@@ -7598,6 +7640,8 @@ export type Database = {
           description: string | null
           id: string
           is_billable: boolean
+          is_taxable: boolean
+          sort_order: number
           voucher_id: string
         }
         Insert: {
@@ -7609,6 +7653,8 @@ export type Database = {
           description?: string | null
           id?: string
           is_billable?: boolean
+          is_taxable?: boolean
+          sort_order?: number
           voucher_id: string
         }
         Update: {
@@ -7620,6 +7666,8 @@ export type Database = {
           description?: string | null
           id?: string
           is_billable?: boolean
+          is_taxable?: boolean
+          sort_order?: number
           voucher_id?: string
         }
         Relationships: [
@@ -7664,9 +7712,11 @@ export type Database = {
           cheque_number: string | null
           created_at: string
           id: string
+          is_recurring: boolean
           journal_entry_id: string | null
           location_id: string | null
           made_by: string | null
+          mailing_address: string | null
           memo: string | null
           payee_id: string | null
           payee_vendor_id: string | null
@@ -7674,12 +7724,18 @@ export type Database = {
           payment_date: string
           payment_method: string
           permit_no: string | null
+          permit_number: string | null
           print_later: boolean
+          recurring_template_id: string | null
           reference_number: string | null
+          reversal_journal_entry_id: string | null
           status: string
           tenant_id: string
           total_amount: number
           updated_at: string
+          void_reason: string | null
+          voided_at: string | null
+          voided_by: string | null
           voucher_number: string
         }
         Insert: {
@@ -7692,9 +7748,11 @@ export type Database = {
           cheque_number?: string | null
           created_at?: string
           id?: string
+          is_recurring?: boolean
           journal_entry_id?: string | null
           location_id?: string | null
           made_by?: string | null
+          mailing_address?: string | null
           memo?: string | null
           payee_id?: string | null
           payee_vendor_id?: string | null
@@ -7702,12 +7760,18 @@ export type Database = {
           payment_date?: string
           payment_method?: string
           permit_no?: string | null
+          permit_number?: string | null
           print_later?: boolean
+          recurring_template_id?: string | null
           reference_number?: string | null
+          reversal_journal_entry_id?: string | null
           status?: string
           tenant_id: string
           total_amount?: number
           updated_at?: string
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
           voucher_number: string
         }
         Update: {
@@ -7720,9 +7784,11 @@ export type Database = {
           cheque_number?: string | null
           created_at?: string
           id?: string
+          is_recurring?: boolean
           journal_entry_id?: string | null
           location_id?: string | null
           made_by?: string | null
+          mailing_address?: string | null
           memo?: string | null
           payee_id?: string | null
           payee_vendor_id?: string | null
@@ -7730,12 +7796,18 @@ export type Database = {
           payment_date?: string
           payment_method?: string
           permit_no?: string | null
+          permit_number?: string | null
           print_later?: boolean
+          recurring_template_id?: string | null
           reference_number?: string | null
+          reversal_journal_entry_id?: string | null
           status?: string
           tenant_id?: string
           total_amount?: number
           updated_at?: string
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
           voucher_number?: string
         }
         Relationships: [
@@ -7775,10 +7847,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "payment_vouchers_reversal_journal_entry_id_fkey"
+            columns: ["reversal_journal_entry_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "payment_vouchers_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_vouchers_voided_by_fkey"
+            columns: ["voided_by"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
@@ -10767,6 +10853,195 @@ export type Database = {
           },
         ]
       }
+      recurring_check_template_lines: {
+        Row: {
+          account_id: string
+          amount: number
+          cost_center_id: string | null
+          customer_id: string | null
+          description: string | null
+          id: string
+          is_billable: boolean
+          is_taxable: boolean
+          recurring_check_template_id: string
+          sort_order: number
+        }
+        Insert: {
+          account_id: string
+          amount?: number
+          cost_center_id?: string | null
+          customer_id?: string | null
+          description?: string | null
+          id?: string
+          is_billable?: boolean
+          is_taxable?: boolean
+          recurring_check_template_id: string
+          sort_order?: number
+        }
+        Update: {
+          account_id?: string
+          amount?: number
+          cost_center_id?: string | null
+          customer_id?: string | null
+          description?: string | null
+          id?: string
+          is_billable?: boolean
+          is_taxable?: boolean
+          recurring_check_template_id?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recurring_check_template_lines_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_check_template_lines_cost_center_id_fkey"
+            columns: ["cost_center_id"]
+            isOneToOne: false
+            referencedRelation: "cost_centers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_check_template_lines_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_check_template_lines_recurring_check_template_id_fkey"
+            columns: ["recurring_check_template_id"]
+            isOneToOne: false
+            referencedRelation: "recurring_check_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      recurring_check_templates: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          end_date: string | null
+          frequency: string
+          id: string
+          interval_count: number
+          location_id: string | null
+          mailing_address: string | null
+          max_occurrences: number | null
+          memo: string | null
+          next_run_date: string
+          occurrences_generated: number
+          payee_id: string | null
+          payee_vendor_id: string | null
+          payment_account_id: string
+          payment_method: string
+          permit_number: string | null
+          print_later: boolean
+          start_date: string
+          status: string
+          template_name: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          end_date?: string | null
+          frequency: string
+          id?: string
+          interval_count?: number
+          location_id?: string | null
+          mailing_address?: string | null
+          max_occurrences?: number | null
+          memo?: string | null
+          next_run_date: string
+          occurrences_generated?: number
+          payee_id?: string | null
+          payee_vendor_id?: string | null
+          payment_account_id: string
+          payment_method?: string
+          permit_number?: string | null
+          print_later?: boolean
+          start_date: string
+          status?: string
+          template_name: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          end_date?: string | null
+          frequency?: string
+          id?: string
+          interval_count?: number
+          location_id?: string | null
+          mailing_address?: string | null
+          max_occurrences?: number | null
+          memo?: string | null
+          next_run_date?: string
+          occurrences_generated?: number
+          payee_id?: string | null
+          payee_vendor_id?: string | null
+          payment_account_id?: string
+          payment_method?: string
+          permit_number?: string | null
+          print_later?: boolean
+          start_date?: string
+          status?: string
+          template_name?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recurring_check_templates_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_check_templates_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_check_templates_payee_id_fkey"
+            columns: ["payee_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_check_templates_payee_vendor_id_fkey"
+            columns: ["payee_vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_check_templates_payment_account_id_fkey"
+            columns: ["payment_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_check_templates_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       recurring_invoice_items: {
         Row: {
           account_id: string | null
@@ -13468,6 +13743,32 @@ export type Database = {
         }
         Returns: number
       }
+      create_check: {
+        Args: {
+          p_account_number?: string
+          p_accountant?: string
+          p_approved_by?: string
+          p_bills_attached?: number
+          p_checked_by?: string
+          p_cheque_number?: string
+          p_is_recurring?: boolean
+          p_lines: Json
+          p_location_id?: string
+          p_made_by?: string
+          p_mailing_address?: string
+          p_memo?: string
+          p_payee_id?: string
+          p_payee_vendor_id?: string
+          p_payment_account_id: string
+          p_payment_date: string
+          p_payment_method: string
+          p_permit_number?: string
+          p_print_later?: boolean
+          p_recurring_template_id?: string
+          p_reference_number?: string
+        }
+        Returns: string
+      }
       create_payment_voucher:
         | {
             Args: {
@@ -13759,6 +14060,7 @@ export type Database = {
       generate_pcr_number: { Args: { p_tenant_id: string }; Returns: string }
       generate_pcv_number: { Args: { p_tenant_id: string }; Returns: string }
       generate_recurring_bills: { Args: never; Returns: Json }
+      generate_recurring_checks: { Args: never; Returns: Json }
       generate_tax_periods: {
         Args: { p_tax_type: string; p_tenant_id: string; p_year: number }
         Returns: number
@@ -14030,6 +14332,10 @@ export type Database = {
           p_account_type: string
           p_parent_id?: string
         }
+        Returns: string
+      }
+      next_check_number: {
+        Args: { p_payment_account_id: string }
         Returns: string
       }
       next_credit_note_number: {
@@ -14594,6 +14900,10 @@ export type Database = {
       }
       void_bill_payment: {
         Args: { p_payment_id: string; p_reason?: string }
+        Returns: Json
+      }
+      void_check: {
+        Args: { p_reason?: string; p_voucher_id: string }
         Returns: Json
       }
       void_supplier_bill: {

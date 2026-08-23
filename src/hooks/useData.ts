@@ -1279,6 +1279,25 @@ export function useAccountAuditHistory(accountId: string | undefined, limit = 50
   });
 }
 
+/** Change history for one check (payment_vouchers record) — created/voided events. */
+export function useCheckAuditHistory(voucherId: string | undefined, limit = 50) {
+  return useQuery({
+    queryKey: ["audit_logs", "payment_voucher", voucherId, limit],
+    enabled: !!voucherId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("audit_logs")
+        .select("id, action, details, created_at, users(first_name, last_name)")
+        .eq("table_name", "payment_vouchers")
+        .eq("record_id", voucherId!)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+      if (error) throw error;
+      return (data ?? []) as unknown as AccountAuditLogRow[];
+    },
+  });
+}
+
 // Subscription Plans
 export function useSubscriptionPlans() {
   return useQuery({

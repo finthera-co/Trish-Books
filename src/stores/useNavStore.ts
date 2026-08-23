@@ -1,41 +1,56 @@
 import { create } from "zustand";
 import { MODULE_CONFIGS } from "@/config/modules";
 
-const BOOKMARKS_KEY = "tb_bookmarks";
+const BOOKMARKS_KEY_PREFIX = "tb_bookmarks";
 const MAX_BOOKMARKS = 10;
 
-const PINNED_MODULES_KEY = "tb_pinned_modules";
+const PINNED_MODULES_KEY_PREFIX = "tb_pinned_modules";
 export const MAX_PINNED_MODULES = 6;
 
-function loadBookmarks(): string[] {
+/** Bookmarks/pins are per-tenant preferences — a shared key would leak one
+ * tenant's nav customization (and removals) into every other tenant a user
+ * can see, including across separate companies on a shared machine. */
+function bookmarksKey(tenantId: string): string {
+  return `${BOOKMARKS_KEY_PREFIX}:${tenantId}`;
+}
+
+function pinnedModulesKey(tenantId: string): string {
+  return `${PINNED_MODULES_KEY_PREFIX}:${tenantId}`;
+}
+
+function loadBookmarks(tenantId: string | null): string[] {
+  if (!tenantId) return [];
   try {
-    const raw = localStorage.getItem(BOOKMARKS_KEY);
+    const raw = localStorage.getItem(bookmarksKey(tenantId));
     return raw ? (JSON.parse(raw) as string[]) : [];
   } catch {
     return [];
   }
 }
 
-function saveBookmarks(bookmarks: string[]) {
+function saveBookmarks(tenantId: string | null, bookmarks: string[]) {
+  if (!tenantId) return;
   try {
-    localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(bookmarks));
+    localStorage.setItem(bookmarksKey(tenantId), JSON.stringify(bookmarks));
   } catch {
     /* private mode — bookmarks simply don't persist */
   }
 }
 
-function loadPinnedModules(): string[] {
+function loadPinnedModules(tenantId: string | null): string[] {
+  if (!tenantId) return [];
   try {
-    const raw = localStorage.getItem(PINNED_MODULES_KEY);
+    const raw = localStorage.getItem(pinnedModulesKey(tenantId));
     return raw ? (JSON.parse(raw) as string[]) : [];
   } catch {
     return [];
   }
 }
 
-function savePinnedModules(pinned: string[]) {
+function savePinnedModules(tenantId: string | null, pinned: string[]) {
+  if (!tenantId) return;
   try {
-    localStorage.setItem(PINNED_MODULES_KEY, JSON.stringify(pinned));
+    localStorage.setItem(pinnedModulesKey(tenantId), JSON.stringify(pinned));
   } catch {
     /* private mode — pins simply don't persist */
   }
@@ -55,6 +70,12 @@ export function moduleIdForPath(pathname: string): string | null {
 }
 
 interface NavState {
+  /** Tenant these bookmarks/pins were loaded for. Null before login. */
+  tenantId: string | null;
+  /** Re-hydrates bookmarks/pins from this tenant's own storage. Call whenever
+   * the authenticated tenant changes (login, tenant switch, logout). */
+  setTenantScope: (tenantId: string | null) => void;
+
   activeModule: string | null;
   setActiveModule: (id: string | null) => void;
 
@@ -79,35 +100,46 @@ interface NavState {
 }
 
 export const useNavStore = create<NavState>((set, get) => ({
+  tenantId: null,
+  setTenantScope: (tenantId) => {
+    if (tenantId === get().tenantId) return;
+    set({
+      tenantId,
+      bookmarks: loadBookmarks(tenantId),
+      pinnedModules: loadPinnedModules(tenantId),
+    });
+  },
+
   activeModule: null,
   setActiveModule: (id) => set({ activeModule: id }),
 
   allAppsOpen: false,
   setAllAppsOpen: (open) => set({ allAppsOpen: open }),
 
-  bookmarks: loadBookmarks(),
+  bookmarks: [],
   addBookmark: (path) => {
-    const { bookmarks } = get();
+    const { bookmarks, tenantId } = get();
     if (bookmarks.includes(path) || bookmarks.length >= MAX_BOOKMARKS) return;
     const next = [...bookmarks, path];
-    saveBookmarks(next);
+    saveBookmarks(tenantId, next);
     set({ bookmarks: next });
   },
   removeBookmark: (path) => {
+    const { tenantId } = get();
     const next = get().bookmarks.filter((p) => p !== path);
-    saveBookmarks(next);
+    saveBookmarks(tenantId, next);
     set({ bookmarks: next });
   },
 
-  pinnedModules: loadPinnedModules(),
+  pinnedModules: [],
   togglePinnedModule: (id) => {
-    const { pinnedModules } = get();
+    const { pinnedModules, tenantId } = get();
     const next = pinnedModules.includes(id)
       ? pinnedModules.filter((m) => m !== id)
       : pinnedModules.length >= MAX_PINNED_MODULES
         ? pinnedModules
         : [...pinnedModules, id];
-    savePinnedModules(next);
+    savePinnedModules(tenantId, next);
     set({ pinnedModules: next });
   },
 

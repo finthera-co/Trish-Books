@@ -11,14 +11,16 @@ export interface VoucherLine {
   customer_id?: string | null;
   is_billable?: boolean;
   cost_center_id?: string | null;
+  is_taxable?: boolean;
+  sort_order?: number;
 }
 
-export interface PaymentVoucherFormData {
+export interface CheckFormData {
   account_number?: string;
   cheque_number?: string;
   payee_id?: string;
   payee_vendor_id?: string;
-  permit_no?: string;
+  permit_number?: string;
   payment_account_id: string;
   payment_method: string;
   reference_number?: string;
@@ -30,7 +32,7 @@ export interface PaymentVoucherFormData {
   checked_by?: string;
   made_by?: string;
   print_later?: boolean;
-  address_block?: string;
+  mailing_address?: string;
   location_id?: string | null;
   lines: VoucherLine[];
 }
@@ -66,18 +68,19 @@ export function usePaymentVoucher(id: string | undefined) {
   });
 }
 
-export function useCreatePaymentVoucher() {
+export function useCreateCheck() {
   const queryClient = useQueryClient();
   const { appUser } = useAuth();
 
   return useMutation({
-    mutationFn: async (formData: PaymentVoucherFormData) => {
+    mutationFn: async (formData: CheckFormData) => {
       if (!appUser) throw new Error("Not authenticated");
 
       // Server validates everything (cash/bank account, expense/liability lines,
-      // duplicate references, balanced JE, precision, account ownership, etc.)
-      // and runs voucher + lines + journal entry in a single transaction.
-      const { data, error } = await supabase.rpc("create_payment_voucher", {
+      // duplicate references, balanced JE, precision, account ownership, check
+      // number assignment, audit log) and runs voucher + lines + journal entry
+      // in a single transaction.
+      const { data, error } = await supabase.rpc("create_check", {
         p_payment_account_id: formData.payment_account_id,
         p_payment_method: formData.payment_method,
         p_payment_date: formData.payment_date,
@@ -88,6 +91,8 @@ export function useCreatePaymentVoucher() {
           customer_id: l.customer_id || null,
           is_billable: l.is_billable ?? false,
           cost_center_id: l.cost_center_id || null,
+          is_taxable: l.is_taxable ?? false,
+          sort_order: l.sort_order ?? 0,
         })),
         p_payee_id: formData.payee_id || null,
         p_payee_vendor_id: formData.payee_vendor_id || null,
@@ -101,9 +106,9 @@ export function useCreatePaymentVoucher() {
         p_checked_by: formData.checked_by || null,
         p_made_by: formData.made_by || null,
         p_print_later: formData.print_later ?? false,
-        p_address_block: formData.address_block || null,
+        p_mailing_address: formData.mailing_address || null,
+        p_permit_number: formData.permit_number || null,
         p_location_id: formData.location_id || null,
-        p_permit_no: formData.permit_no || null,
       });
       if (error) throw error;
       return data as string;
@@ -113,74 +118,33 @@ export function useCreatePaymentVoucher() {
       queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
       queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      toast.success("Payment voucher created");
+      queryClient.invalidateQueries({ queryKey: ["account_balances"] });
+      toast.success("Check created");
     },
     onError: (e: Error) => toast.error(e.message),
   });
 }
 
-export function useUpdatePaymentVoucher() {
+export function useVoidCheck() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, ...formData }: PaymentVoucherFormData & { id: string }) => {
-      // Posted vouchers are immutable — UI guard (server trigger also blocks).
-      const { data: existing, error: fetchErr } = await supabase
-        .from("payment_vouchers")
-        .select("status")
-        .eq("id", id)
-        .single();
-      if (fetchErr) throw fetchErr;
-      if (existing?.status === "posted") {
-        throw new Error("Posted payment vouchers are immutable. Create a reversal instead.");
-      }
-
-      const totalAmount = formData.lines.reduce((sum, l) => sum + l.amount, 0);
-      if (totalAmount <= 0) throw new Error("Total amount must be greater than zero");
-
-      const { error } = await supabase
-        .from("payment_vouchers")
-        .update({
-          account_number: formData.account_number || null,
-          cheque_number: formData.cheque_number || null,
-          payee_id: formData.payee_id || null,
-          payee_vendor_id: formData.payee_vendor_id || null,
-          permit_no: formData.permit_no || null,
-          payment_account_id: formData.payment_account_id,
-          payment_method: formData.payment_method,
-          reference_number: formData.reference_number || null,
-          payment_date: formData.payment_date,
-          memo: formData.memo || null,
-          bills_attached: formData.bills_attached || 0,
-          approved_by: formData.approved_by || null,
-          accountant: formData.accountant || null,
-          checked_by: formData.checked_by || null,
-          made_by: formData.made_by || null,
-          total_amount: totalAmount,
-          print_later: formData.print_later ?? false,
-          address_block: formData.address_block || null,
-          location_id: formData.location_id || null,
-        })
-        .eq("id", id);
+    mutationFn: async ({ id, reason }: { id: string; reason?: string }) => {
+      const { data, error } = await supabase.rpc("void_check", {
+        p_voucher_id: id,
+        p_reason: reason || null,
+      });
       if (error) throw error;
-
-      await supabase.from("payment_voucher_lines").delete().eq("voucher_id", id);
-      const lines = formData.lines.map((l) => ({
-        voucher_id: id,
-        account_id: l.account_id,
-        description: l.description || null,
-        amount: l.amount,
-        customer_id: l.customer_id || null,
-        is_billable: l.is_billable ?? false,
-        cost_center_id: l.cost_center_id || null,
-      }));
-      const { error: linesError } = await supabase.from("payment_voucher_lines").insert(lines);
-      if (linesError) throw linesError;
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["payment_vouchers"] });
       queryClient.invalidateQueries({ queryKey: ["payment_voucher"] });
-      toast.success("Payment voucher updated");
+      queryClient.invalidateQueries({ queryKey: ["journal_entries"] });
+      queryClient.invalidateQueries({ queryKey: ["period_account_movements"] });
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["account_balances"] });
+      toast.success("Check voided");
     },
     onError: (e: Error) => toast.error(e.message),
   });

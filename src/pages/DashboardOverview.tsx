@@ -1,9 +1,11 @@
 import { useState, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { format, subMonths, startOfMonth } from "date-fns";
+import { format } from "date-fns";
 import { useDashboardMetrics } from "@/hooks/useDashboardMetrics";
+import { useFiscalPeriods } from "@/hooks/useFiscalPeriodBalances";
 import OBEBanner from "@/components/dashboard/OBEBanner";
 import PeriodFilter from "@/components/dashboard/PeriodFilter";
+import FiscalPeriodSelector from "@/components/FiscalPeriodSelector";
 import DashboardCharts from "@/components/dashboard/DashboardCharts";
 import AgingCharts from "@/components/dashboard/AgingCharts";
 import KPICards from "@/components/dashboard/KPICards";
@@ -14,9 +16,20 @@ import { Button } from "@/components/ui/button";
 
 export default function DashboardOverview() {
   const { appUser } = useAuth();
+  const { data: fiscalPeriods } = useFiscalPeriods();
 
-  const [fromDate, setFromDate] = useState(() => startOfMonth(subMonths(new Date(), 5)));
-  const [toDate, setToDate] = useState(() => new Date());
+  const [fromDate, setFromDate] = useState(() => new Date(2026, 2, 1));
+  const [toDate, setToDate] = useState(() => new Date(2026, 7, 23));
+  const [selectedPeriodId, setSelectedPeriodId] = useState("");
+
+  const handlePeriodChange = (periodId: string) => {
+    setSelectedPeriodId(periodId);
+    const period = fiscalPeriods?.find((p: any) => p.id === periodId);
+    if (period) {
+      setFromDate(new Date(period.period_start));
+      setToDate(new Date(period.period_end));
+    }
+  };
 
   const period = useMemo(() => ({
     from: format(fromDate, "yyyy-MM-dd"),
@@ -43,8 +56,14 @@ export default function DashboardOverview() {
               Welcome back, <span className="text-foreground font-medium">{appUser?.first_name || "User"}</span>.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <PeriodFilter from={fromDate} to={toDate} onFromChange={setFromDate} onToChange={setToDate} />
+          <div className="flex items-center gap-2 flex-wrap">
+            <FiscalPeriodSelector value={selectedPeriodId} onChange={handlePeriodChange} />
+            <PeriodFilter
+              from={fromDate}
+              to={toDate}
+              onFromChange={(d) => { setSelectedPeriodId(""); setFromDate(d); }}
+              onToChange={(d) => { setSelectedPeriodId(""); setToDate(d); }}
+            />
             <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5 rounded-xl bg-card/60 backdrop-blur">
               <Filter className="w-3.5 h-3.5" /> Filter
             </Button>

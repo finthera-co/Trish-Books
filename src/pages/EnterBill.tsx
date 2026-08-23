@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams, useLocation } from "react-router-dom";
 import { format } from "date-fns";
 import {
   ArrowLeft, Plus, Trash2, Copy, Paperclip, Printer, Download, AlertTriangle,
-  ChevronsUpDown, ChevronDown, Check, Search, Loader2, FileText, CreditCard, X, Ban, Repeat,
+  ChevronsUpDown, ChevronDown, ChevronUp, Check, Search, Loader2, FileText, CreditCard, X, Ban, Repeat,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,7 +42,7 @@ import { useCostCenters, useLocations } from "@/hooks/useDimensions";
 import { useHideSidebar, useSetHideSidebar } from "@/stores/useAppStore";
 import {
   useSupplierBill, useSupplierBills, useCreateSupplierBill, useUpdateSupplierBill, checkForDuplicateBills,
-  useBillAttachments, useUploadBillAttachment, useDeleteBillAttachment,
+  useBillAttachments, useUploadBillAttachment, useDeleteBillAttachment, useBillLinkedTransactionsCount,
 } from "@/hooks/useProcurement";
 import { usePostSupplierBill, useVoidSupplierBill } from "@/hooks/useAPModule";
 import { useCreateRecurringBillTemplate } from "@/hooks/useRecurringBills";
@@ -50,6 +50,12 @@ import AccountCombobox from "@/components/shared/AccountCombobox";
 
 interface LineRow {
   key: string;
+  /** Which QBO-style section this line renders in — 'category' (account only,
+   *  the primary path for service-business bills) or 'item' (product/qty/rate).
+   *  Tracked explicitly rather than inferred from product_id so a freshly
+   *  added blank Item-section row doesn't render in Category until a product
+   *  is picked. */
+  section: "category" | "item";
   account_id: string;
   description: string;
   sku: string;
@@ -69,8 +75,8 @@ interface LineRow {
 const EXPENSE_ACCOUNT_TYPES = ["Expense", "Cost of Goods Sold", "Other Expense", "Asset", "Liability"];
 
 let keySeq = 0;
-const newLine = (): LineRow => ({
-  key: `l${++keySeq}`, account_id: "", description: "", sku: "", product_id: "", qty: "1", unit_cost: "", amount: "", tax_sel: "",
+const newLine = (section: "category" | "item" = "category"): LineRow => ({
+  key: `l${++keySeq}`, section, account_id: "", description: "", sku: "", product_id: "", qty: "1", unit_cost: "", amount: "", tax_sel: "",
   is_tax_inclusive: false, customer_id: null, is_billable: false, cost_center_id: null,
 });
 
@@ -82,6 +88,8 @@ export default function EnterBill() {
   // pre-fills the expense account on line 1. Not applied when editing an
   // existing bill — that bill's own lines take priority.
   const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const copyFrom = (location.state as { copyFrom?: any } | null)?.copyFrom;
 
   const { appUser } = useAuth();
   const { data: existing, isLoading: loadingExisting } = useSupplierBill(id);
@@ -114,26 +122,42 @@ export default function EnterBill() {
   const printRef = useRef<HTMLDivElement>(null);
 
   const isPosted = existing?.status && existing.status !== "draft";
+  const { data: linkedTransactionsCount } = useBillLinkedTransactionsCount(id);
   const computedStatus = existing ? computeBillStatus({ ...existing, amount_paid: existing.amount_paid ?? 0 }) : "draft";
 
   // ── Header state ──────────────────────────────────────────────────────
-  const [vendorId, setVendorId] = useState("");
+  const [vendorId, setVendorId] = useState(() => copyFrom?.vendor_id || "");
   const [vendorPopoverOpen, setVendorPopoverOpen] = useState(false);
   const [vendorSearch, setVendorSearch] = useState("");
   const [billDate, setBillDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [dueDate, setDueDate] = useState("");
-  const [paymentTerms, setPaymentTerms] = useState("net_30");
+  const [paymentTerms, setPaymentTerms] = useState(() => copyFrom?.payment_terms || "net_30");
   const [vendorRef, setVendorRef] = useState("");
-  const [permitNo, setPermitNo] = useState("");
-  const [memo, setMemo] = useState("");
-  const [discountType, setDiscountType] = useState<"percentage" | "fixed">("percentage");
-  const [discountValue, setDiscountValue] = useState("0");
-  const [shippingAmount, setShippingAmount] = useState("0");
-  const [shippingAccountId, setShippingAccountId] = useState("");
-  const [locationId, setLocationId] = useState("");
-  const [currency, setCurrency] = useState("LKR");
+  const [permitNo, setPermitNo] = useState(() => copyFrom?.permit_no || "");
+  const [memo, setMemo] = useState(() => copyFrom?.notes || "");
+  const [discountType, setDiscountType] = useState<"percentage" | "fixed">(() => copyFrom?.discount_type || "percentage");
+  const [discountValue, setDiscountValue] = useState(() => String(copyFrom?.discount_value ?? 0));
+  const [shippingAmount, setShippingAmount] = useState(() => String(copyFrom?.shipping_amount ?? 0));
+  const [shippingAccountId, setShippingAccountId] = useState(() => copyFrom?.shipping_account_id || "");
+  const [locationId, setLocationId] = useState(() => copyFrom?.location_id || "");
+  const [currency, setCurrency] = useState(() => copyFrom?.currency || "LKR");
   const [exchangeRate, setExchangeRate] = useState(1);
   const [lines, setLines] = useState<LineRow[]>(() => {
+    if (copyFrom?.lines?.length) {
+      return copyFrom.lines.map((l: any) => ({
+        ...newLine(l.product_id ? "item" : "category"),
+        account_id: l.account_id || "",
+        description: l.description || "",
+        sku: l.sku || "",
+        product_id: l.product_id || "",
+        qty: l.qty || "1",
+        unit_cost: l.unit_cost || "",
+        amount: String((parseFloat(l.qty) || 1) * (parseFloat(l.unit_cost) || 0)),
+        customer_id: l.customer_id || null,
+        is_billable: !!l.is_billable,
+        cost_center_id: l.cost_center_id || null,
+      }));
+    }
     const expenseAccount = isNew ? searchParams.get("expense_account") : null;
     return expenseAccount ? [{ ...newLine(), account_id: expenseAccount }] : [newLine()];
   });
@@ -193,6 +217,7 @@ export default function EnterBill() {
       setLines(
         existingLines.map((l) => ({
           key: `e${l.id}`,
+          section: l.product_id ? "item" : "category",
           account_id: l.account_id || "",
           description: l.description || "",
           sku: l.sku || "",
@@ -383,14 +408,20 @@ export default function EnterBill() {
       }
       return next;
     }));
-  const addLine = () => setLines((ls) => [...ls, newLine()]);
+  const addLine = (section: "category" | "item" = "category") => setLines((ls) => [...ls, newLine(section)]);
   const duplicateLine = (key: string) => setLines((ls) => {
     const idx = ls.findIndex((l) => l.key === key);
     if (idx === -1) return ls;
     const copy = { ...ls[idx], key: `l${++keySeq}` };
     return [...ls.slice(0, idx + 1), copy, ...ls.slice(idx + 1)];
   });
-  const removeLine = (key: string) => setLines((ls) => (ls.length <= 1 ? ls : ls.filter((l) => l.key !== key)));
+  const removeLine = (key: string) => setLines((ls) => ls.filter((l) => l.key !== key));
+  const clearSection = (section: "category" | "item") => setLines((ls) => ls.filter((l) => l.section !== section));
+
+  const categoryLines = lines.filter((l) => l.section === "category");
+  const itemLines = lines.filter((l) => l.section === "item");
+  const [itemSectionExpanded, setItemSectionExpanded] = useState(false);
+  const [categorySectionExpanded, setCategorySectionExpanded] = useState(true);
 
   // ── Validation ──────────────────────────────────────────────────────────
   const isForeignBill = currency !== BASE_CURRENCY;
@@ -555,6 +586,40 @@ export default function EnterBill() {
     uploadAttachment.mutate({ billId: id, file });
   };
 
+  const handleCopy = () => {
+    if (!existing) return;
+    navigate("/accounting/bills/new", {
+      state: {
+        copyFrom: {
+          vendor_id: existing.vendor_id,
+          payment_terms: (existing as any).payment_terms,
+          permit_no: (existing as any).permit_no,
+          location_id: (existing as any).location_id,
+          discount_type: (existing as any).discount_type,
+          discount_value: (existing as any).discount_value,
+          shipping_amount: (existing as any).shipping_amount,
+          shipping_account_id: (existing as any).shipping_account_id,
+          currency: (existing as any).currency,
+          notes: existing.notes,
+          lines: ((existing as any).lines ?? []).map((l: any) => ({
+            account_id: l.account_id || "",
+            description: l.description || "",
+            sku: l.sku || "",
+            product_id: l.product_id || "",
+            qty: String(l.qty ?? 1),
+            unit_cost: String(l.unit_cost ?? 0),
+            customer_id: l.customer_id || null,
+            is_billable: !!l.is_billable,
+            cost_center_id: l.cost_center_id || null,
+          })),
+          // vendor_ref (the vendor's own invoice number) and bill_date are
+          // deliberately NOT copied — a copy is a new bill on today's date
+          // with no vendor reference yet, same reasoning as Write Checks' Copy.
+        },
+      },
+    });
+  };
+
   const handlePrint = () => {
     if (!printRef.current) return;
     const w = window.open("", "_blank");
@@ -602,6 +667,11 @@ export default function EnterBill() {
                 </Badge>
               )}
             </div>
+            {!isNew && !!linkedTransactionsCount && (
+              <p className="text-xs text-muted-foreground">
+                {linkedTransactionsCount} linked transaction{linkedTransactionsCount === 1 ? "" : "s"}
+              </p>
+            )}
           </div>
         </div>
         {!isNew && (
@@ -635,6 +705,9 @@ export default function EnterBill() {
             )}
             <Button variant="outline" onClick={handlePrint}>
               <Printer className="w-4 h-4 mr-2" /> Print
+            </Button>
+            <Button variant="outline" onClick={handleCopy}>
+              <Copy className="w-4 h-4 mr-2" /> Copy
             </Button>
             {existing?.status !== "draft" && existing?.status !== "voided" && Number(existing?.amount_paid ?? 0) === 0 && (
               <Button
@@ -834,199 +907,382 @@ export default function EnterBill() {
         </CardContent>
       </Card>
 
-      {/* Category Details */}
+      {/* Category details — the primary path: expense accounts only, no
+          product/qty/rate. Starts expanded (this is what most service-business
+          bills use). */}
       <Card>
         <CardContent className="pt-6 space-y-3">
-          <Label className="text-base font-semibold">Category Details</Label>
-          <div className="border rounded-lg overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="min-w-[180px]">Product</TableHead>
-                  <TableHead className="min-w-[260px]">Account</TableHead>
-                  <TableHead className="min-w-[100px]">SKU</TableHead>
-                  <TableHead className="min-w-[180px]">Description</TableHead>
-                  <TableHead className="w-32 text-right">Qty</TableHead>
-                  <TableHead className="w-40 text-right">Rate</TableHead>
-                  <TableHead className="w-32 text-right">Amount</TableHead>
-                  <TableHead className="w-20 text-center">Billable</TableHead>
-                  <TableHead className="min-w-[160px]">Tax</TableHead>
-                  <TableHead className="min-w-[160px]">Customer</TableHead>
-                  {classTrackingEnabled && <TableHead className="min-w-[140px]">Class</TableHead>}
-                  <TableHead className="w-20" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {lines.map((line, idx) => (
-                  <TableRow key={line.key}>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Select
-                          value={line.product_id || "__none__"}
-                          onValueChange={(v) => updateLine(line.key, { product_id: v === "__none__" ? "" : v })}
-                          disabled={!isEditable}
-                        >
-                          <SelectTrigger className="h-9 min-w-0 flex-1 text-xs"><SelectValue placeholder="Link a product" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">— No product —</SelectItem>
-                            {(products ?? []).map((p: any) => (
-                              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {isEditable && (
-                          <QuickProductDialog onCreated={(pid) => updateLine(line.key, { product_id: pid })} />
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <AccountCombobox
-                        options={expenseAccounts}
-                        value={line.account_id}
-                        onChange={(v) => updateLine(line.key, { account_id: v })}
-                        placeholder="Search accounts…"
-                        className="h-9 w-full"
-                        disabled={!isEditable}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        value={line.sku}
-                        onChange={(e) => updateLine(line.key, { sku: e.target.value })}
-                        placeholder="SKU"
-                        disabled={!isEditable}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        value={line.description}
-                        onChange={(e) => updateLine(line.key, { description: e.target.value })}
-                        placeholder="Description"
-                        disabled={!isEditable}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        type="number" min="0" step="0.01" className="text-right"
-                        value={line.qty}
-                        onChange={(e) => updateLine(line.key, { qty: e.target.value })}
-                        disabled={!isEditable}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        type="number" min="0" step="0.01" className="text-right"
-                        value={line.unit_cost}
-                        onChange={(e) => updateLine(line.key, { unit_cost: e.target.value })}
-                        disabled={!isEditable}
-                      />
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums text-sm text-muted-foreground pr-3">
-                      {formatCurrency(parseFloat(line.amount) || 0, currency)}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Checkbox
-                        checked={line.is_billable}
-                        onCheckedChange={(v) => updateLine(line.key, { is_billable: !!v })}
-                        disabled={!isEditable || !line.customer_id}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        <Select value={line.tax_sel || "none"} onValueChange={(v) => updateLine(line.key, { tax_sel: v === "none" ? "" : v })} disabled={!isEditable || isForeignBill}>
-                          <SelectTrigger className="h-9"><SelectValue placeholder="No tax" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">No Tax</SelectItem>
-                            {purchasableGroups.length > 0 && (
-                              <SelectGroup>
-                                <SelectLabel>Groups</SelectLabel>
-                                {purchasableGroups.map((g) => <SelectItem key={g.id} value={`g:${g.id}`}>{g.code}</SelectItem>)}
-                              </SelectGroup>
-                            )}
-                            {purchasableCodes.length > 0 && (
-                              <SelectGroup>
-                                <SelectLabel>Codes</SelectLabel>
-                                {purchasableCodes.map((c) => (
-                                  <SelectItem key={c.id} value={`c:${c.id}`}>{c.code} ({currentRate(c, billDate) ?? 0}%)</SelectItem>
-                                ))}
-                              </SelectGroup>
-                            )}
-                          </SelectContent>
-                        </Select>
-                        {line.tax_sel && (
-                          <div className="flex items-center justify-between text-[11px] text-muted-foreground pl-0.5">
-                            <label className="flex items-center gap-1">
-                              <Checkbox
-                                className="h-3.5 w-3.5"
-                                checked={line.is_tax_inclusive}
-                                onCheckedChange={(v) => updateLine(line.key, { is_tax_inclusive: !!v })}
-                                disabled={!isEditable}
-                              />
-                              Inclusive
-                            </label>
-                            <span>Tax: {formatCurrency(lineCalcs[idx]?.tax || 0)}</span>
-                          </div>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Select value={line.customer_id || "__none__"} onValueChange={(v) => updateLine(line.key, { customer_id: v === "__none__" ? null : v })} disabled={!isEditable}>
-                        <SelectTrigger className="h-9"><SelectValue placeholder="None" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">None</SelectItem>
-                          {(customers ?? []).map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    {classTrackingEnabled && (
-                      <TableCell>
-                        <Select
-                          value={line.cost_center_id || "__none__"}
-                          onValueChange={(v) => updateLine(line.key, { cost_center_id: v === "__none__" ? null : v })}
-                          disabled={!isEditable}
-                        >
-                          <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">None</SelectItem>
-                            {(costCenters ?? []).map((cc) => <SelectItem key={cc.id} value={cc.id}>{cc.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
+          <button
+            type="button"
+            className="flex items-center gap-2 text-base font-semibold"
+            onClick={() => setCategorySectionExpanded((v) => !v)}
+          >
+            {categorySectionExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4 -rotate-90" />}
+            Category details
+          </button>
+          {categorySectionExpanded && (
+            <>
+              <div className="border rounded-lg overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[260px]">Category</TableHead>
+                      <TableHead className="min-w-[200px]">Description</TableHead>
+                      <TableHead className="w-36 text-right">Amount</TableHead>
+                      <TableHead className="w-20 text-center">Billable</TableHead>
+                      <TableHead className="min-w-[160px]">Tax</TableHead>
+                      <TableHead className="min-w-[160px]">Customer</TableHead>
+                      {classTrackingEnabled && <TableHead className="min-w-[140px]">Class</TableHead>}
+                      <TableHead className="w-20" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {categoryLines.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={classTrackingEnabled ? 8 : 7} className="text-center py-6 text-sm text-muted-foreground">
+                          No category lines — click "Add lines" below.
+                        </TableCell>
+                      </TableRow>
                     )}
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!isEditable} onClick={() => duplicateLine(line.key)} title="Duplicate row">
-                          <Copy className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!isEditable || lines.length <= 1} onClick={() => removeLine(line.key)} title="Delete row">
-                          <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={addLine} disabled={!isEditable}>
-                <Plus className="w-3.5 h-3.5 mr-1" /> Add lines
-              </Button>
-              <Button
-                variant="outline" size="sm" disabled={!isEditable}
-                onClick={() => setLines([newLine()])}
-              >
-                Clear all lines
-              </Button>
-            </div>
-            <div className="text-right">
-              <span className="text-sm text-muted-foreground mr-3">Total</span>
-              <span className="text-lg font-semibold tabular-nums">{formatCurrency(displayTotal, currency)}</span>
-            </div>
-          </div>
+                    {categoryLines.map((line) => {
+                      const idx = lines.indexOf(line);
+                      return (
+                      <TableRow key={line.key}>
+                        <TableCell>
+                          <AccountCombobox
+                            options={expenseAccounts}
+                            value={line.account_id}
+                            onChange={(v) => updateLine(line.key, { account_id: v })}
+                            placeholder="Search accounts…"
+                            className="h-9 w-full"
+                            disabled={!isEditable}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={line.description}
+                            onChange={(e) => updateLine(line.key, { description: e.target.value })}
+                            placeholder="Description"
+                            disabled={!isEditable}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number" min="0" step="0.01" className="text-right"
+                            value={line.unit_cost}
+                            onChange={(e) => updateLine(line.key, { unit_cost: e.target.value })}
+                            disabled={!isEditable}
+                          />
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Checkbox
+                            checked={line.is_billable}
+                            onCheckedChange={(v) => updateLine(line.key, { is_billable: !!v })}
+                            disabled={!isEditable || !line.customer_id}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <Select value={line.tax_sel || "none"} onValueChange={(v) => updateLine(line.key, { tax_sel: v === "none" ? "" : v })} disabled={!isEditable || isForeignBill}>
+                              <SelectTrigger className="h-9"><SelectValue placeholder="No tax" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">No Tax</SelectItem>
+                                {purchasableGroups.length > 0 && (
+                                  <SelectGroup>
+                                    <SelectLabel>Groups</SelectLabel>
+                                    {purchasableGroups.map((g) => <SelectItem key={g.id} value={`g:${g.id}`}>{g.code}</SelectItem>)}
+                                  </SelectGroup>
+                                )}
+                                {purchasableCodes.length > 0 && (
+                                  <SelectGroup>
+                                    <SelectLabel>Codes</SelectLabel>
+                                    {purchasableCodes.map((c) => (
+                                      <SelectItem key={c.id} value={`c:${c.id}`}>{c.code} ({currentRate(c, billDate) ?? 0}%)</SelectItem>
+                                    ))}
+                                  </SelectGroup>
+                                )}
+                              </SelectContent>
+                            </Select>
+                            {line.tax_sel && (
+                              <div className="flex items-center justify-between text-[11px] text-muted-foreground pl-0.5">
+                                <label className="flex items-center gap-1">
+                                  <Checkbox
+                                    className="h-3.5 w-3.5"
+                                    checked={line.is_tax_inclusive}
+                                    onCheckedChange={(v) => updateLine(line.key, { is_tax_inclusive: !!v })}
+                                    disabled={!isEditable}
+                                  />
+                                  Inclusive
+                                </label>
+                                <span>Tax: {formatCurrency(lineCalcs[idx]?.tax || 0)}</span>
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Select value={line.customer_id || "__none__"} onValueChange={(v) => updateLine(line.key, { customer_id: v === "__none__" ? null : v })} disabled={!isEditable}>
+                            <SelectTrigger className="h-9"><SelectValue placeholder="None" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">None</SelectItem>
+                              {(customers ?? []).map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        {classTrackingEnabled && (
+                          <TableCell>
+                            <Select
+                              value={line.cost_center_id || "__none__"}
+                              onValueChange={(v) => updateLine(line.key, { cost_center_id: v === "__none__" ? null : v })}
+                              disabled={!isEditable}
+                            >
+                              <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">None</SelectItem>
+                                {(costCenters ?? []).map((cc) => <SelectItem key={cc.id} value={cc.id}>{cc.name}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                        )}
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!isEditable} onClick={() => duplicateLine(line.key)} title="Duplicate row">
+                              <Copy className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!isEditable} onClick={() => removeLine(line.key)} title="Delete row">
+                              <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );})}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => addLine("category")} disabled={!isEditable}>
+                  <Plus className="w-3.5 h-3.5 mr-1" /> Add lines
+                </Button>
+                <Button variant="outline" size="sm" disabled={!isEditable || categoryLines.length === 0} onClick={() => clearSection("category")}>
+                  Clear all lines
+                </Button>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
+
+      {/* Item details — secondary path: product/service lines with qty × rate.
+          Starts collapsed. */}
+      <Card>
+        <CardContent className="pt-6 space-y-3">
+          <button
+            type="button"
+            className="flex items-center gap-2 text-base font-semibold"
+            onClick={() => setItemSectionExpanded((v) => !v)}
+          >
+            {itemSectionExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4 -rotate-90" />}
+            Item details
+          </button>
+          {itemSectionExpanded && (
+            <>
+              <div className="border rounded-lg overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[180px]">Product/Service</TableHead>
+                      <TableHead className="min-w-[260px]">Account</TableHead>
+                      <TableHead className="min-w-[100px]">SKU</TableHead>
+                      <TableHead className="min-w-[180px]">Description</TableHead>
+                      <TableHead className="w-32 text-right">Qty</TableHead>
+                      <TableHead className="w-40 text-right">Rate</TableHead>
+                      <TableHead className="w-32 text-right">Amount</TableHead>
+                      <TableHead className="w-20 text-center">Billable</TableHead>
+                      <TableHead className="min-w-[160px]">Tax</TableHead>
+                      <TableHead className="min-w-[160px]">Customer</TableHead>
+                      {classTrackingEnabled && <TableHead className="min-w-[140px]">Class</TableHead>}
+                      <TableHead className="w-20" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {itemLines.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={classTrackingEnabled ? 12 : 11} className="text-center py-6 text-sm text-muted-foreground">
+                          No item lines — click "Add lines" below.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {itemLines.map((line) => {
+                      const idx = lines.indexOf(line);
+                      return (
+                      <TableRow key={line.key}>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Select
+                              value={line.product_id || "__none__"}
+                              onValueChange={(v) => updateLine(line.key, { product_id: v === "__none__" ? "" : v })}
+                              disabled={!isEditable}
+                            >
+                              <SelectTrigger className="h-9 min-w-0 flex-1 text-xs"><SelectValue placeholder="Select product/service" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">— No product —</SelectItem>
+                                {(products ?? []).map((p: any) => (
+                                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {isEditable && (
+                              <QuickProductDialog onCreated={(pid) => updateLine(line.key, { product_id: pid })} />
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <AccountCombobox
+                            options={expenseAccounts}
+                            value={line.account_id}
+                            onChange={(v) => updateLine(line.key, { account_id: v })}
+                            placeholder="Search accounts…"
+                            className="h-9 w-full"
+                            disabled={!isEditable}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={line.sku}
+                            onChange={(e) => updateLine(line.key, { sku: e.target.value })}
+                            placeholder="SKU"
+                            disabled={!isEditable}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={line.description}
+                            onChange={(e) => updateLine(line.key, { description: e.target.value })}
+                            placeholder="Description"
+                            disabled={!isEditable}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number" min="0" step="0.01" className="text-right"
+                            value={line.qty}
+                            onChange={(e) => updateLine(line.key, { qty: e.target.value })}
+                            disabled={!isEditable}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number" min="0" step="0.01" className="text-right"
+                            value={line.unit_cost}
+                            onChange={(e) => updateLine(line.key, { unit_cost: e.target.value })}
+                            disabled={!isEditable}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-sm text-muted-foreground pr-3">
+                          {formatCurrency(parseFloat(line.amount) || 0, currency)}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Checkbox
+                            checked={line.is_billable}
+                            onCheckedChange={(v) => updateLine(line.key, { is_billable: !!v })}
+                            disabled={!isEditable || !line.customer_id}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <Select value={line.tax_sel || "none"} onValueChange={(v) => updateLine(line.key, { tax_sel: v === "none" ? "" : v })} disabled={!isEditable || isForeignBill}>
+                              <SelectTrigger className="h-9"><SelectValue placeholder="No tax" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">No Tax</SelectItem>
+                                {purchasableGroups.length > 0 && (
+                                  <SelectGroup>
+                                    <SelectLabel>Groups</SelectLabel>
+                                    {purchasableGroups.map((g) => <SelectItem key={g.id} value={`g:${g.id}`}>{g.code}</SelectItem>)}
+                                  </SelectGroup>
+                                )}
+                                {purchasableCodes.length > 0 && (
+                                  <SelectGroup>
+                                    <SelectLabel>Codes</SelectLabel>
+                                    {purchasableCodes.map((c) => (
+                                      <SelectItem key={c.id} value={`c:${c.id}`}>{c.code} ({currentRate(c, billDate) ?? 0}%)</SelectItem>
+                                    ))}
+                                  </SelectGroup>
+                                )}
+                              </SelectContent>
+                            </Select>
+                            {line.tax_sel && (
+                              <div className="flex items-center justify-between text-[11px] text-muted-foreground pl-0.5">
+                                <label className="flex items-center gap-1">
+                                  <Checkbox
+                                    className="h-3.5 w-3.5"
+                                    checked={line.is_tax_inclusive}
+                                    onCheckedChange={(v) => updateLine(line.key, { is_tax_inclusive: !!v })}
+                                    disabled={!isEditable}
+                                  />
+                                  Inclusive
+                                </label>
+                                <span>Tax: {formatCurrency(lineCalcs[idx]?.tax || 0)}</span>
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Select value={line.customer_id || "__none__"} onValueChange={(v) => updateLine(line.key, { customer_id: v === "__none__" ? null : v })} disabled={!isEditable}>
+                            <SelectTrigger className="h-9"><SelectValue placeholder="None" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">None</SelectItem>
+                              {(customers ?? []).map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        {classTrackingEnabled && (
+                          <TableCell>
+                            <Select
+                              value={line.cost_center_id || "__none__"}
+                              onValueChange={(v) => updateLine(line.key, { cost_center_id: v === "__none__" ? null : v })}
+                              disabled={!isEditable}
+                            >
+                              <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">None</SelectItem>
+                                {(costCenters ?? []).map((cc) => <SelectItem key={cc.id} value={cc.id}>{cc.name}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                        )}
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!isEditable} onClick={() => duplicateLine(line.key)} title="Duplicate row">
+                              <Copy className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!isEditable} onClick={() => removeLine(line.key)} title="Delete row">
+                              <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );})}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => addLine("item")} disabled={!isEditable}>
+                  <Plus className="w-3.5 h-3.5 mr-1" /> Add lines
+                </Button>
+                <Button variant="outline" size="sm" disabled={!isEditable || itemLines.length === 0} onClick={() => clearSection("item")}>
+                  Clear all lines
+                </Button>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="flex justify-end">
+        <div className="text-right">
+          <span className="text-sm text-muted-foreground mr-3">Total</span>
+          <span className="text-lg font-semibold tabular-nums">{formatCurrency(displayTotal, currency)}</span>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Attachments + Memo */}
