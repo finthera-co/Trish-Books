@@ -1,5 +1,7 @@
 import type { FetchQueryOptions } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { queryClient } from "@/lib/queryClient";
+import { persistQuery } from "@/lib/queryPersistence";
 
 /**
  * Centralized registry of queries that MUST be hydrated before a tenant
@@ -181,12 +183,26 @@ export const CRITICAL_QUERIES: Record<string, CriticalQueryFactory> = {
   }),
 };
 
-/** Prefetch every critical query in parallel. Resolves only when all settle. */
+/**
+ * Prefetch every critical query in parallel. Resolves only when all settle.
+ * After each successful fetch, the result is persisted to IndexedDB for
+ * instant hydration on the next app load.
+ */
 export async function prefetchCriticalQueries(
   tenantId: string,
   prefetch: (opts: FetchQueryOptions<unknown>) => Promise<void>
 ) {
   await Promise.allSettled(
-    Object.values(CRITICAL_QUERIES).map((factory) => prefetch(factory(tenantId)))
+    Object.entries(CRITICAL_QUERIES).map(async ([, factory]) => {
+      const opts = factory(tenantId);
+      await prefetch(opts);
+      // prefetch() already populated the shared queryClient's cache — read
+      // it back instead of re-invoking queryFn (which would double the
+      // network request for every critical query).
+      const data = queryClient.getQueryData(opts.queryKey);
+      if (data !== undefined) {
+        await persistQuery(opts.queryKey as unknown[], data);
+      }
+    })
   );
 }

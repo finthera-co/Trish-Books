@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { clearAllFintheraDrafts } from "@/hooks/useDraftPersistence";
 import { useIdleLogout } from "@/hooks/useIdleLogout";
 import { setSignOutReason } from "@/lib/browserSession";
+import { clearAllCache } from "@/lib/queryPersistence";
 
 interface AppUser {
   id: string;
@@ -200,8 +201,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
     setAppUser(null);
     // Never leave one user's ledger data cached for the next person to sign in
-    // on this machine.
+    // on this machine — both the in-memory cache and its IndexedDB backup.
     queryClient.clear();
+    await clearAllCache();
   };
 
   // Unattended machine: end the session rather than leave the ledgers open.

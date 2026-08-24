@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { supabase } from "@/integrations/supabase/client";
 import type { QueryClient } from "@tanstack/react-query";
 import { prefetchCriticalQueries } from "@/lib/criticalQueries";
+import { restoreCache } from "@/lib/queryPersistence";
 
 /**
  * Global app store for tenant (company) scoping with blocking prefetch.
@@ -52,6 +53,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set({ isSwitching: true, isDataReady: false });
     try {
+      // Hydrate from IndexedDB first — UI renders instantly with cached data
+      // while the Supabase prefetch below revalidates in the background.
+      await restoreCache(queryClient);
       await prefetchCriticalQueries(id, (opts) => queryClient.prefetchQuery(opts));
       set({ tenantId: id, isDataReady: true });
     } finally {
@@ -68,6 +72,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       await queryClient.cancelQueries();
       // 2. Wipe cross-tenant cache
       queryClient.clear();
+      // Deliberately no restoreCache() here: an explicit switch should hit
+      // the network for the new tenant rather than flash the old tenant's
+      // IndexedDB data. The prefetch below re-primes both memory and IDB.
       // 3. Warm the cache for the NEW tenant BEFORE flipping the id
       await prefetchCriticalQueries(newTenantId, (opts) =>
         queryClient.prefetchQuery(opts)
