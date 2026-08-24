@@ -29,7 +29,7 @@ export const CRITICAL_QUERIES: Record<string, CriticalQueryFactory> = {
       if (error) throw error;
       return data;
     },
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
   }),
 
   customers: (tenantId) => ({
@@ -43,7 +43,7 @@ export const CRITICAL_QUERIES: Record<string, CriticalQueryFactory> = {
       if (error) throw error;
       return data;
     },
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
   }),
 
   vendors: (tenantId) => ({
@@ -57,7 +57,7 @@ export const CRITICAL_QUERIES: Record<string, CriticalQueryFactory> = {
       if (error) throw error;
       return data;
     },
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
   }),
 
   invoices: (tenantId) => ({
@@ -72,7 +72,7 @@ export const CRITICAL_QUERIES: Record<string, CriticalQueryFactory> = {
       if (error) throw error;
       return data;
     },
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
   }),
 
   fiscalPeriods: (tenantId) => ({
@@ -86,7 +86,98 @@ export const CRITICAL_QUERIES: Record<string, CriticalQueryFactory> = {
       if (error) throw error;
       return data;
     },
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
+  }),
+
+  // ── prefetched at login to eliminate per-page loading ──
+  // Note: no separate "bank accounts" table exists — bank accounts are
+  // rows in `accounts` (COA), already covered by the `accounts` entry above.
+
+  bills: (tenantId) => ({
+    queryKey: ["tenant", tenantId, "bills"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("supplier_bills")
+        .select("*, vendors(name)")
+        .eq("tenant_id", tenantId)
+        .order("bill_date", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 5 * 60_000,
+  }),
+
+  taxRates: (tenantId) => ({
+    queryKey: ["tenant", tenantId, "tax_rates"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("taxes")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .order("tax_name");
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 5 * 60_000,
+  }),
+
+  accountSettings: (tenantId) => ({
+    queryKey: ["tenant", tenantId, "account_settings"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("account_settings")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 5 * 60_000,
+  }),
+
+  pettyCashAccounts: (tenantId) => ({
+    queryKey: ["tenant", tenantId, "petty_cash_accounts"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("petty_cash_accounts")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .order("account_name");
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 5 * 60_000,
+  }),
+
+  postingProfiles: (tenantId) => ({
+    queryKey: ["tenant", tenantId, "posting_profiles"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("posting_profiles")
+        .select("*, accounts(account_code, account_name)")
+        .eq("tenant_id", tenantId)
+        .order("module")
+        .order("transaction_type")
+        .order("priority");
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 5 * 60_000,
+  }),
+
+  expenseCategories: (tenantId) => ({
+    queryKey: ["tenant", tenantId, "expense_categories"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("expense_categories")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .order("name");
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 5 * 60_000,
   }),
 };
 

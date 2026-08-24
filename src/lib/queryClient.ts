@@ -5,8 +5,12 @@ import { QueryClient } from "@tanstack/react-query";
  *
  * Defaults chosen for multi-tenant correctness:
  *  - refetchOnWindowFocus: false  → no surprise refetches
- *  - refetchOnMount: true         → always pull fresh on remount
- *  - staleTime: 0                 → no stale reuse across tenant switches
+ *  - refetchOnMount: true         → revalidate once data goes stale
+ *  - staleTime: 5 minutes         → cached data within the window is served
+ *                                    without a network call; mutations still
+ *                                    call invalidateQueries() to force an
+ *                                    immediate refetch regardless of this
+ *  - gcTime: 10 minutes           → unused queries stay warm across nav
  *  - retry: 1                     → fail fast on RLS / network issues
  *
  * Convention: every query key MUST start with the tenantId, e.g.
@@ -18,7 +22,8 @@ export const queryClient = new QueryClient({
     queries: {
       refetchOnWindowFocus: false,
       refetchOnMount: true,
-      staleTime: 0,
+      staleTime: 5 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
       retry: 1,
     },
   },
