@@ -9,11 +9,19 @@ import {
   useFsMapping, useMapAccountToLine, useUnmapAccount, useMoveAccountToLine,
   useFsLineDetails, useUpdateFsLine, useFsLineTerms, useSetFsLineTerms,
   useFsParameters, useSetFsParameter, isFsPnlAccountType, useMoveFsLine,
+  useFsStatements, useSeedFsStatement,
   type FsLineDetail, type FsUnmappedAccount, type FsMappedAccount,
 } from "@/hooks/useFinancialStatements";
 import { checkFsLine, type FsStandardsIssue } from "@/lib/fsMappingStandards";
 
-const STATEMENT_CODE = "SOCI";
+// The fixed catalog of statement shapes this engine knows how to seed — shown
+// in the picker regardless of whether a given tenant has set each one up yet,
+// so "Balance Sheet" is selectable (and offers Set Up) before it exists.
+const STATEMENT_CATALOG = [
+  { code: "SOCI", label: "Income Statement" },
+  { code: "SFP", label: "Balance Sheet" },
+  { code: "CF", label: "Cash Flow Statement" },
+] as const;
 
 function fmt(n: number): string {
   const s = Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -31,18 +39,29 @@ export default function FinancialStatementMapping() {
   // A report's coverage banner links here with ?from=&to= set to the exact
   // period it flagged issues for — arriving from that link must show the same
   // accounts the report saw, not silently re-scope to the last 12 months.
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const linkedFrom = searchParams.get("from");
   const linkedTo = searchParams.get("to");
 
+  const [statementCode, setStatementCode] = useState(searchParams.get("statement") ?? "SOCI");
   const [dateFrom, setDateFrom] = useState(linkedFrom ?? defaultDateFrom);
   const [dateTo, setDateTo] = useState(linkedTo ?? (() => new Date().toISOString().slice(0, 10)));
   const [fiscalPeriodId, setFiscalPeriodId] = useState<string>("");
   const [editingLine, setEditingLine] = useState<FsLineDetail | null>(null);
 
   const { data: fiscalPeriods } = useFiscalPeriods();
-  const { statementId, mapped, unmapped, others, isLoading, error } = useFsMapping(STATEMENT_CODE, dateFrom, dateTo);
+  const { data: seededStatements } = useFsStatements();
+  const seedStatement = useSeedFsStatement();
+  const isSeeded = (seededStatements ?? []).some((s) => s.code === statementCode);
+  const { statementId, mapped, unmapped, others, isLoading, error } = useFsMapping(statementCode, dateFrom, dateTo);
   const { data: lineDetails } = useFsLineDetails(statementId);
+
+  const onStatementChange = (code: string) => {
+    setStatementCode(code);
+    const next = new URLSearchParams(searchParams);
+    next.set("statement", code);
+    setSearchParams(next, { replace: true });
+  };
   const mapAccount = useMapAccountToLine();
   const unmapAccount = useUnmapAccount();
   const moveAccount = useMoveAccountToLine();
@@ -132,6 +151,19 @@ export default function FinancialStatementMapping() {
 
       <div className="stat-card">
         <div className="flex flex-wrap items-end gap-4">
+          <div className="min-w-[180px]">
+            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">Statement</label>
+            <Select value={statementCode} onValueChange={onStatementChange}>
+              <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {STATEMENT_CATALOG.map((s) => (
+                  <SelectItem key={s.code} value={s.code}>
+                    {s.label}{!(seededStatements ?? []).some((x) => x.code === s.code) ? " (not set up)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div>
             <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">From</label>
             <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
@@ -202,7 +234,19 @@ export default function FinancialStatementMapping() {
         )}
       </div>
 
-      {isLoading ? (
+      {!isSeeded && seededStatements !== undefined ? (
+        <div className="stat-card text-center py-16">
+          <p className="font-medium text-foreground">
+            {STATEMENT_CATALOG.find((s) => s.code === statementCode)?.label} hasn't been set up for this tenant yet.
+          </p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Setting it up creates the standard line structure — you can rename, reorder or edit any line afterwards.
+          </p>
+          <Button className="mt-4" size="sm" disabled={seedStatement.isPending} onClick={() => seedStatement.mutate(statementCode)}>
+            Set up this statement
+          </Button>
+        </div>
+      ) : isLoading ? (
         <div className="flex items-center justify-center py-16">
           <span className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
         </div>

@@ -117,7 +117,7 @@ export function useFsStatementAccounts(
   const { appUser } = useAuth();
   return useQuery({
     queryKey: ["fs_statement_accounts", appUser?.tenant_id, statementCode, dateFrom, dateTo, cmpDateFrom ?? null, cmpDateTo ?? null],
-    enabled: Boolean(appUser?.tenant_id && dateFrom && dateTo),
+    enabled: Boolean(appUser?.tenant_id && statementCode && dateFrom && dateTo),
     queryFn: async (): Promise<FsStatementAccount[]> => {
       const { data, error } = await supabase.rpc("rpc_fs_statement_accounts", {
         p_statement_code: statementCode,
@@ -189,6 +189,26 @@ export interface FsStatementMeta {
   footer_notes: string[];
 }
 
+/** Every statement seeded for this tenant — drives the statement picker on
+ * the mapping screen and the Reports hub, so a new statement code (SFP, CF)
+ * shows up there the moment it's seeded, with no separate registration step. */
+export function useFsStatements() {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["fs_statements", appUser?.tenant_id],
+    enabled: Boolean(appUser?.tenant_id),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("fs_statements")
+        .select("id, code, name, title, sort_order")
+        .order("sort_order");
+      if (error) throw error;
+      return (data ?? []) as { id: string; code: string; name: string; title: string; sort_order: number }[];
+    },
+    staleTime: 5 * 60_000,
+  });
+}
+
 /** The statement's own metadata (title, captions, footer notes) — for the on-screen face. */
 export function useFsStatementMeta(statementCode: string) {
   const { appUser } = useAuth();
@@ -205,6 +225,35 @@ export function useFsStatementMeta(statementCode: string) {
       return data as FsStatementMeta | null;
     },
     staleTime: 5 * 60_000,
+  });
+}
+
+/** RPC name for each statement code's seed function — there is one seed RPC
+ * per statement shape (SOCI/SFP/CF), not a single generic one, since each
+ * lays down a different fixed line structure. */
+const SEED_RPC_BY_CODE: Record<string, string> = {
+  SOCI: "rpc_fs_seed_soci",
+  SFP: "rpc_fs_seed_sfp",
+  CF: "rpc_fs_seed_cf",
+};
+
+export function useSeedFsStatement() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (statementCode: string) => {
+      const rpcName = SEED_RPC_BY_CODE[statementCode];
+      if (!rpcName) throw new Error(`No seed function known for statement code ${statementCode}`);
+      const { data, error } = await supabase.rpc(rpcName as any, { p_force: false });
+      if (error) throw error;
+      return data as string;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["fs_statements"] });
+      queryClient.invalidateQueries({ queryKey: ["fs_statement_meta"] });
+      invalidateStatement(queryClient);
+      toast.success("Statement set up");
+    },
+    onError: (e: Error) => toast.error(e.message),
   });
 }
 
@@ -747,5 +796,54 @@ export function useSetFsParameter() {
       toast.success("Parameter saved");
     },
     onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export interface SoceColumnValues {
+  stated_capital: number;
+  revenue_reserves: number;
+  total: number;
+}
+
+export interface SoceBlock {
+  opening_balance: SoceColumnValues;
+  prior_year_adjustment: SoceColumnValues;
+  profit_for_year: SoceColumnValues;
+  dividends: SoceColumnValues;
+  other_movements: SoceColumnValues;
+  closing_balance: SoceColumnValues;
+}
+
+export interface SoceResult {
+  columns: string[];
+  current_period: SoceBlock;
+  comparative_period?: SoceBlock;
+}
+
+/** Statement of Changes in Equity — bespoke RPC (rpc_changes_in_equity), not
+ * part of the fs_lines engine: its shape is a movement matrix, not a flat
+ * list of lines. Self-contained — does not depend on SOCI/SFP mappings. */
+export function useChangesInEquity(
+  periodStart: string,
+  periodEnd: string,
+  cmpPeriodStart?: string | null,
+  cmpPeriodEnd?: string | null
+) {
+  const { appUser } = useAuth();
+  return useQuery({
+    queryKey: ["changes_in_equity", appUser?.tenant_id, periodStart, periodEnd, cmpPeriodStart ?? null, cmpPeriodEnd ?? null],
+    enabled: Boolean(appUser?.tenant_id && periodStart && periodEnd),
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("rpc_changes_in_equity" as any, {
+        p_period_start: periodStart,
+        p_period_end: periodEnd,
+        p_cmp_period_start: cmpPeriodStart ?? null,
+        p_cmp_period_end: cmpPeriodEnd ?? null,
+      });
+      if (error) throw error;
+      return data as unknown as SoceResult;
+    },
+    staleTime: 60_000,
+    retry: 1,
   });
 }

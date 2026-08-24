@@ -1,34 +1,32 @@
-import { useState, useMemo, useEffect, Fragment } from "react";
-import { FileText, TrendingUp, DollarSign, BarChart3, Printer, ArrowLeft, Activity, Warehouse, Download, FileSpreadsheet } from "lucide-react";
+import { useState, useEffect, Fragment } from "react";
+import { useNavigate } from "react-router-dom";
+import { FileText, TrendingUp, DollarSign, BarChart3, Printer, ArrowLeft, Activity, Warehouse, Download, FileSpreadsheet, Scale, Link2, ClipboardList } from "lucide-react";
 import { toast } from "sonner";
 import { downloadReportPdf } from "@/lib/reportPdf";
 import { downloadReportExcel } from "@/lib/reportExcel";
 import { Button } from "@/components/ui/button";
-import { useAccounts, useJournalEntries, useAccountBalances, useInvoices, useExpenses, useBudgets } from "@/hooks/useData";
+import { useExpenses } from "@/hooks/useData";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
-import { format } from "date-fns";
-import {
-  isDebitNormal as checkDebitNormal,
-  isContraSubtype,
-  isNonCurrentAssetSubtype,
-  isNonCurrentLiabilitySubtype,
-} from "@/lib/accountTypes";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { buildScheduleBlocks, deriveFYWindow, fyLabel, type AssetMeta } from "@/lib/ppeSchedule";
 import TrialBalance from "@/pages/TrialBalance";
 import StatementOfComprehensiveIncome from "@/components/reports/StatementOfComprehensiveIncome";
+import StatementOfFinancialPosition from "@/components/reports/StatementOfFinancialPosition";
+import CashFlowStatement from "@/components/reports/CashFlowStatement";
+import StatementOfChangesInEquity from "@/pages/reports/StatementOfChangesInEquity";
 import { ReportMasthead, useReportCompany } from "@/components/reports/ReportMasthead";
 import { formatDate } from "@/lib/format";
 
-type ReportType = "trial-balance" | "pnl" | "balance-sheet" | "cash-flow" | "expense-summary" | "aged-receivables" | "fixed-asset-schedule" | "ppe-schedule" | null;
+type ReportType = "trial-balance" | "pnl" | "balance-sheet" | "cash-flow" | "changes-in-equity" | "expense-summary" | "fixed-asset-schedule" | "ppe-schedule" | null;
 
 const COLORS = ["hsl(215, 60%, 42%)", "hsl(142, 71%, 35%)", "hsl(38, 92%, 50%)", "hsl(199, 89%, 48%)", "hsl(0, 72%, 51%)", "hsl(270, 60%, 50%)"];
 
 export default function Reports() {
   const { appUser } = useAuth();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const reportParam = searchParams.get("report") as ReportType | null;
 
@@ -39,47 +37,17 @@ export default function Reports() {
   });
   const [periodTo, setPeriodTo] = useState(() => new Date().toISOString().slice(0, 10));
 
-  // Trial Balance (and, from Commit 6, SOCI) are self-contained pages with
-  // their own date range, export, and print controls.
-  const SELF_CONTAINED_REPORTS: ReportType[] = ["trial-balance", "pnl"];
+  // The five IFRS statements (Trial Balance, Income Statement, Balance Sheet,
+  // Cash Flow, Changes in Equity) are self-contained pages with their own
+  // date range, export, and print controls.
+  const SELF_CONTAINED_REPORTS: ReportType[] = ["trial-balance", "pnl", "balance-sheet", "cash-flow", "changes-in-equity"];
   const isSelfContainedReport = activeReport != null && SELF_CONTAINED_REPORTS.includes(activeReport);
 
   useEffect(() => {
     if (reportParam && !activeReport) setActiveReport(reportParam);
   }, [reportParam]);
 
-  const { data: accounts } = useAccounts();
-  // Only the Cash Flow statement needs line-level entry detail (it classifies
-  // each cash movement by its counterpart accounts). Every other report here
-  // runs off aggregates or its own query, so the whole-table load stays off
-  // until Cash Flow is actually selected.
-  const { data: journalEntries } = useJournalEntries(activeReport === "cash-flow");
-  const { data: invoices } = useInvoices();
   const { data: expenses } = useExpenses();
-  const { data: budgets } = useBudgets();
-
-  // Fetch fiscal periods to find the matching period for opening balances
-  const { data: fiscalPeriods } = useQuery({
-    queryKey: ["fiscal_periods_for_reports"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("fiscal_periods")
-        .select("id, name, period_start, period_end, status")
-        .order("period_start", { ascending: true });
-      if (error) throw error;
-      return data;
-    },
-  });
-
-  // Fetch all opening balances
-  const { data: allOpeningBalances } = useQuery({
-    queryKey: ["opening_balances_for_reports"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("opening_balances").select("*");
-      if (error) throw error;
-      return data;
-    },
-  });
 
   // Company identity for the masthead and the export headings — shared with
   // every other report so they cannot disagree.
@@ -239,184 +207,24 @@ export default function Reports() {
     },
   });
 
-  // The opening-balance baseline: the latest fiscal period that (a) has opening
-  // balance rows entered and (b) starts on or before the report end date. All
-  // "as at" balances are opening balances + every posted entry from that
-  // period's start through periodTo — independent of the selected From date,
-  // so the Balance Sheet and Trial Balance never lose pre-window activity.
-  const obPeriod = useMemo(() => {
-    if (!fiscalPeriods || !allOpeningBalances) return null;
-    const obPeriodIds = new Set(allOpeningBalances.map(ob => ob.fiscal_period_id));
-    const candidates = fiscalPeriods.filter(p => obPeriodIds.has(p.id) && p.period_start <= periodTo);
-    return candidates.length ? candidates[candidates.length - 1] : null;
-  }, [fiscalPeriods, allOpeningBalances, periodTo]);
+  const reports: { id: ReportType; name: string; description: string; icon: any; category: string }[] = [
+    { id: "trial-balance", name: "Trial Balance", description: "Verify total debits equal total credits across all accounts", icon: FileText, category: "Financial Statement" },
+    { id: "pnl", name: "Income Statement", description: "Revenue, cost of goods sold, operating expenses, and net income", icon: TrendingUp, category: "Financial Statement" },
+    { id: "balance-sheet", name: "Balance Sheet", description: "Statement of financial position — assets, liabilities, and equity, IAS 1 classified", icon: DollarSign, category: "Financial Statement" },
+    { id: "changes-in-equity", name: "Changes in Equity", description: "Movement in stated capital and revenue reserves for the period", icon: Scale, category: "Financial Statement" },
+    { id: "cash-flow", name: "Cash Flow Statement", description: "Operating, investing and financing cash flows — indirect method", icon: Activity, category: "Financial Statement" },
+    { id: "expense-summary", name: "Expense Analysis", description: "Expense breakdown by category, status, and trends", icon: BarChart3, category: "Management" },
+    { id: "fixed-asset-schedule", name: "Fixed Asset Schedule", description: "Property, plant & equipment — cost, accumulated depreciation and net book value by asset", icon: Warehouse, category: "Fixed Assets" },
+    { id: "ppe-schedule", name: "PPE Schedule", description: "Property, plant & equipment by category with per-fiscal-year depreciation, accumulated depreciation and written-down value (IAS 16)", icon: Warehouse, category: "Fixed Assets" },
+  ];
 
-  const openingBalanceMap = useMemo(() => {
-    const m = new Map<string, number>();
-    if (!obPeriod || !allOpeningBalances) return m;
-    allOpeningBalances
-      .filter(ob => ob.fiscal_period_id === obPeriod.id)
-      .forEach(ob => m.set(ob.account_id, Number(ob.balance)));
-    return m;
-  }, [obPeriod, allOpeningBalances]);
-
-  const postedEntries = useMemo(() => {
-    return journalEntries?.filter(e => e.status === "posted" && !(e as any).voided_at) || [];
-  }, [journalEntries]);
-
-  // Entries inside the selected window — drives the P&L, Cash Flow sections
-  // and other period-based reports.
-  const filteredEntries = useMemo(() => {
-    return postedEntries.filter(e => e.entry_date >= periodFrom && e.entry_date <= periodTo);
-  }, [postedEntries, periodFrom, periodTo]);
-
-  // Entries from the opening-balance baseline through periodTo — beginning cash
-  // for the Cash Flow statement. The Balance Sheet used to share this, but it
-  // only ever needed per-account totals, so it now reads the aggregate RPC
-  // below instead of every entry in the tenant.
-  const cumulativeEntries = useMemo(() => {
-    return postedEntries.filter(e =>
-      e.entry_date <= periodTo && (!obPeriod || e.entry_date >= obPeriod.period_start)
-    );
-  }, [postedEntries, periodTo, obPeriod]);
-
-  const prePeriodEntries = useMemo(() => {
-    return cumulativeEntries.filter(e => e.entry_date < periodFrom);
-  }, [cumulativeEntries, periodFrom]);
-
-  // Per-account debit/credit totals from the opening-balance baseline through
-  // periodTo, aggregated server-side by gl_account_balances. This is the whole
-  // input the Balance Sheet needs — ~138 rows in one round trip, rather than
-  // 35k entries and 70k lines pulled into the browser to be summed there.
-  const { data: cumulativeTotals } = useAccountBalances(obPeriod?.period_start, periodTo);
-
-  type AccountBal = { id: string; name: string; code: string; type: string; subtype: string | null; subledger_type: string | null; normalBalance: string | null; debit: number; credit: number; openingBalance: number };
-
-  const buildBalanceMap = (entries: any[], includeOpening: boolean) => {
-    const map = new Map<string, AccountBal>();
-    accounts?.forEach(a => {
-      map.set(a.id, {
-        id: a.id,
-        name: a.account_name,
-        code: a.account_code,
-        type: a.account_type,
-        subtype: (a as any).account_subtype ?? null,
-        subledger_type: (a as any).subledger_type ?? null,
-        normalBalance: (a as any).normal_balance ?? null,
-        debit: 0,
-        credit: 0,
-        openingBalance: includeOpening ? (openingBalanceMap.get(a.id) || 0) : 0,
-      });
-    });
-    entries.forEach(entry => {
-      ((entry.journal_lines as any[]) || []).forEach(line => {
-        const acc = map.get(line.account_id);
-        if (acc) {
-          acc.debit += Number(line.debit) || 0;
-          acc.credit += Number(line.credit) || 0;
-        }
-      });
-    });
-    return map;
-  };
-
-  // Period activity only (no opening balances) — P&L, expense analysis.
-  const accountBalances = useMemo(
-    () => buildBalanceMap(filteredEntries, false),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [accounts, filteredEntries]
-  );
-
-  // As-at-periodTo balances (opening balances + cumulative activity) — the
-  // Balance Sheet. Same shape buildBalanceMap produces, but the debit/credit
-  // totals come from the server aggregate rather than from summing lines here.
-  // Seeded from `accounts` so an account with an opening balance and no
-  // activity still appears.
-  const cumulativeBalances = useMemo(() => {
-    const map = new Map<string, AccountBal>();
-    accounts?.forEach(a => {
-      map.set(a.id, {
-        id: a.id,
-        name: a.account_name,
-        code: a.account_code,
-        type: a.account_type,
-        subtype: (a as any).account_subtype ?? null,
-        subledger_type: (a as any).subledger_type ?? null,
-        normalBalance: (a as any).normal_balance ?? null,
-        debit: 0,
-        credit: 0,
-        openingBalance: openingBalanceMap.get(a.id) || 0,
-      });
-    });
-    (cumulativeTotals ?? []).forEach((row: any) => {
-      const acc = map.get(row.account_id);
-      if (acc) {
-        acc.debit = Number(row.debit) || 0;
-        acc.credit = Number(row.credit) || 0;
-      }
-    });
-    return map;
-  }, [accounts, cumulativeTotals, openingBalanceMap]);
-
-  // As-at-periodFrom balances — beginning cash for the Cash Flow statement.
-  const prePeriodBalances = useMemo(
-    () => buildBalanceMap(prePeriodEntries, true),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [accounts, prePeriodEntries, openingBalanceMap]
-  );
-
-  const cumulativeList = Array.from(cumulativeBalances.values()).filter(a => a.debit > 0 || a.credit > 0 || a.openingBalance !== 0);
-
-  // The side an account's balance normally sits on. Deriving this from the
-  // account TYPE alone is wrong for contra accounts: Accumulated Depreciation
-  // is type "Asset" but credit-normal, so a type-only rule reports its balance
-  // as a negative asset, and the Balance Sheet then *adds* depreciation back
-  // instead of deducting it. Prefer the normal_balance the COA itself records,
-  // fall back to the contra subtype, then to the type.
-  const isDebitSide = (a: AccountBal) => {
-    const declared = a.normalBalance?.trim().toLowerCase();
-    if (declared === "debit" || declared === "credit") return declared === "debit";
-    const debitByType = checkDebitNormal(a.type);
-    return isContraSubtype(a.subtype) ? !debitByType : debitByType;
-  };
-
-  // Signed closing balance in the account's normal-balance direction
-  // (positive = normal side). Works for any balance map built above.
-  const getNetBalance = (a: AccountBal) => {
-    const journalNet = isDebitSide(a) ? (a.debit - a.credit) : (a.credit - a.debit);
-    return a.openingBalance + journalNet;
-  };
-
-  // Account classification helpers used by the Balance Sheet and Cash Flow.
-  const lowerSub = (a: AccountBal) => (a.subtype ?? "").toLowerCase();
-  const isAccumDepAccount = (a: AccountBal) =>
-    a.subledger_type === "asset_depreciation" || lowerSub(a).includes("accumulated depreciation");
-  // Non-current assets are identified from the detail type (LKAS 1.60), not the
-  // account type — "Property, Plant & Equipment", "Fixed Asset" and the rest
-  // are all type "Asset", so a type-only rule leaves every fixed asset sitting
-  // in current assets.
-  const isIntangibleAccount = (a: AccountBal) => lowerSub(a).includes("intangible");
-  const isPPEAccount = (a: AccountBal) =>
-    a.subledger_type === "fixed_asset" ||
-    (isNonCurrentAssetSubtype(a.subtype) && !isAccumDepAccount(a) && !isIntangibleAccount(a));
-  const isNonCurrentLiability = (a: AccountBal) => isNonCurrentLiabilitySubtype(a.subtype);
-  const isCashAccount = (a: AccountBal) =>
-    a.type === "Asset" &&
-    !isPPEAccount(a) && !isAccumDepAccount(a) &&
-    (["cash", "checking", "savings", "bank"].some(k => lowerSub(a).includes(k)) ||
-      a.name.toLowerCase().includes("cash") || a.name.toLowerCase().includes("bank"));
-
-  const PNL_TYPES = ["Income", "Cost of Goods Sold", "Expense", "Other Income", "Other Expense"];
-
-  const reports = [
-    { id: "trial-balance" as ReportType, name: "Trial Balance", description: "Verify total debits equal total credits across all accounts", icon: FileText, category: "Accounting" },
-    { id: "pnl" as ReportType, name: "Income Statement", description: "Revenue, cost of goods sold, operating expenses, and net income", icon: TrendingUp, category: "Financial Statement" },
-    { id: "balance-sheet" as ReportType, name: "Balance Sheet", description: "Statement of financial position — assets, liabilities, and equity", icon: DollarSign, category: "Financial Statement" },
-    { id: "cash-flow" as ReportType, name: "Cash Flow Statement", description: "Cash inflows and outflows from operating, investing, and financing", icon: Activity, category: "Financial Statement" },
-    { id: "expense-summary" as ReportType, name: "Expense Analysis", description: "Expense breakdown by category, status, and trends", icon: BarChart3, category: "Management" },
-    { id: "aged-receivables" as ReportType, name: "Aged Receivables", description: "Outstanding customer invoices analyzed by aging buckets", icon: FileText, category: "Management" },
-    { id: "fixed-asset-schedule" as ReportType, name: "Fixed Asset Schedule", description: "Property, plant & equipment — cost, accumulated depreciation and net book value by asset", icon: Warehouse, category: "Fixed Assets" },
-    { id: "ppe-schedule" as ReportType, name: "PPE Schedule", description: "Property, plant & equipment by category with per-fiscal-year depreciation, accumulated depreciation and written-down value (IAS 16)", icon: Warehouse, category: "Fixed Assets" },
+  // Reports that already live on their own page elsewhere — link out to them
+  // instead of re-implementing a second, divergent version here.
+  const externalReports = [
+    { href: "/accounting/ar-aging", name: "Aged Receivables", description: "Outstanding customer invoices by aging bucket", icon: FileText, category: "Receivables & Payables" },
+    { href: "/accounting/ap-aging", name: "Aged Payables", description: "Outstanding vendor bills by aging bucket", icon: FileText, category: "Receivables & Payables" },
+    { href: "/reports/budget-vs-actual", name: "Budget vs Actual", description: "Variance analysis by account against the approved budget", icon: ClipboardList, category: "Management" },
+    { href: "/accounting/statement-mapping", name: "Statement Mapping", description: "Map chart-of-accounts accounts onto Income Statement, Balance Sheet and Cash Flow lines", icon: Link2, category: "Setup" },
   ];
 
   const fmt = (n: number) => {
@@ -425,9 +233,9 @@ export default function Reports() {
     return n < 0 ? `(LKR ${str})` : `LKR ${str}`;
   };
 
-  // Every statement on this page uses the shared masthead, so the Balance Sheet,
-  // Cash Flow and the schedules carry the same heading as the Trial Balance,
-  // General Ledger and account registers.
+  // Every statement on this page uses the shared masthead, so the schedules
+  // carry the same heading as the Trial Balance, General Ledger and account
+  // registers.
   const StatementHeader = ({ title, subtitle, asAt }: { title: string; subtitle?: string; asAt?: boolean }) => (
     <ReportMasthead
       title={title}
@@ -438,312 +246,6 @@ export default function Reports() {
       currency="LKR"
     />
   );
-
-  const renderBalanceSheet = () => {
-    // Statement of financial position as at periodTo: opening balances plus
-    // ALL posted activity from the opening-balance baseline through periodTo
-    // (not just the selected window).
-    const allAssets = cumulativeList.filter(a => a.type === "Asset");
-    const ppeAccounts = allAssets.filter(isPPEAccount);
-    const accumDepAccounts = allAssets.filter(a => isAccumDepAccount(a) && !isPPEAccount(a));
-    const intangibleAccounts = allAssets.filter(a => isIntangibleAccount(a) && !isPPEAccount(a) && !isAccumDepAccount(a));
-    const currentAssets = allAssets.filter(
-      a => !isPPEAccount(a) && !isAccumDepAccount(a) && !isIntangibleAccount(a)
-    );
-
-    const liabilities = cumulativeList.filter(a => a.type === "Liability");
-    const currentLiabilities = liabilities.filter(a => !isNonCurrentLiability(a));
-    const nonCurrentLiabilities = liabilities.filter(isNonCurrentLiability);
-    const equity = cumulativeList.filter(a => a.type === "Equity");
-
-    // Net income accumulated since the opening-balance baseline. Opening
-    // balances carry prior retained earnings inside Equity, so the unclosed
-    // P&L activity since then is the "Net Income" equity line.
-    const pnlAccounts = cumulativeList.filter(a => PNL_TYPES.includes(a.type));
-    const retainedEarnings = pnlAccounts.reduce((s, a) => {
-      const isIncomeSide = a.type === "Income" || a.type === "Other Income";
-      return s + (isIncomeSide ? (a.credit - a.debit) : -(a.debit - a.credit));
-    }, 0);
-
-    const grossPPE = ppeAccounts.reduce((s, a) => s + getNetBalance(a), 0);
-    // Accumulated depreciation accounts are credit-normal (contra-asset).
-    // getNetBalance returns positive = credit balance, representing the accumulated amount.
-    const totalAccumDep = accumDepAccounts.reduce((s, a) => s + getNetBalance(a), 0);
-    const netPPE = grossPPE - totalAccumDep;
-    const totalIntangibles = intangibleAccounts.reduce((s, a) => s + getNetBalance(a), 0);
-    const totalNonCurrentAssets = netPPE + totalIntangibles;
-    const totalCurrentAssets = currentAssets.reduce((s, a) => s + getNetBalance(a), 0);
-    const totalAssets = totalCurrentAssets + totalNonCurrentAssets;
-
-    const totalCurrentLiabilities = currentLiabilities.reduce((s, a) => s + getNetBalance(a), 0);
-    const totalNonCurrentLiabilities = nonCurrentLiabilities.reduce((s, a) => s + getNetBalance(a), 0);
-    const totalLiabilities = totalCurrentLiabilities + totalNonCurrentLiabilities;
-    const totalEquity = equity.reduce((s, a) => s + getNetBalance(a), 0) + retainedEarnings;
-    const totalLiabEquity = totalLiabilities + totalEquity;
-
-    // The face of the statement is built from four repeating parts, so every
-    // section of both halves carries identical typography: a top-level caption
-    // (ASSETS / EQUITY AND LIABILITIES), a sub-section caption, the ledger
-    // lines, and the sub-section's own total.
-    const FaceCaption = ({ label }: { label: string }) => (
-      <tr className="bg-muted/60">
-        <td colSpan={2} className="font-bold text-foreground uppercase tracking-wider text-sm py-2">{label}</td>
-      </tr>
-    );
-
-    const SectionCaption = ({ label }: { label: string }) => (
-      <tr className="bg-muted/25">
-        <td colSpan={2} className="font-semibold text-foreground text-sm py-1.5 pl-2">{label}</td>
-      </tr>
-    );
-
-    const SectionRows = ({ items }: { items: typeof allAssets }) => (
-      <>
-        {items.length === 0 ? (
-          <tr>
-            <td className="pl-8 text-muted-foreground italic text-sm">None</td>
-            <td className="text-right font-mono text-muted-foreground">—</td>
-          </tr>
-        ) : items.map((a, i) => (
-          <tr key={i}>
-            <td className="pl-8 text-foreground">{a.name}</td>
-            <td className="text-right font-mono">{fmt(getNetBalance(a))}</td>
-          </tr>
-        ))}
-      </>
-    );
-
-    // Sub-section total: single rule above, as on a printed statement.
-    const SectionTotal = ({ label, value }: { label: string; value: number }) => (
-      <tr className="border-t border-border/60">
-        <td className="pl-4 text-sm font-medium text-foreground">{label}</td>
-        <td className="text-right font-mono font-semibold">{fmt(value)}</td>
-      </tr>
-    );
-
-    // Face total (Total Assets / Total Equity and Liabilities): the ruled,
-    // double-underlined line each half of the statement closes on.
-    const FaceTotal = ({ label, value }: { label: string; value: number }) => (
-      <tr className="font-bold border-t-2 border-b-4 border-double border-foreground/40 bg-primary/5">
-        <td className="uppercase tracking-wide text-sm py-2">{label}</td>
-        <td className="text-right font-mono py-2">{fmt(value)}</td>
-      </tr>
-    );
-
-    const hasData = allAssets.length > 0 || liabilities.length > 0 || equity.length > 0;
-
-    return (
-      <div className="space-y-4">
-        <div className="grid grid-cols-3 gap-4 print:hidden">
-          <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Total Assets</p><p className="text-xl font-bold text-foreground mt-1">{fmt(totalAssets)}</p></div>
-          <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Total Liabilities</p><p className="text-xl font-bold text-foreground mt-1">{fmt(totalLiabilities)}</p></div>
-          <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Total Equity</p><p className="text-xl font-bold text-primary mt-1">{fmt(totalEquity)}</p></div>
-        </div>
-
-        <div className="stat-card print:shadow-none">
-          <StatementHeader title="Statement of Financial Position" subtitle="Balance Sheet" asAt />
-            {!hasData ? (
-              <p className="text-center py-12 text-muted-foreground">No balance sheet data. Create accounts and post journal entries.</p>
-            ) : (
-              <table className="data-table">
-                <thead><tr><th>Account</th><th className="text-right w-40">Amount</th></tr></thead>
-                <tbody>
-                  {/* ─────────── ASSETS ─────────── */}
-                  <FaceCaption label="Assets" />
-
-                  <SectionCaption label="Non-Current Assets" />
-                  <SectionRows items={ppeAccounts} />
-                  {accumDepAccounts.map((a, i) => (
-                    <tr key={`accum-${i}`}>
-                      <td className="pl-8 text-foreground italic text-sm">Less: {a.name}</td>
-                      <td className="text-right font-mono text-destructive/80">{fmt(-getNetBalance(a))}</td>
-                    </tr>
-                  ))}
-                  {(ppeAccounts.length > 0 || accumDepAccounts.length > 0) && (
-                    <tr className="border-t border-border/40">
-                      <td className="pl-6 text-sm text-muted-foreground italic">Property, Plant &amp; Equipment — Net</td>
-                      <td className={`text-right font-mono ${netPPE >= 0 ? "" : "text-destructive"}`}>{fmt(netPPE)}</td>
-                    </tr>
-                  )}
-                  {intangibleAccounts.length > 0 && <SectionRows items={intangibleAccounts} />}
-                  <SectionTotal label="Total Non-Current Assets" value={totalNonCurrentAssets} />
-
-                  <SectionCaption label="Current Assets" />
-                  <SectionRows items={currentAssets} />
-                  <SectionTotal label="Total Current Assets" value={totalCurrentAssets} />
-
-                  <FaceTotal label="Total Assets" value={totalAssets} />
-
-                  {/* ─────── EQUITY AND LIABILITIES ─────── */}
-                  <FaceCaption label="Equity and Liabilities" />
-
-                  <SectionCaption label="Equity" />
-                  <SectionRows items={equity} />
-                  {retainedEarnings !== 0 && (
-                    <tr>
-                      <td className="pl-8 text-foreground italic">Net Income (Current Earnings)</td>
-                      <td className="text-right font-mono">{fmt(retainedEarnings)}</td>
-                    </tr>
-                  )}
-                  <SectionTotal label="Total Equity" value={totalEquity} />
-
-                  {nonCurrentLiabilities.length > 0 && (
-                    <>
-                      <SectionCaption label="Non-Current Liabilities" />
-                      <SectionRows items={nonCurrentLiabilities} />
-                      <SectionTotal label="Total Non-Current Liabilities" value={totalNonCurrentLiabilities} />
-                    </>
-                  )}
-
-                  <SectionCaption label="Current Liabilities" />
-                  <SectionRows items={currentLiabilities} />
-                  <SectionTotal label="Total Current Liabilities" value={totalCurrentLiabilities} />
-
-                  <SectionTotal label="Total Liabilities" value={totalLiabilities} />
-
-                  <FaceTotal label="Total Equity and Liabilities" value={totalLiabEquity} />
-                </tbody>
-              </table>
-            )}
-          <div className={`mt-4 px-4 py-2 rounded-md text-sm font-medium ${Math.abs(totalAssets - totalLiabEquity) < 0.01 ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
-            {Math.abs(totalAssets - totalLiabEquity) < 0.01 ? "✓ Balanced — Total Assets = Total Equity and Liabilities" : `✗ Out of balance by ${fmt(Math.abs(totalAssets - totalLiabEquity))}`}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderCashFlow = () => {
-    // Beginning cash = cash & bank balances as at the day before periodFrom
-    // (opening balances + all posted activity before the window).
-    const beginningCash = Array.from(prePeriodBalances.values())
-      .filter(isCashAccount)
-      .reduce((s, a) => s + getNetBalance(a), 0);
-
-    // Classify each cash movement by the counterpart accounts of its entry.
-    // Order matters: fixed-asset counterparts (purchase/sale of PPE) are
-    // investing even when a gain/loss line is present; long-term debt and
-    // equity are financing; everything else — P&L activity and working
-    // capital (AR, AP, inventory, taxes, payroll) — is operating.
-    const classifyCashLine = (counterparts: AccountBal[]): "operating" | "investing" | "financing" => {
-      if (counterparts.some(c => isPPEAccount(c) || isAccumDepAccount(c) || isIntangibleAccount(c))) return "investing";
-      if (counterparts.some(c => c.type === "Equity" || (c.type === "Liability" && isNonCurrentLiability(c)))) return "financing";
-      return "operating";
-    };
-
-    // Build monthly cash flow data
-    const monthlyData = new Map<string, { operating: number; investing: number; financing: number }>();
-    filteredEntries.forEach(entry => {
-      const month = entry.entry_date.slice(0, 7); // YYYY-MM
-      if (!monthlyData.has(month)) monthlyData.set(month, { operating: 0, investing: 0, financing: 0 });
-      const m = monthlyData.get(month)!;
-
-      const lines = (entry.journal_lines as any[]) || [];
-      lines.forEach(line => {
-        const acc = accountBalances.get(line.account_id);
-        if (!acc) return;
-        // Only track cash movements (lines hitting cash/bank asset accounts)
-        if (!isCashAccount(acc)) return;
-        const net = (Number(line.debit) || 0) - (Number(line.credit) || 0);
-
-        const counterparts = lines
-          .filter(l => l.account_id !== line.account_id)
-          .map(l => accountBalances.get(l.account_id))
-          .filter((c): c is AccountBal => !!c && !isCashAccount(c));
-        // Cash-to-cash transfers have no non-cash counterpart; they net to
-        // zero within operating and are excluded from classification noise.
-        if (counterparts.length === 0) return;
-
-        m[classifyCashLine(counterparts)] += net;
-      });
-    });
-
-    const sortedMonths = Array.from(monthlyData.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([month, data]) => ({
-        month: format(new Date(month + "-01"), "MMM yyyy"),
-        ...data,
-        total: data.operating + data.investing + data.financing,
-      }));
-
-    // Running totals
-    let runningTotal = beginningCash;
-    const chartData = sortedMonths.map(d => {
-      runningTotal += d.total;
-      return { ...d, cumulative: runningTotal };
-    });
-
-    const totalOperating = sortedMonths.reduce((s, d) => s + d.operating, 0);
-    const totalInvesting = sortedMonths.reduce((s, d) => s + d.investing, 0);
-    const totalFinancing = sortedMonths.reduce((s, d) => s + d.financing, 0);
-    const netChange = totalOperating + totalInvesting + totalFinancing;
-    
-    const endingCash = beginningCash + netChange;
-
-    return (
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 print:hidden">
-          <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Operating</p><p className={`text-xl font-bold mt-1 ${totalOperating >= 0 ? "text-success" : "text-destructive"}`}>{fmt(totalOperating)}</p></div>
-          <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Investing</p><p className={`text-xl font-bold mt-1 ${totalInvesting >= 0 ? "text-success" : "text-destructive"}`}>{fmt(totalInvesting)}</p></div>
-          <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Financing</p><p className={`text-xl font-bold mt-1 ${totalFinancing >= 0 ? "text-success" : "text-destructive"}`}>{fmt(totalFinancing)}</p></div>
-          <div className="stat-card"><p className="text-xs text-muted-foreground uppercase tracking-wide">Net Change</p><p className={`text-xl font-bold mt-1 ${netChange >= 0 ? "text-success" : "text-destructive"}`}>{fmt(netChange)}</p></div>
-        </div>
-
-        {chartData.length > 0 && (
-          <div className="stat-card print:hidden">
-            <h3 className="text-sm font-medium text-foreground mb-4">Cash Flow Trend</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
-                <YAxis tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `LKR ${(v/1000).toFixed(0)}k`} />
-                <Tooltip formatter={(v: number) => fmt(v)} />
-                <Line type="monotone" dataKey="operating" name="Operating" stroke={COLORS[1]} strokeWidth={2} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="cumulative" name="Cumulative" stroke={COLORS[0]} strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-
-        <div className="stat-card print:shadow-none">
-          <StatementHeader title="Statement of Cash Flows" subtitle="Direct Method" />
-          {sortedMonths.length === 0 ? (
-            <p className="text-center py-12 text-muted-foreground">No cash transactions found for this period. Post journal entries affecting Cash/Bank accounts.</p>
-          ) : (
-            <table className="data-table">
-              <thead><tr><th>Category</th><th className="text-right w-40">Amount</th></tr></thead>
-              <tbody>
-                <tr><td colSpan={2} className="font-semibold text-foreground bg-muted/40 py-2">Cash Flows from Operating Activities</td></tr>
-                {sortedMonths.map((d, i) => d.operating !== 0 && (
-                  <tr key={`o-${i}`}><td className="pl-8 text-foreground">{d.month}</td><td className="text-right font-mono">{fmt(d.operating)}</td></tr>
-                ))}
-                <tr className="font-semibold border-t"><td className="pl-4">Net Cash from Operations</td><td className="text-right font-mono">{fmt(totalOperating)}</td></tr>
-
-                <tr><td colSpan={2} className="font-semibold text-foreground bg-muted/40 py-2">Cash Flows from Investing Activities</td></tr>
-                {sortedMonths.map((d, i) => d.investing !== 0 && (
-                  <tr key={`i-${i}`}><td className="pl-8 text-foreground">{d.month}</td><td className="text-right font-mono">{fmt(d.investing)}</td></tr>
-                ))}
-                <tr className="font-semibold border-t"><td className="pl-4">Net Cash from Investing</td><td className="text-right font-mono">{fmt(totalInvesting)}</td></tr>
-
-                <tr><td colSpan={2} className="font-semibold text-foreground bg-muted/40 py-2">Cash Flows from Financing Activities</td></tr>
-                {sortedMonths.map((d, i) => d.financing !== 0 && (
-                  <tr key={`f-${i}`}><td className="pl-8 text-foreground">{d.month}</td><td className="text-right font-mono">{fmt(d.financing)}</td></tr>
-                ))}
-                <tr className="font-semibold border-t"><td className="pl-4">Net Cash from Financing</td><td className="text-right font-mono">{fmt(totalFinancing)}</td></tr>
-
-                <tr className="font-bold border-t-2 border-foreground/30 bg-primary/5">
-                  <td>Net Change in Cash</td>
-                  <td className={`text-right font-mono ${netChange >= 0 ? "text-success" : "text-destructive"}`}>{fmt(netChange)}</td>
-                </tr>
-                <tr><td className="text-foreground">Cash &amp; Cash Equivalents at Beginning of Period</td><td className="text-right font-mono">{fmt(beginningCash)}</td></tr>
-                <tr className="font-bold border-t-2"><td>Cash &amp; Cash Equivalents at End of Period</td><td className="text-right font-mono">{fmt(endingCash)}</td></tr>
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
-    );
-  };
 
   const renderExpenseSummary = () => {
     const categorySummary = new Map<string, number>();
@@ -830,124 +332,6 @@ export default function Reports() {
                   <td className="text-muted-foreground italic" colSpan={3}>
                     Approved {fmt(approved)} · Pending {fmt(pending)} · Rejected {fmt(rejected)}
                   </td>
-                </tr>
-              </tfoot>
-            </table>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const renderAgedReceivables = () => {
-    // Aged as at the report end date. Outstanding = posted invoices with a
-    // remaining balance after payments and credit notes (balance_due), so
-    // partially paid invoices show only what is still owed.
-    const asOf = new Date(periodTo + "T00:00:00");
-    const buckets = { current: 0, days30: 0, days60: 0, days90: 0, over90: 0 };
-    const outstanding = invoices?.filter(i =>
-      i.status !== "draft" && i.status !== "voided" &&
-      Number((i as any).balance_due) > 0.005 &&
-      i.issue_date <= periodTo
-    ) || [];
-    const customerBuckets = new Map<string, typeof buckets>();
-
-    outstanding.forEach(inv => {
-      const due = inv.due_date ? new Date(inv.due_date) : new Date(inv.issue_date);
-      const daysOverdue = Math.floor((asOf.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
-      const amt = Number((inv as any).balance_due);
-      const custName = (inv.customers as any)?.name || "Unknown";
-      
-      if (!customerBuckets.has(custName)) customerBuckets.set(custName, { current: 0, days30: 0, days60: 0, days90: 0, over90: 0 });
-      const cb = customerBuckets.get(custName)!;
-      
-      if (daysOverdue <= 0) { buckets.current += amt; cb.current += amt; }
-      else if (daysOverdue <= 30) { buckets.days30 += amt; cb.days30 += amt; }
-      else if (daysOverdue <= 60) { buckets.days60 += amt; cb.days60 += amt; }
-      else if (daysOverdue <= 90) { buckets.days90 += amt; cb.days90 += amt; }
-      else { buckets.over90 += amt; cb.over90 += amt; }
-    });
-
-    const chartData = [
-      { name: "Current", amount: buckets.current },
-      { name: "1-30 days", amount: buckets.days30 },
-      { name: "31-60 days", amount: buckets.days60 },
-      { name: "61-90 days", amount: buckets.days90 },
-      { name: "90+ days", amount: buckets.over90 },
-    ];
-    const total = Object.values(buckets).reduce((s, v) => s + v, 0);
-
-    return (
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 print:hidden">
-          {chartData.map((d, i) => (
-            <div key={i} className="stat-card">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">{d.name}</p>
-              <p className="text-lg font-bold text-foreground mt-1">{fmt(d.amount)}</p>
-              <p className="text-xs text-muted-foreground">{total > 0 ? ((d.amount / total) * 100).toFixed(1) : 0}%</p>
-            </div>
-          ))}
-        </div>
-
-        {total > 0 && (
-          <div className="stat-card print:hidden">
-            <h3 className="text-sm font-medium text-foreground mb-4">Aging Distribution</h3>
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="name" tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" />
-                <YAxis tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `LKR ${v.toLocaleString()}`} />
-                <Tooltip formatter={(v: number) => fmt(v)} />
-                <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
-                  {chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-
-        <div className="stat-card print:shadow-none">
-          <StatementHeader title="Aged Receivables Report" subtitle="Outstanding balances by due date" asAt />
-          {total === 0 ? (
-            <p className="text-center py-12 text-muted-foreground">No outstanding invoices. All invoices have been paid.</p>
-          ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Customer</th>
-                  <th className="text-right">Current</th>
-                  <th className="text-right">1-30</th>
-                  <th className="text-right">31-60</th>
-                  <th className="text-right">61-90</th>
-                  <th className="text-right">90+</th>
-                  <th className="text-right">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Array.from(customerBuckets.entries()).map(([name, cb]) => {
-                  const custTotal = cb.current + cb.days30 + cb.days60 + cb.days90 + cb.over90;
-                  return (
-                    <tr key={name}>
-                      <td className="font-medium text-foreground">{name}</td>
-                      <td className="text-right font-mono">{cb.current > 0 ? fmt(cb.current) : "-"}</td>
-                      <td className="text-right font-mono">{cb.days30 > 0 ? fmt(cb.days30) : "-"}</td>
-                      <td className="text-right font-mono">{cb.days60 > 0 ? fmt(cb.days60) : "-"}</td>
-                      <td className="text-right font-mono">{cb.days90 > 0 ? fmt(cb.days90) : "-"}</td>
-                      <td className="text-right font-mono">{cb.over90 > 0 ? fmt(cb.over90) : "-"}</td>
-                      <td className="text-right font-mono font-semibold">{fmt(custTotal)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot>
-                <tr className="font-bold border-t-2">
-                  <td>Total</td>
-                  <td className="text-right font-mono">{fmt(buckets.current)}</td>
-                  <td className="text-right font-mono">{fmt(buckets.days30)}</td>
-                  <td className="text-right font-mono">{fmt(buckets.days60)}</td>
-                  <td className="text-right font-mono">{fmt(buckets.days90)}</td>
-                  <td className="text-right font-mono">{fmt(buckets.over90)}</td>
-                  <td className="text-right font-mono">{fmt(total)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -1243,10 +627,10 @@ export default function Reports() {
     switch (activeReport) {
       case "trial-balance": return <TrialBalance />;
       case "pnl": return <StatementOfComprehensiveIncome />;
-      case "balance-sheet": return renderBalanceSheet();
-      case "cash-flow": return renderCashFlow();
+      case "balance-sheet": return <StatementOfFinancialPosition />;
+      case "cash-flow": return <CashFlowStatement />;
+      case "changes-in-equity": return <StatementOfChangesInEquity />;
       case "expense-summary": return renderExpenseSummary();
-      case "aged-receivables": return renderAgedReceivables();
       case "fixed-asset-schedule": return renderFixedAssetSchedule();
       case "ppe-schedule": return renderPpeSchedule();
       default: return null;
@@ -1254,7 +638,7 @@ export default function Reports() {
   };
 
   // Print with a document title that becomes the suggested PDF filename,
-  // e.g. "Acme (Pvt) Ltd — Balance Sheet 2026-07-05".
+  // e.g. "Acme (Pvt) Ltd — Expense Analysis 2026-07-05".
   const handlePrint = () => {
     const reportName = reports.find(r => r.id === activeReport)?.name ?? "Report";
     const previousTitle = document.title;
@@ -1263,16 +647,11 @@ export default function Reports() {
     document.title = previousTitle;
   };
 
-  // Reports presented "as at" a date rather than over a period — must match
-  // the asAt flag each report passes to StatementHeader.
-  const AS_AT_REPORTS: ReportType[] = ["trial-balance", "balance-sheet", "aged-receivables"];
+  // The remaining reports on the generic export path (Expense Analysis, the
+  // fixed-asset schedules) are all period-range, not "as at" — the five IFRS
+  // statements carry their own export controls via SELF_CONTAINED_REPORTS.
   const REPORT_SUBTITLES: Partial<Record<Exclude<ReportType, null>, string>> = {
-    "trial-balance": "Closing balances by account",
-    "pnl": "Statement of Comprehensive Income",
-    "balance-sheet": "Statement of Financial Position",
-    "cash-flow": "Direct Method",
     "expense-summary": "Expenses by category",
-    "aged-receivables": "Outstanding balances by due date",
     "fixed-asset-schedule": "Property, Plant & Equipment",
     "ppe-schedule": "Property, Plant & Equipment (IAS 16)",
   };
@@ -1281,9 +660,7 @@ export default function Reports() {
   const exportMeta = (extension: "pdf" | "xlsx") => {
     if (!activeReport) return null;
     const reportName = reports.find(r => r.id === activeReport)?.name ?? "Report";
-    const dateLine = AS_AT_REPORTS.includes(activeReport)
-      ? `As at ${formatDate(periodTo)}`
-      : `For the period ${formatDate(periodFrom)} — ${formatDate(periodTo)}`;
+    const dateLine = `For the period ${formatDate(periodFrom)} — ${formatDate(periodTo)}`;
     return {
       companyName: company?.company_name,
       address: company?.address,
@@ -1318,6 +695,8 @@ export default function Reports() {
     }
   };
 
+  const categories = Array.from(new Set([...reports.map(r => r.category), ...externalReports.map(r => r.category)]));
+
   return (
     <div className="space-y-6">
       <div className="page-header print:hidden">
@@ -1328,9 +707,9 @@ export default function Reports() {
         <div className="flex items-center gap-2">
           {activeReport && (
             <>
-              {/* Self-contained reports (Trial Balance, SOCI) bring their own
-                  date range, export, and print controls — the generic ones
-                  here would duplicate and could disagree with them. */}
+              {/* Self-contained reports (the five IFRS statements) bring their
+                  own date range, export, and print controls — the generic
+                  ones here would duplicate and could disagree with them. */}
               {!isSelfContainedReport && (
                 <>
                   <Button variant="outline" size="sm" onClick={handleDownloadPdf} className="print:hidden">
@@ -1353,7 +732,7 @@ export default function Reports() {
       </div>
 
       {/* Period selector */}
-      {!isSelfContainedReport && (
+      {!isSelfContainedReport && activeReport && (
       <div className="flex items-center gap-3 print:hidden">
         <label className="text-sm text-muted-foreground">Period:</label>
         <input type="date" value={periodFrom} onChange={e => setPeriodFrom(e.target.value)} className="text-sm border rounded-md px-3 py-1.5 bg-card text-foreground" />
@@ -1363,27 +742,51 @@ export default function Reports() {
       )}
 
       {!activeReport ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {reports.map((report) => (
-            <div
-              key={report.id}
-              className="stat-card flex flex-col gap-3 cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all group"
-              onClick={() => setActiveReport(report.id)}
-            >
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-colors">
-                  <report.icon className="w-5 h-5 text-primary" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-semibold text-foreground">{report.name}</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{report.description}</p>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-secondary text-secondary-foreground">
-                  {report.category}
-                </span>
-                <Button variant="ghost" size="sm" className="text-xs">Generate →</Button>
+        <div className="space-y-8">
+          {categories.map((category) => (
+            <div key={category}>
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">{category}</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {reports.filter(r => r.category === category).map((report) => (
+                  <div
+                    key={report.id}
+                    className="stat-card flex flex-col gap-3 cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all group"
+                    onClick={() => setActiveReport(report.id)}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-colors">
+                        <report.icon className="w-5 h-5 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-sm font-semibold text-foreground">{report.name}</h3>
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{report.description}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-end">
+                      <Button variant="ghost" size="sm" className="text-xs">Generate →</Button>
+                    </div>
+                  </div>
+                ))}
+                {externalReports.filter(r => r.category === category).map((report) => (
+                  <div
+                    key={report.href}
+                    className="stat-card flex flex-col gap-3 cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all group"
+                    onClick={() => navigate(report.href)}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center shrink-0 group-hover:bg-secondary/80 transition-colors">
+                        <report.icon className="w-5 h-5 text-secondary-foreground" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-sm font-semibold text-foreground">{report.name}</h3>
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{report.description}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-end">
+                      <Button variant="ghost" size="sm" className="text-xs">Open →</Button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ))}
