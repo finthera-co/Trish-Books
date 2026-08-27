@@ -58,16 +58,42 @@ export const prettyTerms = (t?: string | null) =>
   t ? t.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase()) : "";
 
 /**
+ * The product name and the line description as the lines to print, dropping
+ * whichever one restates the other.
+ *
+ * A description is very often the product name plus a qualifier
+ * ("Accountancy Charges" / "Accountancy Charges - July 2026"), and printing
+ * both stacks the same words twice on the document. Only the longer of the
+ * two is kept when one begins with the other at a word boundary — an
+ * unrelated description still prints under its product name.
+ */
+export function itemCellLines(name: string, desc: string): string[] {
+  const n = String(name ?? "").trim();
+  const d = String(desc ?? "").trim();
+  if (!n) return d ? [d] : [];
+  if (!d) return [n];
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ");
+  const nn = norm(n);
+  const nd = norm(d);
+  if (nn === nd) return [d];
+  // The remainder after the shared opening must start on a separator, so
+  // "Pen" is not treated as the opening of "Pencil Set".
+  const restates = (long: string, short: string) =>
+    long.startsWith(short) && /^[\s\-–—:,;./(\[]/.test(long.slice(short.length));
+  if (restates(nd, nn)) return [d];
+  if (restates(nn, nd)) return [n];
+  return [n, d];
+}
+
+/**
  * Compose the product/description cell for a line-items table. Never falls
  * back to the line's GL account name — a chart-of-accounts label (e.g. "Sales
  * Revenue") is an internal posting detail and must not appear on a
  * customer-facing document, even for a manually-mapped line with no product.
  */
 export function buildItemCell(it: any): string {
-  const name = it.products?.name || "";
-  const desc = it.description || "";
-  if (name && desc && name !== desc) return `${name}\n${desc}`;
-  return name || desc || "—";
+  const lines = itemCellLines(it.products?.name || "", it.description || "");
+  return lines.length ? lines.join("\n") : "—";
 }
 
 /**

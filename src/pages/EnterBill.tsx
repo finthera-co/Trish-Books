@@ -385,6 +385,7 @@ export default function EnterBill() {
       if (!next.customer_id) next.is_billable = false;
       if ("product_id" in patch) {
         const product: any = (products ?? []).find((p: any) => p.id === patch.product_id);
+        const prevProduct: any = l.product_id ? (products ?? []).find((p: any) => p.id === l.product_id) : null;
         if (product) {
           next.description = product.description || product.name;
           next.sku = product.sku || next.sku;
@@ -393,16 +394,15 @@ export default function EnterBill() {
           // products only have income_account_id, so leave account_id for
           // the user to pick manually in that case.
           if (product.expense_account_id) next.account_id = product.expense_account_id;
-        } else {
+        } else if (prevProduct && l.account_id === prevProduct.expense_account_id) {
+          // Only an account still inherited from the departing product is
+          // cleared — one the user picked by hand survives.
           next.account_id = "";
         }
       }
-      // Picking an account by hand on a product-linked line detaches the
-      // product — same rule CreateInvoice.tsx uses — so the manual choice
-      // sticks instead of being silently overwritten by a later product edit.
-      if ("account_id" in patch && patch.account_id && l.product_id) {
-        next.product_id = "";
-      }
+      // The expense account stays editable on a product-linked line — same rule
+      // CreateInvoice.tsx uses. A product suggests its purchase account; it does
+      // not own the line's posting account, so an override keeps the product link.
       if ("qty" in patch || "unit_cost" in patch) {
         next.amount = String((parseFloat(next.qty) || 0) * (parseFloat(next.unit_cost) || 0));
       }

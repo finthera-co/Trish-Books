@@ -2,6 +2,7 @@ import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { formatCurrency } from "@/lib/currency";
 import { formatDate } from "@/lib/format";
+import { itemCellLines } from "@/lib/pdfTheme";
 import {
   STAMP_TILT, STAMP_W, STAMP_H, STAMP_CSS_COLOR, paidStampBounds, paidStampSublines, type PaidStamp,
 } from "@/lib/paidStamp";
@@ -142,10 +143,8 @@ export function tableCellContent(
     case "index":
       return { text: String(rowIndex + 1), muted: true };
     case "item_description": {
-      const name = String(item.item || "");
-      const desc = String(item.description || "");
-      const text = name && desc && name !== desc ? `${name}\n${desc}` : name || desc || "—";
-      return { text };
+      const lines = itemCellLines(String(item.item || ""), String(item.description || ""));
+      return { text: lines.length ? lines.join("\n") : "—" };
     }
     case "discount": {
       // A discount is a reduction in the customer's favour, not an error —

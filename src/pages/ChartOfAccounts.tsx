@@ -1092,15 +1092,15 @@ export default function ChartOfAccounts() {
 
   return (
     <div className="space-y-6">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Chart of Accounts</h1>
-          <p className="page-description">
+      <div className="page-header gap-3 flex-nowrap overflow-x-auto">
+        <div className="flex items-baseline gap-3 min-w-0">
+          <h1 className="page-title whitespace-nowrap">Chart of Accounts</h1>
+          <p className="page-description truncate hidden lg:block">
             {viewMode === "quickbooks" ? "Type → Category → Account hierarchy" : "Flat account listing"} ({activeCount} active)
           </p>
         </div>
-        <div className="flex gap-2 flex-wrap items-center">
-          <FiscalPeriodSelector value={selectedPeriodId} onChange={setSelectedPeriodId} />
+        <div className="flex gap-2 flex-nowrap items-center shrink-0">
+          <FiscalPeriodSelector value={selectedPeriodId} onChange={setSelectedPeriodId} className="shrink-0 [&>select]:max-w-[200px] [&>select]:truncate" />
 
           {/* View toggle */}
           <div className="flex border border-input rounded-lg overflow-hidden">
@@ -1122,11 +1122,11 @@ export default function ChartOfAccounts() {
             </button>
           </div>
 
-          <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={!accounts?.length}>
+          <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={handleExportCSV} disabled={!accounts?.length}>
             <Download className="w-4 h-4 mr-1" /> Export
           </Button>
           <COAHealthCheck accounts={(accounts as any[]) || []} />
-          {hasEditPermission && <Button onClick={() => { setParentSeedId(null); setDuplicateFromAccount(null); setFormOpen(true); }}>
+          {hasEditPermission && <Button className="whitespace-nowrap" onClick={() => { setParentSeedId(null); setDuplicateFromAccount(null); setFormOpen(true); }}>
             <Plus className="w-4 h-4" /> Add Account
           </Button>}
         </div>

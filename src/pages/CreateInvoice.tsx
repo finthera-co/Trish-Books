@@ -364,31 +364,25 @@ export default function CreateInvoice() {
         const updated = { ...l, [field]: value };
         if (field === "product_id" && products) {
           const product: any = products.find((p: any) => p.id === value);
+          const prevProduct: any = l.product_id ? products.find((p: any) => p.id === l.product_id) : null;
           if (product) {
             updated.description = product.description || product.name;
             updated.rate = Number(product.price) || 0;
-            // Inherit the product's revenue account onto this line.
-            updated.account_id = product.income_account_id || "";
+            // Suggest the product's revenue account. A product with no income
+            // account mapped leaves whatever the user already picked in place
+            // rather than blanking the line's posting account.
+            if (product.income_account_id) updated.account_id = product.income_account_id;
             // Default tax from the product (group preferred, then code)
             if (product.default_tax_group_id) updated.tax_sel = `g:${product.default_tax_group_id}`;
             else if (product.default_tax_code_id) updated.tax_sel = `c:${product.default_tax_code_id}`;
           } else {
-            // Product cleared → this is now a service line: drop the inherited revenue
-            // account so the manual picker takes over, and reset qty (a service bills a
-            // flat amount, not qty × rate).
-            updated.account_id = "";
+            // Product cleared → this is now a service line, billing a flat amount
+            // rather than qty × rate. An account the user chose by hand survives;
+            // only one still inherited from the departing product is dropped, so
+            // the manual picker starts empty.
+            if (prevProduct && l.account_id === prevProduct.income_account_id) updated.account_id = "";
             updated.qty = 1;
           }
-        }
-        // Explicitly choosing a revenue account turns the line into a manually-mapped
-        // (service) line: unlink any product and clear the product's auto-filled
-        // description so it doesn't linger. Custom text the user typed is preserved.
-        if (field === "account_id" && value && l.product_id) {
-          const prod: any = products?.find((p: any) => p.id === l.product_id);
-          const autoDesc = prod ? (prod.description || prod.name) : null;
-          updated.product_id = "";
-          updated.qty = 1;
-          if (autoDesc && l.description === autoDesc) updated.description = "";
         }
         // ── Keep the discount %/amount pair in step ──────────────────────
         // The percentage is the entry field: it re-derives the money amount
@@ -517,7 +511,10 @@ export default function CreateInvoice() {
     // Non-blocking warning: a posted line with an amount but no revenue account and no
     // product silently lands in the default sales account — a footgun for service firms.
     if (shouldPost) {
-      const unmapped = lines.filter((l) => l.rate > 0 && !l.account_id && !l.product_id);
+      // account_id is the line's revenue account whether it was inherited from a
+      // product or picked by hand, so an empty one is the only thing that falls
+      // through to the default — a product link is no longer a substitute for it.
+      const unmapped = lines.filter((l) => l.rate > 0 && !l.account_id);
       if (unmapped.length > 0) {
         const proceed = window.confirm(
           `${unmapped.length} line(s) have no revenue account selected and will post to the ` +
@@ -885,7 +882,7 @@ export default function CreateInvoice() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <CardTitle className="text-base">Line items</CardTitle>
-                  <p className="text-xs text-muted-foreground mt-0.5">Pick a product, or leave it blank for a service line and choose a revenue account.</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Pick a product, or leave it blank for a service line. The revenue account is always yours to set — a product just suggests one.</p>
                 </div>
                 <span className="text-xs text-muted-foreground tabular-nums shrink-0">{lines.length} line{lines.length === 1 ? "" : "s"}</span>
               </div>
@@ -926,8 +923,8 @@ export default function CreateInvoice() {
                               </Select>
                               <QuickProductDialog onCreated={(id) => updateLine(line.id, "product_id", id)} />
                             </div>
-                            {/* Revenue account — auto-filled from the product's income account,
-                                or pick one for an ad-hoc service line. */}
+                            {/* Revenue account — suggested by the product's income account,
+                                but always overridable, and required on a service line. */}
                             <AccountCombobox
                               options={revenueAccounts}
                               value={line.account_id}
