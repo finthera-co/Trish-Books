@@ -547,6 +547,27 @@ export default function Ledger() {
     setDrillDownEntry(row);
   };
 
+  // Full double-entry breakdown for the drill-down dialog — every line of the
+  // source journal entry (not just the one line posted to this account), so
+  // the dialog shows the whole transaction the way the general ledger does.
+  const { data: drillDownJournalEntry, isLoading: drillDownLinesLoading } = useQuery({
+    queryKey: ["journal_entry_lines_detail", drillDownEntry?.entryId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("journal_entries")
+        .select("*, journal_lines(*, accounts(account_name, account_code, account_type))")
+        .eq("id", drillDownEntry!.entryId)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!drillDownEntry?.entryId,
+  });
+  const drillDownLines = useMemo(
+    () => [...(drillDownJournalEntry?.journal_lines ?? [])].sort((a: any, b: any) => (a.seq ?? 0) - (b.seq ?? 0)),
+    [drillDownJournalEntry]
+  );
+
   const navigateToSource = (row: RegisterRow) => {
     if (!row.transaction_id) return;
     switch (row.transaction_type) {
@@ -682,7 +703,19 @@ export default function Ledger() {
       {/* Header */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">General Ledger</h1>
+          {searchParams.get("account") && selectedAccount && (
+            <button
+              onClick={() => navigate("/accounting/accounts")}
+              className="text-xs text-muted-foreground hover:text-primary hover:underline mb-1 inline-flex items-center gap-1"
+            >
+              <ChevronLeft className="w-3 h-3" /> Back to Chart of Accounts
+            </button>
+          )}
+          <h1 className="page-title">
+            {searchParams.get("account") && selectedAccount
+              ? `${selectedAccount.account_code} · ${selectedAccount.account_name}`
+              : "General Ledger"}
+          </h1>
           <p className="page-description">Account registers, general ledger report, and subsidiary ledgers</p>
         </div>
       </div>
@@ -714,7 +747,16 @@ export default function Ledger() {
                   <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">Account</label>
                   <select
                     value={selectedAccountId || selectedAccount?.id || ""}
-                    onChange={(e) => { setSelectedAccountId(e.target.value); setPage(0); }}
+                    onChange={(e) => {
+                      const nextId = e.target.value;
+                      setSelectedAccountId(nextId);
+                      setPage(0);
+                      setSearchParams((prev) => {
+                        const next = new URLSearchParams(prev);
+                        next.set("account", nextId);
+                        return next;
+                      }, { replace: true });
+                    }}
                     className="w-full text-sm border border-input rounded-lg px-3 py-2.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
                   >
                     {accountsByType.map(([type, accs]) => (
@@ -1217,7 +1259,7 @@ export default function Ledger() {
 
       {/* ═══ Drill-Down Dialog ═══ */}
       <Dialog open={!!drillDownEntry} onOpenChange={() => setDrillDownEntry(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${txnTypeBadge[drillDownEntry?.transactionType || ""] || txnTypeBadge["Journal Entry"]}`}>
@@ -1293,6 +1335,61 @@ export default function Ledger() {
               <div>
                 <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Memo / Description</p>
                 <p className="text-sm text-foreground bg-muted/30 rounded-lg px-3 py-2">{drillDownEntry.memo}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Journal Entry — Full Double Entry</p>
+                <div className="border border-border rounded-lg overflow-hidden overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted/40">
+                      <tr>
+                        <th className="text-left px-2 py-1.5 font-semibold text-muted-foreground">Account</th>
+                        <th className="text-left px-2 py-1.5 font-semibold text-muted-foreground">Memo</th>
+                        <th className="text-right px-2 py-1.5 font-semibold text-muted-foreground w-24">Debit</th>
+                        <th className="text-right px-2 py-1.5 font-semibold text-muted-foreground w-24">Credit</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {drillDownLinesLoading ? (
+                        <tr><td colSpan={4} className="px-2 py-3 text-center text-muted-foreground">Loading…</td></tr>
+                      ) : drillDownLines.length === 0 ? (
+                        <tr><td colSpan={4} className="px-2 py-3 text-center text-muted-foreground">No lines found</td></tr>
+                      ) : (
+                        drillDownLines.map((line: any) => {
+                          const isThisLine = line.id === drillDownEntry.id;
+                          return (
+                            <tr key={line.id} className={`border-t border-border/50 ${isThisLine ? "bg-primary/5 font-semibold" : ""}`}>
+                              <td className="px-2 py-1.5 text-foreground whitespace-nowrap">
+                                {line.accounts?.account_code} · {line.accounts?.account_name}
+                              </td>
+                              <td className="px-2 py-1.5 text-muted-foreground truncate max-w-[160px]" title={line.memo || ""}>
+                                {line.memo || "—"}
+                              </td>
+                              <td className="text-right px-2 py-1.5 font-mono">
+                                {Number(line.debit) > 0 ? Number(line.debit).toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}
+                              </td>
+                              <td className="text-right px-2 py-1.5 font-mono">
+                                {Number(line.credit) > 0 ? Number(line.credit).toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                    {drillDownLines.length > 0 && (
+                      <tfoot>
+                        <tr className="border-t-2 border-border bg-muted/20">
+                          <td colSpan={2} className="px-2 py-1.5 font-semibold text-foreground text-right">Totals</td>
+                          <td className="text-right px-2 py-1.5 font-mono font-semibold">
+                            {drillDownLines.reduce((s: number, l: any) => s + Number(l.debit || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="text-right px-2 py-1.5 font-mono font-semibold">
+                            {drillDownLines.reduce((s: number, l: any) => s + Number(l.credit || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-muted/30 rounded-lg px-3 py-2 text-center">

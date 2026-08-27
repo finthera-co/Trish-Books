@@ -27,6 +27,8 @@ interface AuthContextType {
   signUp: (email: string, password: string, firstName: string, lastName: string, tenantId?: string) => Promise<{ error: Error | null }>;
   /** `automatic: true` for a sign-out the user did not ask for (idle timeout): it keeps sticky drafts. */
   signOut: (opts?: { automatic?: boolean }) => Promise<void>;
+  /** Re-read the profile row for the current session (after a self-edit). */
+  refreshAppUser: () => Promise<void>;
   isSuperAdmin: boolean;
   isCompanyAdmin: boolean;
   isPrimaryAdmin: boolean;
@@ -206,6 +208,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await clearAllCache();
   };
 
+  /**
+   * Pull the profile row again for whoever is signed in. Used after the user
+   * edits their own name on /profile so the top nav reflects it at once.
+   * Deliberately does not touch `loading` — flipping it would make
+   * ProtectedRoute swap the whole tree for its spinner and unmount the page.
+   */
+  const refreshAppUser = async () => {
+    const authUserId = session?.user?.id;
+    if (!authUserId) return;
+    await fetchAppUser(authUserId);
+  };
+
   // Unattended machine: end the session rather than leave the ledgers open.
   const handleIdle = useCallback(() => {
     setSignOutReason("idle");
@@ -221,7 +235,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={{
       user, appUser, session, loading,
-      signIn, signUp, signOut,
+      signIn, signUp, signOut, refreshAppUser,
       isSuperAdmin, isCompanyAdmin, isPrimaryAdmin, isEmployee,
     }}>
       {children}

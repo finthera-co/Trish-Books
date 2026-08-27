@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { BookOpen, List, ExternalLink, Edit2, PenLine, Plus, Power, Trash2, DollarSign, FolderInput, Copy, History, Download } from "lucide-react";
+import { BookOpen, List, ExternalLink, Edit2, PenLine, Plus, Power, Trash2, DollarSign, FolderInput, Copy, History, Download, FileText } from "lucide-react";
 import {
   ContextMenuContent,
   ContextMenuItem,
@@ -19,7 +19,7 @@ import {
   type MappableAccount,
 } from "@/lib/accountMappingEngine";
 import { useMyPermissions } from "@/hooks/usePermissions";
-import { isOpeningBalanceEligible } from "@/lib/accountTypes";
+import { isOpeningBalanceEligible, getStatementPlacement } from "@/lib/accountTypes";
 import { exportAccountTransactionsCsv, exportAccountTransactionsExcel } from "@/lib/accountTransactionsExport";
 import RunReportSubmenu from "./RunReportSubmenu";
 import QuickCreateSubmenu from "./QuickCreateSubmenu";
@@ -69,8 +69,13 @@ interface AccountContextMenuProps<T extends AccountLike> {
  * Phase 3: Set Opening Balance, Move Account, Duplicate Account — all inside
  * the `canEdit` (accounts) group alongside Edit/Add Sub-account.
  *
- * Phase 4: Account History and Export Transactions — both read-only, so they
- * sit in the always-visible group rather than behind `canEdit`.
+ * Phase 4: Edit History (audit trail of changes to the account record) and
+ * Export Transactions — both read-only, so they sit in the always-visible
+ * group rather than behind `canEdit`.
+ *
+ * Phase 5: a primary "Account History" (balance sheet, postable) / "Run
+ * Report" (everything else) item at the top, mirroring the QBO-style primary
+ * Action-column link added to the COA table rows.
  */
 export default function AccountContextMenu<T extends AccountLike>({
   account,
@@ -97,6 +102,17 @@ export default function AccountContextMenu<T extends AccountLike>({
   const subledgerRoute = isControlled ? mapAccountRoute(account, accountsMap) : null;
   const subledgerModule = getModuleLabel(account, accountsMap);
   const childCheck = onAddChild ? canCreateChildUnder(account, accountsMap) : null;
+
+  // Balance sheet accounts that can be posted to directly get the register
+  // (running balance, transaction-by-transaction). Everything else — Income/
+  // Expense accounts, and any non-postable parent/summary account that only
+  // rolls up its children — gets the transaction report instead.
+  const isBalanceSheetPostable =
+    getStatementPlacement(account.account_type ?? "") === "Balance Sheet" && account.is_postable !== false;
+  const handlePrimaryAction = () => {
+    if (isBalanceSheetPostable) navigate(`/accounting/ledger?account=${account.id}`);
+    else onGenerateReport(account);
+  };
 
   const canEnterJournalEntry = account.is_active !== false && account.is_postable !== false && canEditModule("journals");
 
@@ -137,6 +153,13 @@ export default function AccountContextMenu<T extends AccountLike>({
 
   return (
     <ContextMenuContent className={className ?? "w-56"}>
+      <ContextMenuItem onClick={handlePrimaryAction}>
+        {isBalanceSheetPostable ? (
+          <><BookOpen className="w-4 h-4 mr-2" /> Account History</>
+        ) : (
+          <><FileText className="w-4 h-4 mr-2" /> Run Report</>
+        )}
+      </ContextMenuItem>
       <ContextMenuItem onClick={handleOpenLedger}>
         <BookOpen className="w-4 h-4 mr-2" /> Open Ledger
       </ContextMenuItem>
@@ -151,7 +174,7 @@ export default function AccountContextMenu<T extends AccountLike>({
       )}
       {onViewHistory && (
         <ContextMenuItem onClick={() => onViewHistory(account)}>
-          <History className="w-4 h-4 mr-2" /> Account History
+          <History className="w-4 h-4 mr-2" /> Edit History
         </ContextMenuItem>
       )}
       <ContextMenuSub>

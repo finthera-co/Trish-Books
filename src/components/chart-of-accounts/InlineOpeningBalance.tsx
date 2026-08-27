@@ -43,19 +43,31 @@ export default function InlineOpeningBalance({
   const moduleName = getControlAccountModule(subledger_type);
   const moduleRoute = getControlAccountRoute(subledger_type);
 
-  // Ineligible account types cannot have opening balances
+  // Income/Expense accounts cannot have an OPENING balance (they reset each
+  // fiscal year), but they do have a period balance — and this column is the
+  // account's balance, not its opening balance. Showing "N/A" here hid every
+  // P&L figure in the Chart of Accounts; show the period movement read-only
+  // instead, with the tooltip explaining why it isn't editable.
   if (!isOpeningBalanceEligible(accountType)) {
     return (
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/60 cursor-help">
-              <Info className="w-3 h-3" />
-              N/A
+            <span className="inline-flex items-center gap-1 text-sm text-foreground/80 cursor-help justify-end">
+              {currentBalance ? (
+                <>
+                  {formatCurrency(currentBalance)}{" "}
+                  <span className="text-[10px] text-muted-foreground uppercase">{currentType}</span>
+                </>
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              )}
+              <Info className="w-3 h-3 text-muted-foreground/60" />
             </span>
           </TooltipTrigger>
           <TooltipContent side="left" className="max-w-[260px] text-xs">
-            {OPENING_BALANCE_INELIGIBLE_REASON}
+            <p className="font-medium mb-1">Period balance</p>
+            <p>{OPENING_BALANCE_INELIGIBLE_REASON}</p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>

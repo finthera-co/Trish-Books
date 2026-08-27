@@ -29,6 +29,7 @@ import ModuleDashboard from "./pages/ModuleDashboard";
 import Home from "./pages/Home";
 import DashboardOverview from "./pages/DashboardOverview";
 import Notifications from "./pages/Notifications";
+import Profile from "./pages/Profile";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -188,6 +189,10 @@ const App = () => (
 
                 {/* Notifications feed (all alerts) — available to any signed-in user */}
                 <Route path="/notifications" element={<Notifications />} />
+
+                {/* Own account: name, email, password, 2FA — any signed-in user,
+                    Super Admin included, so it sits outside TenantRoute. */}
+                <Route path="/profile" element={<Profile />} />
 
                 {/* ═══════════════════════════════════════════════════
                     SUPER ADMIN ONLY — Control Plane

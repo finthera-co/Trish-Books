@@ -1,6 +1,5 @@
 import { useNavigate } from "react-router-dom";
 import { Plus, LogOut, User } from "lucide-react";
-import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNotificationsRealtime } from "@/hooks/useNotificationsRealtime";
 import NotificationBell from "@/components/NotificationBell";
@@ -103,7 +102,7 @@ export default function GlobalTopNav() {
               <p className="text-[11px] text-muted-foreground truncate">{appUser?.email}</p>
             </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => toast("My profile is coming soon")}>
+            <DropdownMenuItem onClick={() => navigate("/profile")}>
               <User className="w-3.5 h-3.5 mr-2" /> My profile
             </DropdownMenuItem>
             {!isSuperAdmin && (

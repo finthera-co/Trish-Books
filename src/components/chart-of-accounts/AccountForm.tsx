@@ -383,7 +383,7 @@ export default function AccountForm({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editAccount ? "Edit Account" : duplicateFrom ? "Duplicate Account" : "Create New Account"}</DialogTitle>
           <DialogDescription>
@@ -394,359 +394,367 @@ export default function AccountForm({
                 : "Add a new account to your chart of accounts"}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 pt-2">
-          {/* Account Type */}
-          <div>
-            <label className="text-sm font-medium">Account Type <span className="text-destructive">*</span></label>
-            <select
-              value={draft.accountType}
-              onChange={(e) => {
-                setDraft((d) => ({ ...d, accountType: e.target.value, accountSubtype: "", categoryId: "" }));
-                setShowNewCategory(false);
-                setShowNewSubtype(false);
-                setNewSubtypeName("");
-              }}
-              disabled={editTypeRestriction !== null && !editTypeRestriction.allowed}
-              className={inputClass}
-            >
-              {ACCOUNT_TYPES.map(t => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 pt-2">
+          {/* Left column */}
+          <div className="space-y-4">
+            {/* Account Type */}
+            <div>
+              <label className="text-sm font-medium">Account Type <span className="text-destructive">*</span></label>
+              <select
+                value={draft.accountType}
+                onChange={(e) => {
+                  setDraft((d) => ({ ...d, accountType: e.target.value, accountSubtype: "", categoryId: "" }));
+                  setShowNewCategory(false);
+                  setShowNewSubtype(false);
+                  setNewSubtypeName("");
+                }}
+                disabled={editTypeRestriction !== null && !editTypeRestriction.allowed}
+                className={inputClass}
+              >
+                {ACCOUNT_TYPES.map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
 
-          {/* Category - prominent placement */}
-          <div>
-            <label className="text-sm font-medium">Category <span className="text-destructive">*</span></label>
-            <p className="text-[11px] text-muted-foreground mb-1">
-              e.g. Current Assets, Non-Current Assets, Current Liabilities
-            </p>
-            {!showNewCategory ? (
-              <div className="flex gap-2">
-                <select
-                  value={draft.categoryId}
-                  onChange={(e) => setField("categoryId", e.target.value)}
-                  className={`${inputClass} flex-1`}
-                >
-                  <option value="">— Select category —</option>
-                  {filteredCategories.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-                {onCreateCategory && (
+            {/* Category - prominent placement */}
+            <div>
+              <label className="text-sm font-medium">Category <span className="text-destructive">*</span></label>
+              <p className="text-[11px] text-muted-foreground mb-1">
+                e.g. Current Assets, Non-Current Assets, Current Liabilities
+              </p>
+              {!showNewCategory ? (
+                <div className="flex gap-2">
+                  <select
+                    value={draft.categoryId}
+                    onChange={(e) => setField("categoryId", e.target.value)}
+                    className={`${inputClass} flex-1`}
+                  >
+                    <option value="">— Select category —</option>
+                    {filteredCategories.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                  {onCreateCategory && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-1 shrink-0"
+                      onClick={() => setShowNewCategory(true)}
+                    >
+                      <Plus className="h-4 w-4 mr-1" /> New
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="flex gap-2 mt-1">
+                  <input
+                    type="text"
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    className={`${inputClass} flex-1 !mt-0`}
+                    placeholder={`e.g. Current ${draft.accountType}s`}
+                    autoFocus
+                    onKeyDown={(e) => e.key === "Enter" && handleAddCategory()}
+                  />
                   <Button
                     type="button"
-                    variant="outline"
                     size="sm"
-                    className="mt-1 shrink-0"
-                    onClick={() => setShowNewCategory(true)}
+                    disabled={!newCategoryName.trim() || creatingCategory}
+                    onClick={handleAddCategory}
                   >
-                    <Plus className="h-4 w-4 mr-1" /> New
+                    {creatingCategory ? "..." : "Add"}
                   </Button>
-                )}
-              </div>
-            ) : (
-              <div className="flex gap-2 mt-1">
-                <input
-                  type="text"
-                  value={newCategoryName}
-                  onChange={(e) => setNewCategoryName(e.target.value)}
-                  className={`${inputClass} flex-1 !mt-0`}
-                  placeholder={`e.g. Current ${draft.accountType}s`}
-                  autoFocus
-                  onKeyDown={(e) => e.key === "Enter" && handleAddCategory()}
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={!newCategoryName.trim() || creatingCategory}
-                  onClick={handleAddCategory}
-                >
-                  {creatingCategory ? "..." : "Add"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => { setShowNewCategory(false); setNewCategoryName(""); }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            )}
-          </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => { setShowNewCategory(false); setNewCategoryName(""); }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
+            </div>
 
-          {/* Detail Type (Subtype) — REQUIRED */}
-          <div>
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">
-                Detail Type <span className="text-destructive">*</span>
-              </label>
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs gap-1"
-                  onClick={() => {
-                    const suggestion = suggestSubtypeFromCode(draft.accountCode, draft.accountType);
-                    if (suggestion) setField("accountSubtype", suggestion);
-                  }}
-                  title="Auto-assign based on account number range"
-                >
-                  <Sparkles className="h-3 w-3" /> Quick Setup
-                </Button>
-                {!showNewSubtype && (
+            {/* Detail Type (Subtype) — REQUIRED */}
+            <div>
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">
+                  Detail Type <span className="text-destructive">*</span>
+                </label>
+                <div className="flex items-center gap-1">
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     className="h-7 px-2 text-xs gap-1"
                     onClick={() => {
-                      setNewSubtypeName("");
-                      setShowNewSubtype(true);
+                      const suggestion = suggestSubtypeFromCode(draft.accountCode, draft.accountType);
+                      if (suggestion) setField("accountSubtype", suggestion);
                     }}
-                    title="Add a detail type that isn't in the list"
+                    title="Auto-assign based on account number range"
                   >
-                    <Plus className="h-3 w-3" /> New
+                    <Sparkles className="h-3 w-3" /> Quick Setup
                   </Button>
+                  {!showNewSubtype && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs gap-1"
+                      onClick={() => {
+                        setNewSubtypeName("");
+                        setShowNewSubtype(true);
+                      }}
+                      title="Add a detail type that isn't in the list"
+                    >
+                      <Plus className="h-3 w-3" /> New
+                    </Button>
+                  )}
+                </div>
+              </div>
+              {!showNewSubtype ? (
+                <select
+                  value={draft.accountSubtype}
+                  onChange={(e) => setField("accountSubtype", e.target.value)}
+                  className={`${inputClass} ${!draft.accountSubtype ? "!border-destructive/40" : ""}`}
+                >
+                  <option value="">— Select detail type —</option>
+                  {subtypes.map(st => (
+                    <option key={st} value={st}>{st}</option>
+                  ))}
+                </select>
+              ) : (
+                <div className="flex gap-2 mt-1">
+                  <input
+                    type="text"
+                    value={newSubtypeName}
+                    onChange={(e) => setNewSubtypeName(e.target.value)}
+                    className={`${inputClass} flex-1 !mt-0`}
+                    placeholder={`e.g. custom ${getAccountTypeLabel(draft.accountType).toLowerCase()} detail type`}
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddSubtype();
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!newSubtypeName.trim()}
+                    onClick={handleAddSubtype}
+                  >
+                    Add
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => { setShowNewSubtype(false); setNewSubtypeName(""); }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
+              {!draft.accountSubtype ? (
+                <p className="text-[10px] text-destructive mt-1 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" />
+                  Required — drives statement classification, subledger routing & validations. Use Quick Setup to auto-assign.
+                </p>
+              ) : deriveAccountFlags(draft.accountSubtype).is_control_account ? (
+                <p className="text-[10px] text-warning mt-1 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" />
+                  This detail type creates a control account managed by subledger. Manual posting will be restricted.
+                </p>
+              ) : isCustomSubtype ? (
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Custom detail type — no reserved number band, so the account number is taken
+                  from the next free slot in the {getAccountTypeLabel(draft.accountType)} range
+                  {numberRange ? ` (${numberRange.min}–${numberRange.max})` : ""}.
+                </p>
+              ) : null}
+            </div>
+          </div>
+
+          {/* Right column */}
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              {/* Account Code */}
+              <div>
+                <label className="text-sm font-medium flex items-center gap-1">
+                  Account Number <span className="text-destructive">*</span>
+                  <Lock className="w-3 h-3 text-muted-foreground" />
+                </label>
+                <input
+                  type="text"
+                  value={codeLoading && !draft.accountCode ? "…" : draft.accountCode}
+                  readOnly
+                  className={`${inputClass} bg-muted/50 cursor-not-allowed ${isCodeDuplicate ? "!border-destructive !ring-destructive/20" : ""}`}
+                  placeholder={numberRange ? `${numberRange.min}–${numberRange.max}` : ""}
+                />
+                {isCodeDuplicate ? (
+                  <p className="text-[10px] text-destructive mt-1 font-medium">
+                    This account number already exists
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    {codeLoading ? "Generating…" : "Auto-generated"}
+                  </p>
+                )}
+              </div>
+              {/* Account Name */}
+              <div>
+                <label className="text-sm font-medium">Account Name <span className="text-destructive">*</span></label>
+                <input
+                  type="text"
+                  value={draft.accountName}
+                  onChange={(e) => setField("accountName", e.target.value)}
+                  className={`${inputClass} ${isNameDuplicate ? "!border-destructive !ring-destructive/20" : ""}`}
+                  placeholder="e.g. Cash on Hand"
+                />
+                {isNameDuplicate && (
+                  <p className="text-[10px] text-destructive mt-1 font-medium">
+                    An account with this name already exists in the same place
+                  </p>
                 )}
               </div>
             </div>
-            {!showNewSubtype ? (
-              <select
-                value={draft.accountSubtype}
-                onChange={(e) => setField("accountSubtype", e.target.value)}
-                className={`${inputClass} ${!draft.accountSubtype ? "!border-destructive/40" : ""}`}
+
+            {/* Duplicate / near-duplicate matches from the existing chart */}
+            {(nameMatches.exactSameParent || nameMatches.exactElsewhere.length > 0 || nameMatches.similar.length > 0) && (
+              <div
+                className={`rounded-lg border px-3 py-2 space-y-1.5 ${
+                  isNameDuplicate ? "border-destructive/30 bg-destructive/5" : "border-warning/30 bg-warning/5"
+                }`}
               >
-                <option value="">— Select detail type —</option>
-                {subtypes.map(st => (
-                  <option key={st} value={st}>{st}</option>
+                <p className="text-[11px] font-medium flex items-center gap-1.5 text-foreground">
+                  <AlertTriangle className={`w-3 h-3 ${isNameDuplicate ? "text-destructive" : "text-warning"}`} />
+                  {isNameDuplicate ? "This account already exists" : "Similar accounts already exist"}
+                </p>
+                {[
+                  ...(nameMatches.exactSameParent ? [nameMatches.exactSameParent] : []),
+                  ...nameMatches.exactElsewhere,
+                  ...nameMatches.similar,
+                ].map((a) => (
+                  <div key={a.id} className="flex items-center justify-between gap-2 text-[11px]">
+                    <span className="truncate text-muted-foreground">
+                      <span className="font-mono mr-1.5">{a.account_code}</span>
+                      <span className="text-foreground">{a.account_name}</span>
+                      <span className="ml-1.5">· {getAccountTypeLabel(a.account_type)}</span>
+                      {!a.is_active && <span className="ml-1.5 italic">(inactive)</span>}
+                    </span>
+                    {onUseExisting && (
+                      <button
+                        type="button"
+                        onClick={() => onUseExisting(a)}
+                        className="shrink-0 text-primary hover:underline font-medium"
+                      >
+                        Use this
+                      </button>
+                    )}
+                  </div>
                 ))}
+              </div>
+            )}
+
+            {/* Parent Account */}
+            <div>
+              <label className="text-sm font-medium">Parent Account (optional)</label>
+              <select
+                value={draft.parentId}
+                onChange={(e) => setField("parentId", e.target.value)}
+                className={inputClass}
+              >
+                <option value="">None (top-level)</option>
+                {flattenAccountTree(accounts, {
+                  accountType: draft.accountType,
+                  excludeSubtreeOf: editAccount?.id,
+                }).map(({ account: a, depth }) => {
+                  const check = canCreateChildUnder(a, accountsMap);
+                  const pad = "  ".repeat(depth);
+                  const lvl = a.account_level ?? depth + 1;
+                  return (
+                    <option key={a.id} value={a.id} disabled={!check.allowed}>
+                      {pad}{depth > 0 ? "└ " : ""}{a.account_code} — {a.account_name}
+                      {` · L${lvl}`}
+                      {!check.allowed ? " (max depth)" : ""}
+                    </option>
+                  );
+                })}
               </select>
-            ) : (
-              <div className="flex gap-2 mt-1">
-                <input
-                  type="text"
-                  value={newSubtypeName}
-                  onChange={(e) => setNewSubtypeName(e.target.value)}
-                  className={`${inputClass} flex-1 !mt-0`}
-                  placeholder={`e.g. custom ${getAccountTypeLabel(draft.accountType).toLowerCase()} detail type`}
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleAddSubtype();
-                    }
-                  }}
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={!newSubtypeName.trim()}
-                  onClick={handleAddSubtype}
-                >
-                  Add
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => { setShowNewSubtype(false); setNewSubtypeName(""); }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            )}
-            {!draft.accountSubtype ? (
-              <p className="text-[10px] text-destructive mt-1 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" />
-                Required — drives statement classification, subledger routing & validations. Use Quick Setup to auto-assign.
-              </p>
-            ) : deriveAccountFlags(draft.accountSubtype).is_control_account ? (
-              <p className="text-[10px] text-warning mt-1 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" />
-                This detail type creates a control account managed by subledger. Manual posting will be restricted.
-              </p>
-            ) : isCustomSubtype ? (
+              {parentValidation && !parentValidation.allowed && (
+                <p className="text-[10px] text-destructive mt-1 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" /> {parentValidation.reason}
+                </p>
+              )}
+              {parentValidation?.warning && (
+                <p className="text-[10px] text-warning mt-1 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" /> {parentValidation.warning}
+                </p>
+              )}
+              {missingRequiredParent && (
+                <p className="text-[10px] text-destructive mt-1 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" />
+                  Fixed-asset detail accounts must be linked to a parent control account
+                  so their balance rolls up. Select a Fixed Assets / PP&E parent.
+                </p>
+              )}
               <p className="text-[10px] text-muted-foreground mt-1">
-                Custom detail type — no reserved number band, so the account number is taken
-                from the next free slot in the {getAccountTypeLabel(draft.accountType)} range
-                {numberRange ? ` (${numberRange.min}–${numberRange.max})` : ""}.
+                Sub-accounts inherit the parent's account type and subledger routing.
+                Parents become summary accounts and can no longer be posted to directly.
+                Maximum depth is {MAX_ACCOUNT_DEPTH} levels.
               </p>
-            ) : null}
-          </div>
+            </div>
 
-
-          <div className="grid grid-cols-2 gap-4">
-            {/* Account Code */}
+            {/* Description */}
             <div>
-              <label className="text-sm font-medium flex items-center gap-1">
-                Account Number <span className="text-destructive">*</span>
-                <Lock className="w-3 h-3 text-muted-foreground" />
-              </label>
-              <input
-                type="text"
-                value={codeLoading && !draft.accountCode ? "…" : draft.accountCode}
-                readOnly
-                className={`${inputClass} bg-muted/50 cursor-not-allowed ${isCodeDuplicate ? "!border-destructive !ring-destructive/20" : ""}`}
-                placeholder={numberRange ? `${numberRange.min}–${numberRange.max}` : ""}
+              <label className="text-sm font-medium">Description (optional)</label>
+              <textarea
+                value={draft.description}
+                onChange={(e) => setField("description", e.target.value)}
+                rows={2}
+                className={`${inputClass} resize-none`}
+                placeholder="Internal note about what this account is used for"
               />
-              {isCodeDuplicate ? (
-                <p className="text-[10px] text-destructive mt-1 font-medium">
-                  This account number already exists
-                </p>
-              ) : (
-                <p className="text-[10px] text-muted-foreground mt-1">
-                  {codeLoading ? "Generating…" : "Auto-generated"}
-                </p>
-              )}
-            </div>
-            {/* Account Name */}
-            <div>
-              <label className="text-sm font-medium">Account Name <span className="text-destructive">*</span></label>
-              <input
-                type="text"
-                value={draft.accountName}
-                onChange={(e) => setField("accountName", e.target.value)}
-                className={`${inputClass} ${isNameDuplicate ? "!border-destructive !ring-destructive/20" : ""}`}
-                placeholder="e.g. Cash on Hand"
-              />
-              {isNameDuplicate && (
-                <p className="text-[10px] text-destructive mt-1 font-medium">
-                  An account with this name already exists in the same place
-                </p>
-              )}
             </div>
           </div>
 
-          {/* Duplicate / near-duplicate matches from the existing chart */}
-          {(nameMatches.exactSameParent || nameMatches.exactElsewhere.length > 0 || nameMatches.similar.length > 0) && (
-            <div
-              className={`rounded-lg border px-3 py-2 space-y-1.5 ${
-                isNameDuplicate ? "border-destructive/30 bg-destructive/5" : "border-warning/30 bg-warning/5"
-              }`}
-            >
-              <p className="text-[11px] font-medium flex items-center gap-1.5 text-foreground">
-                <AlertTriangle className={`w-3 h-3 ${isNameDuplicate ? "text-destructive" : "text-warning"}`} />
-                {isNameDuplicate ? "This account already exists" : "Similar accounts already exist"}
-              </p>
-              {[
-                ...(nameMatches.exactSameParent ? [nameMatches.exactSameParent] : []),
-                ...nameMatches.exactElsewhere,
-                ...nameMatches.similar,
-              ].map((a) => (
-                <div key={a.id} className="flex items-center justify-between gap-2 text-[11px]">
-                  <span className="truncate text-muted-foreground">
-                    <span className="font-mono mr-1.5">{a.account_code}</span>
-                    <span className="text-foreground">{a.account_name}</span>
-                    <span className="ml-1.5">· {getAccountTypeLabel(a.account_type)}</span>
-                    {!a.is_active && <span className="ml-1.5 italic">(inactive)</span>}
-                  </span>
-                  {onUseExisting && (
-                    <button
-                      type="button"
-                      onClick={() => onUseExisting(a)}
-                      className="shrink-0 text-primary hover:underline font-medium"
-                    >
-                      Use this
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Parent Account */}
-          <div>
-            <label className="text-sm font-medium">Parent Account (optional)</label>
-            <select
-              value={draft.parentId}
-              onChange={(e) => setField("parentId", e.target.value)}
-              className={inputClass}
-            >
-              <option value="">None (top-level)</option>
-              {flattenAccountTree(accounts, {
-                accountType: draft.accountType,
-                excludeSubtreeOf: editAccount?.id,
-              }).map(({ account: a, depth }) => {
-                const check = canCreateChildUnder(a, accountsMap);
-                const pad = "  ".repeat(depth);
-                const lvl = a.account_level ?? depth + 1;
-                return (
-                  <option key={a.id} value={a.id} disabled={!check.allowed}>
-                    {pad}{depth > 0 ? "└ " : ""}{a.account_code} — {a.account_name}
-                    {` · L${lvl}`}
-                    {!check.allowed ? " (max depth)" : ""}
-                  </option>
-                );
-              })}
-            </select>
-            {parentValidation && !parentValidation.allowed && (
-              <p className="text-[10px] text-destructive mt-1 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" /> {parentValidation.reason}
-              </p>
-            )}
-            {parentValidation?.warning && (
-              <p className="text-[10px] text-warning mt-1 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" /> {parentValidation.warning}
-              </p>
-            )}
-            {missingRequiredParent && (
-              <p className="text-[10px] text-destructive mt-1 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" />
-                Fixed-asset detail accounts must be linked to a parent control account
-                so their balance rolls up. Select a Fixed Assets / PP&E parent.
-              </p>
-            )}
-            <p className="text-[10px] text-muted-foreground mt-1">
-              Sub-accounts inherit the parent's account type and subledger routing.
-              Parents become summary accounts and can no longer be posted to directly.
-              Maximum depth is {MAX_ACCOUNT_DEPTH} levels.
-            </p>
-          </div>
-
-          {/* Description */}
-          <div>
-            <label className="text-sm font-medium">Description (optional)</label>
-            <textarea
-              value={draft.description}
-              onChange={(e) => setField("description", e.target.value)}
-              rows={2}
-              className={`${inputClass} resize-none`}
-              placeholder="Internal note about what this account is used for"
-            />
-          </div>
-
-          {/* Info panel */}
-          <div className="bg-muted/50 rounded-lg px-3 py-2.5 text-xs text-muted-foreground space-y-1">
-            <div className="flex justify-between">
-              <span>Classification:</span>
-              <strong className="text-foreground">{getAccountTypeLabel(draft.accountType, isContraSubtype(draft.accountSubtype))}</strong>
-            </div>
-            <div className="flex justify-between">
-              <span>Normal balance:</span>
-              <strong className="text-foreground">{getNormalBalance(draft.accountType, isContraSubtype(draft.accountSubtype))}</strong>
-            </div>
-            <div className="flex justify-between">
-              <span>Financial statement:</span>
-              <strong className="text-foreground">{getStatementPlacement(draft.accountType)}</strong>
-            </div>
-            {draft.accountSubtype && (
-              <div className="flex justify-between">
-                <span>Detail type:</span>
-                <strong className="text-foreground">{draft.accountSubtype}</strong>
+          {/* Summary + submit */}
+          <div className="md:col-span-2 flex flex-col md:flex-row md:items-end gap-4 border-t border-border pt-4">
+            {/* Info panel */}
+            <div className="flex-1 bg-muted/50 rounded-lg px-3 py-2.5 text-xs text-muted-foreground grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-2">
+              <div>
+                <span className="block text-[10px] uppercase tracking-wide">Classification</span>
+                <strong className="text-foreground">{getAccountTypeLabel(draft.accountType, isContraSubtype(draft.accountSubtype))}</strong>
               </div>
-            )}
-          </div>
+              <div>
+                <span className="block text-[10px] uppercase tracking-wide">Normal balance</span>
+                <strong className="text-foreground">{getNormalBalance(draft.accountType, isContraSubtype(draft.accountSubtype))}</strong>
+              </div>
+              <div>
+                <span className="block text-[10px] uppercase tracking-wide">Financial statement</span>
+                <strong className="text-foreground">{getStatementPlacement(draft.accountType)}</strong>
+              </div>
+              {draft.accountSubtype && (
+                <div>
+                  <span className="block text-[10px] uppercase tracking-wide">Detail type</span>
+                  <strong className="text-foreground">{draft.accountSubtype}</strong>
+                </div>
+              )}
+            </div>
 
-          <Button
-            onClick={handleSubmit}
-            disabled={!draft.accountName || !draft.accountCode || !draft.accountSubtype || isCodeDuplicate || isNameDuplicate || isPending || missingRequiredParent}
-            className="w-full"
-          >
-            {isPending ? "Saving..." : editAccount ? "Update Account" : "Create Account"}
-          </Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={!draft.accountName || !draft.accountCode || !draft.accountSubtype || isCodeDuplicate || isNameDuplicate || isPending || missingRequiredParent}
+              className="w-full md:w-auto md:min-w-[180px] shrink-0"
+            >
+              {isPending ? "Saving..." : editAccount ? "Update Account" : "Create Account"}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

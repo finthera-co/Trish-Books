@@ -844,8 +844,15 @@ export default function ChartOfAccounts() {
 
   // Auto-select the period that contains today (so balances reflect current
   // activity); fall back to the most recent period if none covers today.
+  //
+  // This runs ONCE, gated on a separate flag rather than on `!selectedPeriodId`.
+  // "All periods" is the empty string, so keying off falsiness made the effect
+  // re-fire the moment the user picked it and snap the selector straight back
+  // to the current period — "All periods" was unreachable, and with it every
+  // balance dated outside the current fiscal year.
+  const [periodInitialized, setPeriodInitialized] = useState(false);
   useEffect(() => {
-    if (periods?.length && !selectedPeriodId) {
+    if (periods?.length && !periodInitialized) {
       const today = new Date().toISOString().slice(0, 10);
       const current = periods.find(
         (p: any) => p.period_start <= today && today <= p.period_end
@@ -854,8 +861,9 @@ export default function ChartOfAccounts() {
         b.period_end.localeCompare(a.period_end)
       )[0];
       setSelectedPeriodId((current ?? latest).id);
+      setPeriodInitialized(true);
     }
-  }, [periods, selectedPeriodId]);
+  }, [periods, periodInitialized]);
 
   // Ensure the single system account (Opening Balance Equity) exists. No bulk seeding.
   const [obeEnsured, setObeEnsured] = useState(false);
@@ -931,14 +939,20 @@ export default function ChartOfAccounts() {
   const movementsMap = useMemo(() => {
     const combined = new Map<string, { debit: number; credit: number }>();
     for (const account of (accounts as Account[] | undefined) || []) {
-      const src = isPeriodBasedAccount(account.account_type)
+      // P&L accounts normally show movement WITHIN the selected period, since
+      // they reset each fiscal year. But with "All periods" chosen there is no
+      // window to scope to, and usePeriodAccountMovements is disabled — which
+      // left every Income/Expense account with no movement source at all and
+      // blanked its balance to "—". Fall back to the lifetime totals there,
+      // which is exactly what "All periods" should mean.
+      const src = isPeriodBasedAccount(account.account_type) && selectedPeriod
         ? periodMovements
         : cumulativeMovements;
       const m = src?.get(account.id);
       if (m) combined.set(account.id, m);
     }
     return combined;
-  }, [accounts, periodMovements, cumulativeMovements]);
+  }, [accounts, periodMovements, cumulativeMovements, selectedPeriod]);
 
   const displayAccounts = useMemo(() => {
     return ((accounts as Account[] | undefined) || []).map((account) =>
