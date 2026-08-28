@@ -503,20 +503,20 @@ export default function Invoices() {
         ) : filtered.length === 0 ? (
           <p className="text-center py-8 text-muted-foreground">No invoices found</p>
         ) : (
-          <div className="border border-border rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="border border-border rounded-lg overflow-x-auto">
+            <table className="w-full min-w-[1100px] text-sm">
               <thead className="bg-muted/50">
                 <tr>
                   <th className="px-4 py-3 w-10"><Checkbox checked={allFilteredSelected} onCheckedChange={toggleAll} aria-label="Select all" /></th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Invoice</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Customer</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Date</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Due Date</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
-                  <th className="px-4 py-3 text-right font-medium text-muted-foreground">Total</th>
-                  <th className="px-4 py-3 text-right font-medium text-muted-foreground">Paid</th>
-                  <th className="px-4 py-3 text-right font-medium text-muted-foreground">Balance</th>
-                  <th className="px-4 py-3 text-center font-medium text-muted-foreground">Actions</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">Invoice</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">Customer</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">Date</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">Due Date</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">Status</th>
+                  <th className="px-4 py-3 text-right font-medium text-muted-foreground whitespace-nowrap">Total</th>
+                  <th className="px-4 py-3 text-right font-medium text-muted-foreground whitespace-nowrap">Paid</th>
+                  <th className="px-4 py-3 text-right font-medium text-muted-foreground whitespace-nowrap">Balance</th>
+                  <th className="px-4 py-3 text-center font-medium text-muted-foreground whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -541,10 +541,10 @@ export default function Invoices() {
                         </button>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{(inv.customers as any)?.name || "-"}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{formatDate(inv.issue_date)}</td>
-                      <td className="px-4 py-3 text-muted-foreground">
+                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(inv.issue_date)}</td>
+                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                         <div className="flex items-center gap-2">
-                          <span>{inv.due_date || "-"}</span>
+                          <span>{formatDate(inv.due_date)}</span>
                           {(() => {
                             const hint = dueHint(inv);
                             if (!hint) return null;
@@ -591,23 +591,20 @@ export default function Invoices() {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-right text-foreground">{formatCurrency(Number(inv.total_amount), inv.currency)}</td>
-                      <td className="px-4 py-3 text-right text-foreground">
+                      <td className="px-4 py-3 text-right text-foreground whitespace-nowrap">{formatCurrency(Number(inv.total_amount), inv.currency)}</td>
+                      <td className="px-4 py-3 text-right text-foreground whitespace-nowrap">
                         {inv.amount_paid > 0 ? formatCurrency(inv.amount_paid, inv.currency) : "—"}
                       </td>
-                      <td className={`px-4 py-3 text-right font-semibold ${inv.balance_due > 0 ? "text-destructive" : "text-primary"}`}>
+                      <td className={`px-4 py-3 text-right font-semibold whitespace-nowrap ${inv.balance_due > 0 ? "text-destructive" : "text-primary"}`}>
                         {formatCurrency(inv.balance_due, inv.currency)}
                       </td>
-                      <td className="px-4 py-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
+                      <td className="px-4 py-3 text-center whitespace-nowrap">
+                        <div className="flex flex-nowrap items-center justify-center gap-1">
                           <Button variant="ghost" size="sm" title="View invoice" onClick={() => setViewInvoice(inv)}>
                             <Eye className="w-4 h-4" />
                           </Button>
                           <Button variant="ghost" size="sm" title="Payments, approvals & attachments" onClick={() => { setSelectedInvoice(inv); setDetailsOpen(true); }}>
                             <FileText className="w-4 h-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm" title="Download PDF" onClick={() => handleDownload(inv)} disabled={processing}>
-                            <Download className="w-4 h-4" />
                           </Button>
                           {isDraft && (
                             <Button
