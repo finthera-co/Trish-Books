@@ -25,6 +25,7 @@ export interface ReportCompany {
   tax_id: string | null;
   registration_number: string | null;
   logo_url: string | null;
+  financial_year_end: number;
 }
 
 /**
@@ -41,7 +42,7 @@ export function useReportCompany() {
     queryFn: async (): Promise<ReportCompany | null> => {
       const { data, error } = await supabase
         .from("tenants")
-        .select("company_name, address, phone, tax_id, registration_number, logo_url")
+        .select("company_name, address, phone, tax_id, registration_number, logo_url, financial_year_end")
         .eq("id", appUser!.tenant_id)
         .maybeSingle();
       if (error) throw error;
@@ -55,6 +56,38 @@ export function formatReportDate(iso?: string | null): string {
   if (!iso) return "—";
   const d = parseISO(iso);
   return isValid(d) ? formatDate(d) : iso;
+}
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+const ORDINALS: Record<number, string> = { 1: "1st", 2: "2nd", 3: "3rd", 21: "21st", 22: "22nd", 23: "23rd", 31: "31st" };
+
+/** The last calendar day of `month` (1-12) — every fiscal year in this system
+ * ends on the last day of its year-end month, never a fixed day-of-month. */
+function lastDayOfMonth(month: number, year: number): number {
+  return new Date(year, month, 0).getDate();
+}
+
+/**
+ * "As At 31st March" / "For the Year Ended 31st March" — driven by the
+ * tenant's actual financial_year_end (ReportCompany), not a hardcoded month.
+ * Every statement was previously seeded with "31st March" as a fixed string
+ * regardless of the tenant's real fiscal year end; this is now computed at
+ * render time so changing the setting doesn't require reseeding. Callers
+ * append the year themselves (matching the existing
+ * `${periodCaption} ${year}` convention) — the day-of-month ordinal uses the
+ * current calendar year for its leap-year check, which only ever affects a
+ * 28th-vs-29th-February edge case cosmetically, not which year gets shown.
+ */
+export function fiscalYearCaption(kind: "as_at" | "for_year_ended", financialYearEnd: number): string {
+  const day = lastDayOfMonth(financialYearEnd, new Date().getFullYear());
+  const ordinal = ORDINALS[day] ?? `${day}th`;
+  const monthName = MONTH_NAMES[financialYearEnd - 1] ?? "March";
+  const prefix = kind === "as_at" ? "As At" : "For the Year Ended";
+  return `${prefix} ${ordinal} ${monthName}`;
 }
 
 /** One scope/filter fact shown under the period line. */

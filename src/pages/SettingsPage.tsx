@@ -36,6 +36,7 @@ export default function SettingsPage() {
   const [address, setAddress] = useState("");
   const [phone, setPhone] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
+  const [financialYearEnd, setFinancialYearEnd] = useState(3);
   const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -50,6 +51,7 @@ export default function SettingsPage() {
       setAddress(tenant.address || "");
       setPhone(tenant.phone || "");
       setLogoUrl(tenant.logo_url || "");
+      setFinancialYearEnd(tenant.financial_year_end ?? 3);
     }
   }, [tenant]);
 
@@ -159,6 +161,7 @@ export default function SettingsPage() {
         address: address.trim() || null,
         phone: phone.trim() || null,
         logo_url: logoUrl || null,
+        financial_year_end: financialYearEnd,
       })
       .eq("id", appUser.tenant_id)
       .select("id");
@@ -238,6 +241,18 @@ export default function SettingsPage() {
                   ? "TIN should be 9 digits (IRD VAT tax invoice requirement)."
                   : "Supplier TIN — 9 digits. Printed on the statutory tax invoice."}
               </p>
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground">Financial Year End</label>
+              <select
+                value={financialYearEnd}
+                onChange={(e) => setFinancialYearEnd(Number(e.target.value))}
+                className="mt-1 w-full text-sm border rounded-md px-3 py-2 bg-background text-foreground"
+              >
+                {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+                  .map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+              </select>
+              <p className="mt-1 text-xs text-muted-foreground">Determines the "As At" / "For the Year Ended" date shown on financial statements.</p>
             </div>
             <div>
               <label className="text-sm text-muted-foreground">Address</label>

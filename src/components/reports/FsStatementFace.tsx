@@ -13,7 +13,7 @@ import {
   useFsStatement, useFsCoverage, useFsStatementMeta, useFsStatementAccounts,
   useSeedFsStatement, type FsStatementAccount,
 } from "@/hooks/useFinancialStatements";
-import { ReportMasthead, formatReportDate, useReportCompany } from "@/components/reports/ReportMasthead";
+import { ReportMasthead, formatReportDate, useReportCompany, fiscalYearCaption } from "@/components/reports/ReportMasthead";
 import { exportSociCsv, exportSociPdf } from "@/lib/fsStatementExport";
 import { downloadSociWorkbook } from "@/lib/fsStatementWorkbook";
 import { fmtStatement, fmtEps, fmtMargin, rowClasses } from "@/lib/fsStatementModel";
@@ -140,7 +140,7 @@ export default function FsStatementFace({ statementCode, fallbackTitle, subtitle
       userId: appUser?.id,
       statementCode,
       title: meta?.title ?? fallbackTitle,
-      periodCaption: meta?.period_caption,
+      periodCaption: fiscalYearCaption(pointInTime ? "as_at" : "for_year_ended", company?.financial_year_end ?? 3),
       dateFrom: effectiveDateFrom,
       dateTo: effectiveDateTo,
       cmpDateFrom: effectiveCmpFrom,
@@ -285,9 +285,7 @@ export default function FsStatementFace({ statementCode, fallbackTitle, subtitle
         <ReportMasthead
           title={meta?.title ?? fallbackTitle}
           subtitle={subtitle}
-          periodCaption={pointInTime
-            ? `${meta?.period_caption ?? "As At"} ${new Date(effectiveDateTo).getFullYear()}`
-            : `${meta?.period_caption ?? "For the Year Ended 31st March"} ${new Date(effectiveDateTo).getFullYear()}`}
+          periodCaption={`${fiscalYearCaption(pointInTime ? "as_at" : "for_year_ended", company?.financial_year_end ?? 3)} ${new Date(effectiveDateTo).getFullYear()}`}
           currency="LKR"
           scope={[
             pointInTime

@@ -179,6 +179,10 @@ export default function JournalEntries() {
   const locationTrackingEnabled = !!accountSettings?.location_tracking_enabled;
   const locationLabel = accountSettings?.location_label || "Location";
   const [locationId, setLocationId] = useState("");
+  // Read by rpc_changes_in_equity's Prior Year Adjustment row (Statement of
+  // Changes in Equity) — untagged equity movements still tie out, they just
+  // land under "Other Movements" instead of being labelled.
+  const [isPriorYearAdjustment, setIsPriorYearAdjustment] = useState(false);
   const { data: accountCategories } = useAccountCategories();
   const createAccount = useCreateAccount();
   const createAccountCategory = useCreateAccountCategory();
@@ -475,6 +479,7 @@ export default function JournalEntries() {
           reference: reference.trim() || undefined,
           cheque_number: chequeNumber.trim() || undefined,
           location_id: locationId || undefined,
+          is_prior_year_adjustment: isPriorYearAdjustment,
           lines: activeLines,
         });
       } catch (e) {
@@ -518,6 +523,7 @@ export default function JournalEntries() {
     setLines(blank.lines);
     setAmountDrafts({});
     setLocationId("");
+    setIsPriorYearAdjustment(false);
   };
 
   const handleCreate = async () => {
@@ -741,6 +747,16 @@ export default function JournalEntries() {
                     </select>
                   </div>
                 )}
+                <div className="flex items-end pb-2">
+                  <label className="flex items-center gap-1.5 text-sm text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={isPriorYearAdjustment}
+                      onChange={(e) => setIsPriorYearAdjustment(e.target.checked)}
+                    />
+                    Prior Year Adjustment
+                  </label>
+                </div>
               </div>
 
               {/* Journal Lines */}

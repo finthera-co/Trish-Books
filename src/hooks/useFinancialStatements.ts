@@ -799,11 +799,12 @@ export function useSetFsParameter() {
   });
 }
 
-export interface SoceColumnValues {
-  stated_capital: number;
-  revenue_reserves: number;
-  total: number;
-}
+/** One column per distinct equity account_subtype the tenant actually has,
+ * plus "Total" — dynamic, not a fixed Stated Capital / Revenue Reserves pair
+ * (IAS 1.106 wants a Revaluation Reserve, General Reserve, etc. shown as
+ * their own columns, not folded together). Keyed by the same strings as
+ * SoceResult.columns. */
+export type SoceColumnValues = Record<string, number>;
 
 export interface SoceBlock {
   opening_balance: SoceColumnValues;

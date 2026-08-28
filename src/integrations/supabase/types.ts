@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.17"
   }
   public: {
     Tables: {
@@ -12743,6 +12743,7 @@ export type Database = {
           created_at: string
           deleted_at: string | null
           feature_flags: Json
+          financial_year_end: number
           id: string
           industry: string | null
           logo_url: string | null
@@ -12760,6 +12761,7 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           feature_flags?: Json
+          financial_year_end?: number
           id?: string
           industry?: string | null
           logo_url?: string | null
@@ -12777,6 +12779,7 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           feature_flags?: Json
+          financial_year_end?: number
           id?: string
           industry?: string | null
           logo_url?: string | null
@@ -14047,6 +14050,32 @@ export type Database = {
           account_name: string
         }[]
       }
+      fn_soce_balance_asof: {
+        Args: { p_account_ids: string[]; p_asof: string; p_tenant: string }
+        Returns: number
+      }
+      fn_soce_period_block: {
+        Args: {
+          p_dividend_ids: string[]
+          p_other_equity_ids: string[]
+          p_period_end: string
+          p_period_start: string
+          p_pl_ids: string[]
+          p_stated_capital_ids: string[]
+          p_tenant: string
+        }
+        Returns: Json
+      }
+      fn_soce_period_block_v2: {
+        Args: {
+          p_absorbing: string
+          p_categories: string[]
+          p_period_end: string
+          p_period_start: string
+          p_tenant: string
+        }
+        Returns: Json
+      }
       fs_link_depreciation_account: {
         Args: { p_account_id: string; p_tenant_id: string }
         Returns: undefined
@@ -14575,6 +14604,15 @@ export type Database = {
         }[]
       }
       rpc_apply_loan_repayments: { Args: { p_run_id: string }; Returns: Json }
+      rpc_changes_in_equity: {
+        Args: {
+          p_cmp_period_end?: string
+          p_cmp_period_start?: string
+          p_period_end: string
+          p_period_start: string
+        }
+        Returns: Json
+      }
       rpc_final_settlement: { Args: { p_employee_id: string }; Returns: Json }
       rpc_fs_coverage: {
         Args: {
@@ -14596,6 +14634,8 @@ export type Database = {
         Args: { p_direction: string; p_line_id: string }
         Returns: undefined
       }
+      rpc_fs_seed_cf: { Args: { p_force?: boolean }; Returns: string }
+      rpc_fs_seed_sfp: { Args: { p_force?: boolean }; Returns: string }
       rpc_fs_seed_soci: { Args: { p_force?: boolean }; Returns: string }
       rpc_fs_statement: {
         Args: {
@@ -14873,6 +14913,15 @@ export type Database = {
         Returns: Json
       }
       unvoid_journal_entry: { Args: { p_entry_id: string }; Returns: Json }
+      update_my_profile: {
+        Args: { p_first_name?: string; p_last_name?: string }
+        Returns: {
+          email: string
+          first_name: string
+          id: string
+          last_name: string
+        }[]
+      }
       validate_pcv_line_account: {
         Args: {
           p_account_id: string

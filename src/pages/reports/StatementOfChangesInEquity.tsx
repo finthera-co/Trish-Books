@@ -3,7 +3,7 @@ import { Download, FileText, FileSpreadsheet, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useChangesInEquity, type SoceBlock } from "@/hooks/useFinancialStatements";
-import { ReportMasthead, formatReportDate, useReportCompany } from "@/components/reports/ReportMasthead";
+import { ReportMasthead, formatReportDate, useReportCompany, fiscalYearCaption } from "@/components/reports/ReportMasthead";
 import { downloadDataPdf } from "@/lib/reportPdf";
 import { downloadDataExcel } from "@/lib/reportExcel";
 
@@ -43,6 +43,13 @@ function blockRows(block: SoceBlock): MatrixRow[] {
   ];
 }
 
+/** Every non-Total column name the RPC actually returned, in the order it
+ * returned them — the RPC already orders Stated Capital first, then the
+ * retained-earnings-equivalent column, then everything else alphabetically. */
+function columnNames(columns: string[]): string[] {
+  return columns.filter((c) => c !== "Total");
+}
+
 export default function StatementOfChangesInEquity() {
   const { appUser } = useAuth();
   const [periodStart, setPeriodStart] = useState(defaultYearStart);
@@ -53,13 +60,18 @@ export default function StatementOfChangesInEquity() {
   const { data: company } = useReportCompany();
   const { data, isLoading, error } = useChangesInEquity(periodStart, periodEnd, cmpPeriodStart, cmpPeriodEnd);
 
+  const cols = useMemo(() => (data ? columnNames(data.columns) : []), [data]);
+
   const exportRows = useMemo(() => {
     if (!data) return [];
-    type Row = { period: string; label: string; stated_capital: number | null; revenue_reserves: number | null; total: number | null };
+    type Row = { period: string; label: string } & Record<string, number | string | null>;
     const rows: Row[] = [];
     const add = (periodLabel: string, block: SoceBlock) => {
       for (const r of blockRows(block)) {
-        rows.push({ period: periodLabel, label: r.label, stated_capital: r.values?.stated_capital ?? null, revenue_reserves: r.values?.revenue_reserves ?? null, total: r.values?.total ?? null });
+        const row: Row = { period: periodLabel, label: r.label };
+        for (const c of cols) row[c] = r.values?.[c] ?? null;
+        row.Total = r.values?.Total ?? null;
+        rows.push(row);
       }
     };
     add(`${formatReportDate(periodStart)} – ${formatReportDate(periodEnd)}`, data.current_period);
@@ -67,7 +79,7 @@ export default function StatementOfChangesInEquity() {
       add(`${formatReportDate(cmpPeriodStart)} – ${formatReportDate(cmpPeriodEnd)}`, data.comparative_period);
     }
     return rows;
-  }, [data, periodStart, periodEnd, cmpPeriodStart, cmpPeriodEnd]);
+  }, [data, cols, periodStart, periodEnd, cmpPeriodStart, cmpPeriodEnd]);
 
   const exportMetaBase = {
     companyName: company?.company_name,
@@ -81,26 +93,26 @@ export default function StatementOfChangesInEquity() {
     preparedBy: [appUser?.first_name, appUser?.last_name].filter(Boolean).join(" "),
   };
 
-  const columns = [
+  const exportColumns = useMemo(() => [
     { header: "Period", value: (r: any) => r.period },
     { header: "Movement", value: (r: any) => r.label },
-    { header: "Stated Capital", numeric: true, value: (r: any) => r.stated_capital },
-    { header: "Revenue Reserves", numeric: true, value: (r: any) => r.revenue_reserves },
-    { header: "Total", numeric: true, value: (r: any) => r.total },
-  ];
+    ...cols.map((c) => ({ header: c, numeric: true, value: (r: any) => r[c] })),
+    { header: "Total", numeric: true, value: (r: any) => r.Total },
+  ], [cols]);
 
-  const exportPdf = () => downloadDataPdf({ ...exportMetaBase, fileName: "statement-of-changes-in-equity.pdf" }, columns, exportRows);
-  const exportExcel = () => downloadDataExcel({ ...exportMetaBase, fileName: "statement-of-changes-in-equity.xlsx" }, columns, exportRows);
+  const exportPdf = () => downloadDataPdf({ ...exportMetaBase, fileName: "statement-of-changes-in-equity.pdf" }, exportColumns, exportRows);
+  const exportExcel = () => downloadDataExcel({ ...exportMetaBase, fileName: "statement-of-changes-in-equity.xlsx" }, exportColumns, exportRows);
 
   const renderBlock = (title: string, block: SoceBlock) => (
     <div className="mb-6">
       <p className="font-semibold text-sm text-foreground mb-2">{title}</p>
-      <table className="w-full text-sm max-w-2xl report-table">
+      <table className="w-full text-sm report-table">
         <thead>
           <tr className="border-b-2 border-foreground/30">
             <th className="text-left py-1.5 font-semibold text-xs uppercase tracking-wide text-muted-foreground"></th>
-            <th className="text-right py-1.5 font-semibold text-xs uppercase tracking-wide text-muted-foreground w-32">Stated Capital</th>
-            <th className="text-right py-1.5 font-semibold text-xs uppercase tracking-wide text-muted-foreground w-32">Revenue Reserves</th>
+            {cols.map((c) => (
+              <th key={c} className="text-right py-1.5 font-semibold text-xs uppercase tracking-wide text-muted-foreground w-32">{c}</th>
+            ))}
             <th className="text-right py-1.5 font-semibold text-xs uppercase tracking-wide text-muted-foreground w-32">Total</th>
           </tr>
         </thead>
@@ -108,9 +120,10 @@ export default function StatementOfChangesInEquity() {
           {blockRows(block).map((r) => (
             <tr key={r.label} className={r.emphasis === "total" ? "font-bold border-t-2 border-double border-foreground/60" : ""}>
               <td className="py-1.5 pr-2 text-foreground">{r.label}</td>
-              <td className="py-1.5 text-right font-mono tabular-nums">{fmt(r.values?.stated_capital)}</td>
-              <td className="py-1.5 text-right font-mono tabular-nums">{fmt(r.values?.revenue_reserves)}</td>
-              <td className="py-1.5 text-right font-mono tabular-nums">{fmt(r.values?.total)}</td>
+              {cols.map((c) => (
+                <td key={c} className="py-1.5 text-right font-mono tabular-nums">{fmt(r.values?.[c])}</td>
+              ))}
+              <td className="py-1.5 text-right font-mono tabular-nums">{fmt(r.values?.Total)}</td>
             </tr>
           ))}
         </tbody>
@@ -160,7 +173,7 @@ export default function StatementOfChangesInEquity() {
         <ReportMasthead
           title="Statement Of Changes In Equity"
           subtitle="Stated Capital and Revenue Reserves"
-          periodCaption={`For the Year Ended ${new Date(periodEnd).getFullYear()}`}
+          periodCaption={`${fiscalYearCaption("for_year_ended", company?.financial_year_end ?? 3)} ${new Date(periodEnd).getFullYear()}`}
           currency="LKR"
           scope={[
             { label: "Reporting period", value: `${formatReportDate(periodStart)} to ${formatReportDate(periodEnd)}` },
@@ -182,13 +195,14 @@ export default function StatementOfChangesInEquity() {
         ) : !data ? (
           <div className="text-center py-16 text-muted-foreground">No data for this period.</div>
         ) : (
-          <div className="max-w-2xl mx-auto">
+          <div className="overflow-x-auto">
             {renderBlock(`${new Date(periodStart).getFullYear()}/${new Date(periodEnd).getFullYear()}`, data.current_period)}
             {data.comparative_period && cmpPeriodStart && cmpPeriodEnd &&
               renderBlock(`${new Date(cmpPeriodStart).getFullYear()}/${new Date(cmpPeriodEnd).getFullYear()}`, data.comparative_period)}
             <p className="text-xs text-muted-foreground mt-4">
-              Prior Year Adjustment is not currently tracked as a distinct entry type in this system, so it always reads zero;
-              any unclassified equity movement is captured under "Other Movements" instead.
+              Prior Year Adjustment reflects journal entries tagged as such when posted (see the "Prior Year Adjustment"
+              checkbox on the New Journal Entry form). Any equity movement not explicitly tagged as a prior year
+              adjustment, profit, or dividend is captured under "Other Movements" instead.
             </p>
           </div>
         )}

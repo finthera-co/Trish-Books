@@ -40,6 +40,11 @@ interface RequestBody {
   cheque_number?: string | null;
   /** Optional Location tag -> journal_entries.location_id (whole-transaction dimension). */
   location_id?: string | null;
+  /** Tags the entry entry_type = 'prior_year_adjustment' instead of 'manual' —
+   * read by rpc_changes_in_equity's Prior Year Adjustment row (Statement of
+   * Changes in Equity). Without this tag every equity movement falls into
+   * "Other Movements" instead, which still ties out but isn't labelled. */
+  is_prior_year_adjustment?: boolean;
   lines: JournalLine[];
 }
 
@@ -106,7 +111,7 @@ Deno.serve(async (req) => {
     if (blocked) return blocked;
 
     const body: RequestBody = await req.json();
-    const { description, entry_date, reference, cheque_number, location_id, lines } = body;
+    const { description, entry_date, reference, cheque_number, location_id, is_prior_year_adjustment, lines } = body;
     const chequeNumber = (cheque_number ?? "").trim() || null;
 
     const errors: { field: string; message: string }[] = [];
@@ -344,6 +349,7 @@ Deno.serve(async (req) => {
         location_id: location_id || null,
         created_by: appUser.id,
         status: "draft",
+        entry_type: is_prior_year_adjustment ? "prior_year_adjustment" : "manual",
       })
       .select()
       .single();
