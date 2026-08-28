@@ -61,11 +61,12 @@ export const prettyTerms = (t?: string | null) =>
  * The product name and the line description as the lines to print, dropping
  * whichever one restates the other.
  *
- * A description is very often the product name plus a qualifier
- * ("Accountancy Charges" / "Accountancy Charges - July 2026"), and printing
- * both stacks the same words twice on the document. Only the longer of the
- * two is kept when one begins with the other at a word boundary — an
- * unrelated description still prints under its product name.
+ * A description is very often the product name wrapped in a qualifier
+ * ("Accountancy Charges" / "Monthly Accountancy Charges August 2026"), and
+ * printing both stacks the same words twice on the document. Only the longer
+ * of the two is kept when it spells the other out in full at word boundaries,
+ * wherever inside it those words fall — an unrelated description still prints
+ * under its product name.
  */
 export function itemCellLines(name: string, desc: string): string[] {
   const n = String(name ?? "").trim();
@@ -76,13 +77,27 @@ export function itemCellLines(name: string, desc: string): string[] {
   const nn = norm(n);
   const nd = norm(d);
   if (nn === nd) return [d];
-  // The remainder after the shared opening must start on a separator, so
-  // "Pen" is not treated as the opening of "Pencil Set".
-  const restates = (long: string, short: string) =>
-    long.startsWith(short) && /^[\s\-–—:,;./(\[]/.test(long.slice(short.length));
   if (restates(nd, nn)) return [d];
   if (restates(nn, nd)) return [n];
   return [n, d];
+}
+
+/** Whitespace or punctuation — what has to sit on each side of the shared words. */
+const WORD_EDGE = /[\s\-–—:,;./()\[\]|&+]/;
+
+/**
+ * `long` contains all of `short` as whole words. The match must be fenced by a
+ * separator (or the string's edge) on both sides, so "Pen" is not read as part
+ * of "Pencil Set".
+ */
+function restates(long: string, short: string): boolean {
+  if (short.length >= long.length) return false;
+  for (let i = long.indexOf(short); i !== -1; i = long.indexOf(short, i + 1)) {
+    const before = i === 0 ? "" : long[i - 1];
+    const after = i + short.length >= long.length ? "" : long[i + short.length];
+    if ((!before || WORD_EDGE.test(before)) && (!after || WORD_EDGE.test(after))) return true;
+  }
+  return false;
 }
 
 /**

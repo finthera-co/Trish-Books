@@ -8,6 +8,12 @@ describe("itemCellLines", () => {
       .toEqual(["Accountancy Charges - July 2026"]);
   });
 
+  it("drops the product name when the description wraps it in qualifiers", () => {
+    // The real 26AUG_CHAW_00078 line: the name is spelled out mid-description.
+    expect(itemCellLines("Accountancy Charges", "Monthly Accountancy Charges August 2026"))
+      .toEqual(["Monthly Accountancy Charges August 2026"]);
+  });
+
   it("collapses an exact duplicate", () => {
     expect(itemCellLines("Hosting", "Hosting")).toEqual(["Hosting"]);
   });
@@ -23,6 +29,11 @@ describe("itemCellLines", () => {
 
   it("does not treat a shared word opening as a restatement", () => {
     expect(itemCellLines("Pen", "Pencil Set")).toEqual(["Pen", "Pencil Set"]);
+  });
+
+  it("does not treat a partial word match inside the description as a restatement", () => {
+    expect(itemCellLines("Pen", "Monthly Pencil Set"))
+      .toEqual(["Pen", "Monthly Pencil Set"]);
   });
 
   it("ignores case and whitespace differences", () => {
@@ -42,7 +53,9 @@ describe("buildItemCell", () => {
     expect(buildItemCell({ products: { name: "Accountancy Charges" }, description: "Accountancy Charges - July 2026" }))
       .toBe("Accountancy Charges - July 2026");
     expect(buildItemCell({ products: { name: "Hosting" }, description: "Annual hosting package" }))
-      .toBe("Hosting\nAnnual hosting package");
+      .toBe("Annual hosting package");
+    expect(buildItemCell({ products: { name: "Hosting" }, description: "Annual server rental" }))
+      .toBe("Hosting\nAnnual server rental");
     expect(buildItemCell({ account: { name: "Sales Revenue" } })).toBe("—");
   });
 });
