@@ -51,16 +51,18 @@ function parseAmount(raw: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** One leg of a split: where part of the line goes, and how much. */
+/** One leg of a split: where part of the line goes, how much, and why. */
 interface Alloc {
   key: string;
   account_id: string;
   amount: string;
+  /** Posted as the journal line's memo, so each part is legible in the ledger. */
+  memo: string;
 }
 
 let allocSeq = 0;
 function blankAlloc(amount = ""): Alloc {
-  return { key: `a${++allocSeq}`, account_id: "", amount };
+  return { key: `a${++allocSeq}`, account_id: "", amount, memo: "" };
 }
 
 function reasonText(l: SuspenseLine): string {
@@ -604,6 +606,7 @@ export default function SuspenseClearing() {
       allocations: allocs.map((a) => ({
         account_id: a.account_id,
         amount: Number((cents(parseAmount(a.amount)) / 100).toFixed(2)),
+        memo: a.memo.trim() || null,
       })),
       note: note || undefined,
     });
@@ -911,7 +914,8 @@ export default function SuspenseClearing() {
               <div className="space-y-2">
                 <Label className="text-sm">Split across accounts</Label>
                 {allocs.map((a, i) => (
-                  <div key={a.key} className="flex items-start gap-2">
+                  <div key={a.key} className="rounded-md border border-border/60 p-2 space-y-2">
+                    <div className="flex items-start gap-2">
                     <div className="flex-1 min-w-0">
                       <AccountCombobox
                         options={postable}
@@ -946,6 +950,17 @@ export default function SuspenseClearing() {
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
+                    </div>
+                    {/* Posted as this leg's memo. Without it the Journal
+                        Entries page captions every part of the split with the
+                        same entry description. */}
+                    <Input
+                      value={a.memo}
+                      onChange={(e) => patchAlloc(a.key, { memo: e.target.value })}
+                      placeholder="What this part is for (optional) — shows on the journal line"
+                      className="h-8 text-xs"
+                      aria-label={`Note for part ${i + 1}`}
+                    />
                   </div>
                 ))}
                 <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -958,7 +973,8 @@ export default function SuspenseClearing() {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   The arrow drops whatever is still unallocated onto that row. Naming the same account twice is fine —
-                  the journal carries one leg per account.
+                  the journal carries one leg per account. The whole split posts as one entry on the{" "}
+                  <strong>Journal Entries</strong> page, a line per account with the note typed against it.
                 </p>
               </div>
             ) : (

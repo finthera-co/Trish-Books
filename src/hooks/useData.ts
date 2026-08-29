@@ -667,6 +667,10 @@ export interface JournalPageRow {
     account_id: string;
     debit: number;
     credit: number;
+    /** The line's own narration; null means it inherits the entry description. */
+    memo: string | null;
+    /** Insertion order — the lines arrive sorted by it, as on the detail page. */
+    seq: number | null;
     accounts: { account_code: string | null; account_name: string | null } | null;
   }>;
 }
