@@ -313,6 +313,9 @@ export default function SuspenseClearing() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [dialogOpen, setDialogOpen] = useState(false);
   const [targetAccount, setTargetAccount] = useState("");
+  // Narration for the reclassified journal line — the Description column of the
+  // Journal Entries page. Distinct from `note`, which annotates the entry.
+  const [targetMemo, setTargetMemo] = useState("");
   const [note, setNote] = useState("");
   const [teachVariant, setTeachVariant] = useState(false);
   // Splitting is a single-line operation: one lump-sum line broken across
@@ -570,6 +573,7 @@ export default function SuspenseClearing() {
       setSplitMode(false);
       setAllocs([]);
       setNewAccountFor(null);
+      setTargetMemo("");
     }
   }, [dialogOpen]);
 
@@ -625,10 +629,12 @@ export default function SuspenseClearing() {
       target_account_id: targetAccount,
       note: note || undefined,
       teach_variant: teachVariant && commonVariant ? commonVariant : undefined,
+      memo: targetMemo.trim() || undefined,
     });
     setDialogOpen(false);
     setSelected(new Set());
     setTargetAccount("");
+    setTargetMemo("");
     setNote("");
     setTeachVariant(false);
   }
@@ -914,53 +920,69 @@ export default function SuspenseClearing() {
               <div className="space-y-2">
                 <Label className="text-sm">Split across accounts</Label>
                 {allocs.map((a, i) => (
-                  <div key={a.key} className="rounded-md border border-border/60 p-2 space-y-2">
-                    <div className="flex items-start gap-2">
-                    <div className="flex-1 min-w-0">
-                      <AccountCombobox
-                        options={postable}
-                        value={a.account_id}
-                        onChange={(id) => patchAlloc(a.key, { account_id: id })}
-                        placeholder={`Ledger account for part ${i + 1}…`}
-                        onCreateNew={() => { setNewAccountFor(a.key); setAccountFormOpen(true); }}
-                        createLabel="Create new ledger account"
+                  <div key={a.key} className="rounded-md border border-border/60 p-2.5 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Part {i + 1}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button" variant="ghost" size="icon" className="h-7 w-7"
+                          onClick={() => fillRemaining(a.key)}
+                          disabled={remainingCents <= 0 && cents(parseAmount(a.amount)) === 0}
+                          title="Put the unallocated balance on this row"
+                        >
+                          <CornerDownLeft className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
+                          onClick={() => removeAlloc(a.key)}
+                          disabled={allocs.length <= 1}
+                          title="Remove this part"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-[1fr_8rem] gap-2">
+                      <div className="space-y-1 min-w-0">
+                        <Label className="text-[11px] text-muted-foreground">Account</Label>
+                        <AccountCombobox
+                          options={postable}
+                          value={a.account_id}
+                          onChange={(id) => patchAlloc(a.key, { account_id: id })}
+                          placeholder="Ledger account…"
+                          onCreateNew={() => { setNewAccountFor(a.key); setAccountFormOpen(true); }}
+                          createLabel="Create new ledger account"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[11px] text-muted-foreground">Amount</Label>
+                        <Input
+                          value={a.amount}
+                          onChange={(e) => patchAlloc(a.key, { amount: e.target.value })}
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          className="h-9 text-right font-mono"
+                          aria-label={`Amount for part ${i + 1}`}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Posted as this leg's memo, which is what the Journal
+                        Entries page prints in its Description column. Without
+                        it every part of the split reads as the same text. */}
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">Description</Label>
+                      <Input
+                        value={a.memo}
+                        onChange={(e) => patchAlloc(a.key, { memo: e.target.value })}
+                        placeholder="What this part is for — e.g. October rent share"
+                        className="h-9 text-sm"
+                        aria-label={`Description for part ${i + 1}`}
                       />
                     </div>
-                    <Input
-                      value={a.amount}
-                      onChange={(e) => patchAlloc(a.key, { amount: e.target.value })}
-                      inputMode="decimal"
-                      placeholder="0.00"
-                      className="w-32 shrink-0 h-9 text-right font-mono"
-                      aria-label={`Amount for part ${i + 1}`}
-                    />
-                    <Button
-                      type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0"
-                      onClick={() => fillRemaining(a.key)}
-                      disabled={remainingCents <= 0 && cents(parseAmount(a.amount)) === 0}
-                      title="Put the unallocated balance on this row"
-                    >
-                      <CornerDownLeft className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-muted-foreground"
-                      onClick={() => removeAlloc(a.key)}
-                      disabled={allocs.length <= 1}
-                      title="Remove this row"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                    </div>
-                    {/* Posted as this leg's memo. Without it the Journal
-                        Entries page captions every part of the split with the
-                        same entry description. */}
-                    <Input
-                      value={a.memo}
-                      onChange={(e) => patchAlloc(a.key, { memo: e.target.value })}
-                      placeholder="What this part is for (optional) — shows on the journal line"
-                      className="h-8 text-xs"
-                      aria-label={`Note for part ${i + 1}`}
-                    />
                   </div>
                 ))}
                 <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -972,9 +994,10 @@ export default function SuspenseClearing() {
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  The arrow drops whatever is still unallocated onto that row. Naming the same account twice is fine —
+                  The arrow drops whatever is still unallocated onto that part. Naming the same account twice is fine —
                   the journal carries one leg per account. The whole split posts as one entry on the{" "}
-                  <strong>Journal Entries</strong> page, a line per account with the note typed against it.
+                  <strong>Journal Entries</strong> page: a line per account, each showing the description typed against
+                  it. Leave a description blank and that line inherits the entry's own description.
                 </p>
               </div>
             ) : (
@@ -999,6 +1022,24 @@ export default function SuspenseClearing() {
               <p className="text-xs text-muted-foreground mt-1">
                 No matching account? Use <strong>New account</strong> to create a ledger account — it appears here selected.
               </p>
+
+              {/* Posted as the reclassified line's memo, which is what the
+                  Journal Entries page prints in its Description column. Blank
+                  leaves the line inheriting the entry's own description. */}
+              <div className="mt-3 space-y-1">
+                <Label className="text-sm">Description</Label>
+                <Input
+                  value={targetMemo}
+                  onChange={(e) => setTargetMemo(e.target.value)}
+                  placeholder="What this is for — e.g. October rent"
+                  className="h-9 text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Shows against this account on the <strong>Journal Entries</strong> page
+                  {selected.size > 1 && <> — the same description goes on all {selected.size} lines</>}. Leave it blank
+                  and the line inherits the entry's own description.
+                </p>
+              </div>
               {/* One line, one lump sum, more than one ledger — the whole
                   reason an item sits in Suspense unresolved. */}
               {soleLine && (

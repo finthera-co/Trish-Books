@@ -14,6 +14,7 @@ import { buildGeneralLedgerRows, getVisibleLeafAccountIds, fmtAmt, fmtBal } from
 import { computeGlFingerprint, formatGlFingerprintLine } from "@/lib/glReportExport";
 import { exportTrialBalanceCsv, exportTrialBalancePdf } from "@/lib/trialBalanceExport";
 import { downloadTrialBalanceWorkbook } from "@/lib/trialBalanceWorkbook";
+import { TrialBalanceImbalance } from "@/components/reports/TrialBalanceImbalance";
 import { describeStepError } from "@/lib/errorMessage";
 import {
   buildTrialBalanceGroups, filterVarianceRows, computeVarianceStats,
@@ -102,6 +103,15 @@ export default function TrialBalance() {
 
   const { groups, grand } = useMemo(() => buildTrialBalanceGroups(filteredRows), [filteredRows]);
 
+  // The balance check always speaks for the whole report. "Show only audit
+  // variances" renders a deliberate subset, whose totals are not supposed to
+  // agree — reading the banner off it would raise an alarm the ledger never
+  // sounded.
+  const reportTotals = useMemo(
+    () => (varianceOnly ? buildTrialBalanceGroups(rows ?? []).grand : grand),
+    [varianceOnly, rows, grand]
+  );
+
   const varianceStats = useMemo(() => computeVarianceStats(rows ?? []), [rows]);
   const basis = useMemo(() => openingBasis(rows ?? []), [rows]);
 
@@ -130,8 +140,12 @@ export default function TrialBalance() {
     }, 200);
   }, [highlightAccountId, groups, collapsed]);
 
-  const closingDiff = closingDifference(grand);
+  const closingDiff = closingDifference(reportTotals);
   const isUnbalanced = Math.abs(closingDiff) > 0.005;
+  // The TOTAL row adds up the rows on screen. Under the variance filter those
+  // are a subset, so it is not the figure the banner is quoting and must not be
+  // painted as the failing total.
+  const totalRowIsWholeReport = !varianceOnly;
 
   /** Every figure on a row traces back to the same place — the ledger behind it. */
   const openLedger = useCallback(
@@ -141,6 +155,9 @@ export default function TrialBalance() {
     },
     [navigate, dateFrom, dateTo]
   );
+
+  /** A journal entry named as a cause of the difference, opened where it lives. */
+  const openEntry = useCallback((entryId: string) => navigate(`/accounting/journals/${entryId}`), [navigate]);
 
   /**
    * Trial Balance and General Ledger in one workbook. The ledger is fetched at
@@ -317,9 +334,15 @@ export default function TrialBalance() {
         {!isLoading && !error && rows?.length ? <OpeningBasisNote basis={basis} dateFrom={dateFrom} /> : null}
 
         {isUnbalanced && !isLoading && (
-          <div className="print:hidden mb-3 rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-800 px-4 py-2.5 text-sm text-red-900 dark:text-red-200 font-medium">
-            Out of balance: closing debits exceed credits by {fmtBal(closingDiff)}. Review the ledger for the source of the difference.
-          </div>
+          <TrialBalanceImbalance
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            includeInactive={includeInactive}
+            closingDifference={closingDiff}
+            isFilteredView={varianceOnly}
+            onOpenAccount={openLedger}
+            onOpenEntry={openEntry}
+          />
         )}
 
         {isLoading ? (
@@ -366,8 +389,8 @@ export default function TrialBalance() {
                 <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtBal(grand.opening_credit)}</td>
                 <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtBal(grand.period_debit)}</td>
                 <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtBal(grand.period_credit)}</td>
-                <td className={`px-3 py-2 text-right font-mono tabular-nums ${isUnbalanced ? "text-destructive" : ""}`}>{fmtBal(grand.closing_debit)}</td>
-                <td className={`px-3 py-2 text-right font-mono tabular-nums ${isUnbalanced ? "text-destructive" : ""}`}>{fmtBal(grand.closing_credit)}</td>
+                <td className={`px-3 py-2 text-right font-mono tabular-nums ${isUnbalanced && totalRowIsWholeReport ? "text-destructive" : ""}`}>{fmtBal(grand.closing_debit)}</td>
+                <td className={`px-3 py-2 text-right font-mono tabular-nums ${isUnbalanced && totalRowIsWholeReport ? "text-destructive" : ""}`}>{fmtBal(grand.closing_credit)}</td>
               </tr>
             </tbody>
           </table>

@@ -547,12 +547,15 @@ export function useClearSuspense() {
       target_account_id: string;
       note?: string;
       teach_variant?: string;
+      /** Narration for the reclassified journal line itself. */
+      memo?: string;
     }) => {
       const { data, error } = await (supabase as any).rpc("clear_suspense_lines", {
         p_line_ids: params.line_ids,
         p_target_account_id: params.target_account_id,
         p_note: params.note ?? null,
         p_teach_variant: params.teach_variant ?? null,
+        p_memo: params.memo ?? null,
       });
       if (error) throw new Error(error.message);
       return data as { cleared: number; taught: boolean; taught_category: string | null };
