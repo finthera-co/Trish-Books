@@ -152,7 +152,10 @@ export function usePostInvoice() {
       action,
     }: {
       invoice_id: string;
-      action: "post" | "void";
+      // "unpost" reverses a posted invoice's GL and drops it back to draft so
+      // it can be edited and re-posted; the server refuses it once anything
+      // (payment, allocation, credit note) is attached.
+      action: "post" | "void" | "unpost";
     }) => {
       const data = await invokeEdgeFunction<{ ok?: boolean; error?: string }>(
         "post-invoice",

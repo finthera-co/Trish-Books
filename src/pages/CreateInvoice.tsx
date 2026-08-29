@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectGroup, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Plus, Trash2, Send, Save } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Send, Save, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCustomers, useAccounts, useProducts } from "@/hooks/useData";
 import { useTaxProfile, useTaxGroups, useTaxCodes, currentRate } from "@/hooks/useTaxEngine";
@@ -152,12 +152,19 @@ export default function CreateInvoice() {
   const [docDiscount, setDocDiscount] = useState(0);
   const [saving, setSaving] = useState(false);
   const [posting, setPosting] = useState(false);
-  // Guards while an existing draft is being hydrated in edit mode.
+  // Guards while an existing invoice is being hydrated in edit mode.
   const [loadingExisting, setLoadingExisting] = useState(isEdit);
+  // Which kind of invoice is being edited. A posted one has to be reopened
+  // (its journal reversed) before the edit can land, and is always re-posted
+  // afterwards — it can never be left sitting as a draft.
+  const [existingStatus, setExistingStatus] = useState<"draft" | "posted">("draft");
+  const isPostedEdit = isEdit && existingStatus === "posted";
 
-  // ── Edit mode: hydrate the form from the existing DRAFT invoice ──────
-  // Posted/voided invoices are immutable (their GL is already written), so we
-  // bounce the user back to the list if they reach this route for one.
+  // ── Edit mode: hydrate the form from the existing invoice ────────────
+  // Drafts and posted invoices are both editable. A posted one is reopened at
+  // save time (journal reversed, invoice re-posted from the new figures),
+  // which is only sound while nothing is attached to it — once it is voided,
+  // paid or part-paid the instrument is a void or a credit note, not an edit.
   useEffect(() => {
     if (!editId) return;
     let cancelled = false;
@@ -173,11 +180,22 @@ export default function CreateInvoice() {
         navigate("/sales/invoices");
         return;
       }
-      if (inv.status !== "draft" || inv.journal_entry_id) {
-        toast.error("Only draft invoices can be edited");
+      if (!["draft", "posted", "sent"].includes(inv.status)) {
+        toast.error(`A ${inv.status} invoice cannot be edited`);
         navigate("/sales/invoices");
         return;
       }
+      if (inv.status === "draft" && inv.journal_entry_id) {
+        toast.error("This draft still has a journal entry attached — void it before editing");
+        navigate("/sales/invoices");
+        return;
+      }
+      if (Number((inv as any).amount_paid || 0) > 0.005) {
+        toast.error("A paid or part-paid invoice cannot be edited — void it or raise a credit note");
+        navigate("/sales/invoices");
+        return;
+      }
+      setExistingStatus(inv.status === "draft" ? "draft" : "posted");
       setCustomerId(inv.customer_id ?? "");
       setInvoiceNumber(inv.invoice_number ?? "");
       setOriginalNumber(inv.invoice_number ?? "");
@@ -556,6 +574,18 @@ export default function CreateInvoice() {
       };
 
       let invoice: { id: string };
+      // Set once the posted invoice's journal has actually been reversed: from
+      // that point the invoice MUST end up posted again, and a failure has to
+      // say so rather than report a plain save error.
+      let reopened = false;
+
+      // Reopen first. The reversal needs the invoice to still carry its
+      // journal, and the update below only ever touches a draft — the database
+      // refuses financial edits to a posted invoice outright.
+      if (isEdit && isPostedEdit) {
+        await postInvoiceFn.mutateAsync({ invoice_id: editId!, action: "unpost" });
+        reopened = true;
+      }
 
       if (isEdit) {
         // Edit an existing draft in place: update the header, then fully
@@ -640,8 +670,25 @@ export default function CreateInvoice() {
         if (itemErr) throw itemErr;
       }
 
-      if (shouldPost) {
-        await postInvoiceFn.mutateAsync({ invoice_id: invoice.id, action: "post" });
+      if (shouldPost || reopened) {
+        try {
+          await postInvoiceFn.mutateAsync({ invoice_id: invoice.id, action: "post" });
+        } catch (postErr: any) {
+          if (reopened) {
+            // The journal is already reversed, so the invoice is now a saved
+            // draft with an unwound GL. Say that plainly — silently reporting
+            // "save failed" would leave the user hunting for a posted invoice
+            // that no longer exists.
+            toast.error(
+              `Changes saved, but re-posting failed: ${postErr?.message || "unknown error"}. ` +
+              "The invoice is now a draft — fix the issue and post it again.",
+            );
+            queryClient.invalidateQueries({ queryKey: ["invoices"] });
+            navigate("/sales/invoices");
+            return;
+          }
+          throw postErr;
+        }
       } else {
         toast.success(isEdit ? "Draft updated" : "Invoice saved as draft");
       }
@@ -679,22 +726,53 @@ export default function CreateInvoice() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-semibold tracking-tight text-foreground">{isEdit ? "Edit invoice" : "New invoice"}</h1>
-              <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">Draft</span>
+              <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                isPostedEdit
+                  ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+                  : "bg-muted text-muted-foreground"
+              }`}>
+                {isPostedEdit ? "Posted" : "Draft"}
+              </span>
             </div>
-            <p className="text-[13px] text-muted-foreground mt-0.5">Add lines, map each to a revenue account, and post a balanced entry.</p>
+            <p className="text-[13px] text-muted-foreground mt-0.5">
+              {isPostedEdit
+                ? "Saving reverses this invoice's journal and posts a fresh one from the new figures."
+                : "Add lines, map each to a revenue account, and post a balanced entry."}
+            </p>
           </div>
         </div>
         <div className="flex gap-2 shrink-0">
-          <Button variant="outline" size="sm" onClick={() => handleSave(false)} disabled={saving || posting || loadingExisting}>
-            <Save className="w-4 h-4 mr-1.5" />
-            {saving ? "Saving…" : isEdit ? "Update draft" : "Save draft"}
-          </Button>
+          {/* No "save as draft" for a posted invoice: it is reopened only to be
+              posted again, so leaving it half-way is not an outcome to offer. */}
+          {!isPostedEdit && (
+            <Button variant="outline" size="sm" onClick={() => handleSave(false)} disabled={saving || posting || loadingExisting}>
+              <Save className="w-4 h-4 mr-1.5" />
+              {saving ? "Saving…" : isEdit ? "Update draft" : "Save draft"}
+            </Button>
+          )}
           <Button size="sm" onClick={() => handleSave(true)} disabled={saving || posting || loadingExisting}>
             <Send className="w-4 h-4 mr-1.5" />
-            {posting ? "Posting…" : "Save & post"}
+            {posting ? (isPostedEdit ? "Re-posting…" : "Posting…") : isPostedEdit ? "Update & re-post" : "Save & post"}
           </Button>
         </div>
       </div>
+
+      {/* Editing a posted invoice rewrites the ledger — spell out what happens
+          before the user changes a figure, not after. */}
+      {isPostedEdit && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5">
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div className="text-[13px] leading-relaxed text-amber-800 dark:text-amber-300">
+            <p className="font-medium">This invoice is already posted.</p>
+            <p className="text-amber-700 dark:text-amber-400/90">
+              Saving reverses its journal entry (dated as originally posted) and posts a new one from
+              these figures. The invoice number stays the same, and the change is recorded in the audit
+              log. If the new total needs approval, it goes back through the approval chain before it can
+              re-post.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
         {/* Main Form */}

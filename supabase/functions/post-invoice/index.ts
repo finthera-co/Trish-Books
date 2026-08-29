@@ -31,7 +31,7 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { invoice_id, action } = body as {
       invoice_id: string;
-      action: "post" | "void";
+      action: "post" | "void" | "unpost";
       system?: boolean;
       tenant_id?: string;
       actor_user_id?: string;
@@ -224,6 +224,200 @@ Deno.serve(async (req) => {
       });
 
       return json({ ok: true, message: "Invoice voided", reversal_journal_id: revJE.id });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // UNPOST FLOW — reopen a posted invoice so it can be edited
+    // ═══════════════════════════════════════════════════════════════════
+    // Unwinds the GL exactly the way a void does (original entry marked
+    // voided, a mirrored reversal written against the ORIGINAL entry date so
+    // the correction never lands in a different period) and drops the invoice
+    // back to draft — from there the ordinary edit → post path applies.
+    //
+    // Only safe while nothing else has attached itself to the invoice. A
+    // payment, an allocation or a credit note means the figures are already
+    // settled somewhere else, and the right instrument is a void or a credit
+    // note rather than an edit.
+    if (action === "unpost") {
+      if (!["posted", "sent"].includes(invoice.status)) {
+        return json({ ok: false, error: `Only a posted invoice can be reopened for editing (status "${invoice.status}")` }, 200);
+      }
+      if (Number(invoice.amount_paid || 0) > EPSILON) {
+        return json({ ok: false, error: "Invoice has payments against it — void it or raise a credit note instead of editing" }, 200);
+      }
+
+      const { count: allocCount } = await admin
+        .from("payment_received_allocations")
+        .select("id", { count: "exact", head: true })
+        .eq("invoice_id", invoice_id);
+      if ((allocCount ?? 0) > 0) {
+        return json({ ok: false, error: "A receipt is allocated to this invoice — void it or raise a credit note instead of editing" }, 200);
+      }
+
+      const { count: cnCount } = await admin
+        .from("ar_credit_notes")
+        .select("id", { count: "exact", head: true })
+        .eq("invoice_id", invoice_id)
+        .not("status", "in", "(draft,voided)");
+      if ((cnCount ?? 0) > 0) {
+        return json({ ok: false, error: "A credit note is applied to this invoice — it can no longer be edited" }, 200);
+      }
+
+      // Find the live journal first: its date decides which period the
+      // reversal falls in, and a closed one has to stop us before any write.
+      const { data: liveJE } = await admin
+        .from("journal_entries")
+        .select("id, entry_date")
+        .eq("source_type", "invoice")
+        .eq("source_id", invoice_id)
+        .neq("status", "voided")
+        .maybeSingle();
+
+      const { data: closed } = await admin
+        .from("fiscal_periods")
+        .select("period_start, period_end")
+        .eq("tenant_id", appUser.tenant_id)
+        .eq("status", "closed");
+      const inClosed = (d: string | null | undefined) => {
+        if (!d) return null;
+        const when = new Date(d);
+        return (closed || []).find(
+          (p: any) => when >= new Date(p.period_start) && when <= new Date(p.period_end),
+        );
+      };
+      const blockedPeriod = inClosed(liveJE?.entry_date) || inClosed(invoice.issue_date);
+      if (blockedPeriod) {
+        return json({
+          ok: false,
+          error: `Invoice falls in a closed period (${blockedPeriod.period_start} → ${blockedPeriod.period_end}); ` +
+            "reopen the period or raise a credit note instead",
+        }, 200);
+      }
+
+      let reversalJournalId: string | null = null;
+
+      if (liveJE) {
+        const { data: origLines } = await admin
+          .from("journal_lines")
+          .select("account_id, debit, credit")
+          .eq("journal_entry_id", liveJE.id);
+
+        await admin
+          .from("journal_entries")
+          .update({ status: "voided", voided_at: new Date().toISOString(), voided_by: appUser.id })
+          .eq("id", liveJE.id);
+
+        const { data: revJE, error: revErr } = await admin
+          .from("journal_entries")
+          .insert({
+            tenant_id: appUser.tenant_id,
+            entry_date: liveJE.entry_date,
+            description: `Reversal of Invoice ${invoice.invoice_number} (reopened for edit)`,
+            reference: invoice.invoice_number,
+            status: "posted",
+            posted_at: new Date().toISOString(),
+            created_by: appUser.id,
+            reversal_of: liveJE.id,
+            source_type: "invoice_reversal",
+            source_id: invoice_id,
+            is_system_generated: true,
+          })
+          .select()
+          .single();
+        if (revErr) {
+          // Put the original back: a voided entry with no reversal would leave
+          // the ledger short by the invoice total.
+          await admin
+            .from("journal_entries")
+            .update({ status: "posted", voided_at: null, voided_by: null })
+            .eq("id", liveJE.id);
+          return json({ ok: false, error: `Reversal failed: ${revErr.message}` }, 200);
+        }
+        reversalJournalId = revJE.id;
+
+        await admin.from("journal_lines").insert(
+          (origLines || []).map((l: any) => ({
+            journal_entry_id: revJE.id,
+            account_id: l.account_id,
+            debit: Number(l.credit) || 0,
+            credit: Number(l.debit) || 0,
+          })),
+        );
+
+        // Tax sub-ledger: negating mirror rows, same contract as the void flow.
+        const { error: taxRevErr } = await admin.rpc("reverse_tax_transactions", {
+          p_tenant_id: appUser.tenant_id,
+          p_source_type: "invoice",
+          p_source_id: invoice_id,
+          p_reversal_journal_id: revJE.id,
+          p_reversal_date: liveJE.entry_date,
+        });
+        if (taxRevErr) console.error("Tax reversal rows failed:", taxRevErr.message);
+
+        // Legacy GL-linked output VAT (non-engine invoices).
+        const { data: legacyTaxRecs } = await admin
+          .from("tax_records")
+          .select("tax_amount")
+          .eq("source_type", "invoice")
+          .eq("source_id", invoice_id)
+          .eq("direction", "output");
+        const legacyTaxNet = (legacyTaxRecs || []).reduce((sum: number, r: any) => sum + Number(r.tax_amount || 0), 0);
+        if (legacyTaxNet > 0) {
+          await admin.from("tax_records").insert({
+            tenant_id: appUser.tenant_id,
+            invoice_id: invoice_id,
+            tax_id: null,
+            tax_amount: -legacyTaxNet,
+            journal_entry_id: revJE.id,
+            direction: "output",
+            source_type: "invoice",
+            source_id: invoice_id,
+            transaction_date: liveJE.entry_date,
+          });
+        }
+      }
+
+      // AR sub-ledger rows are re-created by the repost, so the originals have
+      // to go or the customer's outstanding balance (and their credit limit
+      // check) counts this invoice twice. Safe here only because the guards
+      // above proved nothing is allocated against them.
+      await admin
+        .from("ar_transactions")
+        .delete()
+        .eq("tenant_id", appUser.tenant_id)
+        .eq("document_id", invoice_id)
+        .eq("transaction_type", "INVOICE");
+      await admin
+        .from("ar_subledger")
+        .delete()
+        .eq("tenant_id", appUser.tenant_id)
+        .eq("document_id", invoice_id)
+        .eq("document_type", "invoice");
+
+      const { error: reopenErr } = await admin
+        .from("invoices")
+        .update({ status: "draft", journal_entry_id: null, posted_at: null, posted_by: null })
+        .eq("id", invoice_id);
+      if (reopenErr) return json({ ok: false, error: `Failed to reopen invoice: ${reopenErr.message}` }, 200);
+
+      await admin.from("audit_logs").insert({
+        action: "Invoice Reopened",
+        table_name: "invoices",
+        record_id: invoice_id,
+        user_id: appUser.id,
+        tenant_id: appUser.tenant_id,
+        details: {
+          invoice_number: invoice.invoice_number,
+          reversed_journal_id: liveJE?.id ?? null,
+          reversal_je: reversalJournalId,
+        },
+      });
+
+      return json({
+        ok: true,
+        message: "Invoice reopened as draft",
+        reversal_journal_id: reversalJournalId,
+      }, 200, rlHeaders);
     }
 
     // ═══════════════════════════════════════════════════════════════════
