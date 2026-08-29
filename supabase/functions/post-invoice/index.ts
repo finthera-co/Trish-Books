@@ -242,24 +242,33 @@ Deno.serve(async (req) => {
       if (!["posted", "sent"].includes(invoice.status)) {
         return json({ ok: false, error: `Only a posted invoice can be reopened for editing (status "${invoice.status}")` }, 200);
       }
-      if (Number(invoice.amount_paid || 0) > EPSILON) {
-        return json({ ok: false, error: "Invoice has payments against it — void it or raise a credit note instead of editing" }, 200);
-      }
-
-      const { count: allocCount } = await admin
+      // What has been paid is NOT a column on invoices — it is the sum of the
+      // receipt allocations whose parent receipt is not voided, the same
+      // figure the invoice list computes. A voided receipt leaves its
+      // allocation row behind, so counting rows alone would wrongly freeze an
+      // invoice whose only receipt was cancelled.
+      const { data: allocs } = await admin
         .from("payment_received_allocations")
-        .select("id", { count: "exact", head: true })
+        .select("amount, payments_received(status)")
         .eq("invoice_id", invoice_id);
-      if ((allocCount ?? 0) > 0) {
-        return json({ ok: false, error: "A receipt is allocated to this invoice — void it or raise a credit note instead of editing" }, 200);
+      const paid = (allocs || [])
+        .filter((a: any) => a.payments_received?.status !== "voided")
+        .reduce((sum: number, a: any) => sum + Number(a.amount || 0), 0);
+      if (paid > EPSILON) {
+        return json({
+          ok: false,
+          error: `Invoice has ${paid.toFixed(2)} received against it — void it or raise a credit note instead of editing`,
+        }, 200);
       }
 
-      const { count: cnCount } = await admin
+      const { data: creditNotes } = await admin
         .from("ar_credit_notes")
-        .select("id", { count: "exact", head: true })
-        .eq("invoice_id", invoice_id)
-        .not("status", "in", "(draft,voided)");
-      if ((cnCount ?? 0) > 0) {
+        .select("amount, status")
+        .eq("invoice_id", invoice_id);
+      const credited = (creditNotes || [])
+        .filter((c: any) => !["draft", "voided"].includes(c.status))
+        .reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0);
+      if (credited > EPSILON) {
         return json({ ok: false, error: "A credit note is applied to this invoice — it can no longer be edited" }, 200);
       }
 
@@ -396,7 +405,15 @@ Deno.serve(async (req) => {
 
       const { error: reopenErr } = await admin
         .from("invoices")
-        .update({ status: "draft", journal_entry_id: null, posted_at: null, posted_by: null })
+        .update({
+          status: "draft",
+          // fn_sync_posting_status_invoices only rewrites this for posted/voided,
+          // so a reopened invoice would otherwise keep reading POSTED.
+          posting_status: "DRAFT",
+          journal_entry_id: null,
+          posted_at: null,
+          posted_by: null,
+        })
         .eq("id", invoice_id);
       if (reopenErr) return json({ ok: false, error: `Failed to reopen invoice: ${reopenErr.message}` }, 200);
 

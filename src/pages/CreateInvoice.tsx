@@ -171,7 +171,12 @@ export default function CreateInvoice() {
     (async () => {
       const { data: inv, error } = await supabase
         .from("invoices")
-        .select("*, invoice_items(*)")
+        // amount_paid/balance_due are not columns: what is settled has to be
+        // read from the receipt allocations and credit notes, the same way the
+        // invoice list derives them.
+        .select(
+          "*, invoice_items(*), payment_received_allocations(amount, payments_received(status)), ar_credit_notes(amount, status)",
+        )
         .eq("id", editId)
         .single();
       if (cancelled) return;
@@ -190,8 +195,18 @@ export default function CreateInvoice() {
         navigate("/sales/invoices");
         return;
       }
-      if (Number((inv as any).amount_paid || 0) > 0.005) {
-        toast.error("A paid or part-paid invoice cannot be edited — void it or raise a credit note");
+      const paid = (((inv as any).payment_received_allocations as any[]) || [])
+        .filter((a: any) => a.payments_received?.status !== "voided")
+        .reduce((sum: number, a: any) => sum + Number(a.amount || 0), 0);
+      const credited = (((inv as any).ar_credit_notes as any[]) || [])
+        .filter((c: any) => !["draft", "voided"].includes(c.status))
+        .reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0);
+      if (paid > 0.005 || credited > 0.005) {
+        toast.error(
+          paid > 0.005
+            ? "A paid or part-paid invoice cannot be edited — void it or raise a credit note"
+            : "A credited invoice cannot be edited — raise a further credit note instead",
+        );
         navigate("/sales/invoices");
         return;
       }

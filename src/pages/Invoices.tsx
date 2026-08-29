@@ -532,7 +532,10 @@ export default function Invoices() {
                   // A posted invoice can be reopened for editing only while
                   // nothing has settled against it — once money (or a receipt)
                   // is attached, the instruments are a void or a credit note.
-                  const settled = Number(inv.amount_paid || 0) > 0.005 || hasReceipt;
+                  const settled =
+                    Number(inv.amount_paid || 0) > 0.005 ||
+                    Number((inv as any).credit_total || 0) > 0.005 ||
+                    hasReceipt;
                   return (
                     <tr key={inv.id} className={`border-t border-border hover:bg-muted/30 transition-colors ${isVoided ? "opacity-50" : ""} ${selected.has(inv.id) ? "bg-primary/5" : ""}`}>
                       <td className="px-4 py-3"><Checkbox checked={selected.has(inv.id)} onCheckedChange={() => toggleSelect(inv.id)} aria-label={`Select ${inv.invoice_number}`} /></td>
@@ -704,7 +707,7 @@ export default function Invoices() {
                                     disabled={settled}
                                     title={
                                       settled
-                                        ? "A paid or receipted invoice cannot be edited — void it or raise a credit note"
+                                        ? "A paid, receipted or credited invoice cannot be edited — void it or raise a credit note"
                                         : "Reverses the journal and re-posts it from the edited figures"
                                     }
                                   >
