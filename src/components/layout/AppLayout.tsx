@@ -12,6 +12,7 @@ import IdleWarningModal from "@/components/IdleWarningModal";
 import NetworkStatusOverlay from "@/components/NetworkStatusOverlay";
 import FullScreenLoader from "@/components/FullScreenLoader";
 import KeyboardShortcutsDialog from "@/components/KeyboardShortcutsDialog";
+import WindowManager from "@/components/windows/WindowManager";
 import { useGlobalKeyboard } from "@/hooks/useGlobalKeyboard";
 import { useAppStore, useHideSidebar, useIsSwitching, useTenantId } from "@/stores/useAppStore";
 import { useNavStore, moduleIdForPath } from "@/stores/useNavStore";
@@ -119,6 +120,7 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <WindowManager />
       <IdleWarningModal open={isIdle && countdown > 0} countdown={countdown} onStayLoggedIn={resetIdle} />
       <KeyboardShortcutsDialog />
       {(isSwitching || needsHydration) && <FullScreenLoader />}

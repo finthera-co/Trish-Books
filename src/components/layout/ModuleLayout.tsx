@@ -1,6 +1,8 @@
-import { Outlet, useLocation, Link } from "react-router-dom";
+import { useLocation, Link } from "react-router-dom";
 import { ChevronRight, Home } from "lucide-react";
 import { cn } from "@/lib/utils";
+import WindowedOutlet from "@/components/windows/WindowedOutlet";
+import MinimizeButton from "@/components/windows/MinimizeButton";
 
 export interface ModuleConfig {
   id: string;
@@ -20,7 +22,7 @@ export default function ModuleLayout({ config }: ModuleLayoutProps) {
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
       <Breadcrumbs config={config} />
       <main className="flex-1 p-6 overflow-y-auto">
-        <Outlet />
+        <WindowedOutlet config={config} />
       </main>
     </div>
   );
@@ -53,6 +55,9 @@ function Breadcrumbs({ config }: { config: ModuleConfig }) {
           <span className="text-foreground font-medium">{currentItem.label}</span>
         </>
       )}
+      <div className="ml-auto">
+        <MinimizeButton />
+      </div>
     </div>
   );
 }
