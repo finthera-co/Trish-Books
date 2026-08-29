@@ -1,5 +1,10 @@
-import { formatCurrency } from "@/lib/currency";
 import type { TaxInvoiceModel } from "@/lib/taxInvoiceData";
+import { totalsRows } from "@/lib/taxInvoicePdf";
+
+// Same formatter the PDF uses, so the screen and the downloaded document state
+// identical figures to the cent.
+const fmt = (n: number, dp = 2): string =>
+  "LKR " + (Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
 
 /**
  * Read-only statutory VAT Tax Invoice (IRD Gazette 2481/22, Annexure I).
@@ -78,10 +83,10 @@ export default function TaxInvoiceDocument({ model }: { model: TaxInvoiceModel }
           {model.lines.map((l, i) => (
             <tr key={i}>
               <td className={cell}>{l.reference}</td>
-              <td className={cell}>{l.description}</td>
+              <td className={cell + " whitespace-pre-line"}>{l.description}</td>
               <td className={cell + " text-right tabular-nums"}>{l.qty || ""}</td>
-              <td className={cell + " text-right tabular-nums"}>{l.unitPrice ? formatCurrency(l.unitPrice) : ""}</td>
-              <td className={cell + " text-right tabular-nums"}>{formatCurrency(l.amountExVat)}</td>
+              <td className={cell + " text-right tabular-nums"}>{l.qty ? fmt(l.unitPrice, l.unitPriceDecimals) : ""}</td>
+              <td className={cell + " text-right tabular-nums"}>{fmt(l.amountExVat)}</td>
             </tr>
           ))}
           {Array.from({ length: emptyRows }).map((_, i) => (
@@ -99,18 +104,12 @@ export default function TaxInvoiceDocument({ model }: { model: TaxInvoiceModel }
       {/* Totals */}
       <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
         <tbody>
-          <tr>
-            <td className={cell + " text-right font-semibold"} style={{ width: "79%" }}>Total Value of Supply:</td>
-            <td className={cell + " text-right tabular-nums"} style={{ width: "21%" }}>{formatCurrency(model.totalValueOfSupply)}</td>
-          </tr>
-          <tr>
-            <td className={cell + " text-right font-semibold"}>VAT Amount (Total Value of Supply @ VAT Rate):</td>
-            <td className={cell + " text-right tabular-nums"}>{formatCurrency(model.vatAmount)}</td>
-          </tr>
-          <tr>
-            <td className={cell + " text-right font-semibold"}>Total Amount/consideration including VAT:</td>
-            <td className={cell + " text-right tabular-nums"}>{formatCurrency(model.totalIncludingVat)}</td>
-          </tr>
+          {totalsRows(model).map((r, i) => (
+            <tr key={r.label}>
+              <td className={cell + " text-right font-semibold"} style={i === 0 ? { width: "79%" } : undefined}>{r.label}</td>
+              <td className={cell + " text-right tabular-nums"} style={i === 0 ? { width: "21%" } : undefined}>{r.value}</td>
+            </tr>
+          ))}
           <tr>
             <td className={cell} colSpan={2}>{labelLine("Total Amount in words:*", model.totalInWords)}</td>
           </tr>

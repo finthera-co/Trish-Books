@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   HelpCircle, CheckCircle2, Clock, Wand2, Loader2,
   Search, ArrowUp, ArrowDown, ArrowUpDown, X, Download, Landmark,
-  CalendarDays,
+  CalendarDays, Split, Trash2, CornerDownLeft,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,7 @@ import AccountCombobox from "@/components/shared/AccountCombobox";
 import {
   useSuspenseLines,
   useClearSuspense,
+  useSplitSuspenseLine,
   useSuspenseClearedStats,
   useImportedBankAccounts,
   useAmendSuspenseLineDate,
@@ -38,6 +39,28 @@ function ageDays(iso: string): number {
 
 function lineAmount(l: SuspenseLine): number {
   return Number(l.debit || 0) > 0 ? Number(l.debit) : Number(l.credit || 0);
+}
+
+/** Cents, so a split is compared and posted on exact 2dp figures. */
+function cents(n: number): number {
+  return Math.round(n * 100);
+}
+
+function parseAmount(raw: string): number {
+  const n = Number(raw.replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** One leg of a split: where part of the line goes, and how much. */
+interface Alloc {
+  key: string;
+  account_id: string;
+  amount: string;
+}
+
+let allocSeq = 0;
+function blankAlloc(amount = ""): Alloc {
+  return { key: `a${++allocSeq}`, account_id: "", amount };
 }
 
 function reasonText(l: SuspenseLine): string {
@@ -266,6 +289,7 @@ export default function SuspenseClearing() {
     [accounts]
   );
   const clearMut = useClearSuspense();
+  const splitMut = useSplitSuspenseLine();
   const amendDate = useAmendSuspenseLineDate();
   // Which row's date is in flight, so only that cell shows a spinner.
   const [dateSavingId, setDateSavingId] = useState<string | null>(null);
@@ -289,6 +313,14 @@ export default function SuspenseClearing() {
   const [targetAccount, setTargetAccount] = useState("");
   const [note, setNote] = useState("");
   const [teachVariant, setTeachVariant] = useState(false);
+  // Splitting is a single-line operation: one lump-sum line broken across
+  // several ledgers. It is offered only when exactly one row is selected,
+  // because there is no sensible way to spread one set of amounts over many.
+  const [splitMode, setSplitMode] = useState(false);
+  const [allocs, setAllocs] = useState<Alloc[]>([]);
+  // Which split row (by key) opened the New-account form; null = the
+  // single-account picker, so the created account lands where it was asked for.
+  const [newAccountFor, setNewAccountFor] = useState<string | null>(null);
 
   const postable = useMemo(
     () => (accounts || []).filter((a: any) => a.is_active && a.is_postable && !a.is_control_account),
@@ -515,6 +547,69 @@ export default function SuspenseClearing() {
       pageRows.forEach((l) => (pageAllSelected ? next.delete(l.id) : next.add(l.id)));
       return next;
     });
+  }
+
+  // ── Split one line across several accounts ────────────────────────────────
+  // Only ever the single selected row: the amounts typed here belong to that
+  // line and nothing else.
+  const soleLine = selectedLines.length === 1 ? selectedLines[0] : null;
+  const splitTotal = soleLine ? lineAmount(soleLine) : 0;
+  const splitSide = soleLine ? (Number(soleLine.debit || 0) > 0 ? "Dr" : "Cr") : "";
+  const allocatedCents = allocs.reduce((sum, a) => sum + cents(parseAmount(a.amount)), 0);
+  const remainingCents = cents(splitTotal) - allocatedCents;
+  const remaining = remainingCents / 100;
+  const allocsFilled = allocs.length > 0 && allocs.every((a) => a.account_id && cents(parseAmount(a.amount)) > 0);
+  const splitValid = !!soleLine && allocsFilled && remainingCents === 0;
+
+  // Leaving the dialog — either way — drops the split, so the next item never
+  // opens with the previous one's amounts in it.
+  useEffect(() => {
+    if (!dialogOpen) {
+      setSplitMode(false);
+      setAllocs([]);
+      setNewAccountFor(null);
+    }
+  }, [dialogOpen]);
+
+  // Two rows to start with: a split of one is just the single-account path.
+  function startSplit() {
+    setSplitMode(true);
+    setAllocs([blankAlloc(), blankAlloc()]);
+  }
+  function stopSplit() {
+    setSplitMode(false);
+    setAllocs([]);
+  }
+  function patchAlloc(key: string, patch: Partial<Alloc>) {
+    setAllocs((prev) => prev.map((a) => (a.key === key ? { ...a, ...patch } : a)));
+  }
+  function removeAlloc(key: string) {
+    setAllocs((prev) => prev.filter((a) => a.key !== key));
+  }
+  // Fills the row with whatever is still unallocated, so the last line of a
+  // split never has to be worked out by hand.
+  function fillRemaining(key: string) {
+    const row = allocs.find((a) => a.key === key);
+    if (!row) return;
+    const others = allocs.reduce((sum, a) => (a.key === key ? sum : sum + cents(parseAmount(a.amount))), 0);
+    const left = cents(splitTotal) - others;
+    if (left <= 0) return;
+    patchAlloc(key, { amount: (left / 100).toFixed(2) });
+  }
+
+  async function submitSplit() {
+    if (!soleLine || !splitValid) return;
+    await splitMut.mutateAsync({
+      line_id: soleLine.id,
+      allocations: allocs.map((a) => ({
+        account_id: a.account_id,
+        amount: Number((cents(parseAmount(a.amount)) / 100).toFixed(2)),
+      })),
+      note: note || undefined,
+    });
+    setDialogOpen(false);
+    setSelected(new Set());
+    setNote("");
   }
 
   async function submitClear() {
@@ -768,15 +863,105 @@ export default function SuspenseClearing() {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+        <DialogContent className={cn("max-h-[85vh] overflow-y-auto", splitMode && "sm:max-w-2xl")}>
           <DialogHeader>
-            <DialogTitle>Clear {selected.size} item(s) from Suspense</DialogTitle>
+            <DialogTitle>
+              {splitMode ? "Split 1 item across accounts" : `Clear ${selected.size} item(s) from Suspense`}
+            </DialogTitle>
             <DialogDescription>
-              A reclass journal moves each line from Suspense to the account below, dated on the original
-              transaction. The original entry stays untouched.
+              {splitMode
+                ? "One reclass journal moves this line out of Suspense in the parts below, dated on the original transaction. The parts must add up to the full amount; the original entry stays untouched."
+                : "A reclass journal moves each line from Suspense to the account below, dated on the original transaction. The original entry stays untouched."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {/* The line being split, kept in view: what it was, and what is
+                still unallocated after the rows below. */}
+            {splitMode && soleLine && (
+              <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{soleLine.description || soleLine.name || "—"}</p>
+                    <p className="text-xs text-muted-foreground font-mono">
+                      {soleLine.txn_date ?? "—"} · {bankNameOf(soleLine.bank_account_id)}
+                    </p>
+                  </div>
+                  <p className="text-sm font-mono font-semibold shrink-0 tabular-nums">
+                    {formatCurrency(splitTotal)} <span className="text-muted-foreground">{splitSide}</span>
+                  </p>
+                </div>
+                <div className="flex items-center justify-between gap-3 border-t border-border pt-2 text-sm tabular-nums">
+                  <span className="text-muted-foreground">
+                    Allocated {formatCurrency(allocatedCents / 100)} of {formatCurrency(splitTotal)}
+                  </span>
+                  <span
+                    className={cn(
+                      "font-mono font-semibold",
+                      remainingCents === 0 ? "text-primary" : remainingCents > 0 ? "text-amber-600" : "text-destructive"
+                    )}
+                  >
+                    {remainingCents < 0 ? "Over by " : "Remaining "}
+                    {formatCurrency(Math.abs(remaining))}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {splitMode ? (
+              <div className="space-y-2">
+                <Label className="text-sm">Split across accounts</Label>
+                {allocs.map((a, i) => (
+                  <div key={a.key} className="flex items-start gap-2">
+                    <div className="flex-1 min-w-0">
+                      <AccountCombobox
+                        options={postable}
+                        value={a.account_id}
+                        onChange={(id) => patchAlloc(a.key, { account_id: id })}
+                        placeholder={`Ledger account for part ${i + 1}…`}
+                        onCreateNew={() => { setNewAccountFor(a.key); setAccountFormOpen(true); }}
+                        createLabel="Create new ledger account"
+                      />
+                    </div>
+                    <Input
+                      value={a.amount}
+                      onChange={(e) => patchAlloc(a.key, { amount: e.target.value })}
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      className="w-32 shrink-0 h-9 text-right font-mono"
+                      aria-label={`Amount for part ${i + 1}`}
+                    />
+                    <Button
+                      type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0"
+                      onClick={() => fillRemaining(a.key)}
+                      disabled={remainingCents <= 0 && cents(parseAmount(a.amount)) === 0}
+                      title="Put the unallocated balance on this row"
+                    >
+                      <CornerDownLeft className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-muted-foreground"
+                      onClick={() => removeAlloc(a.key)}
+                      disabled={allocs.length <= 1}
+                      title="Remove this row"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <Button type="button" variant="outline" size="sm" onClick={() => setAllocs((p) => [...p, blankAlloc()])}>
+                    <Plus className="w-3.5 h-3.5 mr-1" /> Add account
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={stopSplit}>
+                    Send the whole line to one account instead
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  The arrow drops whatever is still unallocated onto that row. Naming the same account twice is fine —
+                  the journal carries one leg per account.
+                </p>
+              </div>
+            ) : (
             <div>
               <Label className="text-sm">Final account</Label>
               <div className="flex items-start gap-2">
@@ -791,19 +976,34 @@ export default function SuspenseClearing() {
                 {/* No suitable ledger yet? Open the full Chart-of-Accounts
                     creation dialog. On save we pre-select the new account here. */}
                 <Button type="button" variant="outline" size="sm" className="shrink-0 gap-1 h-9"
-                  onClick={() => setAccountFormOpen(true)}>
+                  onClick={() => { setNewAccountFor(null); setAccountFormOpen(true); }}>
                   <Plus className="w-3.5 h-3.5" /> New account
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground mt-1">
                 No matching account? Use <strong>New account</strong> to create a ledger account — it appears here selected.
               </p>
+              {/* One line, one lump sum, more than one ledger — the whole
+                  reason an item sits in Suspense unresolved. */}
+              {soleLine && (
+                <Button type="button" variant="outline" size="sm" className="mt-2 gap-1" onClick={startSplit}>
+                  <Split className="w-3.5 h-3.5" /> Split this {formatCurrency(splitTotal)} across accounts
+                </Button>
+              )}
+              {!soleLine && selected.size > 1 && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Select a single row to split its amount across several accounts.
+                </p>
+              )}
             </div>
+            )}
             <div>
               <Label className="text-sm">Note (optional)</Label>
               <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why this account…" rows={2} />
             </div>
-            {commonVariant && (
+            {/* Teaching binds one raw variant to one account, so it has no
+                meaning for a line deliberately going to several. */}
+            {commonVariant && !splitMode && (
               <label className="flex items-start gap-2 text-sm">
                 <Check2 checked={teachVariant} onCheckedChange={(v) => setTeachVariant(!!v)} className="mt-0.5" />
                 <span>
@@ -815,9 +1015,27 @@ export default function SuspenseClearing() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={submitClear} disabled={!targetAccount || clearMut.isPending}>
-              {clearMut.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Clearing…</> : "Clear & reclassify"}
-            </Button>
+            {splitMode ? (
+              <Button
+                onClick={submitSplit}
+                disabled={!splitValid || splitMut.isPending}
+                title={
+                  !allocsFilled
+                    ? "Give every row an account and an amount"
+                    : remainingCents !== 0
+                      ? "The parts must add up to the line amount"
+                      : undefined
+                }
+              >
+                {splitMut.isPending
+                  ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Splitting…</>
+                  : `Split & reclassify${allocs.length ? ` (${allocs.length})` : ""}`}
+              </Button>
+            ) : (
+              <Button onClick={submitClear} disabled={!targetAccount || clearMut.isPending}>
+                {clearMut.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Clearing…</> : "Clear & reclassify"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -837,7 +1055,11 @@ export default function SuspenseClearing() {
           // picker would show the placeholder while a hidden id sat in state.
           const postableResult =
             result?.is_postable !== false && !(result as any)?.is_control_account;
-          if (result?.id && postableResult) setTargetAccount(result.id);
+          if (result?.id && postableResult) {
+            if (newAccountFor) patchAlloc(newAccountFor, { account_id: result.id });
+            else setTargetAccount(result.id);
+          }
+          setNewAccountFor(null);
           setAccountFormOpen(false);
         }}
         onCreateCategory={async (data) => {

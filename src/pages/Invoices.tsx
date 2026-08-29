@@ -24,7 +24,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { downloadInvoicePdf } from "@/lib/invoiceDownload";
 import { downloadTaxInvoicePdf } from "@/lib/taxInvoicePdf";
-import { loadTaxInvoice, type TaxInvoiceModel } from "@/lib/taxInvoiceData";
+import { loadTaxInvoice, TaxInvoiceError, type TaxInvoiceModel } from "@/lib/taxInvoiceData";
 import TaxInvoiceDocument from "@/components/invoices/TaxInvoiceDocument";
 import { shareInvoiceViaWhatsApp, shareInvoiceViaGmail, type ShareInvoiceArgs } from "@/lib/invoiceShare";
 import { formatDate } from "@/lib/format";
@@ -286,7 +286,9 @@ export default function Invoices() {
       await downloadTaxInvoicePdf(inv.id, tenantId);
       toast.success("Tax invoice downloaded");
     } catch (e: any) {
-      toast.error("Failed to download: " + (e?.message || "unknown error"));
+      // A TaxInvoiceError is a statutory refusal, not a failure — its message
+      // already says what to do, so it is shown on its own.
+      toast.error(e instanceof TaxInvoiceError ? e.message : "Failed to download: " + (e?.message || "unknown error"));
     } finally {
       setProcessing(false);
     }
@@ -302,7 +304,7 @@ export default function Invoices() {
       setTaxPreviewInvoice(inv);
       setTaxPreviewOpen(true);
     } catch (e: any) {
-      toast.error("Failed to load tax invoice: " + (e?.message || "unknown error"));
+      toast.error(e instanceof TaxInvoiceError ? e.message : "Failed to load tax invoice: " + (e?.message || "unknown error"));
     } finally {
       setProcessing(false);
     }

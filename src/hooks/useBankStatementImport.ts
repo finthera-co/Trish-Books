@@ -572,6 +572,40 @@ export function useClearSuspense() {
   });
 }
 
+/** Split ONE suspense line across several final accounts.
+ *
+ * The single-account path sends a whole line to one ledger; a lump-sum
+ * statement line often belongs to two or three. The RPC posts one reclass
+ * journal with a leg per account, and refuses anything that does not add up to
+ * the line to the cent — a part-allocated line would be marked cleared while
+ * money was still sitting in Suspense. */
+export function useSplitSuspenseLine() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: {
+      line_id: string;
+      allocations: { account_id: string; amount: number; memo?: string | null }[];
+      note?: string;
+    }) => {
+      const { data, error } = await (supabase as any).rpc("split_suspense_line", {
+        p_line_id: params.line_id,
+        p_allocations: params.allocations,
+        p_note: params.note ?? null,
+      });
+      if (error) throw new Error(error.message);
+      return data as { cleared: number; splits: number; journal_entry_id: string; amount: number };
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["suspense_lines"] });
+      qc.invalidateQueries({ queryKey: ["suspense_cleared_stats"] });
+      qc.invalidateQueries({ queryKey: ["journal_entries"] });
+      qc.invalidateQueries({ queryKey: ["period_account_movements"] });
+      toast.success(`Split across ${data?.splits ?? 0} account(s) and cleared from Suspense`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
 /** Every bank account that has ever been imported against.
  *
  * The suspense screen lists banks from this, not from the suspense lines
