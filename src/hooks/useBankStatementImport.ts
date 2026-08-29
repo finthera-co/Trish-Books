@@ -558,7 +558,15 @@ export function useClearSuspense() {
         p_memo: params.memo ?? null,
       });
       if (error) throw new Error(error.message);
-      return data as { cleared: number; taught: boolean; taught_category: string | null };
+      return data as {
+        cleared: number;
+        /** Lines reclassified by re-pointing the original entry (open period). */
+        in_place: number;
+        /** Lines that got a separate reclassification entry (closed period). */
+        reclassified: number;
+        taught: boolean;
+        taught_category: string | null;
+      };
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["suspense_lines"] });
@@ -566,8 +574,15 @@ export function useClearSuspense() {
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
       qc.invalidateQueries({ queryKey: ["period_account_movements"] });
       qc.invalidateQueries({ queryKey: ["bank_category_account_map"] });
+      // Clearing now rewrites the original entry's coding, so the statements
+      // built from it move too.
+      qc.invalidateQueries({ queryKey: ["trial_balance"] });
+      qc.invalidateQueries({ queryKey: ["balance_sheet"] });
       toast.success(
         `Cleared ${data?.cleared ?? 0} item(s) from Suspense` +
+          ((data?.reclassified ?? 0) > 0
+            ? ` · ${data.reclassified} posted as a dated reclassification (closed period)`
+            : "") +
           (data?.taught ? " · engine will resolve this variant automatically next time" : "")
       );
     },
@@ -596,14 +611,26 @@ export function useSplitSuspenseLine() {
         p_note: params.note ?? null,
       });
       if (error) throw new Error(error.message);
-      return data as { cleared: number; splits: number; journal_entry_id: string; amount: number };
+      return data as {
+        cleared: number;
+        splits: number;
+        /** in_place = original entry re-coded; reclass = separate entry posted. */
+        mode: "in_place" | "reclass";
+        journal_entry_id: string;
+        amount: number;
+      };
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["suspense_lines"] });
       qc.invalidateQueries({ queryKey: ["suspense_cleared_stats"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
       qc.invalidateQueries({ queryKey: ["period_account_movements"] });
-      toast.success(`Split across ${data?.splits ?? 0} account(s) and cleared from Suspense`);
+      qc.invalidateQueries({ queryKey: ["trial_balance"] });
+      qc.invalidateQueries({ queryKey: ["balance_sheet"] });
+      toast.success(
+        `Split across ${data?.splits ?? 0} account(s) and cleared from Suspense` +
+          (data?.mode === "reclass" ? " · posted as a dated reclassification (closed period)" : "")
+      );
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -667,7 +694,11 @@ export function useSuspenseClearedStats() {
         const { data, error } = await (supabase as any)
           .from("bank_statement_lines")
           .select("id, debit, credit, bank_statement_batches(bank_account_id)")
-          .not("reclass_journal_entry_id", "is", null)
+          // Cleared-ness lives on its own column: an in-place clearing re-points
+          // the original entry's suspense leg and never creates a reclass entry,
+          // so reclass_journal_entry_id stays NULL for all but the closed-period
+          // fallback. Keyed off that column this counter would read near zero.
+          .not("suspense_cleared_at", "is", null)
           .range(from, from + PAGE - 1);
         if (error) throw error;
         const rows = (data ?? []) as any[];

@@ -214,17 +214,62 @@ BEGIN
       (SELECT count(*) FROM public.transactions WHERE tenant_id=t.tenant_id AND date='2026-01-05')::int, 0);
   END;
 
-  -- ══ 9. Clear a suspense item → moves cash-flow row, no double count ═══════
-  PERFORM public.clear_suspense_lines(
-    ARRAY[(SELECT id FROM public.bank_statement_lines WHERE batch_id=v_b2)], v_salary, 'was salary', NULL);
-  PERFORM pg_temp.eq('clear.expense_unchanged',
-    (SELECT COALESCE(sum(amount),0) FROM public.transactions WHERE tenant_id=t.tenant_id AND type='expense' AND date='2025-07-06'), 150::numeric);
-  PERFORM pg_temp.eq('clear.no_double_row',
-    (SELECT count(*) FROM public.transactions WHERE tenant_id=t.tenant_id AND date='2025-07-06')::int, 1);
+  -- ══ 9. Clear a suspense item → re-points the leg IN PLACE, no new entry ═══
+  -- Clearing must not create a second journal. It re-points the original
+  -- entry's suspense leg to the final account, so the ledger carries one row
+  -- per transaction and there is no reclass credit that could be orphaned.
+  DECLARE
+    v_line_b2 uuid;
+    v_je_b2   uuid;
+    v_susp    uuid;
+    v_je_cnt  int;
+  BEGIN
+    SELECT id, journal_entry_id INTO v_line_b2, v_je_b2
+      FROM public.bank_statement_lines WHERE batch_id=v_b2;
+    SELECT bank_import_unrecognized_payment_account_id INTO v_susp
+      FROM public.account_settings WHERE tenant_id=t.tenant_id;
+    SELECT count(*) INTO v_je_cnt FROM public.journal_entries WHERE tenant_id=t.tenant_id;
 
-  -- ══ 10. Undo AFTER clearing deletes everything, reclass included ═════════
-  -- v_b2 above had its suspense line cleared; undoing it must now succeed and
-  -- remove the posting entry, the reclass entry, its lines and cash-flow rows.
+    PERFORM public.clear_suspense_lines(ARRAY[v_line_b2], v_salary, 'was salary', NULL);
+
+    PERFORM pg_temp.eq('clear.no_new_journal_entry',
+      (SELECT count(*) FROM public.journal_entries WHERE tenant_id=t.tenant_id)::int, v_je_cnt);
+    PERFORM pg_temp.eq('clear.no_reclass_entry',
+      (SELECT count(*) FROM public.journal_entries
+        WHERE tenant_id=t.tenant_id AND source_type='bank_import_reclass')::int, 0);
+    -- The suspense leg is gone from the original entry and the final account
+    -- carries it instead — one leg, not two.
+    PERFORM pg_temp.eq('clear.suspense_leg_gone',
+      (SELECT count(*) FROM public.journal_lines
+        WHERE journal_entry_id=v_je_b2 AND account_id=v_susp)::int, 0);
+    PERFORM pg_temp.eq('clear.target_leg_once',
+      (SELECT count(*) FROM public.journal_lines
+        WHERE journal_entry_id=v_je_b2 AND account_id=v_salary)::int, 1);
+    -- Double entry still holds on the entry that was edited.
+    PERFORM pg_temp.eq('clear.entry_balanced',
+      (SELECT COALESCE(sum(debit)-sum(credit),0) FROM public.journal_lines
+        WHERE journal_entry_id=v_je_b2), 0::numeric);
+    PERFORM pg_temp.eq('clear.mode_in_place',
+      (SELECT suspense_cleared_mode FROM public.bank_statement_lines WHERE id=v_line_b2), 'in_place');
+    PERFORM pg_temp.eq('clear.no_reclass_link',
+      (SELECT reclass_journal_entry_id IS NULL FROM public.bank_statement_lines WHERE id=v_line_b2), true);
+
+    -- Cash flow still mirrors the final coding exactly once.
+    PERFORM pg_temp.eq('clear.expense_unchanged',
+      (SELECT COALESCE(sum(amount),0) FROM public.transactions WHERE tenant_id=t.tenant_id AND type='expense' AND date='2025-07-06'), 150::numeric);
+    PERFORM pg_temp.eq('clear.no_double_row',
+      (SELECT count(*) FROM public.transactions WHERE tenant_id=t.tenant_id AND date='2025-07-06')::int, 1);
+
+    -- Clearing the same line twice is refused.
+    PERFORM pg_temp.expect_error('clear.recleared', 'LINE_NOT_OPEN',
+      format('SELECT public.clear_suspense_lines(ARRAY[%L]::uuid[], %L::uuid, NULL, NULL)', v_line_b2, v_salary));
+  END;
+
+  -- ══ 10. Undo AFTER clearing deletes everything ═══════════════════════════
+  -- v_b2 above had its suspense line cleared in place, so there is a single
+  -- entry to take back; undo must remove it, its lines, the statement lines and
+  -- the cash-flow rows. (A closed-period clearing produces a separate reclass
+  -- entry instead, which undo picks up via reclass_journal_entry_id.)
   PERFORM public.undo_bank_statement_batch(v_b2, 'delete the month');
   PERFORM pg_temp.eq('undo_after_clear.jes_gone',
     (SELECT count(*) FROM public.journal_entries je

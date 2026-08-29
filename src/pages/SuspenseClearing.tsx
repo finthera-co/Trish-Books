@@ -222,7 +222,7 @@ function DateCell({
             />
           </div>
           <p className="text-[11px] leading-snug text-muted-foreground">
-            The suspense journal moves to this date as well, and the reclass will post on it when
+            The suspense journal moves to this date as well, and the reclassification will use it when
             this item is cleared. Only open items can be re-dated, and neither date may sit in a
             closed period.
             {amended && (
@@ -653,8 +653,9 @@ export default function SuspenseClearing() {
         <p className="text-sm text-muted-foreground">
           Reclassify imported lines parked in <strong>Unrecognized Payments</strong> (money out) and{" "}
           <strong>Unrecognized Deposits</strong> (money in) to their final ledger account. Items are grouped by the
-          bank they were imported against, so one account can be cleared to zero at a time. Each clearing generates
-          a reclass journal out of the matching holding account; the original entry is never changed.
+          bank they were imported against, so one account can be cleared to zero at a time. Clearing re-codes the
+          imported entry itself, so each transaction stays a single line in the ledger — no second journal. If the
+          period is already closed it posts a dated reclassification instead, leaving the closed period untouched.
         </p>
       </div>
 
@@ -879,8 +880,8 @@ export default function SuspenseClearing() {
             </DialogTitle>
             <DialogDescription>
               {splitMode
-                ? "One reclass journal moves this line out of Suspense in the parts below, dated on the original transaction. The parts must add up to the full amount; the original entry stays untouched."
-                : "A reclass journal moves each line from Suspense to the account below, dated on the original transaction. The original entry stays untouched."}
+                ? "The imported entry is re-coded from Suspense into the parts below, keeping its original date. The parts must add up to the full amount. If that period is closed, a dated reclassification is posted instead."
+                : "The imported entry is re-coded from Suspense to the account below, keeping its original date and its bank side. If that period is closed, a dated reclassification is posted instead."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">

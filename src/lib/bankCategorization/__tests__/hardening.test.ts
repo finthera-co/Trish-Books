@@ -22,6 +22,11 @@ const UNDO_LATEST_SQL = readFileSync(
   resolvePath(ROOT, "supabase/migrations/20260722000006_bank_import_undo_reversal_chain.sql"), "utf8");
 const TXSYNC_SQL = readFileSync(
   resolvePath(ROOT, "supabase/migrations/20260722000003_bank_import_transactions_sync.sql"), "utf8");
+// Suspense clearing now re-points the original entry's suspense leg instead of
+// posting a second journal, and re-keys the cash-flow trigger onto the clearing
+// itself. This file is the current definition of both.
+const INPLACE_SQL = readFileSync(
+  resolvePath(ROOT, "supabase/migrations/20260829140000_suspense_clearing_in_place.sql"), "utf8");
 
 describe("roundAmount — ledger 2dp scale", () => {
   it("rounds to exactly two decimals", () => {
@@ -220,12 +225,39 @@ describe("database integrity guards are declared", () => {
   });
 
   it("clearing a suspense item moves its cash-flow row without double-counting", () => {
-    expect(TXSYNC_SQL).toMatch(/AFTER UPDATE OF reclass_journal_entry_id ON public\.bank_statement_lines/);
-    // Rebuild = delete the old row then insert from the final account.
-    const fn = TXSYNC_SQL.slice(TXSYNC_SQL.indexOf("trg_bank_line_reclass_sync"));
+    // Keyed on the clearing, not on the reclass entry: an in-place clearing
+    // never sets reclass_journal_entry_id, so the old key would never fire.
+    expect(INPLACE_SQL).toMatch(/AFTER UPDATE OF suspense_cleared_at ON public\.bank_statement_lines/);
+    const fn = INPLACE_SQL.slice(INPLACE_SQL.indexOf("CREATE OR REPLACE FUNCTION public.trg_bank_line_reclass_sync"));
+    // Rebuild = delete the old row then insert from whichever entry carries the
+    // final coding, always keyed on the ORIGINAL entry so nothing duplicates.
     expect(fn).toMatch(/DELETE FROM public\.transactions/);
-    // A non-income/expense final account (e.g. a fixed asset) drops from cash flow.
-    expect(fn).toMatch(/account_subtype, ''\) <> 'Suspense'/);
+    expect(fn).toMatch(/COALESCE\(NEW\.reclass_journal_entry_id, NEW\.journal_entry_id\)/);
+    // The bank leg is cash itself and must never be mirrored as income/expense.
+    expect(fn).toMatch(/bb\.bank_account_id = jl\.account_id/);
+  });
+
+  it("suspense clearing re-points the original leg and cannot double-post", () => {
+    // Open period: the suspense leg is re-pointed on the ORIGINAL entry. The
+    // UPDATE is scoped by account, side AND exact amount, and demands exactly
+    // one row — that row count IS the balance guard, so it can never drift from
+    // what is actually posted.
+    expect(INPLACE_SQL).toMatch(/UPDATE public\.journal_lines/);
+    expect(INPLACE_SQL).toMatch(/AND account_id\s+= v_suspense_id/);
+    expect(INPLACE_SQL).toMatch(/AND debit\s+= v_dr/);
+    expect(INPLACE_SQL).toMatch(/AND credit\s+= v_cr/);
+    expect(INPLACE_SQL).toMatch(/IF v_n <> 1 THEN/);
+    expect(INPLACE_SQL).toMatch(/LINE_NOT_IN_SUSPENSE/);
+    // A voided or unposted source entry has nothing to reclassify.
+    expect(INPLACE_SQL).toMatch(/SOURCE_ENTRY_NOT_POSTED/);
+  });
+
+  it("a closed period is never edited — it gets a dated reclassification instead", () => {
+    expect(INPLACE_SQL).toMatch(/IF NOT public\.fiscal_period_is_closed\(v_tenant_id, v_je\.entry_date\) THEN/);
+    // The fallback posts into the current period, and refuses outright when
+    // today is closed too rather than writing into a closed period.
+    expect(INPLACE_SQL).toMatch(/v_entry_date := CURRENT_DATE;/);
+    expect(INPLACE_SQL).toMatch(/CLOSED_PERIOD: line % sits in a closed period and today/);
   });
 
   it("the legacy per-entry sync is suppressed during bulk import", () => {
