@@ -478,7 +478,7 @@ export const BASE_PLANS = [
     monthly: 0,
     annual: null,
     desc: "Get provisioned, seeded and posting your first entries.",
-    highlights: ["1 user, 1 company", "Up to 25 invoices / month", "Core double-entry ledger"],
+    highlights: ["1 user, 1 company", "Up to 10 invoices / month", "Core double-entry ledger"],
     limits: ["No module packs", "Community support"],
   },
   {
@@ -488,7 +488,7 @@ export const BASE_PLANS = [
     monthly: 2900,
     annual: 29000,
     desc: "A sole trader or new company keeping its own books.",
-    highlights: ["1 user, 1 company", "Unlimited invoices", "Add any module pack"],
+    highlights: ["1 user, 1 company", "Up to 30 invoices / month", "Add any module pack"],
     limits: ["Email support"],
   },
   {
@@ -671,7 +671,7 @@ const CONTROLS = [
 const FAQS: [string, string][] = [
   [
     "Do I need a credit card to start?",
-    "No. The free tier gives you one user, one company and up to 25 invoices a month on the full double-entry ledger, with no card and no trial clock. Paid plans carry a 30-day money-back guarantee if you move up and change your mind.",
+    "No. The free tier gives you one user, one company and up to 10 invoices a month on the full double-entry ledger, with no card and no trial clock. Paid plans carry a 30-day money-back guarantee if you move up and change your mind.",
   ],
   [
     "Is this real double-entry, or a cashbook with reports on top?",
@@ -2145,15 +2145,21 @@ export default function Landing() {
                   ))}
                 </ul>
 
-                <p className="lp-tier-group">In the core ledger</p>
-                <ul className="lp-tier-feats lp-tier-feats-core">
-                  {CORE_LEDGER.map((f) => (
-                    <li key={f}>
-                      <Check className="w-4 h-4" strokeWidth={2.5} />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
+                {/* Free ships the ledger too, but its card stays short — the core
+                    list is the selling point on the paid tiers, not on the freebie. */}
+                {plan.monthly !== 0 && (
+                  <>
+                    <p className="lp-tier-group">In the core ledger</p>
+                    <ul className="lp-tier-feats lp-tier-feats-core">
+                      {CORE_LEDGER.map((f) => (
+                        <li key={f}>
+                          <Check className="w-4 h-4" strokeWidth={2.5} />
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
 
                 <ul className="lp-tier-limits">
                   {plan.limits.map((f) => (

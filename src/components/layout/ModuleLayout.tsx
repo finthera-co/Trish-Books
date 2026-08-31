@@ -3,6 +3,7 @@ import { ChevronRight, Home } from "lucide-react";
 import { cn } from "@/lib/utils";
 import WindowedOutlet from "@/components/windows/WindowedOutlet";
 import MinimizeButton from "@/components/windows/MinimizeButton";
+import CloseButton from "@/components/windows/CloseButton";
 
 export interface ModuleConfig {
   id: string;
@@ -55,8 +56,9 @@ function Breadcrumbs({ config }: { config: ModuleConfig }) {
           <span className="text-foreground font-medium">{currentItem.label}</span>
         </>
       )}
-      <div className="ml-auto">
+      <div className="ml-auto flex items-center gap-0.5">
         <MinimizeButton />
+        <CloseButton />
       </div>
     </div>
   );
