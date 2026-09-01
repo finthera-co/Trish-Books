@@ -1,4 +1,4 @@
-import { Plus, Search, MoreHorizontal, Eye, Send, Ban, Download, MessageCircle, Mail, FileText, Pencil, Trash2, CheckCircle2, XCircle, ShieldAlert, Receipt, CornerUpLeft, RotateCcw, ArrowDown } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Eye, Send, Ban, Download, MessageCircle, Mail, FileText, Pencil, Trash2, CheckCircle2, XCircle, ShieldAlert, Receipt, CornerUpLeft, RotateCcw, ArrowDown, ArrowUp, ArrowUpDown, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useState, useMemo } from "react";
@@ -28,18 +28,58 @@ import { loadTaxInvoice, TaxInvoiceError, type TaxInvoiceModel } from "@/lib/tax
 import TaxInvoiceDocument from "@/components/invoices/TaxInvoiceDocument";
 import { shareInvoiceViaWhatsApp, shareInvoiceViaGmail, type ShareInvoiceArgs } from "@/lib/invoiceShare";
 import { formatDate } from "@/lib/format";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 // Canonical invoice status vocabulary (stored): draft · posted · partial · paid · voided.
 // "overdue" is derived live (posted/partial past due); "sent" is a legacy alias for "posted".
-const statusColors: Record<string, string> = {
-  paid: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-  partial: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
-  posted: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-  sent: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-  overdue: "bg-destructive/10 text-destructive",
-  draft: "bg-muted text-muted-foreground",
-  voided: "bg-destructive/10 text-destructive line-through",
+// Each state carries a dot as well as a word: down the column the dots read as a
+// colour bar you can scan at a glance, and the label spells out what it means.
+const statusMeta: Record<string, { label: string; chip: string; dot: string }> = {
+  paid:    { label: "Paid",    chip: "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-400",  dot: "bg-green-500" },
+  partial: { label: "Partial", chip: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",  dot: "bg-amber-500" },
+  posted:  { label: "Posted",  chip: "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-400",      dot: "bg-blue-500" },
+  sent:    { label: "Posted",  chip: "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-400",      dot: "bg-blue-500" },
+  overdue: { label: "Overdue", chip: "border-destructive/30 bg-destructive/10 text-destructive",                dot: "bg-destructive" },
+  draft:   { label: "Draft",   chip: "border-border bg-muted text-muted-foreground",                            dot: "bg-muted-foreground/50" },
+  voided:  { label: "Voided",  chip: "border-border bg-muted text-muted-foreground line-through",               dot: "bg-muted-foreground/50" },
 };
+
+// Columns the list can be ordered by. No sort at all = the query's own order,
+// newest first, which is what the page opens on.
+type SortKey = "invoice_number" | "customer" | "issue_date" | "due_date" | "status" | "total_amount" | "amount_paid" | "balance_due";
+type SortState = { key: SortKey; dir: "asc" | "desc" } | null;
+
+/** Header cell that sorts the list. The arrow only appears on hover until the
+ *  column is the active sort, so a resting header stays quiet. */
+function SortableTh({ label, sortKey, sort, onSort, align = "left" }: {
+  label: string;
+  sortKey: SortKey;
+  sort: SortState;
+  onSort: (key: SortKey) => void;
+  align?: "left" | "right";
+}) {
+  const active = sort?.key === sortKey;
+  const Icon = !active ? ArrowUpDown : sort.dir === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <th className={cn("px-4 py-2.5 whitespace-nowrap", align === "right" ? "text-right" : "text-left")}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        aria-label={`Sort by ${label}`}
+        className={cn(
+          "group inline-flex items-center gap-1 rounded text-[11px] font-semibold uppercase tracking-wider transition-colors",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+          align === "right" && "flex-row-reverse",
+          active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        {label}
+        <Icon className={cn("w-3 h-3 transition-opacity", active ? "opacity-100" : "opacity-0 group-hover:opacity-60")} />
+      </button>
+    </th>
+  );
+}
 
 // One editable level of the approval chain (amounts stay strings while typing).
 type GovLevel = { name: string; min_amount: string; required_approvals: number; approver_ids: string[] };
@@ -97,6 +137,7 @@ export default function Invoices() {
   const [rejectDecision, setRejectDecision] = useState<"rejected" | "changes_requested">("rejected");
   const [rejectReason, setRejectReason] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [sort, setSort] = useState<SortState>(null);
   const upsertSettings = useUpsertAccountSettings();
   const { data: tenantUsers } = useTenantUsers();
   const [taxPreviewOpen, setTaxPreviewOpen] = useState(false);
@@ -176,6 +217,48 @@ export default function Invoices() {
     paid: invoices?.filter((i) => getEffectiveStatus(i) === "paid").length ?? 0,
     draft: invoices?.filter((i) => i.status === "draft").length ?? 0,
   };
+
+  // Clicking a header cycles desc → asc → back to the query's own order, so a
+  // sort can always be undone without reloading the page.
+  const toggleSort = (key: SortKey) =>
+    setSort((prev) => {
+      if (prev?.key !== key) return { key, dir: key === "invoice_number" || key === "customer" ? "asc" : "desc" };
+      return prev.dir === "desc" ? { key, dir: "asc" } : null;
+    });
+
+  // What the table actually renders, in display order.
+  const ordered = (() => {
+    if (!sort) return filtered;
+    const dir = sort.dir === "asc" ? 1 : -1;
+    const value = (i: any) => {
+      switch (sort.key) {
+        case "invoice_number": return i.invoice_number.toLowerCase();
+        case "customer": return ((i.customers as any)?.name || "").toLowerCase();
+        case "status": return getEffectiveStatus(i);
+        case "total_amount": return Number(i.total_amount);
+        case "amount_paid": return Number(i.amount_paid || 0);
+        case "balance_due": return Number(i.balance_due || 0);
+        default: return i[sort.key] || "";
+      }
+    };
+    return [...filtered].sort((a, b) => {
+      const av = value(a), bv = value(b);
+      return av === bv ? 0 : (av > bv ? 1 : -1) * dir;
+    });
+  })();
+
+  // Column totals for the footer. Only meaningful while every visible invoice
+  // shares a currency — adding LKR to USD would be a lie, so it stays hidden.
+  const visibleCurrencies = new Set(ordered.map((i) => i.currency || "LKR"));
+  const totalsCurrency = visibleCurrencies.size === 1 ? [...visibleCurrencies][0] : null;
+  const columnTotals = ordered.reduce(
+    (a, i) => ({
+      total: a.total + Number(i.total_amount),
+      paid: a.paid + Number(i.amount_paid || 0),
+      balance: a.balance + Number(i.balance_due || 0),
+    }),
+    { total: 0, paid: 0, balance: 0 },
+  );
 
   const postInvoice = usePostInvoice();
   const { data: settings } = useAccountSettings();
@@ -355,7 +438,7 @@ export default function Invoices() {
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const exportCsv = () => {
-    const rows = selected.size > 0 ? selectedInvoices : filtered;
+    const rows = selected.size > 0 ? selectedInvoices : ordered;
     const header = ["Invoice", "Customer", "Issue Date", "Due Date", "Status", "Currency", "Total", "Paid", "Balance"];
     const bodyRows = rows.map((i) => [
       i.invoice_number, (i.customers as any)?.name || "", i.issue_date, i.due_date || "",
@@ -432,7 +515,7 @@ export default function Invoices() {
         )}
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="stat-card"><p className="text-sm text-muted-foreground">Outstanding Balance</p><p className="text-xl font-semibold text-foreground mt-1">{formatCurrency(stats.outstanding)}</p></div>
         <div className="stat-card"><p className="text-sm text-muted-foreground">Fully Paid</p><p className="text-xl font-semibold text-foreground mt-1">{formatCurrency(stats.paid)}</p></div>
         <div className="stat-card"><p className="text-sm text-muted-foreground">Overdue</p><p className="text-xl font-semibold text-destructive mt-1">{formatCurrency(stats.overdue)}</p></div>
@@ -440,8 +523,9 @@ export default function Invoices() {
       </div>
 
       <div className="stat-card">
-        {/* Status filter tabs — focus the list on what needs chasing */}
-        <div className="flex flex-wrap items-center gap-1 mb-4">
+        {/* Status filter tabs — focus the list on what needs chasing. Overdue keeps
+            its red count even when the tab is idle: the number is the whole point. */}
+        <div className="mb-4 inline-flex flex-wrap items-center gap-1 rounded-xl border border-border bg-muted/40 p-1">
           {([
             { key: "all", label: "All" },
             { key: "due_soon", label: "Due soon" },
@@ -451,19 +535,27 @@ export default function Invoices() {
           ] as const).map((t) => {
             const active = statusFilter === t.key;
             const count = tabCounts[t.key];
-            const isOverdue = t.key === "overdue";
+            const alarming = t.key === "overdue" && count > 0;
             return (
               <button
                 key={t.key}
                 onClick={() => setStatusFilter(t.key)}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                aria-pressed={active}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   active
-                    ? isOverdue ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
               >
                 {t.label}
-                <span className={`tabular-nums rounded-full px-1.5 text-[10px] ${active ? "bg-background/60" : "bg-muted"}`}>
+                <span className={cn(
+                  "rounded-full px-1.5 text-[10px] tabular-nums",
+                  alarming ? "bg-destructive/10 text-destructive"
+                    : count === 0 ? "bg-transparent text-muted-foreground/60"
+                    : active ? "bg-muted text-muted-foreground" : "bg-background/70 text-muted-foreground",
+                )}>
                   {count}
                 </span>
               </button>
@@ -471,11 +563,31 @@ export default function Invoices() {
           })}
         </div>
 
-        <div className="flex items-center gap-3 mb-4">
-          <Search className="w-4 h-4 text-muted-foreground" />
-          <input type="text" placeholder="Search invoices..." value={search} onChange={(e) => setSearch(e.target.value)}
-            className="bg-transparent text-sm outline-none flex-1 text-foreground placeholder:text-muted-foreground" />
-          <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0}>
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <div className="relative min-w-[220px] flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search by invoice number or customer"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-9 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/60 focus:ring-2 focus:ring-ring/25"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <p className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
+            Showing {ordered.length} of {invoices?.length ?? 0}
+          </p>
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={ordered.length === 0}>
             <Download className="w-4 h-4 mr-1.5" /> Export CSV
           </Button>
         </div>
@@ -501,29 +613,65 @@ export default function Invoices() {
         )}
 
         {isLoading ? (
-          <p className="text-center py-8 text-muted-foreground">Loading...</p>
-        ) : filtered.length === 0 ? (
-          <p className="text-center py-8 text-muted-foreground">No invoices found</p>
+          <div className="space-y-px overflow-hidden rounded-xl border border-border">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 border-b border-border/60 px-4 py-3 last:border-0">
+                <Skeleton className="h-4 w-4 rounded" />
+                <Skeleton className="h-4 w-36" />
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-4 w-20" />
+                <div className="flex-1" />
+                <Skeleton className="h-5 w-16 rounded-full" />
+                <Skeleton className="h-4 w-24" />
+              </div>
+            ))}
+          </div>
+        ) : ordered.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 py-14 text-center">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-muted">
+              <FileText className="w-5 h-5 text-muted-foreground" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                {search || statusFilter !== "all" ? "No invoices in this view" : "No invoices yet"}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {search || statusFilter !== "all"
+                  ? "Clear the search or switch tabs to see the rest."
+                  : "Raise the first invoice to open the receivables ledger."}
+              </p>
+            </div>
+            {search || statusFilter !== "all" ? (
+              <Button variant="outline" size="sm" onClick={() => { setSearch(""); setStatusFilter("all"); }}>
+                Clear filters
+              </Button>
+            ) : canEditSales("sales") ? (
+              <Button size="sm" onClick={() => navigate("/sales/invoices/new")}>
+                <Plus className="w-4 h-4 mr-1.5" /> New invoice
+              </Button>
+            ) : null}
+          </div>
         ) : (
-          <div className="border border-border rounded-lg overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-sm">
-              <thead className="bg-muted/50">
-                <tr>
-                  <th className="px-4 py-3 w-10"><Checkbox checked={allFilteredSelected} onCheckedChange={toggleAll} aria-label="Select all" /></th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">Invoice</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">Customer</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">Date</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">Due Date</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">Status</th>
-                  <th className="px-4 py-3 text-right font-medium text-muted-foreground whitespace-nowrap">Total</th>
-                  <th className="px-4 py-3 text-right font-medium text-muted-foreground whitespace-nowrap">Paid</th>
-                  <th className="px-4 py-3 text-right font-medium text-muted-foreground whitespace-nowrap">Balance</th>
-                  <th className="px-4 py-3 text-center font-medium text-muted-foreground whitespace-nowrap">Actions</th>
+          <div className="overflow-x-auto rounded-xl border border-border">
+            <table className="w-full min-w-[1080px] text-sm">
+              <thead className="bg-muted/40">
+                <tr className="border-b border-border">
+                  <th className="w-10 px-4 py-2.5"><Checkbox checked={allFilteredSelected} onCheckedChange={toggleAll} aria-label="Select all" /></th>
+                  <SortableTh label="Invoice" sortKey="invoice_number" sort={sort} onSort={toggleSort} />
+                  <SortableTh label="Customer" sortKey="customer" sort={sort} onSort={toggleSort} />
+                  <SortableTh label="Date" sortKey="issue_date" sort={sort} onSort={toggleSort} />
+                  <SortableTh label="Due" sortKey="due_date" sort={sort} onSort={toggleSort} />
+                  <SortableTh label="Status" sortKey="status" sort={sort} onSort={toggleSort} />
+                  <SortableTh label="Total" sortKey="total_amount" sort={sort} onSort={toggleSort} align="right" />
+                  <SortableTh label="Paid" sortKey="amount_paid" sort={sort} onSort={toggleSort} align="right" />
+                  <SortableTh label="Balance" sortKey="balance_due" sort={sort} onSort={toggleSort} align="right" />
+                  <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((inv) => {
+                {ordered.map((inv) => {
                   const status = getEffectiveStatus(inv);
+                  const meta = statusMeta[status] ?? statusMeta.draft;
                   const isDraft = inv.status === "draft";
                   const isVoided = inv.status === "voided";
                   // Anything not a draft and not voided has been posted to the GL.
@@ -537,50 +685,69 @@ export default function Invoices() {
                     Number((inv as any).credit_total || 0) > 0.005 ||
                     hasReceipt;
                   return (
-                    <tr key={inv.id} className={`border-t border-border hover:bg-muted/30 transition-colors ${isVoided ? "opacity-50" : ""} ${selected.has(inv.id) ? "bg-primary/5" : ""}`}>
-                      <td className="px-4 py-3"><Checkbox checked={selected.has(inv.id)} onCheckedChange={() => toggleSelect(inv.id)} aria-label={`Select ${inv.invoice_number}`} /></td>
-                      <td className="px-4 py-3 font-medium text-foreground">
-                        {/* The number is the handle on the document itself — click it to read the invoice. */}
+                    <tr key={inv.id} className={cn(
+                      "group border-t border-border/70 transition-colors hover:bg-muted/40",
+                      isVoided && "opacity-60",
+                      selected.has(inv.id) && "bg-primary/5",
+                    )}>
+                      <td className="px-4 py-2.5"><Checkbox checked={selected.has(inv.id)} onCheckedChange={() => toggleSelect(inv.id)} aria-label={`Select ${inv.invoice_number}`} /></td>
+                      <td className="px-4 py-2.5">
+                        {/* The number is the handle on the document itself — click it to read the
+                            invoice. Set in the mono face: these are structured serials, and the
+                            branch/sequence parts line up down the column. */}
                         <button
                           onClick={() => setViewInvoice(inv)}
-                          className="text-left font-medium text-foreground hover:text-primary hover:underline"
+                          className="rounded font-mono text-[13px] font-medium text-foreground transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           title="View invoice"
                         >
                           {inv.invoice_number}
                         </button>
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground">{(inv.customers as any)?.name || "-"}</td>
-                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(inv.issue_date)}</td>
-                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <span>{formatDate(inv.due_date)}</span>
-                          {(() => {
-                            const hint = dueHint(inv);
-                            if (!hint) return null;
-                            return (
-                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${hint.overdue ? "bg-destructive/10 text-destructive" : "bg-amber-500/10 text-amber-600 dark:text-amber-400"}`}>
-                                {hint.text}
-                              </span>
-                            );
-                          })()}
-                        </div>
+                      <td className="px-4 py-2.5 text-foreground">
+                        <span className="block max-w-[240px] truncate" title={(inv.customers as any)?.name || undefined}>
+                          {(inv.customers as any)?.name || "—"}
+                        </span>
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[status] || ""}`}>
-                            {status}
+                      <td className="px-4 py-2.5 whitespace-nowrap tabular-nums text-muted-foreground">{formatDate(inv.issue_date)}</td>
+                      <td className="px-4 py-2.5 whitespace-nowrap">
+                        {(() => {
+                          const hint = dueHint(inv);
+                          return (
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className={cn("tabular-nums", hint?.overdue ? "font-medium text-destructive" : "text-muted-foreground")}>
+                                {formatDate(inv.due_date)}
+                              </span>
+                              {hint && (
+                                <span className={cn(
+                                  "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium",
+                                  hint.overdue ? "bg-destructive/10 text-destructive" : "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                                )}>
+                                  {hint.text}
+                                </span>
+                              )}
+                            </span>
+                          );
+                        })()}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex flex-nowrap items-center gap-1.5">
+                          <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium", meta.chip)}>
+                            <span className={cn("h-1.5 w-1.5 rounded-full", meta.dot)} />
+                            {meta.label}
                           </span>
+                          {/* Secondary flags stay icon-sized so the status word keeps the column. */}
                           {hasReceipt && (
                             <span
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                              className="inline-flex items-center rounded p-1 text-green-700 dark:text-green-400 bg-green-500/10"
                               title="A settlement receipt has been issued — the invoice document carries the PAID stamp"
                             >
-                              <Receipt className="w-3 h-3" /> receipted
+                              <Receipt className="w-3 h-3" />
+                              <span className="sr-only">Receipted</span>
                             </span>
                           )}
                           {isDraft && (inv as any).approval_status === "pending" && (
                             <span
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400"
                               title={`${(inv as any).approval_step_name || "Approval"} — ${(inv as any).approvals_count ?? 0} of ${(inv as any).required_approvals || 1} sign-offs at this level`}
                             >
                               <ShieldAlert className="w-3 h-3" />
@@ -589,36 +756,56 @@ export default function Invoices() {
                             </span>
                           )}
                           {isDraft && (inv as any).approval_status === "changes_requested" && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400" title={(inv as any).approval_note || "Sent back for changes"}>
+                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400" title={(inv as any).approval_note || "Sent back for changes"}>
                               changes requested
                             </span>
                           )}
                           {isDraft && (inv as any).approval_status === "rejected" && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-destructive/10 text-destructive" title={(inv as any).approval_note || "Approval rejected"}>
+                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-destructive/10 text-destructive" title={(inv as any).approval_note || "Approval rejected"}>
                               rejected
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-right text-foreground whitespace-nowrap">{formatCurrency(Number(inv.total_amount), inv.currency)}</td>
-                      <td className="px-4 py-3 text-right text-foreground whitespace-nowrap">
+                      <td className="px-4 py-2.5 text-right tabular-nums text-foreground whitespace-nowrap">{formatCurrency(Number(inv.total_amount), inv.currency)}</td>
+                      <td className={cn("px-4 py-2.5 text-right tabular-nums whitespace-nowrap", inv.amount_paid > 0 ? "text-foreground" : "text-muted-foreground/50")}>
                         {inv.amount_paid > 0 ? formatCurrency(inv.amount_paid, inv.currency) : "—"}
                       </td>
-                      <td className={`px-4 py-3 text-right font-semibold whitespace-nowrap ${inv.balance_due > 0 ? "text-destructive" : "text-primary"}`}>
+                      {/* Red is reserved for money that is actually late — colouring every
+                          open balance red leaves nothing to warn with. */}
+                      <td className={cn(
+                        "px-4 py-2.5 text-right font-semibold tabular-nums whitespace-nowrap",
+                        inv.balance_due <= 0.005 ? "text-muted-foreground" : status === "overdue" ? "text-destructive" : "text-foreground",
+                      )}>
                         {formatCurrency(inv.balance_due, inv.currency)}
                       </td>
-                      <td className="px-4 py-3 text-center whitespace-nowrap">
-                        <div className="flex flex-nowrap items-center justify-center gap-1">
-                          <Button variant="ghost" size="sm" title="View invoice" onClick={() => setViewInvoice(inv)}>
+                      <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                        <div className="flex flex-nowrap items-center justify-end gap-0.5">
+                          {/* Read-only shortcuts step back until the row is hovered or focused;
+                              the row's own next step (post a draft) always stays put. */}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+                            title="View invoice"
+                            onClick={() => setViewInvoice(inv)}
+                          >
                             <Eye className="w-4 h-4" />
                           </Button>
-                          <Button variant="ghost" size="sm" title="Payments, approvals & attachments" onClick={() => { setSelectedInvoice(inv); setDetailsOpen(true); }}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+                            title="Payments, approvals & attachments"
+                            onClick={() => { setSelectedInvoice(inv); setDetailsOpen(true); }}
+                          >
                             <FileText className="w-4 h-4" />
                           </Button>
                           {isDraft && (
                             <Button
                               variant="ghost"
                               size="sm"
+                              className="h-8 w-8 p-0"
                               title={
                                 (inv as any).approval_status === "pending"
                                   ? `Awaiting ${(inv as any).approval_step_name || "approval"}`
@@ -634,7 +821,7 @@ export default function Invoices() {
                           )}
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <button className="p-1 rounded hover:bg-accent"><MoreHorizontal className="w-4 h-4 text-muted-foreground" /></button>
+                              <button className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" title="More actions"><MoreHorizontal className="w-4 h-4" /></button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent>
                               <DropdownMenuItem onClick={() => setViewInvoice(inv)}>
@@ -745,6 +932,20 @@ export default function Invoices() {
                   );
                 })}
               </tbody>
+              {/* What the visible rows add up to — the figure an AR clerk is chasing. */}
+              {totalsCurrency && ordered.length > 1 && (
+                <tfoot>
+                  <tr className="border-t-2 border-border bg-muted/30">
+                    <td colSpan={6} className="px-4 py-2.5 text-xs font-medium text-muted-foreground">
+                      {ordered.length} invoices{selected.size > 0 ? ` · ${selected.size} selected` : ""}
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-xs font-semibold tabular-nums text-foreground whitespace-nowrap">{formatCurrency(columnTotals.total, totalsCurrency)}</td>
+                    <td className="px-4 py-2.5 text-right text-xs font-semibold tabular-nums text-foreground whitespace-nowrap">{formatCurrency(columnTotals.paid, totalsCurrency)}</td>
+                    <td className="px-4 py-2.5 text-right text-xs font-semibold tabular-nums text-foreground whitespace-nowrap">{formatCurrency(columnTotals.balance, totalsCurrency)}</td>
+                    <td />
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         )}
