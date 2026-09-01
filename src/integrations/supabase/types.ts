@@ -14317,6 +14317,7 @@ export type Database = {
       journal_entry_stats: {
         Args: never
         Returns: {
+          deleted: number
           posted: number
           total: number
           voided: number
@@ -14326,6 +14327,43 @@ export type Database = {
         Args: { p_desc: string; p_ref: string }
         Returns: string
       }
+      count_deleted_journal_entries: {
+        Args: {
+          p_search?: string
+          p_source?: string
+        }
+        Returns: number
+      }
+      list_deleted_journal_entries: {
+        Args: {
+          p_backward?: boolean
+          p_cursor_audit?: string
+          p_cursor_deleted?: string
+          p_limit?: number
+          p_search?: string
+          p_source?: string
+        }
+        Returns: {
+          audit_id: string
+          created_at: string
+          deleted_at: string
+          deleted_by: string
+          description: string
+          entry_date: string
+          entry_type: string
+          id: string
+          is_system_generated: boolean
+          journal_lines: Json
+          reference: string
+          reversal_of: string
+          source_type: string
+          status: string
+          total_credit: number
+          total_debit: number
+          void_reason: string
+          voided_at: string
+        }[]
+      }
       list_journal_entries: {
         Args: {
           p_backward?: boolean
@@ -14333,6 +14371,7 @@ export type Database = {
           p_cursor_date?: string
           p_cursor_id?: string
           p_limit?: number
+          p_order?: string
           p_search?: string
           p_source?: string
           p_status?: string

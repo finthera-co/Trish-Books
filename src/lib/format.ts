@@ -101,3 +101,26 @@ export function formatMonth(value: string | Date | null | undefined): string {
  * now resolves to the one system standard like everything else.
  */
 export const formatInvoiceDate = formatDate;
+
+/**
+ * "Entered 3h ago" for anything recent, the plain DD/MM/YYYY date beyond a
+ * week. Used where the useful question is how long ago something happened
+ * rather than exactly when — pair it with a title showing formatDateTime.
+ */
+export function formatRelativeTime(value: string | Date | null | undefined): string {
+  if (!value) return "—";
+  const then = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(then.getTime())) return "—";
+
+  const seconds = Math.floor((Date.now() - then.getTime()) / 1000);
+  if (seconds < 0) return formatDate(then); // clock skew — don't say "in -2m"
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days}d ago`;
+  return formatDate(then);
+}

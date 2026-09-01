@@ -1,4 +1,4 @@
-import { Plus, Search, RotateCcw, Ban, Undo2, Trash2, ChevronDown, ChevronRight, Filter, AlertTriangle, CheckCircle2, XCircle, Info, FileText, Copy } from "lucide-react";
+import { Plus, Search, RotateCcw, Ban, Undo2, Trash2, ChevronDown, ChevronRight, Filter, AlertTriangle, CheckCircle2, XCircle, Info, FileText, Copy, ArrowDownWideNarrow } from "lucide-react";
 import BudgetWarningBanner from "@/components/budgets/BudgetWarningBanner";
 import AccountSelector from "@/components/shared/AccountSelector";
 import AccountForm, { type Account as LedgerAccount } from "@/components/chart-of-accounts/AccountForm";
@@ -7,6 +7,7 @@ import { useState, Fragment, useMemo, useCallback, useEffect, useRef } from "rea
 import {
   useJournalEntriesPage, useJournalEntriesCount, useJournalEntryStats,
   useNextJvReference, useAccounts, useCreateAccount, useCustomers, journalCursorOf, type JournalCursor,
+  type JournalOrder, useDeletedJournalEntriesPage, useDeletedJournalEntriesCount, journalDeletedCursorOf,
 } from "@/hooks/useData";
 import { useAccountCategories, useCreateAccountCategory } from "@/hooks/useAccountCategories";
 import { useVendors } from "@/hooks/useSubledger";
@@ -41,14 +42,14 @@ import {
   EPSILON,
 } from "@/lib/journalValidation";
 import { typeColors, getTypeLabel } from "@/lib/accountTypes";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatDateTime, formatRelativeTime } from "@/lib/format";
 import { useJournalEntryDraft } from "@/hooks/useJournalEntryDraft";
 import DraftRestoredNotice from "@/components/journal/DraftRestoredNotice";
 
 const fmt = (n: number) =>
   n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-type StatusFilter = "all" | "posted" | "voided";
+type StatusFilter = "all" | "posted" | "voided" | "deleted";
 type SourceFilter = "all" | "manual" | "invoice" | "payment_received" | "credit_note" | "depreciation" | "opening_balance" | "other";
 
 const PAGE_SIZE = 50;
@@ -85,6 +86,9 @@ export default function JournalEntries() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  // "Recently entered" re-sorts by when each entry was keyed in. Nothing is
+  // filtered out, so the count and the page total stay the same either way.
+  const [order, setOrder] = useState<JournalOrder>("entry_date");
   // Keyset navigation: where we are is a cursor plus a direction, not an offset.
   // pageIndex is display-only (the "Page N of M" label).
   const [nav, setNav] = useState<{ cursor: JournalCursor | null; backward: boolean }>({
@@ -157,17 +161,34 @@ export default function JournalEntries() {
   useEffect(() => {
     setNav({ cursor: null, backward: false });
     setPageIndex(0);
-  }, [debouncedSearch, statusFilter, sourceFilter]);
+  }, [debouncedSearch, statusFilter, sourceFilter, order]);
 
-  const { data: rows, isLoading, isFetching } = useJournalEntriesPage({
-    cursor: nav.cursor,
+  // Deleted entries are a separate, read-only read rebuilt from audit_logs —
+  // the row is gone from journal_entries, so the live query cannot serve them.
+  // Only one of the two pairs is ever enabled at a time.
+  const showDeleted = statusFilter === "deleted";
+
+  const liveQuery = useJournalEntriesPage({
+    cursor: showDeleted ? null : nav.cursor,
     backward: nav.backward,
     pageSize: PAGE_SIZE,
     search: debouncedSearch,
-    status: statusFilter,
+    status: statusFilter === "deleted" ? "all" : statusFilter,
+    source: sourceFilter,
+    order,
+  });
+  const deletedQuery = useDeletedJournalEntriesPage({
+    cursor: showDeleted ? nav.cursor : null,
+    backward: nav.backward,
+    pageSize: PAGE_SIZE,
+    search: debouncedSearch,
     source: sourceFilter,
   });
-  const { data: total = 0 } = useJournalEntriesCount(debouncedSearch, statusFilter, sourceFilter);
+  const { data: rows, isLoading, isFetching } = showDeleted ? deletedQuery : liveQuery;
+
+  const { data: liveTotal = 0 } = useJournalEntriesCount(debouncedSearch, statusFilter, sourceFilter);
+  const { data: deletedTotal = 0 } = useDeletedJournalEntriesCount(debouncedSearch, sourceFilter);
+  const total = showDeleted ? deletedTotal : liveTotal;
   const { data: stats } = useJournalEntryStats();
   const { data: accounts } = useAccounts();
   const { data: customers } = useCustomers();
@@ -194,14 +215,17 @@ export default function JournalEntries() {
   // last row, backward from the first. No offsets, so cost is independent of depth.
   const goFirst = () => { setNav({ cursor: null, backward: false }); setPageIndex(0); };
   const goLast  = () => { setNav({ cursor: null, backward: true }); setPageIndex(pageCount - 1); };
+  // The deleted view keysets on the audit row, not the entry — same nav state,
+  // different columns behind it.
+  const cursorOf = showDeleted ? journalDeletedCursorOf : journalCursorOf;
   const goNext  = () => {
-    const c = journalCursorOf(pageRows[pageRows.length - 1]);
+    const c = cursorOf(pageRows[pageRows.length - 1]);
     if (!c) return;
     setNav({ cursor: c, backward: false });
     setPageIndex(i => Math.min(pageCount - 1, i + 1));
   };
   const goPrev  = () => {
-    const c = journalCursorOf(pageRows[0]);
+    const c = cursorOf(pageRows[0]);
     if (!c) return;
     setNav({ cursor: c, backward: true });
     setPageIndex(i => Math.max(0, i - 1));
@@ -255,9 +279,11 @@ export default function JournalEntries() {
   });
 
   const entries = useMemo(() => {
-    if (!highlightedEntry) return pageRows as any[];
+    // The pinned ?highlight= row is read from journal_entries, so it has no place
+    // in the deleted view — that list is reconstructed from audit snapshots.
+    if (!highlightedEntry || showDeleted) return pageRows as any[];
     return [highlightedEntry, ...pageRows.filter((e: any) => e.id !== (highlightedEntry as any).id)] as any[];
-  }, [pageRows, highlightedEntry]);
+  }, [pageRows, highlightedEntry, showDeleted]);
 
   // Auto-scroll to highlighted entry from source navigation
   useEffect(() => {
@@ -367,6 +393,7 @@ export default function JournalEntries() {
   // Stats (counted server-side, so they cover the whole table — not just this page)
   const totalPosted = stats?.posted ?? 0;
   const totalVoided = stats?.voided ?? 0;
+  const totalDeleted = stats?.deleted ?? 0;
 
   const addLine = () => setLines([...lines, blankLine()]);
   const removeLine = (index: number) => {
@@ -1168,7 +1195,7 @@ export default function JournalEntries() {
       </Dialog>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="stat-card">
           <p className="text-xs font-medium text-muted-foreground">Total Entries</p>
           <p className="text-2xl font-bold text-foreground tabular-nums">{stats?.total ?? 0}</p>
@@ -1181,6 +1208,14 @@ export default function JournalEntries() {
           <p className="text-xs font-medium text-muted-foreground">Voided</p>
           <p className="text-2xl font-bold text-destructive tabular-nums">{totalVoided}</p>
         </div>
+        <button
+          type="button"
+          onClick={() => setStatusFilter(showDeleted ? "all" : "deleted")}
+          className="stat-card text-left transition-colors hover:border-primary/40"
+        >
+          <p className="text-xs font-medium text-muted-foreground">Deleted</p>
+          <p className="text-2xl font-bold text-muted-foreground tabular-nums">{totalDeleted}</p>
+        </button>
       </div>
 
       {/* Filters + Table */}
@@ -1193,15 +1228,28 @@ export default function JournalEntries() {
           </div>
           <div className="flex items-center gap-1.5">
             <Filter className="w-3.5 h-3.5 text-muted-foreground" />
-            {(["all", "posted", "voided"] as StatusFilter[]).map(s => (
-              <button key={s} onClick={() => setStatusFilter(s)}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                  statusFilter === s
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted/50 text-muted-foreground hover:bg-accent"
-                }`}>
-                {s.charAt(0).toUpperCase() + s.slice(1)}
-              </button>
+            {(["all", "posted", "voided", "deleted"] as StatusFilter[]).map(s => (
+              <Tooltip key={s}>
+                <TooltipTrigger asChild>
+                  <button onClick={() => setStatusFilter(s)}
+                    aria-pressed={statusFilter === s}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                      statusFilter === s
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted/50 text-muted-foreground hover:bg-accent"
+                    }`}>
+                    {s.charAt(0).toUpperCase() + s.slice(1)}
+                  </button>
+                </TooltipTrigger>
+                {s === "deleted" && (
+                  <TooltipContent>
+                    <p className="text-xs max-w-[18rem]">
+                      Entries that were permanently deleted, rebuilt from the audit log. Read-only —
+                      they are no longer part of the ledger and affect no balance.
+                    </p>
+                  </TooltipContent>
+                )}
+              </Tooltip>
             ))}
           </div>
           <div className="flex items-center gap-1.5">
@@ -1217,6 +1265,36 @@ export default function JournalEntries() {
               </button>
             ))}
           </div>
+          <div className="flex items-center gap-1.5">
+            <ArrowDownWideNarrow className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Sort:</span>
+            {([
+              { value: "entry_date", label: "Entry date", hint: "Newest transaction date first" },
+              { value: "created_at", label: "Recently entered", hint: "Newest by when it was keyed in — surfaces backdated entries posted today" },
+            ] as { value: JournalOrder; label: string; hint: string }[]).map(o => (
+              <Tooltip key={o.value}>
+                <TooltipTrigger asChild>
+                  <button onClick={() => setOrder(o.value)}
+                    disabled={showDeleted}
+                    aria-pressed={!showDeleted && order === o.value}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                      showDeleted
+                        ? "bg-muted/30 text-muted-foreground/40 cursor-not-allowed"
+                        : order === o.value
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted/50 text-muted-foreground hover:bg-accent"
+                    }`}>
+                    {o.label}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="text-xs max-w-[16rem]">
+                    {showDeleted ? "Deleted entries are always listed newest deletion first." : o.hint}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
         </div>
 
         {isLoading ? (
@@ -1224,13 +1302,16 @@ export default function JournalEntries() {
             <span className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
           </div>
         ) : filtered.length === 0 ? (
-          <p className="text-center py-8 text-muted-foreground">No journal entries found</p>
+          <p className="text-center py-8 text-muted-foreground">
+            {showDeleted ? "No deleted journal entries" : "No journal entries found"}
+          </p>
         ) : (
           <table className="data-table">
             <thead>
               <tr>
                 <th className="w-8"></th>
                 <th>Date</th>
+                <th>Entered</th>
                 <th>Description</th>
                 <th>Reference</th>
                 <th>Source</th>
@@ -1277,6 +1358,13 @@ export default function JournalEntries() {
                           : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />}
                       </td>
                       <td className={`text-muted-foreground text-sm ${dim}`}>{formatDate(entry.entry_date)}</td>
+                      {/* When it was keyed in, as opposed to what date it is
+                          booked under — the two diverge on every backdated
+                          entry, and sorting by one while showing only the other
+                          makes the order look arbitrary. */}
+                      <td className={`text-muted-foreground text-xs whitespace-nowrap ${dim}`} title={formatDateTime(entry.created_at)}>
+                        {formatRelativeTime(entry.created_at)}
+                      </td>
                       <td className={`font-medium text-foreground ${dim} ${isVoided ? "line-through" : ""}`}>
                         {entry.description}
                         {isReversal && <span className="ml-1.5 text-xs text-muted-foreground">(reversal)</span>}
@@ -1290,14 +1378,36 @@ export default function JournalEntries() {
                       <td className={`text-right tabular-nums font-medium text-foreground ${dim}`}>LKR {fmt(entryTotalDebit)}</td>
                       <td className={`text-right tabular-nums font-medium text-foreground ${dim}`}>LKR {fmt(entryTotalCredit)}</td>
                       <td>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                          isVoided ? "bg-destructive/10 text-destructive" :
-                          entry.status === "posted" ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"
-                        }`}>{entry.status}</span>
+                        {showDeleted ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground border border-border">
+                                <Trash2 className="w-3 h-3" /> deleted
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p className="text-xs">
+                                Deleted by {entry.deleted_by || "Unknown"} on{" "}
+                                {formatDateTime(entry.deleted_at)}
+                                <br />
+                                Was {entry.status} when removed.
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            isVoided ? "bg-destructive/10 text-destructive" :
+                            entry.status === "posted" ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"
+                          }`}>{entry.status}</span>
+                        )}
                       </td>
                       <td className="text-right" onClick={e => e.stopPropagation()}>
                         <div className="flex gap-1 justify-end">
-                          {entry.status === "posted" && (
+                          {/* Nothing is actionable on a deleted entry: the row no
+                              longer exists, so there is nothing to reverse, void,
+                              edit or delete. */}
+                          {showDeleted && <span className="text-xs text-muted-foreground pr-2">—</span>}
+                          {!showDeleted && entry.status === "posted" && (
                             <>
                               {isSystemGenerated && (
                                 <Tooltip>
@@ -1317,7 +1427,7 @@ export default function JournalEntries() {
                               </Button>
                             </>
                           )}
-                          {isVoided && canEditJournals("journals") && (
+                          {!showDeleted && isVoided && canEditJournals("journals") && (
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <Button variant="ghost" size="sm" title="Restore" onClick={() => setRestoreDialogId(entry.id)}>
@@ -1329,7 +1439,7 @@ export default function JournalEntries() {
                               </TooltipContent>
                             </Tooltip>
                           )}
-                          {canDeleteJournals("journals") && (
+                          {!showDeleted && canDeleteJournals("journals") && (
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <span className="inline-flex">
@@ -1361,7 +1471,7 @@ export default function JournalEntries() {
                     {/* Expanded line details */}
                     {isExpanded && (
                       <tr>
-                        <td colSpan={9} className="bg-muted/30 px-6 py-3">
+                        <td colSpan={10} className="bg-muted/30 px-6 py-3">
                           {/* Source Info Banner (shown when navigated from register) */}
                           {isHighlighted && (
                             <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 mb-4 space-y-1.5">

@@ -625,7 +625,22 @@ export function useAccountLedgerFacets(accountId?: string, dateFrom?: string, da
   });
 }
 
-export type JournalStatusFilter = "all" | "posted" | "voided";
+/**
+ * "deleted" is not a status any row carries — delete_journal_entry() is a hard
+ * delete. It selects an entirely separate read (list_deleted_journal_entries)
+ * that reconstructs removed entries from their audit_logs snapshot, so it is
+ * mutually exclusive with the others rather than part of "all".
+ */
+export type JournalStatusFilter = "all" | "posted" | "voided" | "deleted";
+
+/**
+ * How the list is ordered. "entry_date" is the accounting view; "created_at"
+ * ("Recently entered") surfaces what was actually keyed in most recently — an
+ * entry backdated to March but entered today sits hundreds of pages down under
+ * the default order. A sort, not a filter: the result set and the count are
+ * identical either way.
+ */
+export type JournalOrder = "entry_date" | "created_at";
 export type JournalSourceFilter =
   | "all" | "manual" | "invoice" | "payment_received"
   | "credit_note" | "depreciation" | "opening_balance" | "other";
@@ -645,12 +660,18 @@ export interface JournalPageParams {
   search?: string;
   status?: JournalStatusFilter;
   source?: JournalSourceFilter;
+  order?: JournalOrder;
 }
 
 export interface JournalPageRow {
   id: string;
   entry_date: string;
   created_at: string;
+  /** Deleted-view only: audit_logs row id, the other half of that view's cursor. */
+  audit_id?: string;
+  /** Deleted-view only: when the entry was removed, and by whom. */
+  deleted_at?: string;
+  deleted_by?: string;
   description: string;
   reference: string | null;
   status: string;
@@ -679,6 +700,16 @@ export const journalCursorOf = (row: JournalPageRow | undefined): JournalCursor 
   row ? { entry_date: row.entry_date, created_at: row.created_at, id: row.id } : null;
 
 /**
+ * The deleted view is ordered by when the entry was removed, so its keyset runs
+ * on (audit_logs.created_at, audit_logs.id) rather than the entry's own columns.
+ * Reuses the JournalCursor shape so the page keeps one nav state for both views.
+ */
+export const journalDeletedCursorOf = (row: JournalPageRow | undefined): JournalCursor | null =>
+  row?.audit_id && row?.deleted_at
+    ? { entry_date: row.entry_date, created_at: row.deleted_at, id: row.audit_id }
+    : null;
+
+/**
  * One page of journal entries via keyset (cursor) pagination.
  *
  * Not OFFSET. OFFSET is O(depth) no matter how the table is indexed — the server
@@ -692,11 +723,11 @@ export const journalCursorOf = (row: JournalPageRow | undefined): JournalCursor 
  * format(%L) — so no escaping is needed (or wanted) on this side.
  */
 export function useJournalEntriesPage(params: JournalPageParams) {
-  const { cursor, backward = false, pageSize, search = "", status = "all", source = "all" } = params;
+  const { cursor, backward = false, pageSize, search = "", status = "all", source = "all", order = "entry_date" } = params;
   return useQuery({
     // Keyed under "journal_entries" so the invalidateQueries(["journal_entries"])
     // calls scattered across the app refresh this by prefix match too.
-    queryKey: ["journal_entries", "page", { cursor, backward, pageSize, search, status, source }],
+    queryKey: ["journal_entries", "page", { cursor, backward, pageSize, search, status, source, order }],
     queryFn: async () => {
       const { data, error } = await supabase.rpc("list_journal_entries", {
         p_limit: pageSize,
@@ -707,6 +738,7 @@ export function useJournalEntriesPage(params: JournalPageParams) {
         p_cursor_created: cursor?.created_at ?? null,
         p_cursor_id: cursor?.id ?? null,
         p_backward: backward,
+        p_order: order,
       });
       if (error) throw error;
       return (data ?? []) as unknown as JournalPageRow[];
@@ -738,7 +770,52 @@ export function useJournalEntriesCount(
   });
 }
 
-/** Entry counts for the stat cards — three tallies in one round trip. */
+/**
+ * One page of hard-deleted entries, rebuilt from their audit_logs snapshot.
+ *
+ * A separate query rather than a branch inside useJournalEntriesPage: these rows
+ * come from a different table, are ordered by deletion time, and are read-only —
+ * folding them into the live list would mean a UNION that no index can serve.
+ */
+export function useDeletedJournalEntriesPage(params: JournalPageParams) {
+  const { cursor, backward = false, pageSize, search = "", source = "all" } = params;
+  return useQuery({
+    queryKey: ["journal_entries", "deleted", "page", { cursor, backward, pageSize, search, source }],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("list_deleted_journal_entries", {
+        p_limit: pageSize,
+        p_search: search || null,
+        p_source: source === "all" ? null : source,
+        // The cursor's created_at/id carry the audit row's timestamp and id here
+        // — see journalDeletedCursorOf.
+        p_cursor_deleted: cursor?.created_at ?? null,
+        p_cursor_audit: cursor?.id ?? null,
+        p_backward: backward,
+      });
+      if (error) throw error;
+      return (data ?? []) as unknown as JournalPageRow[];
+    },
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Total deleted entries matching the current search/source. */
+export function useDeletedJournalEntriesCount(search = "", source: JournalSourceFilter = "all") {
+  return useQuery({
+    queryKey: ["journal_entries", "deleted", "count", { search, source }],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("count_deleted_journal_entries", {
+        p_search: search || null,
+        p_source: source === "all" ? null : source,
+      });
+      if (error) throw error;
+      return Number(data ?? 0);
+    },
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Entry counts for the stat cards — four tallies in one round trip. */
 export function useJournalEntryStats() {
   return useQuery({
     queryKey: ["journal_entries", "stats"],
@@ -750,6 +827,7 @@ export function useJournalEntryStats() {
         total: Number(row?.total ?? 0),
         posted: Number(row?.posted ?? 0),
         voided: Number(row?.voided ?? 0),
+        deleted: Number(row?.deleted ?? 0),
       };
     },
     // Whole-table tallies; not worth re-counting on every navigation.
