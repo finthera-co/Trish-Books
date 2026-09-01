@@ -13,6 +13,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { formatCurrency } from "@/lib/currency";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { useVendorDetail, useVoidBillPayment, useVoidVendorRefund } from "@/hooks/useAPModule";
 import PayBillsDialog from "@/components/ap/PayBillsDialog";
 import VendorCreditNoteDialog from "@/components/ap/VendorCreditNoteDialog";
@@ -47,6 +48,8 @@ export default function VendorDetail() {
   const [voidRefundTarget, setVoidRefundTarget] = useState<{ id: string; reference: string } | null>(null);
   const [voidRefundReason, setVoidRefundReason] = useState("");
   const voidRefund = useVoidVendorRefund();
+
+  usePageTitle(data?.vendor?.name);
 
   if (isLoading) return <div className="p-8 text-muted-foreground">Loading vendor…</div>;
   if (!data) return <div className="p-8 text-muted-foreground">Vendor not found</div>;

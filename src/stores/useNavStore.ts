@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { MODULE_CONFIGS } from "@/config/modules";
 
 const BOOKMARKS_KEY_PREFIX = "tb_bookmarks";
-const MAX_BOOKMARKS = 10;
+export const MAX_BOOKMARKS = 10;
 
 const PINNED_MODULES_KEY_PREFIX = "tb_pinned_modules";
 export const MAX_PINNED_MODULES = 6;
@@ -83,7 +83,9 @@ interface NavState {
   setAllAppsOpen: (open: boolean) => void;
 
   bookmarks: string[];
-  addBookmark: (path: string) => void;
+  /** False when the cap is already full — callers surface that, rather than
+   *  reporting a bookmark that was never actually stored. */
+  addBookmark: (path: string) => boolean;
   removeBookmark: (path: string) => void;
 
   pinnedModules: string[];
@@ -119,10 +121,12 @@ export const useNavStore = create<NavState>((set, get) => ({
   bookmarks: [],
   addBookmark: (path) => {
     const { bookmarks, tenantId } = get();
-    if (bookmarks.includes(path) || bookmarks.length >= MAX_BOOKMARKS) return;
+    if (bookmarks.includes(path)) return true;
+    if (bookmarks.length >= MAX_BOOKMARKS) return false;
     const next = [...bookmarks, path];
     saveBookmarks(tenantId, next);
     set({ bookmarks: next });
+    return true;
   },
   removeBookmark: (path) => {
     const { tenantId } = get();

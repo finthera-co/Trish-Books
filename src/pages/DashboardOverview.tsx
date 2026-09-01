@@ -39,7 +39,7 @@ export default function DashboardOverview() {
   const { metrics, isLoading, isError, error, isFetching, refetch } = useDashboardMetrics(period);
 
   return (
-    <div className="w-full px-4 sm:px-6 py-6 space-y-6 overflow-y-auto flex-1">
+    <div className="space-y-6">
       {/* Premium Header */}
       <div className="premium-hero rounded-3xl border border-border/60 px-6 sm:px-8 py-7 animate-fade-in relative overflow-hidden">
         <div className="absolute inset-0 pointer-events-none opacity-[0.04] bg-[radial-gradient(circle_at_1px_1px,_hsl(var(--foreground))_1px,_transparent_0)] [background-size:24px_24px]" />

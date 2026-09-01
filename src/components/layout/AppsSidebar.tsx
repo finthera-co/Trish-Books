@@ -1,11 +1,12 @@
 import { useMemo } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ArrowLeft, Lock, Pin, PinOff, BookmarkPlus, BookmarkCheck } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSubscriptionLimits } from "@/hooks/useSubscriptionLimits";
-import { useNavStore } from "@/stores/useNavStore";
-import { NavLink } from "@/components/NavLink";
+import { useNavStore, MAX_BOOKMARKS } from "@/stores/useNavStore";
+import { matchNavItem } from "@/lib/navMatch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem } from "@/components/ui/context-menu";
 import type { ModuleConfig } from "@/components/layout/ModuleLayout";
@@ -39,7 +40,26 @@ export default function AppsSidebar({ config }: AppsSidebarProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.sidebarItems, isCompanyAdmin]);
 
-  const isBookmarked = bookmarks.includes(location.pathname);
+  const url = location.pathname + location.search;
+  const isBookmarked = bookmarks.includes(url);
+
+  // Resolved once for the whole sidebar rather than per-link: react-router's own
+  // isActive ignores the search string, so the two items that share
+  // /reports/financial would both light up. matchNavItem picks exactly one.
+  const activePath = matchNavItem(visibleItems, url)?.path ?? null;
+
+  const handleToggleBookmark = (path: string, bookmarked: boolean) => {
+    if (bookmarked) {
+      removeBookmark(path);
+      toast("Bookmark removed");
+    } else if (addBookmark(path)) {
+      toast("Page bookmarked");
+    } else {
+      toast.error(`Bookmark limit reached (${MAX_BOOKMARKS})`, {
+        description: "Remove one from the Bookmarks menu to add another.",
+      });
+    }
+  };
 
   return (
     <aside
@@ -91,22 +111,24 @@ export default function AppsSidebar({ config }: AppsSidebarProps) {
                   );
                 }
                 const itemBookmarked = bookmarks.includes(item.path);
+                const isActive = item.path === activePath;
                 return (
                   <ContextMenu key={item.path}>
                     <ContextMenuTrigger asChild>
-                      <NavLink
+                      <Link
                         to={item.path}
-                        className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-foreground transition-all duration-200 hover:bg-muted"
-                        activeClassName="bg-accent text-accent-foreground font-medium border-l-[3px] border-l-primary"
+                        aria-current={isActive ? "page" : undefined}
+                        className={cn(
+                          "flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-foreground transition-all duration-200 hover:bg-muted",
+                          isActive && "bg-accent text-accent-foreground font-medium border-l-[3px] border-l-primary",
+                        )}
                       >
                         <item.icon className="w-[18px] h-[18px] shrink-0" />
                         <span className="truncate">{item.label}</span>
-                      </NavLink>
+                      </Link>
                     </ContextMenuTrigger>
                     <ContextMenuContent>
-                      <ContextMenuItem
-                        onClick={() => (itemBookmarked ? removeBookmark(item.path) : addBookmark(item.path))}
-                      >
+                      <ContextMenuItem onClick={() => handleToggleBookmark(item.path, itemBookmarked)}>
                         {itemBookmarked ? (
                           <>
                             <BookmarkCheck className="w-3.5 h-3.5 mr-2" /> Remove bookmark
@@ -137,7 +159,7 @@ export default function AppsSidebar({ config }: AppsSidebarProps) {
         </button>
         <button
           type="button"
-          onClick={() => (isBookmarked ? removeBookmark(location.pathname) : addBookmark(location.pathname))}
+          onClick={() => handleToggleBookmark(url, isBookmarked)}
           className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-200"
         >
           {isBookmarked ? <BookmarkCheck className="w-3.5 h-3.5 shrink-0 text-primary" /> : <BookmarkPlus className="w-3.5 h-3.5 shrink-0" />}

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useFixedAsset, useAssetDepreciation, useDisposeAsset, useAssetJournalEntries } from "@/hooks/useFixedAssets";
 import { useAccounts } from "@/hooks/useData";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { formatCurrency } from "@/lib/currency";
 import { generateDepreciationSchedule, type Asset } from "@/lib/depreciation";
 import { Progress } from "@/components/ui/progress";
@@ -35,6 +36,8 @@ export default function AssetDetail() {
       )
     );
   }, [accounts]);
+
+  usePageTitle(asset?.asset_name);
 
   if (isLoading || !asset) {
     return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading asset...</div>;

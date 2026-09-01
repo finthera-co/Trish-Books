@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useWindowsStore, type WindowEntry } from "@/stores/useWindowsStore";
+import { useWindowsStore, windowTitle, type WindowEntry } from "@/stores/useWindowsStore";
 import { useMovePortalNode } from "@/lib/domPortal";
 
 /**
@@ -55,6 +55,7 @@ function WindowPortalTarget({ window: w, holdingNode }: WindowPortalTargetProps)
 function Dock({ windows }: { windows: WindowEntry[] }) {
   const navigate = useNavigate();
   const close = useWindowsStore((s) => s.close);
+  const pageTitles = useWindowsStore((s) => s.pageTitles);
   const minimized = windows.filter((w) => w.minimized);
 
   if (minimized.length === 0) return null;
@@ -67,7 +68,9 @@ function Dock({ windows }: { windows: WindowEntry[] }) {
         "flex items-center gap-2 px-3 py-2 overflow-x-auto",
       )}
     >
-      {minimized.map((w) => (
+      {minimized.map((w) => {
+        const title = windowTitle(w, pageTitles);
+        return (
         <div
           key={w.id}
           className="shrink-0 flex items-center gap-2 rounded-lg border border-border bg-card pl-3 pr-1.5 py-1.5 shadow-sm hover:shadow-md transition-shadow duration-200"
@@ -80,18 +83,19 @@ function Dock({ windows }: { windows: WindowEntry[] }) {
             <div className={cn("w-5 h-5 rounded-md flex items-center justify-center shrink-0", w.color)}>
               <w.icon className="w-3 h-3 text-primary-foreground" />
             </div>
-            <span className="text-xs font-medium text-foreground max-w-[140px] truncate">{w.title}</span>
+            <span className="text-xs font-medium text-foreground max-w-[140px] truncate">{title}</span>
           </button>
           <button
             type="button"
             onClick={() => close(w.id)}
-            aria-label={`Close ${w.title}`}
+            aria-label={`Close ${title}`}
             className="shrink-0 w-5 h-5 rounded-md flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-200"
           >
             <X className="w-3 h-3" />
           </button>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

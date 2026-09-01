@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { toast } from "sonner";
-import { useNavStore } from "@/stores/useNavStore";
+import { useNavStore, MAX_BOOKMARKS } from "@/stores/useNavStore";
 import { MODULE_CONFIGS } from "@/config/modules";
 
 const GO_TARGETS: Record<string, { path: string; moduleId: string | null }> = {
@@ -37,8 +37,9 @@ export function useGlobalKeyboard() {
   const setCreateMenuOpen = useNavStore((s) => s.setCreateMenuOpen);
   const setActiveModule = useNavStore((s) => s.setActiveModule);
 
-  const pathRef = useRef(location.pathname);
-  pathRef.current = location.pathname;
+  // pathname + search, so a bookmark round-trips to the exact same view.
+  const pathRef = useRef(location.pathname + location.search);
+  pathRef.current = location.pathname + location.search;
   const bookmarksRef = useRef(bookmarks);
   bookmarksRef.current = bookmarks;
 
@@ -62,9 +63,12 @@ export function useGlobalKeyboard() {
         if (bookmarksRef.current.includes(path)) {
           removeBookmark(path);
           toast("Bookmark removed");
-        } else {
-          addBookmark(path);
+        } else if (addBookmark(path)) {
           toast("Page bookmarked");
+        } else {
+          toast.error(`Bookmark limit reached (${MAX_BOOKMARKS})`, {
+            description: "Remove one from the Bookmarks menu to add another.",
+          });
         }
         return;
       }

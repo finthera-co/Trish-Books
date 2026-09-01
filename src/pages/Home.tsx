@@ -1,5 +1,6 @@
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCompanyProfile } from "@/hooks/useCompanyProfile";
 import WorkflowCanvas from "@/components/dashboard/workflow/WorkflowCanvas";
 import { Loader2, ArrowRight, LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -32,19 +33,37 @@ export default function Home() {
   return <TenantHome />;
 }
 
+function greeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
 function TenantHome() {
   const navigate = useNavigate();
+  const { appUser } = useAuth();
+  const { data: company } = useCompanyProfile();
 
   return (
     <div className="w-full px-4 sm:px-6 py-6 space-y-6 overflow-y-auto flex-1">
       {/* Premium Header */}
       <div className="premium-hero rounded-3xl border border-border/60 px-6 sm:px-8 py-7 animate-fade-in relative overflow-hidden">
         <div className="absolute inset-0 pointer-events-none opacity-[0.04] bg-[radial-gradient(circle_at_1px_1px,_hsl(var(--foreground))_1px,_transparent_0)] [background-size:24px_24px]" />
-        <div className="relative flex justify-end">
+        <div className="relative flex flex-wrap items-center justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground truncate">
+              {greeting()}
+              {appUser?.first_name ? `, ${appUser.first_name}` : ""}
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1 truncate">
+              {company?.trading_name || "Your workspace"}
+            </p>
+          </div>
           <Button
             onClick={() => navigate("/dashboard")}
             size="sm"
-            className="h-9 text-xs gap-1.5 rounded-xl"
+            className="h-9 text-xs gap-1.5 rounded-xl shrink-0"
           >
             <LayoutDashboard className="w-3.5 h-3.5" /> View Dashboard <ArrowRight className="w-3.5 h-3.5" />
           </Button>

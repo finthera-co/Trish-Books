@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { ChevronRight } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import GlobalTopNav from "./GlobalTopNav";
 import NavRail from "./NavRail";
 import AppsSidebar from "./AppsSidebar";
@@ -33,6 +35,7 @@ export default function AppLayout() {
   const setActiveModule = useNavStore((s) => s.setActiveModule);
   const sidebarPinned = useNavStore((s) => s.sidebarPinned);
   const setNavTenantScope = useNavStore((s) => s.setTenantScope);
+  const setSidebarPinned = useNavStore((s) => s.setSidebarPinned);
   const hideSidebar = useHideSidebar();
   const [sidebarHovered, setSidebarHovered] = useState(false);
 
@@ -104,10 +107,27 @@ export default function AppLayout() {
             <AppsSidebar config={moduleConfig} />
           ) : (
             <div
-              className="relative w-3 shrink-0"
+              className="relative w-3 shrink-0 border-r border-border/60 bg-card/40"
               onMouseEnter={() => setSidebarHovered(true)}
               onMouseLeave={() => setSidebarHovered(false)}
             >
+              {/* The collapsed sidebar used to be an invisible 12px hover strip:
+                  mouse-only, with nothing on screen saying it was there. This
+                  handle gives it a visible target and a keyboard route back —
+                  clicking re-pins the sidebar open for good. */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => setSidebarPinned(true)}
+                    aria-label={`Show ${moduleConfig.label} navigation`}
+                    className="absolute left-0 top-1/2 -translate-y-1/2 z-30 h-16 w-3 flex items-center justify-center rounded-r-md bg-border/70 text-muted-foreground hover:bg-primary hover:text-primary-foreground focus-visible:bg-primary focus-visible:text-primary-foreground focus-visible:outline-none transition-colors duration-200"
+                  >
+                    <ChevronRight className="w-2.5 h-2.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Show navigation (⌘B)</TooltipContent>
+              </Tooltip>
               {sidebarHovered && (
                 <div className="absolute inset-y-0 left-0 z-40 shadow-xl">
                   <AppsSidebar config={moduleConfig} />

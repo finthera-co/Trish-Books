@@ -40,19 +40,38 @@ interface WindowsState {
   windows: WindowEntry[];
   mainSlotNode: HTMLElement | null;
   holdingNode: HTMLElement | null;
+  /** Page-supplied titles, keyed by window id. Kept OUT of WindowEntry because
+   * registerActive rewrites a re-docked window's title from the nav match on
+   * every navigation, which would clobber whatever the page had set. */
+  pageTitles: Record<string, string>;
 
   registerActive: (entry: RegisterActiveInput) => void;
   discardIfActive: (id: string) => void;
   minimize: (id: string) => void;
   close: (id: string) => void;
+  setPageTitle: (id: string, title: string | null) => void;
   setMainSlotNode: (node: HTMLElement | null) => void;
   setHoldingNode: (node: HTMLElement | null) => void;
+}
+
+/** Title a window shows in the dock and breadcrumb: the page's own if it set
+ *  one (an invoice number, a customer name), else its nav-derived label. */
+export function windowTitle(entry: WindowEntry, pageTitles: Record<string, string>): string {
+  return pageTitles[entry.id] ?? entry.title;
+}
+
+function withoutTitle(titles: Record<string, string>, id: string): Record<string, string> {
+  if (!(id in titles)) return titles;
+  const next = { ...titles };
+  delete next[id];
+  return next;
 }
 
 export const useWindowsStore = create<WindowsState>((set, get) => ({
   windows: [],
   mainSlotNode: null,
   holdingNode: null,
+  pageTitles: {},
 
   registerActive: (entry) => {
     const existing = get().windows.find((w) => w.id === entry.id);
@@ -73,7 +92,7 @@ export const useWindowsStore = create<WindowsState>((set, get) => ({
   discardIfActive: (id) => {
     const target = get().windows.find((w) => w.id === id);
     if (!target || target.minimized) return; // explicitly minimized — keep it
-    set({ windows: get().windows.filter((w) => w.id !== id) });
+    set({ windows: get().windows.filter((w) => w.id !== id), pageTitles: withoutTitle(get().pageTitles, id) });
   },
 
   minimize: (id) => {
@@ -83,7 +102,18 @@ export const useWindowsStore = create<WindowsState>((set, get) => ({
   close: (id) => {
     const target = get().windows.find((w) => w.id === id);
     target?.portalNode.parentElement?.removeChild(target.portalNode);
-    set({ windows: get().windows.filter((w) => w.id !== id) });
+    set({ windows: get().windows.filter((w) => w.id !== id), pageTitles: withoutTitle(get().pageTitles, id) });
+  },
+
+  setPageTitle: (id, title) => {
+    const current = get().pageTitles;
+    if (title === null) {
+      if (!(id in current)) return;
+      set({ pageTitles: withoutTitle(current, id) });
+      return;
+    }
+    if (current[id] === title) return;
+    set({ pageTitles: { ...current, [id]: title } });
   },
 
   setMainSlotNode: (node) => set({ mainSlotNode: node }),

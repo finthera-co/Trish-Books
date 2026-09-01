@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/currency";
 import { formatDate } from "@/lib/format";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { useProductSalesDetail } from "@/hooks/useData";
 import { downloadDataExcel, type DataColumn } from "@/lib/reportExcel";
 import { supabase } from "@/integrations/supabase/client";
@@ -39,6 +40,8 @@ export default function ProductDetail() {
       return data;
     },
   });
+
+  usePageTitle(data?.product?.name);
 
   if (isLoading) return <div className="p-8 text-muted-foreground">Loading product...</div>;
   if (!data) return <div className="p-8 text-muted-foreground">Product not found</div>;

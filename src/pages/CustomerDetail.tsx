@@ -8,11 +8,14 @@ import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/currency";
 import { useCustomerDetail } from "@/hooks/useARModule";
 import { formatDate } from "@/lib/format";
+import { usePageTitle } from "@/hooks/usePageTitle";
 
 export default function CustomerDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data, isLoading } = useCustomerDetail(id);
+
+  usePageTitle(data?.customer?.name);
 
   if (isLoading) return <div className="p-8 text-muted-foreground">Loading customer...</div>;
   if (!data) return <div className="p-8 text-muted-foreground">Customer not found</div>;

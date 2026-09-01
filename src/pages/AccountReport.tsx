@@ -45,6 +45,7 @@ import { resolveLineMemo } from "@/lib/journalValidation";
 import { ReportMasthead } from "@/components/reports/ReportMasthead";
 import EditTransactionModal from "@/components/account-report/EditTransactionModal";
 import { formatDate } from "@/lib/format";
+import { usePageTitle } from "@/hooks/usePageTitle";
 
 interface TransactionRow {
   date: string;
@@ -143,6 +144,8 @@ export default function AccountReport() {
     [accounts, accountId]
   );
   const isOBEAccount = useMemo(() => isOpeningBalanceEquityAccount(account), [account]);
+
+  usePageTitle(account ? `${account.account_code} ${account.account_name}` : null);
 
   // One page of the register at a time. account_ledger_page resolves the
   // search, the type filter, the running balance and the row count

@@ -17,6 +17,7 @@ import {
   getReceiptSignedUrl,
 } from "@/hooks/usePettyCash";
 import { useMyPermissions } from "@/hooks/usePermissions";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { toast } from "sonner";
 
 const statusConfig: Record<string, { color: string; icon: any }> = {
@@ -40,6 +41,8 @@ export default function PettyCashVoucherDetail() {
   const { data: company } = useCompanyProfile();
   const canManage = canEdit("banking");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  usePageTitle(voucher?.voucher_number);
 
   if (isLoading) return <p className="text-center py-12 text-muted-foreground">Loading...</p>;
   if (!voucher) return <p className="text-center py-12 text-muted-foreground">Voucher not found</p>;

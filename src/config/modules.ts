@@ -45,6 +45,8 @@ import {
   LayoutTemplate,
   HardDrive,
   Package,
+  LayoutDashboard,
+  User,
 } from "lucide-react";
 import type { ModuleConfig } from "@/components/layout/ModuleLayout";
 
@@ -118,6 +120,8 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "Petty Cash", path: "/banking/petty-cash", icon: Coins, group: "Payments" },
       { label: "Replenishments", path: "/banking/petty-cash/replenishments", icon: RefreshCw, group: "Payments" },
       { label: "Petty Cash Imports", path: "/banking/petty-cash/imports", icon: FileSpreadsheet, group: "Payments" },
+      { label: "Petty Cash Counts", path: "/banking/petty-cash/counts", icon: ClipboardList, group: "Payments" },
+      { label: "Recurring Checks", path: "/banking/recurring-checks", icon: RefreshCw, group: "Payments" },
       { label: "PC Account Types", path: "/banking/petty-cash/account-types", icon: Wand2, group: "Payments" },
       { label: "Petty Cash Suspense", path: "/banking/petty-cash/suspense", icon: HelpCircle, group: "Exceptions" },
     ],
@@ -183,10 +187,11 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
     sidebarItems: [
       { label: "Financial Reports", path: "/reports/financial", icon: BarChart3, group: "Analysis" },
       { label: "Financial Analyst", path: "/reports/analyst", icon: Sparkles, group: "Analysis" },
+      { label: "Anomaly Detection", path: "/reports/anomalies", icon: AlertTriangle, group: "Analysis" },
       { label: "Asset Schedule", path: "/reports/financial?report=fixed-asset-schedule", icon: Warehouse, group: "Analysis" },
       { label: "Budgets", path: "/reports/budgets", icon: TrendingUp, group: "Planning" },
       { label: "Forecasting", path: "/reports/forecasting", icon: TrendingUp, group: "Planning" },
-      { label: "Tax Center", path: "/tax", icon: Landmark, group: "Compliance" },
+      { label: "Tax Center", path: "/reports/tax", icon: Landmark, group: "Compliance" },
       { label: "Data Exports", path: "/reports/exports", icon: FileArchive, group: "Compliance" },
     ],
   },
@@ -221,6 +226,27 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "Classes & Locations", path: "/settings/classes-locations", icon: MapPin, group: "Accounting Setup" },
     ],
   },
+};
+
+/**
+ * Workspace-level pages that belong to no module. Deliberately NOT part of
+ * MODULE_CONFIGS: moduleIdForPath would then match them and open a sidebar of
+ * unrelated siblings. Handing this to ModuleLayout gives them the breadcrumb
+ * bar and the minimize/close buttons every module page already has, and
+ * nothing else.
+ */
+export const STANDALONE_PAGES: ModuleConfig = {
+  id: "workspace",
+  label: "Workspace",
+  icon: LayoutDashboard,
+  color: "bg-primary",
+  basePath: "/home",
+  standalone: true,
+  sidebarItems: [
+    { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+    { label: "Notifications", path: "/notifications", icon: Bell },
+    { label: "My Profile", path: "/profile", icon: User },
+  ],
 };
 
 export interface ModuleCard {

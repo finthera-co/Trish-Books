@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, X, FileText, Receipt, CreditCard, DollarSign, BookText, Landmark } from "lucide-react";
-import { MODULE_CONFIGS, HOME_MODULES, SUPER_ADMIN_MODULES } from "@/config/modules";
+import { MODULE_CONFIGS, HOME_MODULES, SUPER_ADMIN_MODULES, STANDALONE_PAGES } from "@/config/modules";
 import { useAuth } from "@/contexts/AuthContext";
 
 type NavItem = {
@@ -54,6 +54,20 @@ function buildNavItems(isSuperAdmin: boolean): NavItem[] {
         moduleColor: "bg-primary",
       });
     }
+  }
+
+  // Dashboard / Notifications / My Profile belong to no module, so they would
+  // otherwise be searchable nowhere despite every user having them.
+  for (const item of STANDALONE_PAGES.sidebarItems) {
+    items.push({
+      kind: "page",
+      label: item.label,
+      path: item.path,
+      icon: item.icon,
+      moduleLabel: STANDALONE_PAGES.label,
+      moduleIcon: STANDALONE_PAGES.icon,
+      moduleColor: STANDALONE_PAGES.color,
+    });
   }
 
   const moduleCards = isSuperAdmin ? SUPER_ADMIN_MODULES : HOME_MODULES;

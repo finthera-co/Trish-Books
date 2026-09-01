@@ -1,11 +1,15 @@
-import { useState } from "react";
+import { forwardRef, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LayoutDashboard, Bookmark, Grid3X3, BarChart3, Settings, HelpCircle, Lock, X, Pin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MODULE_CONFIGS } from "@/config/modules";
+import { matchNavItem, allNavItems } from "@/lib/navMatch";
 import { useNavStore, MAX_PINNED_MODULES } from "@/stores/useNavStore";
 import { useSubscriptionLimits } from "@/hooks/useSubscriptionLimits";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+
+/** Modules that always have their own button on the rail. */
+const FIXED_RAIL_MODULES = new Set(["reports", "tenantAdmin"]);
 
 const APP_GROUPS: { label: string; moduleIds: string[] }[] = [
   { label: "Core", moduleIds: ["accounting", "sales", "banking", "expenses"] },
@@ -24,6 +28,11 @@ export default function NavRail() {
     .map((id) => MODULE_CONFIGS[id])
     .filter((m): m is NonNullable<typeof m> => !!m && isModuleAllowed(m.basePath));
 
+  // Reports and Settings have permanent buttons at the bottom of the rail, so
+  // pinning either one must not render it a second time in the pinned strip.
+  const pinnedIds = new Set(pinned.map((m) => m.id));
+  const railModuleIds = new Set([...pinnedIds, "reports", "tenantAdmin"]);
+
   return (
     <nav
       aria-label="Primary"
@@ -41,10 +50,12 @@ export default function NavRail() {
 
       <RailBookmarks />
 
-      <RailAllApps />
+      <RailAllApps railModuleIds={railModuleIds} />
 
-      {pinned.length > 0 && <div className="w-6 h-px bg-sidebar-border mx-auto my-1" />}
-      {pinned.map((mod) => (
+      {pinned.some((m) => !FIXED_RAIL_MODULES.has(m.id)) && (
+        <div className="w-6 h-px bg-sidebar-border mx-auto my-1" />
+      )}
+      {pinned.filter((m) => !FIXED_RAIL_MODULES.has(m.id)).map((mod) => (
         <RailButton
           key={mod.id}
           icon={mod.icon}
@@ -89,18 +100,26 @@ interface RailButtonProps {
   icon: React.ElementType;
   label: string;
   active?: boolean;
+  /** Set on the buttons that open a flyout, so the panel state is announced. */
+  expanded?: boolean;
   onClick: () => void;
 }
 
-function RailButton({ icon: Icon, label, active, onClick }: RailButtonProps) {
+const RailButton = forwardRef<HTMLButtonElement, RailButtonProps>(function RailButton(
+  { icon: Icon, label, active, expanded, onClick },
+  ref,
+) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
+          ref={ref}
           type="button"
           onClick={onClick}
           aria-label={label}
           aria-current={active ? "page" : undefined}
+          aria-haspopup={expanded === undefined ? undefined : "menu"}
+          aria-expanded={expanded}
           className={cn(
             "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 shrink-0",
             "hover:bg-sidebar-accent",
@@ -113,6 +132,63 @@ function RailButton({ icon: Icon, label, active, onClick }: RailButtonProps) {
       <TooltipContent side="right">{label}</TooltipContent>
     </Tooltip>
   );
+});
+
+interface RailFlyoutProps {
+  icon: React.ElementType;
+  label: string;
+  active?: boolean;
+  open: boolean;
+  setOpen: (open: boolean) => void;
+  panelClassName?: string;
+  children: React.ReactNode;
+}
+
+/**
+ * A rail button and the panel it opens. Click to toggle, Escape or an outside
+ * click to dismiss — deliberately NOT hover-to-open: these panels hold their
+ * own controls (pin a module, remove a bookmark), and one that disappears the
+ * moment the pointer slips off it makes those controls unusable. Hover-open
+ * also fought the click handler, since clicking while already hovered closed
+ * the panel and it could not reopen until the pointer left the rail entirely.
+ */
+function RailFlyout({ icon, label, active, open, setOpen, panelClassName, children }: RailFlyoutProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      buttonRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open, setOpen]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <RailButton ref={buttonRef} icon={icon} label={label} active={active} expanded={open} onClick={() => setOpen(!open)} />
+      {open && (
+        <div
+          className={cn(
+            "absolute left-14 top-0 z-50 bg-card border border-border rounded-xl shadow-xl",
+            panelClassName,
+          )}
+        >
+          {children}
+        </div>
+      )}
+    </div>
+  );
 }
 
 interface BookmarkDisplay {
@@ -121,32 +197,20 @@ interface BookmarkDisplay {
 }
 
 /**
- * Resolves a bookmarked path to a label + icon. Exact sidebar-item matches win;
- * a module's own root (e.g. "/accounting") falls back to the module itself;
- * anything else (detail/edit routes with an :id, etc.) falls back to the
- * longest sidebar-item path that prefixes it, then finally a generic label
- * derived from the path — so a bookmark never silently vanishes from the list.
+ * Resolves a bookmarked URL to a label + icon. matchNavItem handles the
+ * sidebar-item cases (exact, query-string, and detail routes under a list);
+ * a module root falls back to the module, and anything still unresolved to a
+ * label derived from the path — so a bookmark never silently vanishes.
  */
 function resolveBookmark(path: string): BookmarkDisplay {
-  for (const mod of Object.values(MODULE_CONFIGS)) {
-    const exact = mod.sidebarItems.find((i) => i.path === path);
-    if (exact) return { label: exact.label, icon: exact.icon };
-  }
-  for (const mod of Object.values(MODULE_CONFIGS)) {
-    if (mod.basePath === path) return { label: mod.label, icon: mod.icon };
-  }
-  let best: BookmarkDisplay | null = null;
-  let bestLen = 0;
-  for (const mod of Object.values(MODULE_CONFIGS)) {
-    for (const item of mod.sidebarItems) {
-      if (path.startsWith(`${item.path}/`) && item.path.length > bestLen) {
-        best = { label: item.label, icon: item.icon };
-        bestLen = item.path.length;
-      }
-    }
-  }
-  if (best) return best;
-  const lastSegment = path.split("/").filter(Boolean).pop() ?? path;
+  const item = matchNavItem(allNavItems(), path);
+  if (item) return { label: item.label, icon: item.icon };
+
+  const pathname = path.split("?")[0];
+  const mod = Object.values(MODULE_CONFIGS).find((m) => m.basePath === pathname);
+  if (mod) return { label: mod.label, icon: mod.icon };
+
+  const lastSegment = pathname.split("/").filter(Boolean).pop() ?? pathname;
   const label = lastSegment.replace(/-/g, " ").replace(/^\w/, (c) => c.toUpperCase());
   return { label, icon: Bookmark };
 }
@@ -160,47 +224,55 @@ function RailBookmarks() {
   const items = bookmarks.map((path) => ({ path, ...resolveBookmark(path) }));
 
   return (
-    <div className="relative" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
-      <RailButton icon={Bookmark} label="Bookmarks" onClick={() => setOpen((o) => !o)} />
-      {open && (
-        <div className="absolute left-14 top-0 z-50 w-56 bg-card border border-border rounded-xl shadow-xl overflow-hidden">
-          <div className="max-h-[calc(100vh-8rem)] overflow-y-auto py-1.5">
-            {items.length === 0 ? (
-              <p className="px-3.5 py-6 text-xs text-muted-foreground text-center">
-                No bookmarks yet. Right-click any page to bookmark it.
-              </p>
-            ) : (
-              items.map(({ path, label, icon: Icon }) => (
-                <div
-                  key={path}
-                  className="flex items-center gap-2.5 px-3.5 py-2 text-sm text-foreground hover:bg-muted/60 group"
-                >
-                  <Icon className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                  <button type="button" onClick={() => navigate(path)} className="truncate flex-1 text-left">
-                    {label}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => removeBookmark(path)}
-                    aria-label={`Remove bookmark: ${label}`}
-                    className="shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-          <div className="border-t border-border px-3.5 py-2">
-            <p className="text-[10px] text-muted-foreground">Tip: press Ctrl+D to bookmark the current page</p>
-          </div>
-        </div>
-      )}
-    </div>
+    <RailFlyout
+      icon={Bookmark}
+      label="Bookmarks"
+      open={open}
+      setOpen={setOpen}
+      panelClassName="w-56 overflow-hidden"
+    >
+      <div className="max-h-[calc(100vh-8rem)] overflow-y-auto py-1.5">
+        {items.length === 0 ? (
+          <p className="px-3.5 py-6 text-xs text-muted-foreground text-center">
+            No bookmarks yet. Right-click any page to bookmark it.
+          </p>
+        ) : (
+          items.map(({ path, label, icon: Icon }) => (
+            <div
+              key={path}
+              className="flex items-center gap-2.5 px-3.5 py-2 text-sm text-foreground hover:bg-muted/60 group"
+            >
+              <Icon className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+              <button
+                type="button"
+                onClick={() => {
+                  navigate(path);
+                  setOpen(false);
+                }}
+                className="truncate flex-1 text-left"
+              >
+                {label}
+              </button>
+              <button
+                type="button"
+                onClick={() => removeBookmark(path)}
+                aria-label={`Remove bookmark: ${label}`}
+                className="shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+      <div className="border-t border-border px-3.5 py-2">
+        <p className="text-[10px] text-muted-foreground">Tip: press Ctrl+D to bookmark the current page</p>
+      </div>
+    </RailFlyout>
   );
 }
 
-function RailAllApps() {
+function RailAllApps({ railModuleIds }: { railModuleIds: Set<string> }) {
   const navigate = useNavigate();
   const open = useNavStore((s) => s.allAppsOpen);
   const setOpen = useNavStore((s) => s.setAllAppsOpen);
@@ -217,16 +289,15 @@ function RailAllApps() {
   };
 
   return (
-    <div className="relative" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
-      <RailButton
-        icon={Grid3X3}
-        label="All apps"
-        active={activeModule !== null && activeModule !== "reports" && activeModule !== "tenantAdmin"}
-        onClick={() => setOpen(!open)}
-      />
-      {open && (
-        <div className="absolute left-14 top-0 z-50 w-64 max-h-[calc(100vh-8rem)] overflow-y-auto bg-card border border-border rounded-xl shadow-xl py-1.5">
-          {APP_GROUPS.map((group) => {
+    <RailFlyout
+      icon={Grid3X3}
+      label="All apps"
+      active={activeModule !== null && !railModuleIds.has(activeModule)}
+      open={open}
+      setOpen={setOpen}
+      panelClassName="w-64 max-h-[calc(100vh-8rem)] overflow-y-auto py-1.5"
+    >
+      {APP_GROUPS.map((group) => {
             const modules = group.moduleIds
               .map((id) => MODULE_CONFIGS[id])
               .filter((m): m is NonNullable<typeof m> => !!m);
@@ -291,8 +362,6 @@ function RailAllApps() {
               </div>
             );
           })}
-        </div>
-      )}
-    </div>
+    </RailFlyout>
   );
 }

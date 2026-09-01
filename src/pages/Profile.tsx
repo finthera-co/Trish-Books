@@ -160,10 +160,7 @@ export default function Profile() {
   const isActive = (profile?.status ?? "active").toLowerCase() === "active";
 
   return (
-    // Routed straight under AppLayout, whose <main> is overflow-hidden and
-    // unpadded — ModuleLayout supplies the p-6/overflow-y-auto that module
-    // pages get for free, so this page owns its own padding and scroll.
-    <div className="w-full px-4 sm:px-6 py-6 space-y-6 overflow-y-auto flex-1">
+    <div className="space-y-6">
       <div className="page-header">
         <div>
           <h1 className="page-title">My Profile</h1>

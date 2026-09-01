@@ -1,6 +1,7 @@
 import { useRef, useLayoutEffect } from "react";
 import { useLocation, useOutlet } from "react-router-dom";
 import { useWindowsStore } from "@/stores/useWindowsStore";
+import { matchNavItem } from "@/lib/navMatch";
 import type { ModuleConfig } from "@/components/layout/ModuleLayout";
 
 interface WindowedOutletProps {
@@ -26,7 +27,7 @@ export default function WindowedOutlet({ config }: WindowedOutletProps) {
   const id = location.pathname + location.search;
 
   useLayoutEffect(() => {
-    const matchedItem = config.sidebarItems.find((i) => location.pathname === i.path);
+    const matchedItem = matchNavItem(config.sidebarItems, id);
     registerActive({
       id,
       path: id,

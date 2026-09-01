@@ -22,7 +22,7 @@ import MyProfile from "./pages/employee/MyProfile";
 import MyNotifications from "./pages/employee/MyNotifications";
 import AppLayout from "./components/layout/AppLayout";
 import ModuleLayout from "./components/layout/ModuleLayout";
-import { MODULE_CONFIGS } from "./config/modules";
+import { MODULE_CONFIGS, STANDALONE_PAGES } from "./config/modules";
 import ModuleDashboard from "./pages/ModuleDashboard";
 
 // Pages
@@ -184,15 +184,19 @@ const App = () => (
                 {/* Home — navigation landing page, role-aware redirect */}
                 <Route path="/home" element={<Home />} />
 
-                {/* Dashboard — stats, KPIs, charts, moved off the home page */}
-                <Route path="/dashboard" element={<DashboardOverview />} />
-
-                {/* Notifications feed (all alerts) — available to any signed-in user */}
-                <Route path="/notifications" element={<Notifications />} />
-
-                {/* Own account: name, email, password, 2FA — any signed-in user,
-                    Super Admin included, so it sits outside TenantRoute. */}
-                <Route path="/profile" element={<Profile />} />
+                {/* Workspace-level pages: no module of their own, but they get
+                    the same breadcrumb bar, padding, scroll container and
+                    minimize/close chrome as every module page. Outside
+                    TenantRoute — Super Admin reaches profile and notifications
+                    too. */}
+                <Route element={<ModuleLayout config={STANDALONE_PAGES} />}>
+                  {/* Stats, KPIs, charts — moved off the home page */}
+                  <Route path="/dashboard" element={<DashboardOverview />} />
+                  {/* Notifications feed (all alerts) */}
+                  <Route path="/notifications" element={<Notifications />} />
+                  {/* Own account: name, email, password, 2FA */}
+                  <Route path="/profile" element={<Profile />} />
+                </Route>
 
                 {/* ═══════════════════════════════════════════════════
                     SUPER ADMIN ONLY — Control Plane
@@ -323,6 +327,11 @@ const App = () => (
                     <Route path="/payroll/recurring" element={<RecurringPay />} />
                   </Route>
 
+                  {/* Tax Center used to live at /tax, which sits under no
+                      module basePath — the sidebar vanished on arrival. Kept as
+                      a redirect so old links and bookmarks still land. */}
+                  <Route path="/tax" element={<Navigate to="/reports/tax" replace />} />
+
                   {/* Reports module */}
                   <Route element={<ModuleLayout config={MODULE_CONFIGS.reports} />}>
                     <Route path="/reports" element={<ModuleDashboard config={MODULE_CONFIGS.reports} />} />
@@ -333,7 +342,7 @@ const App = () => (
                     <Route path="/reports/analyst" element={<FinancialAnalyst />} />
                     <Route path="/reports/anomalies" element={<AnomalyDashboard />} />
                     <Route path="/reports/forecasting" element={<ForecastDashboard />} />
-                    <Route path="/tax" element={<TaxCenter />} />
+                    <Route path="/reports/tax" element={<TaxCenter />} />
                   </Route>
 
                   {/* Fixed Assets module */}

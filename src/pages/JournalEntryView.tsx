@@ -9,6 +9,7 @@ import { useState } from "react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { ArrowLeft, Copy, Edit, FileText, RotateCcw, Ban, Undo2, Trash2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { typeColors, getTypeLabel } from "@/lib/accountTypes";
 import { resolveLineMemo, isMemoInherited, bySeq } from "@/lib/journalValidation";
 import { formatDate } from "@/lib/format";
@@ -38,6 +39,10 @@ export default function JournalEntryView() {
     },
     enabled: !!id,
   });
+
+  // Names this page in the breadcrumb and the minimize dock — without it
+  // every open journal entry docks as an identical "Journal Entries" chip.
+  usePageTitle(entry?.reference || entry?.description);
 
   // Check if entry is in a closed period
   const { data: closedPeriods } = useQuery({
