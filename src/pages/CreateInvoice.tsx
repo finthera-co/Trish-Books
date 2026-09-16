@@ -627,9 +627,10 @@ export default function CreateInvoice() {
       } else {
         // A typed number is used as entered. Otherwise generate the IRD-compliant
         // serial (YYMMM_QQQQ_XXXXX) atomically before the insert: the RPC bumps a
-        // row-locked per-tenant/branch/month counter and records the number in the
-        // serial register, so concurrent saves never collide and the sequence has
-        // no unexplained gaps. A typed number sits outside that register.
+        // row-locked per-tenant/branch counter — continuous, never reset at a month
+        // boundary — and records the number in the serial register, so concurrent
+        // saves never collide and the sequence has no unexplained gaps. A typed
+        // number sits outside that register.
         let serial = typedNumber;
         if (!serial) {
           const { data: generated, error: serialErr } = await supabase

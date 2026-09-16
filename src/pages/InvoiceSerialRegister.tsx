@@ -27,8 +27,9 @@ const periodLabel = (iso: string) => {
  * raised, key those in by hand with their original numbers, and the sequence
  * continues cleanly from there.
  *
- * Numbering restarts each month per branch under the IRD format, so the counter
- * belongs to one branch + month rather than the whole company.
+ * The counter belongs to a branch and runs on for good — it does not restart at
+ * a month or year boundary — so the month picked here only decides the YYMMM
+ * stamp the number will carry.
  */
 function NextNumberCard() {
   const [period, setPeriod] = useState(today());
@@ -83,7 +84,7 @@ function NextNumberCard() {
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <div className="space-y-1.5">
-            <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Month</Label>
+            <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Issue month</Label>
             <Input type="date" className="h-9" value={period} onChange={(e) => setPeriod(e.target.value)} />
           </div>
           <div className="space-y-1.5">
@@ -105,17 +106,18 @@ function NextNumberCard() {
         </div>
 
         <p className="text-[11px] text-muted-foreground">
-          Numbering restarts every month, so this applies to {periodLabel(period)} for the branch shown.
-          It can only move forward — a number already issued is never handed out twice.
+          Numbering runs on without restarting, so this sets the branch's counter outright — the
+          month above only stamps {periodLabel(period)} on the numbers passed over. It can only
+          move forward: a number already issued is never handed out twice.
           {" "}The branch code is saved as this company's default and pre-fills new invoices.
         </p>
 
         {(current ?? []).length > 0 && (
           <div className="rounded-lg border border-border divide-y divide-border">
             {(current ?? []).map((r) => (
-              <div key={`${r.branch_code}-${r.yy}-${r.mmm}`} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+              <div key={r.branch_code} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
                 <span className="text-muted-foreground">
-                  Branch <span className="font-mono text-foreground">{r.branch_code}</span> · {r.mmm} 20{String(r.yy).padStart(2, "0")}
+                  Branch <span className="font-mono text-foreground">{r.branch_code}</span>
                 </span>
                 <span className="flex items-center gap-2">
                   <span className="font-mono tabular-nums text-foreground">
@@ -138,9 +140,9 @@ function NextNumberCard() {
             <AlertDialogHeader>
               <AlertDialogTitle>Remove the {deleteTarget?.branch_code} number series?</AlertDialogTitle>
               <AlertDialogDescription>
-                This deletes the counter and every register row for branch {deleteTarget?.branch_code} in{" "}
-                {deleteTarget?.mmm} 20{String(deleteTarget?.yy ?? "").padStart(2, "0")}. It is refused if any
-                invoice still uses a number from this series.
+                This deletes the counter and every register row for branch {deleteTarget?.branch_code},
+                across every month it has issued in. It is refused if any invoice still uses a number
+                from this series.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -149,7 +151,7 @@ function NextNumberCard() {
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 onClick={() => {
                   if (!deleteTarget) return;
-                  deleteSeries.mutate({ branchCode: deleteTarget.branch_code, period });
+                  deleteSeries.mutate(deleteTarget.branch_code);
                   setDeleteTarget(null);
                 }}
               >
@@ -211,7 +213,7 @@ export default function InvoiceSerialRegister() {
           <Card key={g.key}>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-base">Branch {g.branch_code} · {g.mmm} 20{String(g.yy).padStart(2, "0")}</CardTitle>
+                <CardTitle className="text-base">Branch {g.branch_code}</CardTitle>
                 <div className="flex items-center gap-2 text-xs">
                   <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">{g.issued} issued</Badge>
                   {g.reserved > 0 && <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">{g.reserved} reserved</Badge>}
@@ -225,6 +227,7 @@ export default function InvoiceSerialRegister() {
               <Table>
                 <TableHeader><TableRow>
                   <TableHead className="w-16">Seq</TableHead><TableHead>Serial</TableHead>
+                  <TableHead>Month</TableHead>
                   <TableHead>Status</TableHead><TableHead>Reason</TableHead><TableHead>Recorded</TableHead>
                   {canSetNextNumber && <TableHead className="w-10"></TableHead>}
                 </TableRow></TableHeader>
@@ -233,6 +236,7 @@ export default function InvoiceSerialRegister() {
                     <TableRow key={r.id}>
                       <TableCell className="text-muted-foreground tabular-nums">{r.seq}</TableCell>
                       <TableCell className="font-mono font-medium">{r.serial}</TableCell>
+                      <TableCell className="text-muted-foreground">{r.mmm} 20{String(r.yy).padStart(2, "0")}</TableCell>
                       <TableCell><Badge className={statusBadge(r.status)}>{r.status}</Badge></TableCell>
                       <TableCell className="text-muted-foreground">{r.reason || "—"}</TableCell>
                       <TableCell className="text-muted-foreground">{formatDate(r.created_at)}</TableCell>

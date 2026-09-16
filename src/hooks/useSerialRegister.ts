@@ -7,8 +7,11 @@ export interface SerialRow {
   invoice_id: string | null; status: "reserved" | "issued" | "cancelled" | "skipped"; reason: string | null; created_at: string;
 }
 
+// One group per branch. The sequence runs on across months, so a branch's
+// numbers are one series however many months they span — grouping them by month
+// would report every month boundary as a gap.
 export interface SerialGroup {
-  key: string; branch_code: string; yy: number; mmm: string;
+  key: string; branch_code: string;
   rows: SerialRow[]; minSeq: number; maxSeq: number;
   missing: number[]; // seq numbers with no register row = unexplained gaps (should be empty)
   issued: number; cancelled: number; reserved: number; skipped: number;
@@ -24,16 +27,16 @@ export function useSerialRegister() {
         .from("invoice_serial_register" as any)
         .select("*")
         .eq("tenant_id", appUser!.tenant_id)
-        .order("branch_code").order("yy", { ascending: false }).order("mmm").order("seq");
+        .order("branch_code").order("seq");
       if (error) throw error;
       const rows = (data || []) as unknown as SerialRow[];
 
       const groups = new Map<string, SerialGroup>();
       for (const r of rows) {
-        const key = `${r.branch_code}·${r.yy}·${r.mmm}`;
+        const key = r.branch_code;
         let g = groups.get(key);
         if (!g) {
-          g = { key, branch_code: r.branch_code, yy: r.yy, mmm: r.mmm, rows: [], minSeq: r.seq, maxSeq: r.seq, missing: [], issued: 0, cancelled: 0, reserved: 0, skipped: 0 };
+          g = { key, branch_code: r.branch_code, rows: [], minSeq: r.seq, maxSeq: r.seq, missing: [], issued: 0, cancelled: 0, reserved: 0, skipped: 0 };
           groups.set(key, g);
         }
         g.rows.push(r);

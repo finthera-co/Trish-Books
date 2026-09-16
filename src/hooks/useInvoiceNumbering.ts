@@ -12,9 +12,9 @@ export interface NextNumberRow {
 }
 
 /**
- * The next auto-generated invoice number per branch, for the month `period`
- * falls in. Numbering restarts each month under the IRD YYMMM_QQQQ_XXXXX
- * format, so a counter only ever means something within one branch + month.
+ * The next auto-generated invoice number per branch. The counter is continuous
+ * per branch — it never restarts — so `period` no longer picks a counter, it
+ * only says which YYMMM stamp an invoice dated then would carry.
  */
 export function useInvoiceNextNumbers(period: string) {
   const { appUser } = useAuth();
@@ -30,25 +30,25 @@ export function useInvoiceNextNumbers(period: string) {
 }
 
 /**
- * Remove a branch's number series outright — counter and register rows.
+ * Remove a branch's number series outright — counter and register rows. A
+ * series is the whole branch now that numbering runs on across months.
  * The RPC refuses when any invoice uses a number from it, so a series that
  * actually issued something can't be erased.
  */
 export function useDeleteInvoiceNumberSeries() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { branchCode: string; period: string }) => {
+    mutationFn: async (branchCode: string) => {
       const { data, error } = await supabase.rpc("delete_invoice_number_series" as any, {
-        p_branch_code: input.branchCode,
-        p_period: input.period,
+        p_branch_code: branchCode,
       });
       if (error) throw new Error(error.message);
       return data as number;
     },
-    onSuccess: (_rows, input) => {
+    onSuccess: (_rows, branchCode) => {
       qc.invalidateQueries({ queryKey: ["invoice_next_numbers"] });
       qc.invalidateQueries({ queryKey: ["invoice_serial_register"] });
-      toast.success(`Removed the ${input.branchCode} number series`);
+      toast.success(`Removed the ${branchCode} number series`);
     },
     onError: (e: Error) => toast.error(e.message),
   });
