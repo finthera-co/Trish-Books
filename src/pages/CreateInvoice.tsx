@@ -460,9 +460,9 @@ export default function CreateInvoice() {
     [lineNets, docDiscountApplied],
   );
 
-  // Same %/amount pairing as a line discount: the % re-derives the money value
-  // and keeps following the net total as lines are edited, while typing into
-  // the money box re-derives the %.
+  // Enter either a % or an amount. A % re-derives the money value and keeps
+  // following the net total as lines are edited; a typed amount is fixed and
+  // the % box only reads it out.
   const setDocPct = (v: number) => {
     const pct = Math.min(100, Math.max(0, Number(v) || 0));
     setDocDiscountPct(pct);
@@ -470,9 +470,15 @@ export default function CreateInvoice() {
   };
   const setDocAmount = (v: number) => {
     const amt = Math.max(0, Number(v) || 0);
+    // A typed amount is a fixed figure: it stays exactly as entered and does not
+    // follow line edits, so no stored % drives it (0 = flat-amount discount).
     setDocDiscount(amt);
-    setDocDiscountPct(netTotal > 0 ? Math.min(100, Math.round((amt / netTotal) * 10000) / 100) : 0);
+    setDocDiscountPct(0);
   };
+  // In amount mode the % box just reads out what the amount comes to.
+  const docPctShown = docDiscountPct > 0
+    ? docDiscountPct
+    : docDiscount > 0 && netTotal > 0 ? Math.min(100, Math.round((docDiscount / netTotal) * 10000) / 100) : 0;
   useEffect(() => {
     if (loadingExisting || docDiscountPct <= 0) return;
     setDocDiscount(Math.round(netTotal * docDiscountPct) / 100);
@@ -1186,7 +1192,7 @@ export default function CreateInvoice() {
                 <div className="flex items-center gap-1.5">
                   <div className="relative w-[44%] shrink-0">
                     <Input type="number" className="h-9 pr-5 text-sm text-right font-mono" placeholder="0"
-                      value={docDiscountPct || ""} min={0} max={100} step="0.01"
+                      value={docPctShown || ""} min={0} max={100} step="0.01"
                       onChange={(e) => setDocPct(Number(e.target.value))} />
                     <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">%</span>
                   </div>
