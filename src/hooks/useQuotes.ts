@@ -13,6 +13,8 @@ export interface QuoteItemInput {
   discount_amount?: number;
   /** Line discount as a % of quantity × unit_price; 0 for a flat-amount discount. */
   discount_percent?: number;
+  /** The line's OWN discount; discount_amount also carries its share of the quote-level discount. */
+  line_discount_amount?: number;
   is_tax_inclusive?: boolean;
   tax_code_id?: string | null;
   tax_group_id?: string | null;
@@ -29,6 +31,9 @@ export interface CreateQuoteInput {
   subtotal: number;
   tax_amount: number;
   discount_amount: number;
+  /** Quote-level discount as entered — already apportioned into the items' discount_amount. */
+  document_discount?: number;
+  document_discount_percent?: number;
   total_amount: number;
   items: QuoteItemInput[];
 }
@@ -110,6 +115,7 @@ export function useCreateQuote() {
             account_id: it.account_id || null,
             discount_amount: it.discount_amount || 0,
             discount_percent: it.discount_percent || 0,
+            line_discount_amount: it.line_discount_amount ?? it.discount_amount ?? 0,
             is_tax_inclusive: !!it.is_tax_inclusive,
             tax_code_id: it.tax_code_id || null,
             tax_group_id: it.tax_group_id || null,
@@ -157,6 +163,7 @@ export function useUpdateQuote() {
             account_id: it.account_id || null,
             discount_amount: it.discount_amount || 0,
             discount_percent: it.discount_percent || 0,
+            line_discount_amount: it.line_discount_amount ?? it.discount_amount ?? 0,
             is_tax_inclusive: !!it.is_tax_inclusive,
             tax_code_id: it.tax_code_id || null,
             tax_group_id: it.tax_group_id || null,
@@ -255,6 +262,8 @@ export function useConvertQuoteToInvoice() {
           subtotal: quote.subtotal,
           tax_amount: quote.tax_amount,
           discount_amount: quote.discount_amount,
+          document_discount: quote.document_discount || 0,
+          document_discount_percent: quote.document_discount_percent || 0,
           notes: quote.notes,
           terms: quote.terms,
           status: "draft",
@@ -276,6 +285,7 @@ export function useConvertQuoteToInvoice() {
             account_id: it.account_id || null,
             discount_amount: it.discount_amount || 0,
             discount_percent: it.discount_percent || 0,
+            line_discount_amount: it.line_discount_amount ?? it.discount_amount ?? 0,
             is_tax_inclusive: !!it.is_tax_inclusive,
             tax_code_id: it.tax_code_id || null,
             tax_group_id: it.tax_group_id || null,

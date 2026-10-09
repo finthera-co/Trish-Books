@@ -22,6 +22,14 @@ export default function QuoteDocument({ quote, company }: Props) {
     return pct > 0 ? `-${formatCurrency(amt)} (${pct}%)` : `-${formatCurrency(amt)}`;
   };
 
+  // subtotal is stored net of every discount; document_discount is the part given
+  // on the total and is already inside the lines — present it, never re-subtract.
+  const totalDiscount = Number(quote?.discount_amount || 0);
+  const docDiscount = Math.min(Number(quote?.document_discount || 0), totalDiscount);
+  const docDiscountPct = Number(quote?.document_discount_percent || 0);
+  const lineDiscount = Math.round((totalDiscount - docDiscount) * 100) / 100;
+  const grossSubtotal = Number(quote?.subtotal || 0) + totalDiscount;
+
   return (
     <div id="estimate-doc" className="bg-white text-neutral-900 p-8 w-full text-sm">
       {/* Header */}
@@ -87,9 +95,18 @@ export default function QuoteDocument({ quote, company }: Props) {
       {/* Totals */}
       <div className="flex justify-end pt-4">
         <div className="w-64 space-y-1.5 text-sm">
-          <div className="flex justify-between"><span className="text-neutral-500">Subtotal</span><span className="tabular-nums">{formatCurrency(Number(quote?.subtotal || 0))}</span></div>
-          {Number(quote?.discount_amount || 0) > 0 && (
-            <div className="flex justify-between"><span className="text-neutral-500">Discount</span><span className="tabular-nums text-red-600">-{formatCurrency(Number(quote.discount_amount))}</span></div>
+          <div className="flex justify-between"><span className="text-neutral-500">Subtotal</span><span className="tabular-nums">{formatCurrency(grossSubtotal)}</span></div>
+          {lineDiscount > 0 && (
+            <div className="flex justify-between"><span className="text-neutral-500">Discount</span><span className="tabular-nums text-red-600">-{formatCurrency(lineDiscount)}</span></div>
+          )}
+          {docDiscount > 0 && (
+            <div className="flex justify-between">
+              <span className="text-neutral-500">Discount on total{docDiscountPct > 0 ? ` (${docDiscountPct}%)` : ""}</span>
+              <span className="tabular-nums text-red-600">-{formatCurrency(docDiscount)}</span>
+            </div>
+          )}
+          {totalDiscount > 0 && (
+            <div className="flex justify-between"><span className="text-neutral-500">Taxable amount</span><span className="tabular-nums">{formatCurrency(Number(quote?.subtotal || 0))}</span></div>
           )}
           {Number(quote?.tax_amount || 0) > 0 && (
             <div className="flex justify-between"><span className="text-neutral-500">Tax</span><span className="tabular-nums">{formatCurrency(Number(quote.tax_amount))}</span></div>

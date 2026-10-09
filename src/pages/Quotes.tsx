@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, FileText, Plus, Trash2, MoreHorizontal, Send, Check, X, ArrowRightCircle, Eye, Pencil, Printer, Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -17,7 +17,7 @@ import { useCustomers, useAccounts } from "@/hooks/useData";
 import { QuickCustomerDialog } from "@/components/invoices/QuickCustomerDialog";
 import { useTaxGroups, useTaxCodes, useTaxProfile, currentRate } from "@/hooks/useTaxEngine";
 import { calculateLineTax, type TaxMemberInput } from "@/lib/taxEngine";
-import { discountFromPercent, percentFromDiscount } from "@/lib/lineDiscount";
+import { discountFromPercent, percentFromDiscount, apportionDiscount } from "@/lib/lineDiscount";
 import {
   useQuotes, useCreateQuote, useUpdateQuote, useSetQuoteStatus, useDeleteQuote, useConvertQuoteToInvoice, useQuoteDocument,
   type QuoteItemInput,
@@ -82,6 +82,11 @@ export default function Quotes() {
     expiry_date: "", branch_code: "", payment_terms: "net_30", notes: "", terms: "",
   });
   const [lines, setLines] = useState<LineDraft[]>([emptyLine()]);
+  // Quote-level discount — one figure off the whole estimate, entered as a % or
+  // an amount. Like the invoice one it is apportioned onto the lines so tax is
+  // charged on the discounted value (see apportionDiscount).
+  const [docDiscountPct, setDocDiscountPct] = useState(0);
+  const [docDiscount, setDocDiscount] = useState(0);
 
   const revenueAccounts = useMemo(
     () => (accounts ?? []).filter((a: any) => a.is_active && ["Revenue", "Income", "Other Income"].includes(a.account_type))
@@ -114,8 +119,34 @@ export default function Quotes() {
     return [];
   };
 
-  const lineCalcs = useMemo(() => lines.map((l) => {
-    const lineAmount = l.qty * l.rate - l.discount;
+  const lineNets = useMemo(
+    () => lines.map((l) => Math.max(0, Math.round((l.qty * l.rate - l.discount) * 100) / 100)),
+    [lines],
+  );
+  const netTotal = Math.round(lineNets.reduce((s, n) => s + n, 0) * 100) / 100;
+  // A discount can never exceed what's left to discount.
+  const docDiscountApplied = Math.min(Math.max(0, docDiscount), netTotal);
+  const docShares = useMemo(() => apportionDiscount(lineNets, docDiscountApplied), [lineNets, docDiscountApplied]);
+
+  // Same %/amount pairing as a line discount: the % keeps following the net
+  // total as lines are edited, typing into the money box re-derives the %.
+  const setDocPct = (v: number) => {
+    const pct = Math.min(100, Math.max(0, Number(v) || 0));
+    setDocDiscountPct(pct);
+    setDocDiscount(Math.round(netTotal * pct) / 100);
+  };
+  const setDocAmount = (v: number) => {
+    const amt = Math.max(0, Number(v) || 0);
+    setDocDiscount(amt);
+    setDocDiscountPct(netTotal > 0 ? Math.min(100, Math.round((amt / netTotal) * 10000) / 100) : 0);
+  };
+  useEffect(() => {
+    if (docDiscountPct <= 0) return;
+    setDocDiscount(Math.round(netTotal * docDiscountPct) / 100);
+  }, [netTotal, docDiscountPct]);
+
+  const lineCalcs = useMemo(() => lines.map((l, i) => {
+    const lineAmount = l.qty * l.rate - l.discount - (docShares[i] ?? 0);
     const members = membersFor(l.tax_sel);
     if (members.length === 0 || lineAmount <= 0) {
       const base = Math.round(Math.max(0, lineAmount) * 100) / 100;
@@ -123,12 +154,14 @@ export default function Quotes() {
     }
     const first = codesById.get(members[0].taxCodeId);
     return calculateLineTax({ lineAmount, isInclusive: l.inclusive, members, roundingMethod: (first?.rounding_method as any) || "half_up", roundingLevel: "line", documentDate: form.issue_date });
-  }), [lines, taxGroups, taxCodes, form.issue_date]);
+  }), [lines, docShares, taxGroups, taxCodes, form.issue_date]);
 
   const subtotal = Math.round(lineCalcs.reduce((s, c) => s + c.exclusiveBase, 0) * 100) / 100;
   const totalTax = Math.round(lineCalcs.reduce((s, c) => s + c.taxes.reduce((t: number, x: any) => t + x.amount, 0), 0) * 100) / 100;
   const total = Math.round((subtotal + totalTax) * 100) / 100;
-  const totalDiscount = lines.reduce((s, l) => s + l.discount, 0);
+  const lineDiscountTotal = Math.round(lines.reduce((s, l) => s + l.discount, 0) * 100) / 100;
+  const totalDiscount = Math.round((lineDiscountTotal + docDiscountApplied) * 100) / 100;
+  const grossSubtotal = Math.round(lines.reduce((s, l) => s + l.qty * l.rate, 0) * 100) / 100;
 
   // Editing a line keeps its discount %/amount pair in step: the % re-derives the
   // money value from qty × rate (and follows any change to either), while typing
@@ -147,6 +180,8 @@ export default function Quotes() {
   const resetForm = () => {
     setForm({ customer_id: "", issue_date: new Date().toISOString().split("T")[0], expiry_date: "", branch_code: "", payment_terms: "net_30", notes: "", terms: "" });
     setLines([emptyLine()]);
+    setDocDiscount(0);
+    setDocDiscountPct(0);
     setEditingId(null);
   };
 
@@ -170,18 +205,26 @@ export default function Quotes() {
     const items = [...(data.quote_items ?? [])].sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     setLines(items.length ? items.map((it: any): LineDraft => ({
       id: crypto.randomUUID(), description: it.description || "", qty: Number(it.quantity), rate: Number(it.unit_price),
-      discount_pct: Number(it.discount_percent || 0), discount: Number(it.discount_amount || 0),
+      // The line's OWN discount — discount_amount also carries its share of the
+      // quote-level discount, which is re-apportioned from the header figure.
+      discount_pct: Number(it.discount_percent || 0), discount: Number(it.line_discount_amount ?? it.discount_amount ?? 0),
       tax_sel: it.tax_group_id ? `g:${it.tax_group_id}` : it.tax_code_id ? `c:${it.tax_code_id}` : "",
       inclusive: !!it.is_tax_inclusive, account_id: it.account_id || "",
     })) : [emptyLine()]);
+    setDocDiscount(Number(data.document_discount) || 0);
+    setDocDiscountPct(Number(data.document_discount_percent) || 0);
     setEditingId(q.id);
     setOpen(true);
   };
 
   const handleSubmit = async () => {
-    const items: QuoteItemInput[] = lines.filter((l) => l.rate > 0 || l.description).map((l, idx) => ({
+    const kept = lines.map((l, idx) => ({ l, idx })).filter(({ l }) => l.rate > 0 || l.description);
+    const items: QuoteItemInput[] = kept.map(({ l, idx }) => ({
       description: l.description, quantity: l.qty, unit_price: l.rate,
-      discount_amount: l.discount, discount_percent: l.discount_pct,
+      // Own discount plus this line's share of the quote-level one, so a
+      // converted invoice recomputes tax on the discounted value.
+      discount_amount: Math.round((l.discount + (docShares[idx] ?? 0)) * 100) / 100,
+      line_discount_amount: l.discount, discount_percent: l.discount_pct,
       total: lineCalcs[idx]?.lineTotal ?? Math.max(0, l.qty * l.rate - l.discount),
       account_id: l.account_id || null, is_tax_inclusive: l.inclusive,
       tax_group_id: l.tax_sel.startsWith("g:") ? l.tax_sel.slice(2) : null,
@@ -191,7 +234,9 @@ export default function Quotes() {
       customer_id: form.customer_id || null, issue_date: form.issue_date, expiry_date: form.expiry_date || null,
       branch_code: form.branch_code.trim() || null, payment_terms: form.payment_terms,
       notes: form.notes || null, terms: form.terms || null,
-      subtotal, tax_amount: totalTax, discount_amount: totalDiscount, total_amount: total, items,
+      subtotal, tax_amount: totalTax, discount_amount: totalDiscount,
+      document_discount: docDiscountApplied, document_discount_percent: docDiscountPct,
+      total_amount: total, items,
     };
     if (editingId) await updateQuote.mutateAsync({ id: editingId, input });
     else await createQuote.mutateAsync(input);
@@ -350,13 +395,60 @@ export default function Quotes() {
                   ))}
                   <Button variant="outline" size="sm" className="w-full border-dashed" onClick={() => setLines((p) => [...p, emptyLine()])}><Plus className="w-4 h-4 mr-1.5" /> Add line</Button>
                 </div>
-                <div className="flex justify-end gap-6 text-sm pt-1">
-                  <span className="text-muted-foreground">Subtotal <span className="text-foreground font-medium ml-1">{formatCurrency(subtotal)}</span></span>
-                  {totalDiscount > 0 && (
-                    <span className="text-muted-foreground">Discount <span className="text-destructive font-medium ml-1">−{formatCurrency(totalDiscount)}</span></span>
+                {/* Totals ladder — gross, each deduction, taxable, tax, total. */}
+                <div className="ml-auto w-full max-w-xs space-y-1.5 pt-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Subtotal</span>
+                    <span className="tabular-nums text-foreground">{formatCurrency(grossSubtotal)}</span>
+                  </div>
+                  {lineDiscountTotal > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Line discounts</span>
+                      <span className="tabular-nums text-destructive">−{formatCurrency(lineDiscountTotal)}</span>
+                    </div>
                   )}
-                  <span className="text-muted-foreground">Tax <span className="text-foreground font-medium ml-1">{formatCurrency(totalTax)}</span></span>
-                  <span className="text-muted-foreground">Total <span className="text-foreground font-semibold ml-1">{formatCurrency(total)}</span></span>
+                  {/* Quote-level discount — comes off the taxable value, so tax reacts to it. */}
+                  <div className="space-y-1.5 rounded-md border border-dashed border-border p-2.5">
+                    <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Discount on total</Label>
+                    <div className="flex items-center gap-1.5">
+                      <div className="relative w-[44%] shrink-0">
+                        <Input type="number" className="h-9 pr-5 text-sm text-right tabular-nums" placeholder="0"
+                          value={docDiscountPct || ""} min={0} max={100} step="0.01"
+                          onChange={(e) => setDocPct(Number(e.target.value))} />
+                        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">%</span>
+                      </div>
+                      <Input type="number" className="h-9 min-w-0 flex-1 text-sm text-right tabular-nums" placeholder="0.00"
+                        value={docDiscount || ""} min={0}
+                        onChange={(e) => setDocAmount(Number(e.target.value))} />
+                    </div>
+                    {docDiscount > netTotal ? (
+                      <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                        Capped at {formatCurrency(netTotal)} — a quote can't be discounted below zero.
+                      </p>
+                    ) : (
+                      <p className="text-[10px] text-muted-foreground">Spread across the lines, so tax is charged on the discounted value.</p>
+                    )}
+                  </div>
+                  {docDiscountApplied > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Discount on total</span>
+                      <span className="tabular-nums text-destructive">−{formatCurrency(docDiscountApplied)}</span>
+                    </div>
+                  )}
+                  {totalDiscount > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Taxable amount</span>
+                      <span className="tabular-nums text-foreground">{formatCurrency(subtotal)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Tax</span>
+                    <span className="tabular-nums text-foreground">{formatCurrency(totalTax)}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-border pt-1.5 font-semibold">
+                    <span className="text-foreground">Total</span>
+                    <span className="tabular-nums text-foreground">{formatCurrency(total)}</span>
+                  </div>
                 </div>
               </div>
 

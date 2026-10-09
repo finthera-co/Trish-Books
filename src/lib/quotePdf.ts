@@ -349,15 +349,22 @@ export async function buildQuotePdf(
     ty += 6.2;
   };
 
-  // quote.subtotal is stored NET of line discounts. Present the breakdown so
-  // Total = (gross subtotal) − discount + tax always reconciles on the page.
-  const lineDiscount = Number(quote.discount_amount) || 0;
-  const grossSubtotal = (Number(quote.subtotal) || 0) + lineDiscount;
+  // quote.subtotal is stored NET of every discount. Present the breakdown so
+  // Total = (gross subtotal) − discounts + tax always reconciles on the page.
+  // discount_amount is every discount on the quote; document_discount is the
+  // part given on the total. Both are already inside the lines, so they are
+  // only ever presented here — never subtracted again.
+  const totalDiscount = Number(quote.discount_amount) || 0;
+  const docDiscount = Math.min(Number(quote.document_discount) || 0, totalDiscount);
+  const lineDiscount = Math.round((totalDiscount - docDiscount) * 100) / 100;
+  const grossSubtotal = (Number(quote.subtotal) || 0) + totalDiscount;
   totalRow("Sub Total", fmt(grossSubtotal));
-  if (lineDiscount > 0) {
-    totalRow("Discount", `-${fmt(lineDiscount)}`);
-    totalRow("Taxable amount", fmt(quote.subtotal));
+  if (lineDiscount > 0) totalRow("Discount", `-${fmt(lineDiscount)}`);
+  if (docDiscount > 0) {
+    const pct = Number(quote.document_discount_percent) || 0;
+    totalRow(pct > 0 ? `Discount on Total (${pct}%)` : "Discount on Total", `-${fmt(docDiscount)}`);
   }
+  if (totalDiscount > 0) totalRow("Taxable amount", fmt(quote.subtotal));
   if (Number(quote.tax_amount) > 0) totalRow("Tax", fmt(quote.tax_amount));
   ty += 2;
   setDraw(doc, RULE); doc.setLineWidth(0.3);
