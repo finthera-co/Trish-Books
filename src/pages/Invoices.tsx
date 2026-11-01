@@ -1,7 +1,7 @@
 import { Plus, Search, MoreHorizontal, Eye, Send, Ban, Download, MessageCircle, Mail, FileText, Pencil, Trash2, CheckCircle2, XCircle, ShieldAlert, Receipt, CornerUpLeft, RotateCcw, ArrowDown, ArrowUp, ArrowUpDown, X } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useInvoices, useUpdateInvoice, useAccounts, useDeleteInvoice } from "@/hooks/useData";
 import { useApprovalQueue, useDecideInvoice, useResubmitInvoice } from "@/hooks/useApprovals";
 import { usePostInvoice } from "@/hooks/useAccountSettings";
@@ -153,6 +153,18 @@ export default function Invoices() {
   const [taxPreviewInvoice, setTaxPreviewInvoice] = useState<any>(null);
 
   const { data: invoices, isLoading } = useInvoices();
+  // Deep link from due-reminder notifications: /sales/invoices?invoice=<id>
+  // opens that invoice's details, then drops the param so a refresh or closing
+  // the dialog doesn't reopen it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkedInvoiceId = searchParams.get("invoice");
+  useEffect(() => {
+    if (!linkedInvoiceId || !invoices) return;
+    const inv = invoices.find((i: any) => i.id === linkedInvoiceId);
+    if (inv) { setSelectedInvoice(inv); setDetailsOpen(true); }
+    else toast.error("That invoice is no longer available.");
+    setSearchParams((p) => { p.delete("invoice"); return p; }, { replace: true });
+  }, [linkedInvoiceId, invoices, setSearchParams]);
   const { data: accounts } = useAccounts();
   const updateInvoice = useUpdateInvoice();
   const deleteInvoice = useDeleteInvoice();
