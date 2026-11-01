@@ -52,6 +52,14 @@ type SortState = { key: SortKey; dir: "asc" | "desc" } | null;
 
 /** Header cell that sorts the list. The arrow only appears on hover until the
  *  column is the active sort, so a resting header stays quiet. */
+// The Actions column stays on screen while the table scrolls sideways. A sticky cell
+// needs an opaque fill (rows scroll underneath it), so the row's hover/selected tint is
+// re-applied as an inset shadow over the card colour, alongside the edge shadow.
+// Full literals on purpose: Tailwind only generates classes it can read verbatim.
+const PINNED_RIGHT = "sticky right-0 z-10 bg-card shadow-[-8px_0_8px_-8px_hsl(var(--foreground)/0.18)]";
+const PINNED_ROW = "sticky right-0 z-10 bg-card shadow-[-8px_0_8px_-8px_hsl(var(--foreground)/0.18)] group-hover:shadow-[-8px_0_8px_-8px_hsl(var(--foreground)/0.18),inset_0_0_0_9999px_hsl(var(--muted)/0.4)]";
+const PINNED_ROW_SELECTED = "sticky right-0 z-10 bg-card shadow-[-8px_0_8px_-8px_hsl(var(--foreground)/0.18),inset_0_0_0_9999px_hsl(var(--primary)/0.05)]";
+
 function SortableTh({ label, sortKey, sort, onSort, align = "left" }: {
   label: string;
   sortKey: SortKey;
@@ -652,10 +660,13 @@ export default function Invoices() {
             ) : null}
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-border">
+          // The list scrolls inside a viewport-high box so its horizontal scrollbar, header
+          // and totals stay on screen — nobody should have to reach the last row to slide
+          // over to the balances. The Actions column is pinned to the right edge as well.
+          <div className="max-h-[calc(100vh-14rem)] min-h-[16rem] overflow-auto rounded-xl border border-border">
             <table className="w-full min-w-[1080px] text-sm">
-              <thead className="bg-muted/40">
-                <tr className="border-b border-border">
+              <thead className="sticky top-0 z-20 bg-card shadow-[inset_0_-1px_0_hsl(var(--border))]">
+                <tr className="bg-muted/40">
                   <th className="w-10 px-4 py-2.5"><Checkbox checked={allFilteredSelected} onCheckedChange={toggleAll} aria-label="Select all" /></th>
                   <SortableTh label="Invoice" sortKey="invoice_number" sort={sort} onSort={toggleSort} />
                   <SortableTh label="Customer" sortKey="customer" sort={sort} onSort={toggleSort} />
@@ -665,7 +676,7 @@ export default function Invoices() {
                   <SortableTh label="Total" sortKey="total_amount" sort={sort} onSort={toggleSort} align="right" />
                   <SortableTh label="Paid" sortKey="amount_paid" sort={sort} onSort={toggleSort} align="right" />
                   <SortableTh label="Balance" sortKey="balance_due" sort={sort} onSort={toggleSort} align="right" />
-                  <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">Actions</th>
+                  <th className={cn(PINNED_RIGHT, "px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap")}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -779,7 +790,10 @@ export default function Invoices() {
                       )}>
                         {formatCurrency(inv.balance_due, inv.currency)}
                       </td>
-                      <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                      <td className={cn(
+                        selected.has(inv.id) ? PINNED_ROW_SELECTED : PINNED_ROW,
+                        "px-4 py-2.5 text-right whitespace-nowrap",
+                      )}>
                         <div className="flex flex-nowrap items-center justify-end gap-0.5">
                           {/* Read-only shortcuts step back until the row is hovered or focused;
                               the row's own next step (post a draft) always stays put. */}
@@ -934,15 +948,15 @@ export default function Invoices() {
               </tbody>
               {/* What the visible rows add up to — the figure an AR clerk is chasing. */}
               {totalsCurrency && ordered.length > 1 && (
-                <tfoot>
-                  <tr className="border-t-2 border-border bg-muted/30">
+                <tfoot className="sticky bottom-0 z-20 bg-card shadow-[inset_0_2px_0_hsl(var(--border))]">
+                  <tr className="bg-muted/30">
                     <td colSpan={6} className="px-4 py-2.5 text-xs font-medium text-muted-foreground">
                       {ordered.length} invoices{selected.size > 0 ? ` · ${selected.size} selected` : ""}
                     </td>
                     <td className="px-4 py-2.5 text-right text-xs font-semibold tabular-nums text-foreground whitespace-nowrap">{formatCurrency(columnTotals.total, totalsCurrency)}</td>
                     <td className="px-4 py-2.5 text-right text-xs font-semibold tabular-nums text-foreground whitespace-nowrap">{formatCurrency(columnTotals.paid, totalsCurrency)}</td>
                     <td className="px-4 py-2.5 text-right text-xs font-semibold tabular-nums text-foreground whitespace-nowrap">{formatCurrency(columnTotals.balance, totalsCurrency)}</td>
-                    <td />
+                    <td className={PINNED_RIGHT} />
                   </tr>
                 </tfoot>
               )}
