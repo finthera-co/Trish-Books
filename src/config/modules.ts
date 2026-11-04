@@ -87,6 +87,7 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       { label: "Journal Entries", path: "/accounting/journals", icon: FileText, group: "General Ledger" },
       { label: "General Ledger", path: "/accounting/ledger", icon: Receipt, group: "General Ledger" },
       { label: "Trial Balance", path: "/accounting/trial-balance", icon: FileText, group: "General Ledger" },
+      { label: "Bookkeeping Agent", path: "/accounting/bookkeeper", icon: Sparkles, group: "General Ledger" },
       { label: "Statement Mapping", path: "/accounting/statement-mapping", icon: FileText, group: "General Ledger" },
       { label: "Receive Payment", path: "/accounting/receive-payment", icon: CreditCard, group: "Receivables" },
       { label: "Credit Notes", path: "/accounting/credit-notes", icon: Receipt, group: "Receivables" },

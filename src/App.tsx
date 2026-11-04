@@ -114,6 +114,7 @@ import AnomalyDashboard from "./pages/AnomalyDashboard";
 
 import ForecastDashboard from "./pages/ForecastDashboard";
 import FinancialAnalyst from "./pages/FinancialAnalyst";
+import BookkeepingAgent from "./pages/BookkeepingAgent";
 import AccountReport from "./pages/AccountReport";
 import GLVerification from "./pages/GLVerification";
 import CustomersPage from "./pages/CustomersPage";
@@ -232,6 +233,7 @@ const App = () => (
                     <Route path="/accounting/accounts" element={<ChartOfAccounts />} />
                     <Route path="/accounting/accounts/:id/report" element={<AccountReport />} />
                     <Route path="/accounting/journals" element={<JournalEntries />} />
+                    <Route path="/accounting/bookkeeper" element={<BookkeepingAgent />} />
                     <Route path="/accounting/journals/:id" element={<JournalEntryView />} />
                     <Route path="/accounting/journals/:id/edit" element={<JournalEntryEdit />} />
                     <Route path="/accounting/ledger" element={<Ledger />} />

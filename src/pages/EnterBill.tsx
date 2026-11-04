@@ -74,6 +74,24 @@ interface LineRow {
 
 const EXPENSE_ACCOUNT_TYPES = ["Expense", "Cost of Goods Sold", "Other Expense", "Asset", "Liability"];
 
+/** location.state.agentBill — built by useApproveProposal from a supplier_bill proposal. */
+export interface AgentBillPrefill {
+  proposal_id: string;
+  vendor_id: string;
+  bill_date: string;
+  due_date: string | null;
+  vendor_ref: string | null;
+  notes: string | null;
+  lines: {
+    account_id: string;
+    description: string;
+    qty: string;
+    unit_cost: string;
+    tax_sel: string;
+    is_tax_inclusive: boolean;
+  }[];
+}
+
 let keySeq = 0;
 const newLine = (section: "category" | "item" = "category"): LineRow => ({
   key: `l${++keySeq}`, section, account_id: "", description: "", sku: "", product_id: "", qty: "1", unit_cost: "", amount: "", tax_sel: "",
@@ -89,7 +107,11 @@ export default function EnterBill() {
   // existing bill — that bill's own lines take priority.
   const [searchParams] = useSearchParams();
   const location = useLocation();
-  const copyFrom = (location.state as { copyFrom?: any } | null)?.copyFrom;
+  // Opened from an approved Bookkeeping Agent proposal. Same shape as a copy,
+  // plus the fields a copy deliberately drops (date, vendor ref, tax) — the
+  // agent's bill IS the supplier's document, not a template for a new one.
+  const agentBill = (location.state as { agentBill?: AgentBillPrefill } | null)?.agentBill;
+  const copyFrom = (location.state as { copyFrom?: any } | null)?.copyFrom ?? agentBill;
 
   const { appUser } = useAuth();
   const { data: existing, isLoading: loadingExisting } = useSupplierBill(id);
@@ -129,10 +151,10 @@ export default function EnterBill() {
   const [vendorId, setVendorId] = useState(() => copyFrom?.vendor_id || "");
   const [vendorPopoverOpen, setVendorPopoverOpen] = useState(false);
   const [vendorSearch, setVendorSearch] = useState("");
-  const [billDate, setBillDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [dueDate, setDueDate] = useState("");
+  const [billDate, setBillDate] = useState(() => agentBill?.bill_date || format(new Date(), "yyyy-MM-dd"));
+  const [dueDate, setDueDate] = useState(() => agentBill?.due_date || "");
   const [paymentTerms, setPaymentTerms] = useState(() => copyFrom?.payment_terms || "net_30");
-  const [vendorRef, setVendorRef] = useState("");
+  const [vendorRef, setVendorRef] = useState(() => agentBill?.vendor_ref || "");
   const [permitNo, setPermitNo] = useState(() => copyFrom?.permit_no || "");
   const [memo, setMemo] = useState(() => copyFrom?.notes || "");
   const [discountType, setDiscountType] = useState<"percentage" | "fixed">(() => copyFrom?.discount_type || "percentage");
@@ -156,6 +178,8 @@ export default function EnterBill() {
         customer_id: l.customer_id || null,
         is_billable: !!l.is_billable,
         cost_center_id: l.cost_center_id || null,
+        tax_sel: l.tax_sel || "",
+        is_tax_inclusive: !!l.is_tax_inclusive,
       }));
     }
     const expenseAccount = isNew ? searchParams.get("expense_account") : null;
@@ -478,6 +502,15 @@ export default function EnterBill() {
       let savedId: string;
       if (isNew) {
         savedId = await createBill.mutateAsync(payload as any);
+        if (agentBill) {
+          // The bill is saved either way; a failure here only leaves the
+          // proposal open in the review queue, so warn rather than throw.
+          const { error: doneErr } = await supabase.rpc("complete_agent_proposal" as never, {
+            p_id: agentBill.proposal_id,
+            p_result: { bill_id: savedId },
+          } as never);
+          if (doneErr) toast.warning(`Bill saved, but the agent proposal could not be marked done: ${doneErr.message}`);
+        }
       } else {
         savedId = await updateBill.mutateAsync({ id: id!, ...payload } as any);
       }

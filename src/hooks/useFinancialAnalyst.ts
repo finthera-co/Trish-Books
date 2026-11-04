@@ -20,11 +20,19 @@ export interface AnalystToolCall {
   error?: string;
 }
 
+/** A proposal the bookkeeping agent queued during this message. */
+export interface AgentProposalEvent {
+  id: string;
+  kind: "journal_entry" | "supplier_bill" | "clear_suspense";
+  title: string;
+}
+
 export interface AnalystMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   toolCalls: AnalystToolCall[];
+  proposals?: AgentProposalEvent[];
   /** Set while this message is still being streamed. */
   streaming?: boolean;
 }
@@ -47,6 +55,15 @@ const TOOL_LABELS: Record<string, string> = {
   get_budget_vs_actual: "Comparing budget to actual",
   get_customer_statement: "Reading the customer statement",
   get_fiscal_context: "Checking the fiscal calendar",
+  // Bookkeeping agent
+  list_suspense_lines: "Reading open suspense lines",
+  find_vendors: "Looking up suppliers",
+  find_customers: "Looking up customers",
+  list_tax_codes: "Reading tax codes",
+  list_agent_proposals: "Checking the review queue",
+  propose_clear_suspense: "Proposing a suspense clearance",
+  propose_journal_entry: "Proposing a journal entry",
+  propose_supplier_bill: "Proposing a supplier bill",
 };
 
 export function toolLabel(name: string): string {
@@ -63,9 +80,25 @@ interface StreamPayload {
   ok?: boolean;
   error?: string;
   message?: string;
+  id?: string;
+  kind?: AgentProposalEvent["kind"];
+  title?: string;
 }
 
 export function useFinancialAnalyst() {
+  return useAgentChat("financial-analyst");
+}
+
+/** Streaming chat against one of the agent edge functions. Both speak the same
+ *  SSE protocol; the bookkeeping agent adds a `proposal` event per queued action. */
+export function useAgentChat(
+  functionName: "financial-analyst" | "bookkeeping-agent",
+  opts: { onProposal?: (p: AgentProposalEvent) => void } = {},
+) {
+  // Read through a ref so a fresh callback each render doesn't rebuild ask().
+  const onProposal = useRef(opts.onProposal);
+  onProposal.current = opts.onProposal;
+
   const [messages, setMessages] = useState<AnalystMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const conversationId = useRef<string | null>(null);
@@ -107,7 +140,7 @@ export function useFinancialAnalyst() {
         const token = sessionData.session?.access_token;
         if (!token) throw new Error("Your session has expired. Sign in again.");
 
-        const res = await fetch(`${FUNCTIONS_URL}/financial-analyst`, {
+        const res = await fetch(`${FUNCTIONS_URL}/${functionName}`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -124,7 +157,7 @@ export function useFinancialAnalyst() {
         if (!res.ok || !res.body) {
           // Errors before the stream opens come back as plain JSON.
           const detail = await res.json().catch(() => null);
-          throw new Error(detail?.error ?? `The analyst is unavailable (${res.status}).`);
+          throw new Error(detail?.error ?? `The assistant is unavailable (${res.status}).`);
         }
 
         const reader = res.body.getReader();
@@ -193,6 +226,14 @@ export function useFinancialAnalyst() {
                 });
                 break;
 
+              case "proposal":
+                if (payload.id && payload.kind && payload.title) {
+                  const p = { id: payload.id, kind: payload.kind, title: payload.title };
+                  patchLast((m) => ({ ...m, proposals: [...(m.proposals ?? []), p] }));
+                  onProposal.current?.(p);
+                }
+                break;
+
               case "error":
                 toast.error(payload.message);
                 patchLast((m) => ({
@@ -224,7 +265,7 @@ export function useFinancialAnalyst() {
         patchLast((m) => ({ ...m, streaming: false }));
       }
     },
-    [isStreaming, patchLast],
+    [functionName, isStreaming, patchLast],
   );
 
   const stop = useCallback(() => abortRef.current?.abort(), []);

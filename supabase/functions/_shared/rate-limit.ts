@@ -41,6 +41,10 @@ export const RATE_LIMITS: Record<string, RateLimitRule[]> = {
   "financial-analyst":     [{ scope: "user", limit: 5,  windowSeconds: 60 },
                             { scope: "tenant", limit: 100, windowSeconds: 3600 }],
   "analyst-reindex":       [{ scope: "tenant", limit: 5, windowSeconds: 3600 }],
+  // Same loop shape as financial-analyst with a higher round cap, so the same
+  // tight limits. It only writes proposals, but every request is still model spend.
+  "bookkeeping-agent":     [{ scope: "user", limit: 5,  windowSeconds: 60 },
+                            { scope: "tenant", limit: 100, windowSeconds: 3600 }],
 
   // Deployed with verify_jwt=false. The handler checks is_super_admin() itself,
   // so this is not an authz hole — but unauthenticated callers still reach it and
