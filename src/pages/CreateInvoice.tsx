@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, type KeyboardEvent } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectGroup, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Plus, Trash2, Send, Save, AlertTriangle } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ArrowLeft, Plus, Trash2, Send, Save, AlertTriangle, ChevronDown, Pencil } from "lucide-react";
+import { formatDate } from "@/lib/format";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCustomers, useAccounts, useProducts } from "@/hooks/useData";
 import { useTaxProfile, useTaxGroups, useTaxCodes, currentRate } from "@/hooks/useTaxEngine";
@@ -27,6 +30,7 @@ import { useSetHideSidebar } from "@/stores/useAppStore";
 import { useLegacyInvoiceNumbering } from "@/hooks/useTenantFeature";
 import { useCompanyProfile } from "@/hooks/useCompanyProfile";
 import AccountCombobox from "@/components/shared/AccountCombobox";
+import SearchCombobox, { type SearchOption } from "@/components/shared/SearchCombobox";
 import { LineDescriptionInput, tidyDescription } from "@/components/shared/LineDescriptionInput";
 
 interface LineItem {
@@ -297,11 +301,6 @@ export default function CreateInvoice() {
     () => accounts?.find((a) => a.account_subtype === "Accounts Receivable" || a.account_name?.toLowerCase().includes("accounts receivable")),
     [accounts]
   );
-  const revenueAccount = useMemo(
-    () => accounts?.find((a) => (a.account_type === "Income" || a.account_type === "Other Income" || a.account_type === "Revenue") && !a.account_name?.toLowerCase().includes("return")),
-    [accounts]
-  );
-
   // All active income accounts, for the per-line revenue-account picker. Sorted by code.
   // "Revenue" is the live COA label; "Income"/"Other Income" are defensive and harmless if unused.
   const revenueAccounts = useMemo(
@@ -318,6 +317,26 @@ export default function CreateInvoice() {
           String(a.account_code).localeCompare(String(b.account_code)),
         ),
     [accounts]
+  );
+
+  // Options for the searchable customer / product pickers.
+  const customerOptions = useMemo<SearchOption[]>(
+    () => (customers || []).map((c) => ({
+      id: c.id,
+      label: c.name,
+      hint: c.customer_code || c.email,
+      keywords: [c.email, c.phone, c.customer_code].filter(Boolean).join(" "),
+    })),
+    [customers]
+  );
+  const productOptions = useMemo<SearchOption[]>(
+    () => (products || []).map((p: any) => ({
+      id: p.id,
+      label: p.name,
+      hint: p.price != null ? formatCurrency(Number(p.price), currency) : null,
+      keywords: p.sku,
+    })),
+    [products, currency]
   );
 
   const productsById = useMemo(
@@ -435,8 +454,31 @@ export default function CreateInvoice() {
     );
   }, [products]);
 
-  const addLine = () => setLines((prev) => [...prev, emptyLine()]);
+  // A newly added line takes focus on its description, so lines can be keyed
+  // in one after another without reaching for the mouse.
+  const [focusLineId, setFocusLineId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!focusLineId) return;
+    document.querySelector<HTMLTextAreaElement>(`tr[data-line-id="${focusLineId}"] textarea`)?.focus();
+    setFocusLineId(null);
+  }, [focusLineId]);
+  const addLine = () => {
+    const line = emptyLine();
+    setLines((prev) => [...prev, line]);
+    setFocusLineId(line.id);
+  };
   const removeLine = (id: string) => setLines((prev) => prev.filter((l) => l.id !== id));
+  // Enter in a text/number field on the last row adds a new line. Popovers
+  // (account search, selects) render in portals: React still bubbles their key
+  // events here, so only fields physically inside the row count.
+  const handleLineKeyDown = (e: KeyboardEvent<HTMLTableRowElement>, idx: number) => {
+    if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+    const target = e.target as HTMLElement;
+    if (!e.currentTarget.contains(target) || !["INPUT", "TEXTAREA"].includes(target.tagName)) return;
+    if (idx !== lines.length - 1) return;
+    e.preventDefault();
+    addLine();
+  };
 
   // ── Invoice-level discount, apportioned onto the lines ───────────────
   // Everything downstream (tax, revenue split, the server-side recompute) works
@@ -534,6 +576,26 @@ export default function CreateInvoice() {
 
   const totalTax = useMemo(() => Math.round(taxByCode.reduce((s, t) => s + t.amount, 0) * 100) / 100, [taxByCode]);
   const total = Math.round((subtotal + totalTax) * 100) / 100;
+
+  // Journal preview: one revenue credit per account the lines map to, as
+  // post-invoice books it. A line with no account falls back to the tenant's
+  // default sales account, which only the server resolves — shown as such.
+  const revenueByAccount = useMemo(() => {
+    const map = new Map<string, number>();
+    lines.forEach((l, i) => {
+      const amt = lineCalcs[i]?.exclusiveBase ?? 0;
+      if (amt > 0) map.set(l.account_id, Math.round(((map.get(l.account_id) ?? 0) + amt) * 100) / 100);
+    });
+    return [...map.entries()].map(([accountId, amount]) => ({
+      accountId,
+      amount,
+      name: accountId
+        ? accounts?.find((a) => a.id === accountId)?.account_name ?? "Revenue"
+        : "Default sales account",
+    }));
+  }, [lines, lineCalcs, accounts]);
+  // Document currency → LKR, rounded per leg the same way post-invoice does.
+  const toBase = (n: number) => Math.round(n * exchangeRate * 100) / 100;
 
   const handleSave = async (shouldPost = false) => {
     // Ignored unless the tenant is entitled to type one — otherwise the serial
@@ -737,6 +799,21 @@ export default function CreateInvoice() {
   // that accounts for the generated sequence.
   const numberIsGazette = /^\d{2}(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)_.+_\d+$/.test(invoiceNumber.trim());
   const numberIsManual = canTypeNumber && !!invoiceNumber.trim() && invoiceNumber.trim() !== originalNumber;
+  const numberOffFormat = numberIsManual && !numberIsGazette;
+
+  // The statutory / less-used header fields live behind "More details". Anything
+  // set away from its default is surfaced as a chip on the closed section, so
+  // collapsing it never hides a value that changes the invoice.
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const selectedTemplate = templateId ? (invoiceTemplates || []).find((t: any) => t.id === templateId) : null;
+  const detailChips = [
+    branchCode && `Branch ${branchCode}`,
+    dateOfSupply && dateOfSupply !== issueDate && `Supplied ${formatDate(dateOfSupply)}`,
+    placeOfSupply.trim(),
+    modeOfPayment,
+    currency !== "LKR" && `${currency} @ ${exchangeRate}`,
+    selectedTemplate && `Template: ${(selectedTemplate as any).template_name}`,
+  ].filter(Boolean) as string[];
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-12">
@@ -747,8 +824,68 @@ export default function CreateInvoice() {
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl font-semibold tracking-tight text-foreground">{isEdit ? "Edit invoice" : "New invoice"}</h1>
+              {/* Invoice number — a read-only badge. Typing a number is a per-tenant
+                  entitlement; with it, the badge opens an editor. */}
+              {canTypeNumber ? (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-xs transition-colors hover:bg-muted ${
+                        numberOffFormat
+                          ? "border-amber-500/50 text-amber-700 dark:text-amber-400"
+                          : "border-border text-muted-foreground"
+                      }`}
+                    >
+                      {invoiceNumber.trim() ? `#${invoiceNumber.trim()}` : "Auto number"}
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-80 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Invoice number</Label>
+                      {numberIsManual && (
+                        <button
+                          type="button"
+                          className="text-[10px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                          onClick={() => setInvoiceNumber(originalNumber)}
+                        >
+                          {isEdit ? "Undo change" : "Use auto number"}
+                        </button>
+                      )}
+                    </div>
+                    <Input
+                      className="h-9 font-mono"
+                      value={invoiceNumber}
+                      onChange={(e) => setInvoiceNumber(e.target.value)}
+                      maxLength={40}
+                      placeholder="Auto-generated on save"
+                      autoFocus
+                    />
+                    {numberOffFormat ? (
+                      <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                        Saved exactly as typed. It doesn't follow the IRD format (YYMMM_QQQQ_XXXXX), so it
+                        won't appear in the serial register.
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground">
+                        {isEdit
+                          ? "Edit to renumber this draft, or leave it as it is."
+                          : "Leave blank to generate one per IRD format (YYMMM_QQQQ_XXXXX), or type your own."}
+                      </p>
+                    )}
+                  </PopoverContent>
+                </Popover>
+              ) : (
+                <span
+                  className="rounded-md border border-border px-2 py-0.5 font-mono text-xs text-muted-foreground"
+                  title="Generated on save per IRD format (YYMMM_QQQQ_XXXXX)"
+                >
+                  {invoiceNumber.trim() ? `#${invoiceNumber.trim()}` : "Number assigned on save"}
+                </span>
+              )}
               <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${
                 isPostedEdit
                   ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
@@ -797,310 +934,287 @@ export default function CreateInvoice() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
-        {/* Main Form */}
-        <div className="lg:col-span-4 space-y-6">
-          {/* Customer & Dates */}
-          <Card>
-            <CardContent className="p-5 space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                <div className="space-y-1.5">
-                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Customer</Label>
-                  <div className="flex gap-2">
-                    <Select value={customerId} onValueChange={setCustomerId}>
-                      <SelectTrigger className="h-9"><SelectValue placeholder="Select customer..." /></SelectTrigger>
-                      <SelectContent>
-                        {customers?.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                    <QuickCustomerDialog onCreated={(id) => setCustomerId(id)} />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Invoice number</Label>
-                    {numberIsManual && (
-                      <button
-                        type="button"
-                        className="text-[10px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                        onClick={() => setInvoiceNumber(originalNumber)}
-                      >
-                        {isEdit ? "Undo change" : "Use auto number"}
-                      </button>
-                    )}
-                  </div>
-                  {/* Typing a number is a per-tenant entitlement; without it the
-                      field is a read-only display of the generated serial. */}
-                  <Input
-                    className={`h-9 font-mono${canTypeNumber ? "" : " bg-muted/50 text-muted-foreground"}`}
-                    value={invoiceNumber}
-                    onChange={(e) => setInvoiceNumber(e.target.value)}
-                    readOnly={!canTypeNumber}
-                    tabIndex={canTypeNumber ? undefined : -1}
-                    maxLength={40}
-                    placeholder={canTypeNumber ? "Auto-generated on save" : "System-generated on save"}
+      <div className="space-y-6">
+        {/* Customer & Dates — the four fields every invoice needs up front;
+            statutory and less-used fields sit under "More details". */}
+        <Card>
+          <CardContent className="p-5 space-y-4">
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-12">
+              <div className="space-y-1.5 sm:col-span-2 lg:col-span-5">
+                <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Customer</Label>
+                <div className="flex gap-2">
+                  <SearchCombobox
+                    options={customerOptions}
+                    value={customerId}
+                    onChange={setCustomerId}
+                    placeholder="Select customer…"
+                    searchPlaceholder="Search by name, code, email or phone…"
+                    emptyText="No customers found"
                   />
-                  {!canTypeNumber ? (
-                    <p className="text-[10px] text-muted-foreground">
-                      Generated on save per IRD format (YYMMM_QQQQ_XXXXX)
-                    </p>
-                  ) : numberIsManual && !numberIsGazette ? (
-                    <p className="text-[10px] text-amber-600 dark:text-amber-400">
-                      Saved exactly as typed. It doesn't follow the IRD format (YYMMM_QQQQ_XXXXX), so it
-                      won't appear in the serial register.
-                    </p>
-                  ) : (
-                    <p className="text-[10px] text-muted-foreground">
-                      {isEdit
-                        ? "Edit to renumber this draft, or leave it as it is."
-                        : "Leave blank to generate one per IRD format (YYMMM_QQQQ_XXXXX), or type your own."}
-                    </p>
-                  )}
+                  <QuickCustomerDialog onCreated={(id) => setCustomerId(id)} />
                 </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                <div className="space-y-1.5">
-                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Branch / Entity code (QQQQ)</Label>
-                  <Input
-                    className="h-9 font-mono"
-                    value={branchCode}
-                    // A serial may not contain whitespace, so never let one in.
-                    onChange={(e) => setBranchCode(e.target.value.replace(/\s/g, ""))}
-                    maxLength={15}
-                    placeholder="e.g. BR03"
-                  />
-                  <p className="text-[10px] text-muted-foreground">
-                    Used as the QQQQ segment of an auto-generated number. Pre-filled from your company
-                    default{companyProfile?.default_branch_code ? "" : "; falls back to MAIN when left blank"}.
+                {customer && (customer.email || customer.address) && (
+                  <p className="truncate text-xs text-muted-foreground" title={[customer.email, customer.address].filter(Boolean).join(" · ")}>
+                    {[customer.email, customer.address].filter(Boolean).join(" · ")}
                   </p>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Date of supply</Label>
-                  <DatePicker value={dateOfSupply || issueDate} onChange={setDateOfSupply} placeholder="Select date of supply" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Place of supply</Label>
-                  <Input
-                    className="h-9"
-                    value={placeOfSupply}
-                    onChange={(e) => setPlaceOfSupply(e.target.value)}
-                    placeholder="Optional"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                <div className="space-y-1.5">
-                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Mode of payment</Label>
-                  <Select value={modeOfPayment || MOP_NONE} onValueChange={(v) => setModeOfPayment(v === MOP_NONE ? "" : v)}>
-                    <SelectTrigger className="h-9"><SelectValue placeholder="Not specified" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={MOP_NONE}>Not specified</SelectItem>
-                      {MODE_OF_PAYMENT_OPTIONS.map((m) => (
-                        <SelectItem key={m} value={m}>{m}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Currency</Label>
-                  <Select value={currency} onValueChange={setCurrency}>
-                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {["LKR", "USD", "EUR", "GBP", "INR", "AUD", "SGD", "JPY", "AED"].map((c) => (
-                        <SelectItem key={c} value={c}>{c}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {currency !== "LKR" && (
-                  <div className="space-y-1.5">
-                    <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Exchange rate (1 {currency} → LKR)</Label>
-                    <Input
-                      type="number"
-                      className="h-9 font-mono"
-                      value={exchangeRate || ""}
-                      onChange={(e) => setExchangeRate(Number(e.target.value))}
-                      min={0}
-                      step="0.0001"
-                    />
-                    <p className="text-[10px] text-muted-foreground">GL posts in LKR at this rate. Set rates in Settings → Exchange Rates.</p>
-                  </div>
                 )}
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                <div className="space-y-1.5">
-                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Issue date</Label>
-                  <DatePicker value={issueDate} onChange={setIssueDate} placeholder="Select issue date" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Payment terms</Label>
-                  <Select value={paymentTerms} onValueChange={setPaymentTerms}>
-                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {TERM_OPTIONS.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Due date</Label>
-                  <DatePicker value={dueDate} onChange={setDueDate} placeholder="Select due date" fromDate={issueDate} />
-                </div>
+              <div className="space-y-1.5 lg:col-span-3">
+                <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Issue date</Label>
+                <DatePicker value={issueDate} onChange={setIssueDate} placeholder="Select issue date" />
               </div>
-              {(invoiceTemplates?.length ?? 0) > 0 && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+              <div className="space-y-1.5 lg:col-span-2">
+                <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Terms</Label>
+                <Select value={paymentTerms} onValueChange={setPaymentTerms}>
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {TERM_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5 lg:col-span-2">
+                <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Due date</Label>
+                <DatePicker value={dueDate} onChange={setDueDate} placeholder="Select due date" fromDate={issueDate} />
+              </div>
+            </div>
+
+            <Collapsible open={detailsOpen} onOpenChange={setDetailsOpen} className="border-t border-border pt-3">
+              <CollapsibleTrigger asChild>
+                <button type="button" className="group flex w-full flex-wrap items-center gap-2 text-left">
+                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${detailsOpen ? "" : "-rotate-90"}`} />
+                  <span className="text-[13px] font-medium text-foreground group-hover:underline">More details</span>
+                  {!detailsOpen && (detailChips.length > 0 ? (
+                    detailChips.map((chip) => (
+                      <span key={chip} className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{chip}</span>
+                    ))
+                  ) : (
+                    <span className="text-[11px] text-muted-foreground">Branch code, supply, payment mode, currency{(invoiceTemplates?.length ?? 0) > 0 ? ", PDF template" : ""}</span>
+                  ))}
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="grid grid-cols-1 gap-5 pt-4 sm:grid-cols-3">
                   <div className="space-y-1.5">
-                    <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">PDF template</Label>
-                    <Select value={templateId || TPL_DEFAULT} onValueChange={(v) => setTemplateId(v === TPL_DEFAULT ? "" : v)}>
-                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                    <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Branch / Entity code (QQQQ)</Label>
+                    <Input
+                      className="h-9 font-mono"
+                      value={branchCode}
+                      // A serial may not contain whitespace, so never let one in.
+                      onChange={(e) => setBranchCode(e.target.value.replace(/\s/g, ""))}
+                      maxLength={15}
+                      placeholder="e.g. BR03"
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      Used as the QQQQ segment of an auto-generated number. Pre-filled from your company
+                      default{companyProfile?.default_branch_code ? "" : "; falls back to MAIN when left blank"}.
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Date of supply</Label>
+                    <DatePicker value={dateOfSupply || issueDate} onChange={setDateOfSupply} placeholder="Select date of supply" />
+                    <p className="text-[10px] text-muted-foreground">Defaults to the issue date.</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Place of supply</Label>
+                    <Input
+                      className="h-9"
+                      value={placeOfSupply}
+                      onChange={(e) => setPlaceOfSupply(e.target.value)}
+                      placeholder="Optional"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Mode of payment</Label>
+                    <Select value={modeOfPayment || MOP_NONE} onValueChange={(v) => setModeOfPayment(v === MOP_NONE ? "" : v)}>
+                      <SelectTrigger className="h-9"><SelectValue placeholder="Not specified" /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value={TPL_DEFAULT}>Default template</SelectItem>
-                        {(invoiceTemplates || []).map((t: any) => (
-                          <SelectItem key={t.id} value={t.id}>
-                            {t.template_name}{t.is_default ? " (default)" : ""}
-                          </SelectItem>
+                        <SelectItem value={MOP_NONE}>Not specified</SelectItem>
+                        {MODE_OF_PAYMENT_OPTIONS.map((m) => (
+                          <SelectItem key={m} value={m}>{m}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-[10px] text-muted-foreground">Layout used when this invoice is downloaded as a PDF.</p>
                   </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Currency</Label>
+                    <Select value={currency} onValueChange={setCurrency}>
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {["LKR", "USD", "EUR", "GBP", "INR", "AUD", "SGD", "JPY", "AED"].map((c) => (
+                          <SelectItem key={c} value={c}>{c}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {currency !== "LKR" && (
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Exchange rate (1 {currency} → LKR)</Label>
+                      <Input
+                        type="number"
+                        className="h-9 font-mono"
+                        value={exchangeRate || ""}
+                        onChange={(e) => setExchangeRate(Number(e.target.value))}
+                        min={0}
+                        step="0.0001"
+                      />
+                      <p className="text-[10px] text-muted-foreground">GL posts in LKR at this rate. Set rates in Settings → Exchange Rates.</p>
+                    </div>
+                  )}
+                  {(invoiceTemplates?.length ?? 0) > 0 && (
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">PDF template</Label>
+                      <Select value={templateId || TPL_DEFAULT} onValueChange={(v) => setTemplateId(v === TPL_DEFAULT ? "" : v)}>
+                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={TPL_DEFAULT}>Default template</SelectItem>
+                          {(invoiceTemplates || []).map((t: any) => (
+                            <SelectItem key={t.id} value={t.id}>
+                              {t.template_name}{t.is_default ? " (default)" : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[10px] text-muted-foreground">Layout used when this invoice is downloaded as a PDF.</p>
+                    </div>
+                  )}
                 </div>
-              )}
-              {customer && (
-                <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm">
-                  <p className="font-medium text-foreground">{customer.name}</p>
-                  {customer.email && <p className="text-muted-foreground">{customer.email}</p>}
-                  {customer.address && <p className="text-muted-foreground">{customer.address}</p>}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+              </CollapsibleContent>
+            </Collapsible>
+          </CardContent>
+        </Card>
 
-          {/* Line Items */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <CardTitle className="text-base">Line items</CardTitle>
-                  <p className="text-xs text-muted-foreground mt-0.5">Pick a product, or leave it blank for a service line. The revenue account is always yours to set — a product just suggests one.</p>
-                </div>
-                <span className="text-xs text-muted-foreground tabular-nums shrink-0">{lines.length} line{lines.length === 1 ? "" : "s"}</span>
+        {/* Line Items — one row per line with the column headers shown once.
+            Enter in a field on the last row adds a new line. */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">Line items</CardTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">Pick a product, or leave it blank for a service line. The revenue account is always yours to set — a product just suggests one.</p>
               </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="divide-y divide-border border-y border-border">
-                {lines.map((line, idx) => {
-                  const lineProduct = line.product_id ? productsById.get(line.product_id) : null;
-                  const lineBadge = typeLabel(lineProduct);
-                  // A line with no product is a service / ad-hoc line: it bills a flat
-                  // amount against a chosen revenue account — no qty, no unit cost, no
-                  // COGS leg. Selecting a product switches it back to a goods line.
-                  const isService = !line.product_id;
-                  return (
-                    <div key={line.id} className="group/line relative px-5 py-6 transition-colors hover:bg-muted/20">
-                      {/* Row 1 — line number, description and product picker */}
-                      <div className="flex items-start gap-3">
-                        <span className="mt-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground">
-                          {idx + 1}
-                        </span>
-                        <div className="flex-1 space-y-2">
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-                            {/* Description, product picker and revenue account share the top row.
-                                Shift+Enter adds a line to the description; the box grows to fit. */}
-                            <LineDescriptionInput className="min-w-0 flex-1" placeholder="Description (Shift+Enter for a new line)"
-                              value={line.description}
-                              onChange={(v) => updateLine(line.id, "description", v)} />
-                            <div className="flex gap-2 w-full shrink-0 sm:w-[220px]">
-                              <Select value={line.product_id || "none"}
-                                onValueChange={(v) => updateLine(line.id, "product_id", v === "none" ? "" : v)}>
-                                <SelectTrigger className="h-10 min-w-0 flex-1 text-xs"><SelectValue placeholder="Link a product" /></SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="none">— No product (service) —</SelectItem>
-                                  {products?.map((p: any) => (
-                                    <SelectItem key={p.id} value={p.id}>
-                                      {p.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <QuickProductDialog onCreated={(id) => updateLine(line.id, "product_id", id)} />
-                            </div>
-                            {/* Revenue account — suggested by the product's income account,
-                                but always overridable, and required on a service line. */}
-                            <AccountCombobox
-                              options={revenueAccounts}
-                              value={line.account_id}
-                              onChange={(v) => updateLine(line.id, "account_id", v)}
-                              placeholder="Revenue account…"
-                              className="h-10 w-full shrink-0 text-xs sm:w-[190px]"
+              <span className="text-xs text-muted-foreground tabular-nums shrink-0">{lines.length} line{lines.length === 1 ? "" : "s"}</span>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto border-y border-border">
+              <table className="w-full min-w-[1080px] table-fixed text-sm">
+                <colgroup>
+                  <col className="w-10" />
+                  <col className="w-[200px]" />
+                  <col />
+                  <col className="w-[180px]" />
+                  <col className="w-[72px]" />
+                  <col className="w-[112px]" />
+                  <col className="w-[148px]" />
+                  <col className="w-[136px]" />
+                  <col className="w-[124px]" />
+                  <col className="w-12" />
+                </colgroup>
+                <thead className="bg-muted/40">
+                  <tr className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                    <th className="py-2 pl-4 text-left font-medium">#</th>
+                    <th className="px-2 py-2 text-left font-medium">Product / service</th>
+                    <th className="px-2 py-2 text-left font-medium">Description</th>
+                    <th className="px-2 py-2 text-left font-medium">Revenue account</th>
+                    <th className="px-2 py-2 text-center font-medium">Qty</th>
+                    <th className="px-2 py-2 text-right font-medium">Rate</th>
+                    <th className="px-2 py-2 text-right font-medium">Discount % / amt</th>
+                    <th className="px-2 py-2 text-left font-medium">Tax</th>
+                    <th className="px-2 py-2 text-right font-medium">Amount</th>
+                    <th><span className="sr-only">Remove</span></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {lines.map((line, idx) => {
+                    const lineProduct = line.product_id ? productsById.get(line.product_id) : null;
+                    const lineBadge = typeLabel(lineProduct);
+                    // A line with no product is a service / ad-hoc line: it bills a flat
+                    // amount against a chosen revenue account — no qty, no unit cost, no
+                    // COGS leg. Selecting a product switches it back to a goods line.
+                    const isService = !line.product_id;
+                    return (
+                      <tr key={line.id} data-line-id={line.id} className="align-top transition-colors hover:bg-muted/20"
+                        onKeyDown={(e) => handleLineKeyDown(e, idx)}>
+                        <td className="py-2 pl-4">
+                          <div className="flex h-10 items-center text-xs tabular-nums text-muted-foreground">{idx + 1}</div>
+                        </td>
+                        <td className="px-2 py-2">
+                          <div className="flex gap-1.5">
+                            <SearchCombobox
+                              options={productOptions}
+                              value={line.product_id}
+                              onChange={(v) => updateLine(line.id, "product_id", v)}
+                              placeholder="Service (no product)"
+                              searchPlaceholder="Search by name or SKU…"
+                              emptyText="No products found"
+                              clearLabel="— No product (service) —"
+                              className="h-10 min-w-0 flex-1 text-xs"
                             />
+                            <QuickProductDialog onCreated={(id) => updateLine(line.id, "product_id", id)} />
                           </div>
                           {lineBadge && (
-                            <div className="flex items-center gap-2">
-                              <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                                {lineBadge}
-                              </span>
-                            </div>
+                            <span className="mt-1 inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                              {lineBadge}
+                            </span>
                           )}
-                        </div>
-                        <div className="w-9 shrink-0">
-                          {lines.length > 1 && (
-                            <Button variant="ghost" size="icon" className="h-9 w-9 opacity-0 transition-opacity group-hover/line:opacity-100" onClick={() => removeLine(line.id)}>
-                              <Trash2 className="w-4 h-4 text-muted-foreground hover:text-destructive" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Row 2 — the financial fields, each with its own label and breathing room */}
-                      <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-4 pl-9 sm:grid-cols-12">
-                        <div className="space-y-1.5 sm:col-span-2">
-                          <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Qty</Label>
+                        </td>
+                        <td className="px-2 py-2">
+                          {/* Shift+Enter adds a line to the description; the box grows to fit. */}
+                          <LineDescriptionInput placeholder="Description"
+                            value={line.description}
+                            onChange={(v) => updateLine(line.id, "description", v)} />
+                        </td>
+                        <td className="px-2 py-2">
+                          {/* Revenue account — suggested by the product's income account,
+                              but always overridable, and required on a service line. */}
+                          <AccountCombobox
+                            options={revenueAccounts}
+                            value={line.account_id}
+                            onChange={(v) => updateLine(line.id, "account_id", v)}
+                            placeholder="Revenue account…"
+                            className="h-10 w-full text-xs"
+                          />
+                        </td>
+                        <td className="px-2 py-2">
                           {isService ? (
                             // Service lines bill a flat amount; quantity is not applicable.
-                            <div className="flex h-10 items-center justify-center rounded-md border border-dashed border-border">
+                            <div className="flex h-10 items-center justify-center rounded-md border border-dashed border-border" title="Service lines bill a flat amount">
                               <span className="text-xs text-muted-foreground/50">—</span>
                             </div>
                           ) : (
                             <Input type="number"
-                              className="h-10 text-sm text-center font-mono"
+                              className="h-10 px-2 text-sm text-center font-mono"
                               value={line.qty || ""}
                               onChange={(e) => updateLine(line.id, "qty", Number(e.target.value))} min={1} />
                           )}
-                        </div>
-                        <div className="space-y-1.5 sm:col-span-2">
-                          <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{isService ? "Amount" : "Rate"}</Label>
-                          <Input type="number" className="h-10 text-sm text-right font-mono" placeholder="0.00"
+                        </td>
+                        <td className="px-2 py-2">
+                          <Input type="number" className="h-10 px-2 text-sm text-right font-mono" placeholder={isService ? "Amount" : "0.00"}
                             value={line.rate || ""}
                             onChange={(e) => updateLine(line.id, "rate", Number(e.target.value))} min={0} />
-                        </div>
+                        </td>
                         {/* Discount — type a % and the money value is calculated from
                             qty × rate, or type the money value and the % follows. */}
-                        <div className="col-span-2 space-y-1.5 sm:col-span-3">
-                          <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Discount</Label>
-                          <div className="flex items-center gap-1.5">
+                        <td className="px-2 py-2">
+                          <div className="flex items-center gap-1">
                             <div className="relative w-[44%] shrink-0">
-                              <Input type="number" className="h-10 pr-5 text-sm text-right font-mono" placeholder="0"
+                              <Input type="number" className="h-10 pl-1.5 pr-4 text-sm text-right font-mono" placeholder="0"
                                 value={line.discount_pct || ""} min={0} max={100} step="0.01"
                                 onChange={(e) => updateLine(line.id, "discount_pct", Number(e.target.value))} />
-                              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">%</span>
+                              <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">%</span>
                             </div>
-                            <Input type="number" className="h-10 min-w-0 flex-1 text-sm text-right font-mono" placeholder="0.00"
+                            <Input type="number" className="h-10 min-w-0 flex-1 px-1.5 text-sm text-right font-mono" placeholder="0.00"
                               value={line.discount || ""} min={0}
+                              title={line.discount > 0 ? `−${formatCurrency(line.discount, currency)} off ${formatCurrency(line.qty * line.rate, currency)}` : undefined}
                               onChange={(e) => updateLine(line.id, "discount", Number(e.target.value))} />
                           </div>
-                          {line.discount > 0 && (
-                            <p className="text-[10px] text-right text-muted-foreground">
-                              −{formatCurrency(line.discount, currency)} off {formatCurrency(line.qty * line.rate, currency)}
-                            </p>
-                          )}
-                        </div>
-                        <div className="space-y-1.5 sm:col-span-3">
-                          <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Tax</Label>
+                        </td>
+                        <td className="px-2 py-2">
                           <Select value={line.tax_sel || "none"}
                             onValueChange={(v) => updateLine(line.id, "tax_sel", v === "none" ? "" : v)}>
-                            <SelectTrigger className="h-10 text-sm"><SelectValue placeholder="No tax" /></SelectTrigger>
+                            <SelectTrigger className="h-10 text-xs"><SelectValue placeholder="No tax" /></SelectTrigger>
                             <SelectContent>
                               <SelectItem value="none">No Tax</SelectItem>
                               {sellableGroups.length > 0 && (
@@ -1122,36 +1236,45 @@ export default function CreateInvoice() {
                             </SelectContent>
                           </Select>
                           {line.tax_sel && (
-                            <label className="flex items-center gap-1.5 pt-0.5 text-[10px] text-muted-foreground">
+                            <label className="flex items-center gap-1.5 pt-1 text-[10px] text-muted-foreground">
                               <Switch className="scale-75" checked={line.inclusive}
                                 onCheckedChange={(v) => updateLine(line.id, "inclusive", v)} />
                               Tax inclusive
                             </label>
                           )}
-                        </div>
-                        <div className="col-span-2 space-y-1.5 sm:col-span-2">
-                          <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:text-right sm:block">Amount</Label>
-                          <div className="flex h-10 items-center justify-end font-mono tabular-nums text-base font-semibold text-foreground">
+                        </td>
+                        <td className="px-2 py-2">
+                          <div className="flex h-10 items-center justify-end font-mono tabular-nums font-semibold text-foreground">
                             {formatCurrency(lineCalcs[idx]?.lineTotal ?? 0, currency)}
                           </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="p-4">
-                <Button variant="outline" size="sm" onClick={addLine} className="w-full border-dashed text-muted-foreground hover:text-foreground">
-                  <Plus className="w-4 h-4 mr-1.5" /> Add line
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                        </td>
+                        <td className="py-2 pr-2">
+                          {/* Always visible — a hover-only button can't be reached on touch. */}
+                          <Button variant="ghost" size="icon" className="h-10 w-9 text-muted-foreground hover:text-destructive"
+                            disabled={lines.length === 1} onClick={() => removeLine(line.id)} aria-label={`Remove line ${idx + 1}`}>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 p-4">
+              <Button variant="outline" size="sm" onClick={addLine} className="border-dashed text-muted-foreground hover:text-foreground">
+                <Plus className="w-4 h-4 mr-1.5" /> Add line
+              </Button>
+              <span className="text-[11px] text-muted-foreground">Tip: press Enter on the last line to add another.</span>
+            </div>
+          </CardContent>
+        </Card>
 
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
           {/* Notes & Terms */}
-          <Card>
+          <Card className="lg:col-span-3">
             <CardContent className="pt-6">
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                 <div>
                   <Label>Notes</Label>
                   <Textarea className="mt-1.5" rows={4} placeholder="Notes visible on invoice..." value={notes} onChange={(e) => setNotes(e.target.value)} />
@@ -1163,120 +1286,126 @@ export default function CreateInvoice() {
               </div>
             </CardContent>
           </Card>
-        </div>
 
-        {/* Sidebar - Totals & Journal Preview */}
-        <div className="space-y-5 lg:sticky lg:top-6">
-          <Card>
-            <CardHeader className="pb-3"><CardTitle className="text-base">Summary</CardTitle></CardHeader>
-            <CardContent className="space-y-2.5">
-              {/* Gross, then each deduction, then the taxable figure — so the
-                  ladder reconciles down to the total the customer pays. */}
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span className="font-mono tabular-nums text-foreground">{formatCurrency(grossSubtotal, currency)}</span>
-              </div>
-              {lineDiscountTotal > 0 && (
+          {/* Totals & Journal Preview */}
+          <div className="space-y-5 lg:col-span-2">
+            <Card>
+              <CardHeader className="pb-3"><CardTitle className="text-base">Summary</CardTitle></CardHeader>
+              <CardContent className="space-y-2.5">
+                {/* Gross, then each deduction, then the taxable figure — so the
+                    ladder reconciles down to the total the customer pays. */}
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Line discounts</span>
-                  <span className="font-mono tabular-nums text-destructive">-{formatCurrency(lineDiscountTotal, currency)}</span>
+                  <span className="text-muted-foreground">Subtotal</span>
+                  <span className="font-mono tabular-nums text-foreground">{formatCurrency(grossSubtotal, currency)}</span>
                 </div>
-              )}
-
-              {/* Invoice-level discount — one figure off the whole invoice. It
-                  comes off the taxable value, so the tax rows below react to it. */}
-              <div className="space-y-1.5 rounded-md border border-dashed border-border p-2.5">
-                <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Discount on total
-                </Label>
-                <div className="flex items-center gap-1.5">
-                  <div className="relative w-[44%] shrink-0">
-                    <Input type="number" className="h-9 pr-5 text-sm text-right font-mono" placeholder="0"
-                      value={docPctShown || ""} min={0} max={100} step="0.01"
-                      onChange={(e) => setDocPct(Number(e.target.value))} />
-                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">%</span>
+                {lineDiscountTotal > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Line discounts</span>
+                    <span className="font-mono tabular-nums text-destructive">-{formatCurrency(lineDiscountTotal, currency)}</span>
                   </div>
-                  <Input type="number" className="h-9 min-w-0 flex-1 text-sm text-right font-mono" placeholder="0.00"
-                    value={docDiscount || ""} min={0}
-                    onChange={(e) => setDocAmount(Number(e.target.value))} />
-                </div>
-                {docDiscount > netTotal ? (
-                  <p className="text-[10px] text-amber-600 dark:text-amber-400">
-                    Capped at {formatCurrency(netTotal, currency)} — an invoice can't be discounted below zero.
-                  </p>
-                ) : (
-                  <p className="text-[10px] text-muted-foreground">
-                    Spread across the lines, so tax is charged on the discounted value.
-                  </p>
                 )}
-              </div>
 
-              {docDiscountApplied > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Discount on total</span>
-                  <span className="font-mono tabular-nums text-destructive">-{formatCurrency(docDiscountApplied, currency)}</span>
-                </div>
-              )}
-              {totalDiscount > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Taxable amount</span>
-                  <span className="font-mono tabular-nums text-foreground">{formatCurrency(subtotal, currency)}</span>
-                </div>
-              )}
-              {/* One row per tax code */}
-              {taxByCode.map((t) => (
-                <div key={t.code} className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">{t.code} {t.rate}%</span>
-                  <span className="font-mono tabular-nums text-foreground">{formatCurrency(t.amount, currency)}</span>
-                </div>
-              ))}
-              <Separator />
-              <div className="flex items-baseline justify-between">
-                <span className="text-sm font-semibold text-foreground">Total</span>
-                <span className="font-mono tabular-nums text-xl font-bold text-primary">{formatCurrency(total, currency)}</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Journal Preview */}
-          <Card>
-            <CardHeader className="pb-3"><CardTitle className="text-base">Journal preview</CardTitle></CardHeader>
-            <CardContent>
-              {total > 0 ? (
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between gap-2">
-                    <span className="text-muted-foreground truncate">Dr {arAccount?.account_name || "A/R"}</span>
-                    <span className="font-mono tabular-nums shrink-0">{formatCurrency(total)}</span>
-                  </div>
-                  <div className="flex justify-between gap-2 pl-4">
-                    <span className="text-muted-foreground truncate">Cr {revenueAccount?.account_name || "Revenue"}</span>
-                    <span className="font-mono tabular-nums shrink-0">{formatCurrency(subtotal)}</span>
-                  </div>
-                  {taxByCode.map((t) => (
-                    <div key={t.code} className="flex justify-between gap-2 pl-4">
-                      <span className="text-muted-foreground truncate">Cr {t.code} Payable</span>
-                      <span className="font-mono tabular-nums shrink-0">{formatCurrency(t.amount)}</span>
+                {/* Invoice-level discount — one figure off the whole invoice. It
+                    comes off the taxable value, so the tax rows below react to it. */}
+                <div className="space-y-1.5 rounded-md border border-dashed border-border p-2.5">
+                  <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Discount on total
+                  </Label>
+                  <div className="flex items-center gap-1.5">
+                    <div className="relative w-[44%] shrink-0">
+                      <Input type="number" className="h-9 pr-5 text-sm text-right font-mono" placeholder="0"
+                        value={docPctShown || ""} min={0} max={100} step="0.01"
+                        onChange={(e) => setDocPct(Number(e.target.value))} />
+                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">%</span>
                     </div>
-                  ))}
-                  <Separator className="my-2" />
-                  <p className="text-[10px] leading-relaxed text-muted-foreground">
-                    Each tax code posts to its own liability account; the server recomputes tax and rejects mismatches.
-                  </p>
-                  {currency !== "LKR" && (
-                    <p className="text-[10px] leading-relaxed text-amber-600 dark:text-amber-400">
-                      Document is in {currency}; the GL posts in LKR at rate {exchangeRate} (≈ {formatCurrency(total * exchangeRate)}).
+                    <Input type="number" className="h-9 min-w-0 flex-1 text-sm text-right font-mono" placeholder="0.00"
+                      value={docDiscount || ""} min={0}
+                      onChange={(e) => setDocAmount(Number(e.target.value))} />
+                  </div>
+                  {docDiscount > netTotal ? (
+                    <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                      Capped at {formatCurrency(netTotal, currency)} — an invoice can't be discounted below zero.
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-muted-foreground">
+                      Spread across the lines, so tax is charged on the discounted value.
                     </p>
                   )}
                 </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">Add line items to preview journal entries</p>
-              )}
-            </CardContent>
-          </Card>
+
+                {docDiscountApplied > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Discount on total</span>
+                    <span className="font-mono tabular-nums text-destructive">-{formatCurrency(docDiscountApplied, currency)}</span>
+                  </div>
+                )}
+                {totalDiscount > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Taxable amount</span>
+                    <span className="font-mono tabular-nums text-foreground">{formatCurrency(subtotal, currency)}</span>
+                  </div>
+                )}
+                {/* One row per tax code */}
+                {taxByCode.map((t) => (
+                  <div key={t.code} className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">{t.code} {t.rate}%</span>
+                    <span className="font-mono tabular-nums text-foreground">{formatCurrency(t.amount, currency)}</span>
+                  </div>
+                ))}
+                <Separator />
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm font-semibold text-foreground">Total</span>
+                  <span className="font-mono tabular-nums text-xl font-bold text-primary">{formatCurrency(total, currency)}</span>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Journal Preview */}
+            <Card>
+              <CardHeader className="pb-3"><CardTitle className="text-base">Journal preview</CardTitle></CardHeader>
+              <CardContent>
+                {total > 0 ? (
+                  <div className="space-y-2 text-xs">
+                    {/* Amounts are in LKR — what the GL actually books — converted
+                        per leg exactly as post-invoice does (toBase). */}
+                    <div className="flex justify-between gap-2">
+                      <span className="text-muted-foreground truncate">Dr {arAccount?.account_name || "A/R"}</span>
+                      <span className="font-mono tabular-nums shrink-0">{formatCurrency(toBase(total), "LKR")}</span>
+                    </div>
+                    {revenueByAccount.map((r) => (
+                      <div key={r.accountId || "default"} className="flex justify-between gap-2 pl-4">
+                        <span className={`truncate ${r.accountId ? "text-muted-foreground" : "text-amber-600 dark:text-amber-400"}`}
+                          title={r.accountId ? undefined : "Lines with no revenue account post to the default sales account in Settings"}>
+                          Cr {r.name}
+                        </span>
+                        <span className="font-mono tabular-nums shrink-0">{formatCurrency(toBase(r.amount), "LKR")}</span>
+                      </div>
+                    ))}
+                    {taxByCode.map((t) => (
+                      <div key={t.code} className="flex justify-between gap-2 pl-4">
+                        <span className="text-muted-foreground truncate">Cr {t.code} Payable</span>
+                        <span className="font-mono tabular-nums shrink-0">{formatCurrency(toBase(t.amount), "LKR")}</span>
+                      </div>
+                    ))}
+                    <Separator className="my-2" />
+                    <p className="text-[10px] leading-relaxed text-muted-foreground">
+                      Each tax code posts to its own liability account; the server recomputes tax and rejects mismatches.
+                    </p>
+                    {currency !== "LKR" && (
+                      <p className="text-[10px] leading-relaxed text-amber-600 dark:text-amber-400">
+                        Document is in {currency} ({formatCurrency(total, currency)}); the GL posts in LKR at rate {exchangeRate}.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Add line items to preview journal entries</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-// test
