@@ -2824,6 +2824,17 @@ const css = `
 .lp .lp-chat-dot { position: absolute; top: 0.45rem; right: 0.45rem; width: 0.7rem; height: 0.7rem;
   border-radius: 999px; background: var(--violet); border: 2px solid #FFD24A; }
 
+/* WhatsApp launcher, stacked above the assistant's. Brand green so it reads as
+   WhatsApp at a glance; fades out while the panel is open over the same spot. */
+.lp .lp-wa-fab { position: fixed; right: 1.75rem; bottom: 6.25rem; z-index: 55;
+  display: grid; place-items: center; width: 3.5rem; height: 3.5rem; border-radius: 999px;
+  color: #FFFFFF; background: #25D366; text-decoration: none;
+  box-shadow: 0 18px 36px -14px rgba(20, 20, 19, 0.55);
+  transition: transform var(--lp-dur-ui) var(--lp-ease), box-shadow var(--lp-dur-ui) ease, opacity 200ms ease; }
+.lp .lp-wa-fab:hover { transform: translate3d(0, -3px, 0) scale(1.04); box-shadow: 0 26px 46px -16px rgba(20, 20, 19, 0.6); }
+.lp .lp-wa-fab:focus-visible { outline: 2px solid #141413; outline-offset: 3px; }
+.lp .lp-wa-fab.is-hidden { opacity: 0; pointer-events: none; }
+
 .lp .lp-chat { position: fixed; right: 1.5rem; bottom: 6.25rem; z-index: 55;
   width: min(27.5rem, calc(100vw - 3rem)); max-height: min(41rem, calc(100dvh - 9rem));
   display: flex; flex-direction: column; overflow: hidden;
