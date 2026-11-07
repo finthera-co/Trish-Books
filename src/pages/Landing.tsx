@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import LandingChat from "@/components/landing/LandingChat";
+import InvoicingOffer from "@/components/landing/InvoicingOffer";
 import BrandMark from "@/components/BrandMark";
 import {
   ArrowRight, Check, Tag, X, Menu,
@@ -1597,6 +1598,7 @@ export default function Landing() {
   const sRiseDocs = useSectionRise<HTMLElement>();
   const sRiseShots = useSectionRise<HTMLElement>();
   const sRiseStart = useSectionRise<HTMLElement>();
+  const sRiseInvoicing = useSectionRise<HTMLElement>();
   const sRisePricing = useSectionRise<HTMLElement>();
   const sRiseFaq = useSectionRise<HTMLElement>();
   const faqRef = useReveal<HTMLDivElement>();
@@ -2042,6 +2044,13 @@ export default function Landing() {
             </header>
             <GettingStarted />
           </div>
+        </section>
+
+        {/* ── Invoicing offer ─────────────────────────────────────
+               The single LKR 1,500 invoicing price, ahead of the full-ledger tiers
+               so a business that only needs to bill sees its price first. ── */}
+        <section id="invoicing" aria-labelledby="lp-io-title" ref={sRiseInvoicing}>
+          <InvoicingOffer />
         </section>
 
         {/* Mid-page repeat of the offer. Deliberately outside lp-shell so it runs

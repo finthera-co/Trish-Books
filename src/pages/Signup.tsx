@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { BookOpen, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
@@ -20,6 +20,10 @@ import { fieldErrors, signupRequestSchema, MESSAGE_MAX } from "@/lib/validation"
  * imply an account that does not exist yet.
  */
 export default function Signup() {
+  // The landing page's invoicing card links here as ?offer=invoicing. The note is
+  // prefilled so the reviewer sees which offer the trial request came from.
+  const [params] = useSearchParams();
+  const invoicingTrial = params.get("offer") === "invoicing";
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -27,7 +31,7 @@ export default function Signup() {
     email: "",
     phone: "",
     teamSize: "",
-    message: "",
+    message: invoicingTrial ? "Free trial — Trish Books invoicing (LKR 1,500 / month)" : "",
   });
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -122,9 +126,13 @@ export default function Signup() {
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-primary mb-4 shadow-sm">
             <BookOpen className="w-6 h-6 text-primary-foreground" />
           </div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">Request your account</h1>
+          <h1 className="text-2xl font-bold text-foreground tracking-tight">
+            {invoicingTrial ? "Start your free trial" : "Request your account"}
+          </h1>
           <p className="text-muted-foreground mt-2">
-            Tell us about your company and we'll set it up for you.
+            {invoicingTrial
+              ? "Trish Books invoicing, LKR 1,500 a month after your trial. Tell us about your company and we'll set it up for you."
+              : "Tell us about your company and we'll set it up for you."}
           </p>
         </div>
 
