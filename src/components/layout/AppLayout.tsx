@@ -45,6 +45,8 @@ export default function AppLayout() {
   // NavRail clicks, deep links, refreshes and back/forward.
   useEffect(() => {
     setActiveModule(moduleIdForPath(location.pathname));
+    // Close the slide-out sidebar once a link in it has been followed.
+    setSidebarHovered(false);
   }, [location.pathname, setActiveModule]);
 
   const moduleConfig = activeModule ? MODULE_CONFIGS[activeModule] : null;
@@ -102,8 +104,11 @@ export default function AppLayout() {
       <GlobalTopNav />
       <div className={`flex-1 flex flex-row min-w-0 overflow-hidden ${isSlow && !isOffline ? "mt-10" : ""}`}>
         <NavRail />
-        {moduleConfig && !hideSidebar && (
-          sidebarPinned ? (
+        {/* Wide workspace pages (invoices, bills, cheques, reconciliation) set
+            hideSidebar: the sidebar gives up its column but still slides out
+            over the page when the edge strip is hovered. */}
+        {moduleConfig && (
+          sidebarPinned && !hideSidebar ? (
             <AppsSidebar config={moduleConfig} />
           ) : (
             <div
@@ -119,14 +124,16 @@ export default function AppLayout() {
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    onClick={() => setSidebarPinned(true)}
+                    // Pinning can't apply while the page hides the sidebar, so
+                    // there the handle just opens the overlay (keyboard route).
+                    onClick={() => (hideSidebar ? setSidebarHovered((v) => !v) : setSidebarPinned(true))}
                     aria-label={`Show ${moduleConfig.label} navigation`}
                     className="absolute left-0 top-1/2 -translate-y-1/2 z-30 h-16 w-3 flex items-center justify-center rounded-r-md bg-border/70 text-muted-foreground hover:bg-primary hover:text-primary-foreground focus-visible:bg-primary focus-visible:text-primary-foreground focus-visible:outline-none transition-colors duration-200"
                   >
                     <ChevronRight className="w-2.5 h-2.5" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="right">Show navigation (⌘B)</TooltipContent>
+                <TooltipContent side="right">{hideSidebar ? "Show navigation" : "Show navigation (⌘B)"}</TooltipContent>
               </Tooltip>
               {sidebarHovered && (
                 <div className="absolute inset-y-0 left-0 z-40 shadow-xl">

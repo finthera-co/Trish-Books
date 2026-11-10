@@ -2,6 +2,7 @@ import { Plus, Search, MoreHorizontal, Eye, Send, Ban, Download, MessageCircle, 
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useState, useMemo, useEffect } from "react";
+import { useHideSidebar, useSetHideSidebar } from "@/stores/useAppStore";
 import { useInvoices, useUpdateInvoice, useAccounts, useDeleteInvoice } from "@/hooks/useData";
 import { useApprovalQueue, useDecideInvoice, useResubmitInvoice } from "@/hooks/useApprovals";
 import { usePostInvoice } from "@/hooks/useAccountSettings";
@@ -123,6 +124,16 @@ export default function Invoices() {
   const navigate = useNavigate();
   const { appUser, isCompanyAdmin } = useAuth();
   const queryClient = useQueryClient();
+  // The invoice register is a wide table (balances sit at the far right), so
+  // give it the module sidebar's width; the NavRail stays for navigation.
+  const sidebarHidden = useHideSidebar();
+  const setSidebarHidden = useSetHideSidebar();
+  useEffect(() => {
+    const prev = sidebarHidden;
+    setSidebarHidden(true);
+    return () => setSidebarHidden(prev);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "due_soon" | "overdue" | "paid" | "draft">("all");
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
@@ -708,8 +719,22 @@ export default function Invoices() {
                     Number((inv as any).credit_total || 0) > 0.005 ||
                     hasReceipt;
                   return (
-                    <tr key={inv.id} className={cn(
-                      "group border-t border-border/70 transition-colors hover:bg-muted/40",
+                    <tr
+                      key={inv.id}
+                      // Clicking anywhere on the row opens its details — the corner
+                      // icons are hover-only and easy to miss. Controls inside the
+                      // row (checkbox, buttons, menu items, which bubble here through
+                      // their portal) and text selection keep their own behaviour.
+                      onClick={(e) => {
+                        const target = e.target as HTMLElement;
+                        if (target.closest('button, a, input, [role="checkbox"], [role="menuitem"], [role="menu"]')) return;
+                        if (!e.currentTarget.contains(target)) return;
+                        if (window.getSelection()?.toString()) return;
+                        setSelectedInvoice(inv);
+                        setDetailsOpen(true);
+                      }}
+                      className={cn(
+                      "group cursor-pointer border-t border-border/70 transition-colors hover:bg-muted/40",
                       isVoided && "opacity-60",
                       selected.has(inv.id) && "bg-primary/5",
                     )}>
