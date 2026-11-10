@@ -53,16 +53,10 @@ type SortState = { key: SortKey; dir: "asc" | "desc" } | null;
 
 /** Header cell that sorts the list. The arrow only appears on hover until the
  *  column is the active sort, so a resting header stays quiet. */
-// The Actions column stays on screen while the table scrolls sideways. A sticky cell
-// needs an opaque fill (rows scroll underneath it), so the row's hover/selected tint is
-// re-applied as an inset shadow over the card colour, alongside the edge shadow.
-// Full literals on purpose: Tailwind only generates classes it can read verbatim.
-const PINNED_RIGHT = "sticky right-0 z-10 bg-card shadow-[-8px_0_8px_-8px_hsl(var(--foreground)/0.18)]";
-const PINNED_ROW = "sticky right-0 z-10 bg-card shadow-[-8px_0_8px_-8px_hsl(var(--foreground)/0.18)] group-hover:shadow-[-8px_0_8px_-8px_hsl(var(--foreground)/0.18),inset_0_0_0_9999px_hsl(var(--muted)/0.4)]";
-const PINNED_ROW_SELECTED = "sticky right-0 z-10 bg-card shadow-[-8px_0_8px_-8px_hsl(var(--foreground)/0.18),inset_0_0_0_9999px_hsl(var(--primary)/0.05)]";
 
-function SortableTh({ label, sortKey, sort, onSort, align = "left" }: {
+function SortableTh({ label, sortKey, sort, onSort, align = "left", className }: {
   label: string;
+  className?: string;
   sortKey: SortKey;
   sort: SortState;
   onSort: (key: SortKey) => void;
@@ -71,7 +65,7 @@ function SortableTh({ label, sortKey, sort, onSort, align = "left" }: {
   const active = sort?.key === sortKey;
   const Icon = !active ? ArrowUpDown : sort.dir === "asc" ? ArrowUp : ArrowDown;
   return (
-    <th className={cn("px-4 py-2.5 whitespace-nowrap", align === "right" ? "text-right" : "text-left")}>
+    <th className={cn("px-3 py-2.5 whitespace-nowrap", align === "right" ? "text-right" : "text-left", className)}>
       <button
         type="button"
         onClick={() => onSort(sortKey)}
@@ -683,23 +677,23 @@ export default function Invoices() {
             ) : null}
           </div>
         ) : (
-          // The list scrolls inside a viewport-high box so its horizontal scrollbar, header
-          // and totals stay on screen — nobody should have to reach the last row to slide
-          // over to the balances. The Actions column is pinned to the right edge as well.
-          <div className="max-h-[calc(100vh-14rem)] min-h-[16rem] overflow-auto rounded-xl border border-border">
-            <table className="w-full min-w-[1080px] text-sm">
+          // The register fits the page width — no sideways scrolling to reach the balances.
+          // On narrower screens the issue date folds under the invoice number and the paid
+          // amount under the total; both get their own columns back on wide screens.
+          <div className="max-h-[calc(100vh-14rem)] min-h-[16rem] overflow-y-auto overflow-x-hidden rounded-xl border border-border">
+            <table className="w-full text-sm">
               <thead className="sticky top-0 z-20 bg-card shadow-[inset_0_-1px_0_hsl(var(--border))]">
                 <tr className="bg-muted/40">
-                  <th className="w-10 px-4 py-2.5"><Checkbox checked={allFilteredSelected} onCheckedChange={toggleAll} aria-label="Select all" /></th>
+                  <th className="w-10 px-3 py-2.5"><Checkbox checked={allFilteredSelected} onCheckedChange={toggleAll} aria-label="Select all" /></th>
                   <SortableTh label="Invoice" sortKey="invoice_number" sort={sort} onSort={toggleSort} />
                   <SortableTh label="Customer" sortKey="customer" sort={sort} onSort={toggleSort} />
-                  <SortableTh label="Date" sortKey="issue_date" sort={sort} onSort={toggleSort} />
+                  <SortableTh label="Date" sortKey="issue_date" sort={sort} onSort={toggleSort} className="hidden 2xl:table-cell" />
                   <SortableTh label="Due" sortKey="due_date" sort={sort} onSort={toggleSort} />
                   <SortableTh label="Status" sortKey="status" sort={sort} onSort={toggleSort} />
                   <SortableTh label="Total" sortKey="total_amount" sort={sort} onSort={toggleSort} align="right" />
-                  <SortableTh label="Paid" sortKey="amount_paid" sort={sort} onSort={toggleSort} align="right" />
+                  <SortableTh label="Paid" sortKey="amount_paid" sort={sort} onSort={toggleSort} align="right" className="hidden xl:table-cell" />
                   <SortableTh label="Balance" sortKey="balance_due" sort={sort} onSort={toggleSort} align="right" />
-                  <th className={cn(PINNED_RIGHT, "px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap")}>Actions</th>
+                  <th className={cn("w-px px-3 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap")}><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -738,7 +732,7 @@ export default function Invoices() {
                       isVoided && "opacity-60",
                       selected.has(inv.id) && "bg-primary/5",
                     )}>
-                      <td className="px-4 py-2.5"><Checkbox checked={selected.has(inv.id)} onCheckedChange={() => toggleSelect(inv.id)} aria-label={`Select ${inv.invoice_number}`} /></td>
+                      <td className="px-3 py-2.5"><Checkbox checked={selected.has(inv.id)} onCheckedChange={() => toggleSelect(inv.id)} aria-label={`Select ${inv.invoice_number}`} /></td>
                       <td className="px-4 py-2.5">
                         {/* The number is the handle on the document itself — click it to read the
                             invoice. Set in the mono face: these are structured serials, and the
@@ -750,18 +744,19 @@ export default function Invoices() {
                         >
                           {inv.invoice_number}
                         </button>
+                        <span className="block text-[11px] tabular-nums text-muted-foreground 2xl:hidden">{formatDate(inv.issue_date)}</span>
                       </td>
-                      <td className="px-4 py-2.5 text-foreground">
-                        <span className="block max-w-[240px] truncate" title={(inv.customers as any)?.name || undefined}>
+                      <td className="px-3 py-2.5 text-foreground">
+                        <span className="block max-w-[150px] truncate lg:max-w-[220px] 2xl:max-w-[280px]" title={(inv.customers as any)?.name || undefined}>
                           {(inv.customers as any)?.name || "—"}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5 whitespace-nowrap tabular-nums text-muted-foreground">{formatDate(inv.issue_date)}</td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">
+                      <td className="hidden px-3 py-2.5 whitespace-nowrap tabular-nums text-muted-foreground 2xl:table-cell">{formatDate(inv.issue_date)}</td>
+                      <td className="px-3 py-2.5">
                         {(() => {
                           const hint = dueHint(inv);
                           return (
-                            <span className="inline-flex items-center gap-1.5">
+                            <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 whitespace-nowrap">
                               <span className={cn("tabular-nums", hint?.overdue ? "font-medium text-destructive" : "text-muted-foreground")}>
                                 {formatDate(inv.due_date)}
                               </span>
@@ -777,8 +772,8 @@ export default function Invoices() {
                           );
                         })()}
                       </td>
-                      <td className="px-4 py-2.5">
-                        <div className="flex flex-nowrap items-center gap-1.5">
+                      <td className="px-3 py-2.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium", meta.chip)}>
                             <span className={cn("h-1.5 w-1.5 rounded-full", meta.dot)} />
                             {meta.label}
@@ -815,21 +810,25 @@ export default function Invoices() {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-foreground whitespace-nowrap">{formatCurrency(Number(inv.total_amount), inv.currency)}</td>
-                      <td className={cn("px-4 py-2.5 text-right tabular-nums whitespace-nowrap", inv.amount_paid > 0 ? "text-foreground" : "text-muted-foreground/50")}>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-foreground whitespace-nowrap">
+                        {formatCurrency(Number(inv.total_amount), inv.currency)}
+                        {inv.amount_paid > 0 && (
+                          <span className="block text-[11px] text-muted-foreground xl:hidden">Paid {formatCurrency(inv.amount_paid, inv.currency)}</span>
+                        )}
+                      </td>
+                      <td className={cn("hidden px-3 py-2.5 text-right tabular-nums whitespace-nowrap xl:table-cell", inv.amount_paid > 0 ? "text-foreground" : "text-muted-foreground/50")}>
                         {inv.amount_paid > 0 ? formatCurrency(inv.amount_paid, inv.currency) : "—"}
                       </td>
                       {/* Red is reserved for money that is actually late — colouring every
                           open balance red leaves nothing to warn with. */}
                       <td className={cn(
-                        "px-4 py-2.5 text-right font-semibold tabular-nums whitespace-nowrap",
+                        "px-3 py-2.5 text-right font-semibold tabular-nums whitespace-nowrap",
                         inv.balance_due <= 0.005 ? "text-muted-foreground" : status === "overdue" ? "text-destructive" : "text-foreground",
                       )}>
                         {formatCurrency(inv.balance_due, inv.currency)}
                       </td>
                       <td className={cn(
-                        selected.has(inv.id) ? PINNED_ROW_SELECTED : PINNED_ROW,
-                        "px-4 py-2.5 text-right whitespace-nowrap",
+                        "px-2 py-2.5 text-right whitespace-nowrap",
                       )}>
                         <div className="flex flex-nowrap items-center justify-end gap-0.5">
                           {/* Read-only shortcuts step back until the row is hovered or focused;
@@ -842,15 +841,6 @@ export default function Invoices() {
                             onClick={() => setViewInvoice(inv)}
                           >
                             <Eye className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
-                            title="Payments, approvals & attachments"
-                            onClick={() => { setSelectedInvoice(inv); setDetailsOpen(true); }}
-                          >
-                            <FileText className="w-4 h-4" />
                           </Button>
                           {isDraft && (
                             <Button
@@ -877,6 +867,9 @@ export default function Invoices() {
                             <DropdownMenuContent>
                               <DropdownMenuItem onClick={() => setViewInvoice(inv)}>
                                 <Eye className="w-4 h-4 mr-2" /> View Invoice
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => { setSelectedInvoice(inv); setDetailsOpen(true); }}>
+                                <FileText className="w-4 h-4 mr-2" /> Payments, approvals & attachments
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleDownload(inv)} disabled={processing}>
                                 <Download className="w-4 h-4 mr-2" /> Invoice (Template)
@@ -987,13 +980,15 @@ export default function Invoices() {
               {totalsCurrency && ordered.length > 1 && (
                 <tfoot className="sticky bottom-0 z-20 bg-card shadow-[inset_0_2px_0_hsl(var(--border))]">
                   <tr className="bg-muted/30">
-                    <td colSpan={6} className="px-4 py-2.5 text-xs font-medium text-muted-foreground">
+                    {/* colSpan 5 + the Date column's own cell, which hides with it below 2xl. */}
+                    <td colSpan={5} className="px-3 py-2.5 text-xs font-medium text-muted-foreground">
                       {ordered.length} invoices{selected.size > 0 ? ` · ${selected.size} selected` : ""}
                     </td>
-                    <td className="px-4 py-2.5 text-right text-xs font-semibold tabular-nums text-foreground whitespace-nowrap">{formatCurrency(columnTotals.total, totalsCurrency)}</td>
-                    <td className="px-4 py-2.5 text-right text-xs font-semibold tabular-nums text-foreground whitespace-nowrap">{formatCurrency(columnTotals.paid, totalsCurrency)}</td>
-                    <td className="px-4 py-2.5 text-right text-xs font-semibold tabular-nums text-foreground whitespace-nowrap">{formatCurrency(columnTotals.balance, totalsCurrency)}</td>
-                    <td className={PINNED_RIGHT} />
+                    <td className="hidden 2xl:table-cell" />
+                    <td className="px-3 py-2.5 text-right text-xs font-semibold tabular-nums text-foreground whitespace-nowrap">{formatCurrency(columnTotals.total, totalsCurrency)}</td>
+                    <td className="hidden px-3 py-2.5 text-right text-xs font-semibold tabular-nums text-foreground whitespace-nowrap xl:table-cell">{formatCurrency(columnTotals.paid, totalsCurrency)}</td>
+                    <td className="px-3 py-2.5 text-right text-xs font-semibold tabular-nums text-foreground whitespace-nowrap">{formatCurrency(columnTotals.balance, totalsCurrency)}</td>
+                    <td />
                   </tr>
                 </tfoot>
               )}
