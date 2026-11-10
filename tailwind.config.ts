@@ -147,6 +147,10 @@ export default {
 			'pulse-soft': {
 				'0%, 100%': { opacity: '1' },
 				'50%': { opacity: '0.7' }
+			},
+			'float': {
+				'0%, 100%': { transform: 'translateY(0)' },
+				'50%': { transform: 'translateY(-8px)' }
 			}
 		},
 		animation: {
@@ -159,6 +163,8 @@ export default {
 			'slide-in-left': 'slide-in-left 0.3s ease-out',
 			'slide-up': 'slide-up 0.4s ease-out forwards',
 			'pulse-soft': 'pulse-soft 2s ease-in-out infinite',
+			'float': 'float 6s ease-in-out infinite',
+			'float-slow': 'float 8s ease-in-out 1.5s infinite',
 			'enter': 'fade-in 0.3s ease-out, scale-in 0.2s ease-out'
 		},
   		boxShadow: {
